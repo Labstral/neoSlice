@@ -2,13 +2,10 @@
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
-block_cipher = None
-
 pyside6_datas,   pyside6_bins,   pyside6_hidden   = collect_all('PySide6')
 pyvista_datas,   pyvista_bins,   pyvista_hidden    = collect_all('pyvista')
 pyvistaqt_datas, pyvistaqt_bins, pyvistaqt_hidden  = collect_all('pyvistaqt')
 vtkmod_datas,    vtkmod_bins,    vtkmod_hidden     = collect_all('vtkmodules')
-mpl_datas,       mpl_bins,       mpl_hidden        = collect_all('matplotlib')
 
 project_datas = [
     ('ui/styles', 'ui/styles'),
@@ -26,7 +23,6 @@ a = Analysis(
         *pyvista_bins,
         *pyvistaqt_bins,
         *vtkmod_bins,
-        *mpl_bins,
     ],
     datas=[
         *project_datas,
@@ -34,38 +30,38 @@ a = Analysis(
         *pyvista_datas,
         *pyvistaqt_datas,
         *vtkmod_datas,
-        *mpl_datas,
     ],
     hiddenimports=[
         *pyside6_hidden,
         *pyvista_hidden,
         *pyvistaqt_hidden,
         *vtkmod_hidden,
-        *mpl_hidden,
         'trimesh',
         'trimesh.creation',
         'trimesh.repair',
         'trimesh.smoothing',
         'trimesh.transformations',
+        'trimesh.voxel',
+        'trimesh.voxel.creation',
+        'trimesh.voxel.ops',
+        'trimesh.proximity',
         'scipy',
         'scipy.spatial',
         'scipy.spatial.qhull',
         'scipy.sparse',
         'scipy.sparse.csgraph',
         'scipy.ndimage',
-        'trimesh.voxel',
-        'trimesh.voxel.creation',
-        'trimesh.voxel.ops',
-        'trimesh.proximity',
         'rtree',
         'loguru',
         'yaml',
         'numpy',
+        'pydantic',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=['hooks/rthook_pyvistaqt.py'],
     excludes=[
+        'matplotlib',
         'IPython',
         'jupyter',
         'notebook',
@@ -75,11 +71,10 @@ a = Analysis(
         'PySide6.QtWebEngineCore',
         'PySide6.QtWebEngineQuick',
     ],
-    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
@@ -96,7 +91,6 @@ exe = EXE(
 coll = COLLECT(
     exe,
     a.binaries,
-    a.zipfiles,
     a.datas,
     strip=False,
     upx=False,
