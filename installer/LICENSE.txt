@@ -1,0 +1,158 @@
+ACCORD DE LICENCE UTILISATEUR FINAL — neoSlice
+===============================================
+Version 1.0 — Version Bêta de lancement
+Copyright (c) 2025 Emmanuel Percheron. Tous droits réservés.
+
+VEUILLEZ LIRE ATTENTIVEMENT CET ACCORD AVANT D'INSTALLER OU D'UTILISER
+LE LOGICIEL neoSlice.
+
+En installant, copiant ou utilisant neoSlice, vous acceptez sans réserve
+les termes de cet accord de licence utilisateur final (CLUF/EULA).
+Si vous n'acceptez pas ces termes dans leur intégralité, n'installez pas
+et n'utilisez pas ce logiciel.
+
+───────────────────────────────────────────────
+1. LICENCE D'UTILISATION
+───────────────────────────────────────────────
+Emmanuel Percheron vous accorde une licence personnelle, non exclusive,
+non transférable et révocable pour installer et utiliser neoSlice sur
+vos appareils personnels, à des fins personnelles ou professionnelles,
+dans le respect des présentes conditions.
+
+───────────────────────────────────────────────
+2. GRATUITÉ ET CONDITIONS FINANCIÈRES
+───────────────────────────────────────────────
+neoSlice est mis à disposition gratuitement dans sa version actuelle.
+Emmanuel Percheron se réserve le droit de modifier les conditions
+tarifaires pour les versions futures, sans que cela n'affecte les
+droits d'utilisation des versions déjà obtenues gratuitement.
+
+Les contributions financières volontaires (dons) proposées via la
+plateforme Buy Me a Coffee ne confèrent aucun droit supplémentaire
+et restent entièrement facultatives. Elles constituent un soutien
+au développement du logiciel et sont profondément appréciées.
+
+───────────────────────────────────────────────
+3. RESTRICTIONS D'UTILISATION
+───────────────────────────────────────────────
+Dans le cadre de cette licence, vous n'êtes pas autorisé à :
+
+   a) Redistribuer, revendre, louer, prêter ou sous-licencier le
+      logiciel ou toute partie de celui-ci, à titre gratuit ou onéreux,
+      sans l'autorisation écrite préalable d'Emmanuel Percheron.
+
+   b) Désassembler, décompiler, procéder à de l'ingénierie inverse ou
+      tenter d'extraire le code source du logiciel par quelque moyen
+      que ce soit.
+
+   c) Modifier, adapter, traduire ou créer des oeuvres dérivées basées
+      sur le logiciel sans autorisation écrite préalable.
+
+   d) Supprimer, altérer ou dissimuler toute mention de copyright,
+      marque commerciale ou autre mention de propriété intellectuelle
+      présente dans le logiciel.
+
+   e) Utiliser le logiciel à des fins illégales ou contraires aux
+      présentes conditions.
+
+───────────────────────────────────────────────
+4. PROPRIÉTÉ INTELLECTUELLE
+───────────────────────────────────────────────
+neoSlice, son interface, son code source, ses algorithmes, sa conception
+graphique et tous les éléments qui le composent sont et restent la
+propriété exclusive d'Emmanuel Percheron, protégés par les lois
+françaises, suisses et internationales relatives au droit d'auteur
+et à la propriété intellectuelle.
+
+Les fichiers 3MF générés par neoSlice à partir de vos propres modèles
+3D appartiennent intégralement à l'utilisateur. Emmanuel Percheron
+ne revendique aucun droit sur les fichiers produits par le logiciel.
+
+───────────────────────────────────────────────
+5. COLLECTE DE DONNÉES ET VIE PRIVÉE
+───────────────────────────────────────────────
+neoSlice ne collecte, ne stocke, ne transmet et ne partage aucune
+donnée personnelle ou technique vous concernant. Le logiciel fonctionne
+entièrement en local sur votre machine. Aucune connexion à un serveur
+distant n'est établie lors de son utilisation.
+
+Aucune publicité n'est intégrée au logiciel et aucun tiers n'a accès
+à vos données via neoSlice.
+
+───────────────────────────────────────────────
+6. MISES À JOUR ET ÉVOLUTIONS
+───────────────────────────────────────────────
+neoSlice est actuellement distribué en version Bêta. À ce titre, il
+peut contenir des imperfections ou des comportements inattendus.
+Vos retours sont essentiels à son amélioration.
+
+Emmanuel Percheron s'efforce de proposer des mises à jour régulières
+en fonction des retours utilisateurs, mais n'est soumis à aucune
+obligation légale de fournir des mises à jour, corrections ou nouvelles
+fonctionnalités dans un délai défini. Les fonctionnalités du logiciel
+peuvent évoluer, être modifiées ou supprimées entre deux versions,
+sans préavis.
+
+───────────────────────────────────────────────
+7. LIMITATION DE RESPONSABILITÉ
+───────────────────────────────────────────────
+neoSlice est fourni "tel quel" (as-is), sans garantie d'aucune sorte,
+expresse ou implicite, y compris mais sans s'y limiter, les garanties
+de qualité marchande, d'adéquation à un usage particulier ou d'absence
+de contrefaçon.
+
+Emmanuel Percheron ne saurait être tenu responsable :
+
+   a) Des dommages directs, indirects, accessoires, spéciaux ou
+      consécutifs résultant de l'utilisation ou de l'impossibilité
+      d'utiliser le logiciel.
+
+   b) Des résultats d'impression obtenus via les fichiers 3MF générés
+      par le logiciel. L'utilisateur reste seul responsable de la
+      vérification des paramètres avant toute impression.
+
+   c) De tout dommage causé à du matériel ou des équipements
+      d'impression 3D résultant d'une utilisation du logiciel.
+
+   d) De toute perte de données résultant de l'utilisation du logiciel.
+
+───────────────────────────────────────────────
+8. RÉSILIATION
+───────────────────────────────────────────────
+La présente licence est effective dès l'installation du logiciel et
+pour une durée indéterminée. Elle prend fin automatiquement et sans
+préavis si vous ne respectez pas l'un quelconque de ses termes.
+
+En cas de résiliation, vous devez cesser toute utilisation du logiciel
+et supprimer toutes les copies en votre possession.
+
+Emmanuel Percheron se réserve le droit de résilier cette licence à
+tout moment, avec un préavis raisonnable communiqué via les canaux
+de distribution habituels du logiciel.
+
+───────────────────────────────────────────────
+9. LOI APPLICABLE ET JURIDICTION
+───────────────────────────────────────────────
+Le présent accord est régi par le droit suisse, sans égard aux
+principes de conflits de lois. Tout litige relatif à l'interprétation
+ou à l'exécution du présent accord sera soumis à la juridiction
+exclusive des tribunaux compétents du canton de Fribourg, Suisse.
+
+───────────────────────────────────────────────
+10. INTÉGRALITÉ DE L'ACCORD
+───────────────────────────────────────────────
+Le présent accord constitue l'intégralité de l'accord entre vous et
+Emmanuel Percheron concernant neoSlice, et remplace tout accord,
+communication ou représentation antérieure, écrite ou orale, relative
+à ce logiciel.
+
+Si une disposition du présent accord est jugée invalide ou inapplicable,
+les autres dispositions restent pleinement en vigueur.
+
+───────────────────────────────────────────────
+
+En installant ou en utilisant neoSlice, vous confirmez avoir lu,
+compris et accepté l'intégralité des termes du présent accord.
+
+neoSlice — AI-Powered 3D Print Optimizer
+© 2025 Emmanuel Percheron — Tous droits réservés

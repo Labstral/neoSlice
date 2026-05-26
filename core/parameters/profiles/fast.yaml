@@ -1,0 +1,26 @@
+name: fast
+label: "Rapide"
+description: "+vitesse couche 0.24mm — qualité légèrement réduite"
+
+layer_height: 0.24
+first_layer_height: 0.25
+wall_loops: 2
+wall_generator: "classic"
+wall_sequence: "inner wall/outer wall"
+top_shell_layers: 4
+bottom_shell_layers: 3
+infill_density: 15
+infill_pattern: "grid"
+top_surface_pattern: "monotonicline"
+ironing_type: "no ironing"
+outer_wall_speed: 150
+inner_wall_speed: 220
+infill_speed: 300
+top_surface_speed: 100
+bridge_speed: 50
+first_layer_speed: 35
+seam_position: "nearest"
+elefant_foot_compensation: 0.1
+enable_arc_fitting: true
+nozzle_temperature: 225
+bed_temperature: 60

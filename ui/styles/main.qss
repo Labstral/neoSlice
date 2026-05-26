@@ -1,0 +1,10 @@
+/* Styles globaux minimaux — tout le reste est géré via setStyleSheet dans les composants */
+
+QToolTip {
+    background: #070D14;
+    color: #C8DCF0;
+    border: 1px solid #1E90FF;
+    padding: 4px 8px;
+    font-family: "Courier New";
+    font-size: 9px;
+}

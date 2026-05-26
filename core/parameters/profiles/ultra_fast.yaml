@@ -1,0 +1,26 @@
+name: ultra_fast
+label: "Ultra Rapide"
+description: "Prototype rapide, résistance secondaire"
+
+layer_height: 0.28
+first_layer_height: 0.30
+wall_loops: 2
+wall_generator: "classic"
+wall_sequence: "inner wall/outer wall"
+top_shell_layers: 3
+bottom_shell_layers: 3
+infill_density: 10
+infill_pattern: "lightning"
+top_surface_pattern: "zig-zag"
+ironing_type: "no ironing"
+outer_wall_speed: 150
+inner_wall_speed: 250
+infill_speed: 350
+top_surface_speed: 100
+bridge_speed: 60
+first_layer_speed: 40
+seam_position: "nearest"
+elefant_foot_compensation: 0.1
+enable_arc_fitting: true
+nozzle_temperature: 225
+bed_temperature: 60

@@ -1,0 +1,108 @@
+; Script Inno Setup — neoSlice Installer
+; Généré automatiquement — ne pas modifier manuellement
+; Pour compiler : ISCC.exe neoSlice_setup.iss
+
+#define AppName      "neoSlice"
+#define AppVersion   "0.1.0"
+#define AppPublisher "Emmanuel Percheron"
+#define AppURL       "https://github.com/neoslice"
+#define AppExeName   "neoSlice.exe"
+#define SourceExe    "C:\neoSlice_dist\neoSlice.exe"
+#define OutputDir    "C:\neoSlice_dist\installer"
+
+[Setup]
+AppId={{A3F2C8D1-7B4E-4F9A-B2C6-E8D3A1F5C7B9}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppPublisher={#AppPublisher}
+AppPublisherURL={#AppURL}
+AppSupportURL={#AppURL}
+AppUpdatesURL={#AppURL}
+
+; Répertoire d'installation par défaut
+DefaultDirName={autopf}\{#AppName}
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
+
+; Fichiers de sortie
+OutputDir={#OutputDir}
+OutputBaseFilename=neoSlice_Setup_v{#AppVersion}-beta
+SetupIconFile=..\assets\neoSlice.ico
+
+; Compression
+Compression=lzma2/ultra64
+SolidCompression=yes
+LZMANumFastBytes=273
+
+; Interface
+WizardStyle=modern
+
+; Droits requis
+PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=dialog
+
+; License
+LicenseFile=LICENSE.txt
+
+; Version info dans le setup.exe
+VersionInfoVersion={#AppVersion}
+VersionInfoCompany={#AppPublisher}
+VersionInfoDescription={#AppName} Setup
+VersionInfoProductName={#AppName}
+VersionInfoProductVersion={#AppVersion}
+
+; Désinstalleur
+UninstallDisplayIcon={app}\{#AppExeName}
+UninstallDisplayName={#AppName} {#AppVersion}
+
+
+[Languages]
+Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+
+
+[Tasks]
+Name: "desktopicon"; Description: "Créer un raccourci sur le &Bureau"; GroupDescription: "Raccourcis :"
+
+
+[Files]
+; L'EXE principal (one-file PyInstaller)
+Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "{#AppExeName}"; Flags: ignoreversion
+; Documentation
+Source: "README.txt";  DestDir: "{app}"; Flags: ignoreversion isreadme
+Source: "LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
+
+
+[Icons]
+; Menu Démarrer
+Name: "{group}\{#AppName}";           Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"
+Name: "{group}\Désinstaller {#AppName}"; Filename: "{uninstallexe}"; IconFilename: "{app}\{#AppExeName}"
+
+; Bureau (optionnel — coché par défaut)
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; Tasks: desktopicon
+
+
+[Run]
+; Proposer de lancer neoSlice à la fin de l'installation
+Filename: "{app}\{#AppExeName}"; \
+  Description: "Lancer {#AppName}"; \
+  Flags: nowait postinstall skipifsilent
+
+
+[UninstallDelete]
+; Nettoyer les fichiers temporaires laissés par PyInstaller au lancement
+Type: filesandordirs; Name: "{app}"
+
+
+[Code]
+// Vérification minimale : Windows 10 ou supérieur
+function InitializeSetup(): Boolean;
+var
+  Version: TWindowsVersion;
+begin
+  GetWindowsVersionEx(Version);
+  if Version.Major < 10 then begin
+    MsgBox('neoSlice nécessite Windows 10 ou supérieur.', mbError, MB_OK);
+    Result := False;
+  end else
+    Result := True;
+end;

@@ -1,0 +1,36 @@
+name: standard
+label: "Standard"
+description: "Paramètres Bambu Lab standards — aucune modification par rapport aux réglages Bambu"
+
+layer_height: 0.20
+first_layer_height: 0.20
+wall_loops: 3
+wall_generator: "classic"
+wall_sequence: "inner wall/outer wall"
+top_one_wall_type: "not apply"
+top_shell_layers: 4
+bottom_shell_layers: 3
+infill_density: 15
+infill_pattern: "gyroid"
+top_surface_pattern: "monotonic"
+ironing_type: "no ironing"
+ironing_speed: 20.0
+ironing_flow: 15.0
+ironing_spacing: 0.1
+brim_type: "no_brim"
+brim_width: 0.0
+brim_object_gap: 0.0
+outer_wall_speed: 150
+inner_wall_speed: 250
+infill_speed: 350
+top_surface_speed: 150
+bridge_speed: 50
+first_layer_speed: 50
+seam_position: "back"
+enable_arc_fitting: true
+xy_contour_compensation: 0.0
+elefant_foot_compensation: 0.1
+flush_into_infill: false
+flush_into_support: false
+nozzle_temperature: 220
+bed_temperature: 65

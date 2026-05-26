@@ -1,0 +1,26 @@
+# Environnement virtuel
+.venv/
+venv/
+
+# Build PyInstaller
+build/
+dist/
+*.spec.bak
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/

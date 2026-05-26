@@ -1,0 +1,39 @@
+name: easy_support
+label: "Supports Faciles"
+description: "Supports optimisés pour un retrait sans effort"
+
+layer_height: 0.20
+first_layer_height: 0.20
+wall_loops: 3
+wall_generator: "classic"
+top_shell_layers: 5
+bottom_shell_layers: 4
+infill_density: 15
+infill_pattern: "grid"
+top_surface_pattern: "monotonicline"
+ironing_type: "no ironing"
+outer_wall_speed: 60
+inner_wall_speed: 100
+infill_speed: 180
+top_surface_speed: 80
+bridge_speed: 50
+first_layer_speed: 30
+seam_position: "aligned"
+# Supports : tree_hybrid, distances maximales pour retrait facile
+support_style: "tree_hybrid"
+support_threshold_angle: 40
+support_top_z_distance: 0.25
+support_bottom_z_distance: 0.15
+support_interface_top_layers: 2
+support_interface_bottom_layers: 0
+support_interface_spacing: 0.25
+support_interface_pattern: "rectilinear_interlaced"
+support_object_xy_distance: 0.50
+support_base_pattern_spacing: 4.0
+tree_support_wall_count: -1
+support_remove_small_overhang: true
+bridge_no_support: true
+elefant_foot_compensation: 0.1
+enable_arc_fitting: true
+nozzle_temperature: 220
+bed_temperature: 65

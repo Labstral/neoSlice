@@ -1,0 +1,95 @@
+==============================================================================
+  neoSlice — Idées de futures fonctionnalités
+==============================================================================
+
+
+------------------------------------------------------------------------------
+1. INTELLIGENCE ARTIFICIELLE LOCALE (OLLAMA)
+------------------------------------------------------------------------------
+
+Concept
+-------
+Remplacer (ou compléter) le parser de mots-clés actuel par un vrai modèle de
+langage tournant en local sur la machine de l'utilisateur. L'utilisateur décrit
+sa pièce en langage naturel, le modèle comprend le contexte et infère les
+paramètres optimaux directement.
+
+Aucune donnée ne sort de la machine — 100% local, comme le reste de neoSlice.
+
+Comment ça fonctionne
+---------------------
+neoSlice envoie à Ollama un prompt structuré qui inclut :
+  - La description de l'utilisateur ("support de téléphone pour la voiture")
+  - Les résultats de l'analyse géométrique (zones fragiles, surplombs, dimensions)
+  - L'imprimante et le filament sélectionnés
+
+Le modèle répond avec un JSON de paramètres que neoSlice applique directement.
+
+Exemple de raisonnement que le LLM peut faire et que le parser actuel ne peut pas :
+  -> "zones fragiles détectées + usage vibrations => augmenter les parois"
+  -> "pièce outdoor + PETG => activer le séchage recommandé"
+  -> "pièce décorative sans contrainte mécanique => privilégier qualité surface"
+
+Modèles compatibles (à installer via Ollama)
+--------------------------------------------
+  - llama3.2:3b  -> léger, ~2 Go RAM, tourne sur toutes les machines
+  - mistral:7b   -> meilleure compréhension, ~8 Go RAM recommandés
+  - qwen2.5:3b   -> très bon rapport qualité/taille
+
+Intégration prévue
+------------------
+neoSlice détecte automatiquement si Ollama est installé sur la machine.
+  - Ollama présent  -> mode IA activé, champ de texte enrichi
+  - Ollama absent   -> fallback sur le parser de mots-clés actuel (aucune régression)
+
+Ollama est gratuit et open source : https://ollama.com
+
+
+------------------------------------------------------------------------------
+2. VISUALISATION DES COUCHES
+------------------------------------------------------------------------------
+
+Concept
+-------
+Un slider vertical dans le viewer 3D qui découpe le modèle à une hauteur Z
+donnée et affiche les couches une par une — comme l'aperçu de Bambu Studio,
+mais intégré directement dans neoSlice avant l'export.
+
+Ce qu'on pourrait afficher par couche
+--------------------------------------
+  - Contour extérieur de la section (périmètres)
+  - Zones de support en orange
+  - Ponts (bridges) en vert
+  - Épaisseur de couche visualisée
+
+Version complète (plus ambitieuse)
+-----------------------------------
+  - Simulation du remplissage (infill gyroïde, grille, etc.) en 2D
+  - Estimation du volume de matière par couche
+  - Détection visuelle des couches problématiques (ponts longs, surplombs)
+
+Utilité concrète
+----------------
+Vérifier visuellement qu'une pièce s'imprimera bien sans avoir à ouvrir
+Bambu Studio. Identifier d'un coup d'oeil les couches qui nécessiteront
+des supports ou qui risquent de poser problème.
+
+
+------------------------------------------------------------------------------
+3. AUTRES IDÉES NOTÉES
+------------------------------------------------------------------------------
+
+  - Estimation temps d'impression + coût filament (g et €)
+  - Mode batch : analyser et exporter plusieurs STL en une fois
+  - Rapport PDF d'analyse exportable
+  - Bibliothèque des pièces déjà traitées (historique)
+  - Visualisation des zones fragiles directement sur le modèle 3D
+  - Suggestion de filament selon géométrie et usage
+  - Mise à jour automatique in-app
+  - Support d'autres slicers (PrusaSlicer, OrcaSlicer...)
+
+
+==============================================================================
+  neoSlice — AI-Powered 3D Print Optimizer
+  Emmanuel Percheron — 2026
+==============================================================================

@@ -1,0 +1,26 @@
+name: strong
+label: "Renforcée"
+description: "Pièce fonctionnelle robuste — parois et infill augmentés"
+
+layer_height: 0.20
+first_layer_height: 0.20
+wall_loops: 4
+wall_generator: "arachne"
+wall_sequence: "inner wall/outer wall"
+top_shell_layers: 6
+bottom_shell_layers: 5
+infill_density: 40
+infill_pattern: "gyroid"
+top_surface_pattern: "monotonic"
+ironing_type: "no ironing"
+outer_wall_speed: 50
+inner_wall_speed: 80
+infill_speed: 200
+top_surface_speed: 60
+bridge_speed: 35
+first_layer_speed: 25
+seam_position: "back"
+elefant_foot_compensation: 0.1
+enable_arc_fitting: true
+nozzle_temperature: 220
+bed_temperature: 65

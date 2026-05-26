@@ -1,0 +1,148 @@
+"""Base de données des imprimantes Bambu Lab supportées, organisée par série."""
+from __future__ import annotations
+
+# Ordre d'affichage des séries dans les sélecteurs
+SERIES_ORDRE = ["Série H2", "Série X", "Série P", "Série A"]
+
+PRINTERS: dict[str, dict] = {
+
+    # ── Série H2 ──────────────────────────────────────────────────────────
+    "H2D": {
+        "serie": "Série H2",
+        "nom_complet": "Bambu Lab H2D",
+        "enceinte": True, "ams": True, "multi_couleur": True,
+        "double_extrudeur": True,
+        "plateau_max_temp": 120, "buse_max_temp": 350,
+        "volume": "325×320×325 mm (simple) / 300×320×325 mm (double)",
+        "couleurs_max": 25,
+        "particularites": ["Double extrudeur", "Compatible laser/cutter", "Chambre chauffée"],
+        "filaments_incompatibles": [],
+    },
+    "H2C": {
+        "serie": "Série H2",
+        "nom_complet": "Bambu Lab H2C",
+        "enceinte": True, "ams": True, "multi_couleur": True,
+        "double_extrudeur": True,
+        "plateau_max_temp": 120, "buse_max_temp": 350,
+        "volume": "325×320×325 mm",
+        "couleurs_max": 7,
+        "particularites": ["Changement automatique de buses sans purge", "7 couleurs simultanées", "Réduction waste filament"],
+        "filaments_incompatibles": [],
+    },
+    "H2S": {
+        "serie": "Série H2",
+        "nom_complet": "Bambu Lab H2S",
+        "enceinte": True, "ams": True, "multi_couleur": True,
+        "double_extrudeur": True,
+        "plateau_max_temp": 120, "buse_max_temp": 350,
+        "volume": "325×320×325 mm",
+        "couleurs_max": 16,
+        "particularites": ["Variante simplifiée du H2D", "Double extrusion"],
+        "filaments_incompatibles": [],
+    },
+    "H2D Pro": {
+        "serie": "Série H2",
+        "nom_complet": "Bambu Lab H2D Pro",
+        "enceinte": True, "ams": True, "multi_couleur": True,
+        "double_extrudeur": True,
+        "plateau_max_temp": 120, "buse_max_temp": 350,
+        "volume": "325×320×325 mm",
+        "couleurs_max": 25,
+        "particularites": ["Laser avancé", "Air assist intégré", "Fonctions professionnelles"],
+        "filaments_incompatibles": [],
+    },
+
+    # ── Série X ───────────────────────────────────────────────────────────
+    "X1 Carbon": {
+        "serie": "Série X",
+        "nom_complet": "Bambu Lab X1 Carbon",
+        "enceinte": True, "ams": True, "multi_couleur": True,
+        "double_extrudeur": False,
+        "plateau_max_temp": 120, "buse_max_temp": 300,
+        "volume": "256×256×256 mm",
+        "couleurs_max": 16,
+        "particularites": ["CoreXY haute vitesse", "LiDAR intégré", "Caméra IA"],
+        "filaments_incompatibles": [],
+    },
+    "X1E": {
+        "serie": "Série X",
+        "nom_complet": "Bambu Lab X1E",
+        "enceinte": True, "ams": True, "multi_couleur": True,
+        "double_extrudeur": False,
+        "plateau_max_temp": 120, "buse_max_temp": 320,
+        "volume": "256×256×256 mm",
+        "couleurs_max": 16,
+        "particularites": ["Variante industrielle X1C", "Buse 320°C", "Wi-Fi et Ethernet"],
+        "filaments_incompatibles": [],
+    },
+    "X2D": {
+        "serie": "Série X",
+        "nom_complet": "Bambu Lab X2D",
+        "enceinte": True, "ams": True, "multi_couleur": True,
+        "double_extrudeur": True,
+        "plateau_max_temp": 120, "buse_max_temp": 300,
+        "volume": "256×256×260 mm",
+        "couleurs_max": 16,
+        "particularites": ["Double extrudeur ultra-léger", "Chambre chauffée active 60-65°C", "IA avancée", "Supports solubles"],
+        "filaments_incompatibles": [],
+    },
+
+    # ── Série P ───────────────────────────────────────────────────────────
+    "P2S": {
+        "serie": "Série P",
+        "nom_complet": "Bambu Lab P2S",
+        "enceinte": True, "ams": True, "multi_couleur": True,
+        "double_extrudeur": False,
+        "plateau_max_temp": 120, "buse_max_temp": 300,
+        "volume": "256×256×256 mm",
+        "couleurs_max": 16,
+        "particularites": ["Successeur P1S", "Très rapide", "Caméra IA intégrée", "Extrusion renforcée"],
+        "filaments_incompatibles": [],
+    },
+    "P1S": {
+        "serie": "Série P",
+        "nom_complet": "Bambu Lab P1S",
+        "enceinte": True, "ams": True, "multi_couleur": True,
+        "double_extrudeur": False,
+        "plateau_max_temp": 120, "buse_max_temp": 300,
+        "volume": "256×256×256 mm",
+        "couleurs_max": 16,
+        "particularites": ["CoreXY rapide", "Excellent rapport qualité/prix"],
+        "filaments_incompatibles": [],
+    },
+    "P1": {
+        "serie": "Série P",
+        "nom_complet": "Bambu Lab P1",
+        "enceinte": False, "ams": True, "multi_couleur": True,
+        "double_extrudeur": False,
+        "plateau_max_temp": 100, "buse_max_temp": 300,
+        "volume": "256×256×256 mm",
+        "couleurs_max": 16,
+        "particularites": ["Open frame", "Entrée de gamme série P"],
+        "filaments_incompatibles": ["ABS", "ASA", "PC", "PA-CF"],
+    },
+
+    # ── Série A ───────────────────────────────────────────────────────────
+    "A1": {
+        "serie": "Série A",
+        "nom_complet": "Bambu Lab A1",
+        "enceinte": False, "ams": True, "multi_couleur": True,
+        "double_extrudeur": False,
+        "plateau_max_temp": 60, "buse_max_temp": 300,
+        "volume": "256×256×256 mm",
+        "couleurs_max": 4,
+        "particularites": ["Bed slinger", "AMS Lite inclus"],
+        "filaments_incompatibles": ["ABS", "ASA", "PC", "Nylon", "PA-CF", "PETG-CF", "TPE"],
+    },
+    "A1 Mini": {
+        "serie": "Série A",
+        "nom_complet": "Bambu Lab A1 Mini",
+        "enceinte": False, "ams": True, "multi_couleur": True,
+        "double_extrudeur": False,
+        "plateau_max_temp": 60, "buse_max_temp": 300,
+        "volume": "180×180×180 mm",
+        "couleurs_max": 4,
+        "particularites": ["Bed slinger compact", "AMS Lite compatible"],
+        "filaments_incompatibles": ["ABS", "ASA", "PC", "Nylon", "PA-CF", "PETG-CF", "TPE"],
+    },
+}
