@@ -1,6 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_data_files
+import subprocess as _sp
+
+# ── Pré-build : fermer neoSlice.exe s'il tourne (sinon Windows bloque l'écrasement)
+_sp.run(["taskkill", "/F", "/IM", "neoSlice.exe"], capture_output=True)
 
 block_cipher = None
 
@@ -64,6 +68,9 @@ a = Analysis(
         'loguru',
         'yaml',
         'numpy',
+        'networkx',
+        'lxml',
+        'lxml.etree',
         'version',
     ],
     hookspath=[],

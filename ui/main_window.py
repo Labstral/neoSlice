@@ -585,6 +585,11 @@ class MainWindow(QMainWindow):
         elif should_show_tutorial():
             QTimer.singleShot(400, self._show_tutorial)
 
+    def closeEvent(self, event):
+        event.accept()
+        import os
+        os._exit(0)
+
         QTimer.singleShot(4000, self._check_for_updates)
 
     # ── Fenêtre ────────────────────────────────────────────────────────────
@@ -908,6 +913,10 @@ class MainWindow(QMainWindow):
         except STLLoadError as e:
             self._statusbar.set_message(f"Erreur chargement : {e}", ERROR_RED)
             return
+        except Exception as e:
+            logger.exception("Erreur inattendue chargement fichier")
+            self._statusbar.set_message(f"Erreur chargement : {e}", ERROR_RED)
+            return
 
         self._viewer.stop_auto_rotate()
         self._viewer.load_mesh(self._mesh)
@@ -918,7 +927,7 @@ class MainWindow(QMainWindow):
             _p = _load_prefs(); _p["last_stl"] = str(path); _save_prefs(_p)
         except Exception:
             pass
-        self._statusbar.set_message(f"STL chargé — {path.name} — analyse en cours...", AMBER)
+        self._statusbar.set_message(f"Modèle chargé — {path.name} — analyse en cours...", AMBER)
         self._start_analysis()
 
     def _start_analysis(self):
@@ -1098,11 +1107,12 @@ class MainWindow(QMainWindow):
         )
 
         from PySide6.QtWidgets import QFileDialog
+        from PySide6.QtCore import QStandardPaths
         stl_stem = getattr(self, "_stl_path", None)
         stl_stem = stl_stem.stem if stl_stem else "model"
-        downloads = Path.home() / "Downloads"
-        if not downloads.exists():
-            downloads = Path.home()
+        _dl_str = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.DownloadLocation)
+        downloads = Path(_dl_str) if _dl_str else Path.home()
         default_name = str(downloads / f"{stl_stem}_neoslice_output.3mf")
         output_path, _ = QFileDialog.getSaveFileName(
             self, "Enregistrer le fichier .3MF",
@@ -1121,14 +1131,11 @@ class MainWindow(QMainWindow):
             )
             logger.info(f"3MF exporté : {path}")
 
-            if path.exists():
-                os.startfile(str(path))
-
             selection = getattr(self, "_current_selection", None)
-            self._show_success_dialog(config, selection)
+            self._show_success_dialog(config, selection, path)
 
             if ok:
-                self._statusbar.set_message(".3MF exporté et ouvert dans Bambu Studio", TELE_GREEN)
+                self._statusbar.set_message(".3MF exporté", TELE_GREEN)
             else:
                 self._statusbar.set_message(f".3MF exporté ({result_msg})", AMBER)
 
@@ -1136,7 +1143,7 @@ class MainWindow(QMainWindow):
             logger.exception("Erreur export")
             self._statusbar.set_message(f"Erreur export : {e}", ERROR_RED)
 
-    def _show_success_dialog(self, config, selection: "SelectionResult | None"):
+    def _show_success_dialog(self, config, selection: "SelectionResult | None", tmf_path: "Path | None" = None):
         from PySide6.QtWidgets import QDialog, QFileDialog
         from data.filaments import FILAMENTS
 
@@ -1262,43 +1269,69 @@ class MainWindow(QMainWindow):
 
         def _generate_pdf():
             import re as _re
+            import subprocess
+            from PySide6.QtCore import QStandardPaths
+            from PySide6.QtWidgets import QMessageBox
             safe_name = _re.sub(r'[<>:"/\\|?*]', '_',
                                 f"neoSlice_{filament_name}_{printer_name}.pdf")
-            default_path = str(Path.home() / safe_name)
-            save_path, _ = QFileDialog.getSaveFileName(
-                dlg,
-                "Enregistrer le rapport PDF",
-                default_path,
-                "Fichiers PDF (*.pdf)",
-            )
-            if not save_path:
+            _dl_str = QStandardPaths.writableLocation(
+                QStandardPaths.StandardLocation.DownloadLocation)
+            _dl = Path(_dl_str) if _dl_str else Path.home()
+            _dl.mkdir(parents=True, exist_ok=True)
+            save_path = str(_dl / safe_name)
+            try:
+                from core.export.pdf_generator import generate_full_report_pdf, generate_filament_pdf
+                analysis = self._analysis
+                if analysis and hasattr(self, "_current_config"):
+                    ok = generate_full_report_pdf(
+                        filament_name, printer_name,
+                        self._current_config, analysis,
+                        Path(save_path),
+                    )
+                else:
+                    ok = generate_filament_pdf(filament_name, printer_name, Path(save_path))
+            except Exception as _pdf_err:
+                logger.exception("Erreur génération PDF")
+                QMessageBox.critical(dlg, "Erreur PDF", str(_pdf_err))
                 return
-            if not save_path.lower().endswith(".pdf"):
-                save_path += ".pdf"
-            from core.export.pdf_generator import generate_full_report_pdf, generate_filament_pdf
-            analysis = self._analysis
-            if analysis and hasattr(self, "_current_config"):
-                ok = generate_full_report_pdf(
-                    filament_name, printer_name,
-                    self._current_config, analysis,
-                    Path(save_path),
-                )
-            else:
-                ok = generate_filament_pdf(filament_name, printer_name, Path(save_path))
             if ok:
-                import os
                 try:
-                    os.startfile(save_path)
+                    subprocess.Popen(f'explorer /select,"{save_path}"')
                 except Exception:
                     pass
-                self._statusbar.set_message(f"PDF enregistré : {Path(save_path).name}", TELE_GREEN)
+                self._statusbar.set_message(f"PDF → {save_path}", TELE_GREEN)
             else:
-                self._statusbar.set_message("Erreur génération PDF — reportlab installé ?", ERROR_RED)
+                QMessageBox.critical(dlg, "Erreur PDF", "Génération échouée — reportlab installé ?")
+
+
+        btn_bambu = QPushButton("▶   Ouvrir dans Bambu Studio")
+        btn_bambu.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        btn_bambu.setFixedHeight(34)
+        btn_bambu.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_bambu.setStyleSheet(f"""
+            QPushButton {{
+                background: {BG_ELEVATED}; color: {TELE_GREEN};
+                border: 1px solid {TELE_GREEN}; border-radius: 4px; padding: 0 16px;
+            }}
+            QPushButton:hover {{ background: {TELE_GREEN}; color: #020408; }}
+        """)
+        btn_bambu.setVisible(tmf_path is not None and tmf_path.exists())
+
+        def _open_in_bambu():
+            if tmf_path and tmf_path.exists():
+                import os as _os
+                try:
+                    _os.startfile(str(tmf_path))
+                except Exception:
+                    pass
+
+        btn_bambu.clicked.connect(_open_in_bambu)
 
         btn_pdf.clicked.connect(_generate_pdf)
         btn_close.clicked.connect(dlg.accept)
 
         btn_hl.addWidget(btn_pdf, 1)
+        btn_hl.addWidget(btn_bambu, 0)
         btn_hl.addWidget(btn_close, 0)
         layout.addWidget(btn_row)
 

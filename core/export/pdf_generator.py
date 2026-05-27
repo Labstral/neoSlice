@@ -402,8 +402,8 @@ def generate_full_report_pdf(
         _row("Couches sup./inf.",   f"{config.top_shell_layers} / {config.bottom_shell_layers}", ""),
         _row("Vitesse paroi ext.",  f"{config.outer_wall_speed}",        "mm/s"),
         _row("Vitesse remplissage", f"{config.infill_speed}",            "mm/s"),
-        _row("Supports",            "Activés" if config.enable_support else "Désactivés",
-             "", config.support_type if config.enable_support else ""),
+        _row("Supports",            "Désactivés" if config.support_type == "none" else "Activés",
+             "", "" if config.support_type == "none" else config.support_type),
         _row("Adhérence (brim)",    f"{config.brim_width}",              "mm"),
         _row("Profil neoSlice",     config.neoslice_profile_name,        ""),
     ]

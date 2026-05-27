@@ -25,7 +25,7 @@ from loguru import logger
 
 from ..parameters.print_config import PrintConfig
 
-BAMBU_VERSION = "02.07.00.55"
+BAMBU_VERSION = "02.06.00.51"
 _NS_3MF = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 _NS_BBL = "http://schemas.bambulab.com/package/2021"
 _NS_PROD = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
@@ -309,6 +309,36 @@ class ThreeMFBuilder:
             )
         else:
             project_settings["print_settings_id"] = f"0.20mm Standard @BBL {bbl_id}"
+
+        # Remplacer tous les réglages filament par un slot "Generic PLA" neutre.
+        # Bambu Studio exige la présence de ces clés pour charger le fichier sans crasher.
+        # Les valeurs correspondent exactement au profil built-in "Generic PLA" de BS
+        # → pas de dialog "Préréglage Personnalisé", pas de crash.
+        # L'utilisateur configure le filament lui-même dans BS (guidé par la fiche PDF).
+        _filament_strip = [k for k in project_settings
+                           if k.startswith("filament_") or k.startswith("default_filament_")]
+        _filament_strip += [
+            "nozzle_temperature", "nozzle_temperature_initial_layer",
+            "nozzle_temperature_range_high", "nozzle_temperature_range_low",
+            "required_nozzle_HRC",
+        ]
+        for _k in _filament_strip:
+            project_settings.pop(_k, None)
+        project_settings.update({
+            "filament_settings_id":              ["Generic PLA"],
+            "filament_colour":                   ["#FFFFFF"],
+            "filament_type":                     ["PLA"],
+            "filament_diameter":                 ["1.75"],
+            "filament_density":                  ["1.24"],
+            "filament_flow_ratio":               ["0.98"],
+            "filament_is_support":               ["0"],
+            "filament_soluble":                  ["0"],
+            "nozzle_temperature":                ["220"],
+            "nozzle_temperature_initial_layer":  ["220"],
+            "nozzle_temperature_range_high":     ["240"],
+            "nozzle_temperature_range_low":      ["190"],
+            "required_nozzle_HRC":               ["3"],
+        })
 
         # Positionner la pièce au centre du plateau (256×256 mm pour X1C)
         bb = mesh.bounding_box.extents
