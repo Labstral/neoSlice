@@ -8,7 +8,7 @@ from typing import Callable
 
 from loguru import logger
 
-CURRENT_VERSION = "0.1.0"
+from version import __version__ as CURRENT_VERSION
 
 # URL vers un fichier JSON hébergé contenant {"version": "0.1.1", "url": "..."}
 # Laisser vide pour désactiver la vérification.

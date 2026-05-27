@@ -24,8 +24,8 @@ from scipy.sparse.csgraph import connected_components as _scipy_cc
 
 # ── Paramètres (calibrés sur Benchy / Bishop réels) ─────────────────────────
 SUPPORT_THRESHOLD_DEG: float = 45.0   # angle depuis l'horizontale (norme FDM)
-_MIN_CLUSTER_AREA_MM2: float = 25.0   # surface minimale d'un cluster à signaler
-_MAX_BRIDGE_SPAN_MM: float = 12.0     # portée max en pont (~10-15 mm Bambu)
+_MIN_CLUSTER_AREA_MM2: float = 8.0    # surface minimale d'un cluster à signaler (~3×3 mm)
+_MAX_BRIDGE_SPAN_MM: float = 12.0    # portée max en pont (~10-15 mm Bambu)
 _SMOOTH_WEIGHT: float = 0.25          # contribution voisin au lissage
 
 

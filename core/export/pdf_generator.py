@@ -224,7 +224,8 @@ def generate_filament_pdf(
         s_note,
     ))
     story.append(Spacer(1, 0.2*cm))
-    story.append(Paragraph("Généré par neoSlice v0.1.0", s_footer))
+    from version import __version__
+    story.append(Paragraph(f"Généré par neoSlice v{__version__}", s_footer))
 
     # ── Build PDF ─────────────────────────────────────────────────────────
     doc = SimpleDocTemplate(
@@ -445,7 +446,8 @@ def generate_full_report_pdf(
     story.append(Spacer(1, 0.5*cm))
     story.append(HRFlowable(width="100%", thickness=0.3, color=C_INACTIVE))
     story.append(Spacer(1, 0.15*cm))
-    story.append(Paragraph("Généré par neoSlice v0.1.0", s_footer))
+    from version import __version__
+    story.append(Paragraph(f"Généré par neoSlice v{__version__}", s_footer))
 
     doc = SimpleDocTemplate(
         str(output_path), pagesize=A4,

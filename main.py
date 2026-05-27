@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgr
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont, QIcon, QPixmap
 from loguru import logger
+from version import __version__
 
 
 def _configure_logging():
@@ -131,7 +132,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("neoSlice")
     app.setApplicationDisplayName("neoSlice")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion(__version__)
     app.setOrganizationName("neoSlice")
 
     font = QFont("Segoe UI", 10)

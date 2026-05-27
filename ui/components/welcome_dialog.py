@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QUrl, QPoint
 from PySide6.QtGui import QFont, QPixmap, QDesktopServices, QMouseEvent
 
+from version import __version__
 from ui.styles.theme import (
     BG_PANEL, BG_SURFACE, BG_ELEVATED,
     ACCENT, ACCENT_BRIGHT, TELE_GREEN, AMBER, INACTIVE,
@@ -131,7 +132,7 @@ class WelcomeDialog(QDialog):
         badges.setSpacing(8)
 
         for text, fg, bg, border in [
-            ("v0.1.0",                ACCENT_BRIGHT, BG_SURFACE,            ACCENT),
+            (f"v{__version__}",        ACCENT_BRIGHT, BG_SURFACE,            ACCENT),
             ("BÊTA",                  AMBER,          "rgba(255,184,0,0.10)", AMBER),
             ("© 2026 Emmanuel Percheron", INACTIVE,   "transparent",         "transparent"),
         ]:

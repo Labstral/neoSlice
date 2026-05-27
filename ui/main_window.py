@@ -349,7 +349,8 @@ class _TopBar(QWidget):
         icon_lay.addWidget(coffee_btn)
         layout.addWidget(self.icon_group)
 
-        version = QLabel("v0.1.0")
+        from version import __version__
+        version = QLabel(f"v{__version__}")
         version.setFont(QFont(FONT_MONO, 8))
         version.setStyleSheet(f"color: {INACTIVE}; background: transparent;")
         layout.addWidget(version)
@@ -898,6 +899,7 @@ class MainWindow(QMainWindow):
 
     def _on_stl_dropped(self, path: Path):
         logger.info(f"STL reçu : {path}")
+        self._stl_path = path
         self._statusbar.set_message(f"Chargement — {path.name}", AMBER)
         self._step_stl.set_active()
 
@@ -1096,9 +1098,15 @@ class MainWindow(QMainWindow):
         )
 
         from PySide6.QtWidgets import QFileDialog
+        stl_stem = getattr(self, "_stl_path", None)
+        stl_stem = stl_stem.stem if stl_stem else "model"
+        downloads = Path.home() / "Downloads"
+        if not downloads.exists():
+            downloads = Path.home()
+        default_name = str(downloads / f"{stl_stem}_neoslice_output.3mf")
         output_path, _ = QFileDialog.getSaveFileName(
             self, "Enregistrer le fichier .3MF",
-            "neoslice_output.3mf", "Fichiers 3MF (*.3mf)",
+            default_name, "Fichiers 3MF (*.3mf)",
         )
         if not output_path:
             return
@@ -1253,14 +1261,20 @@ class MainWindow(QMainWindow):
         """)
 
         def _generate_pdf():
+            import re as _re
+            safe_name = _re.sub(r'[<>:"/\\|?*]', '_',
+                                f"neoSlice_{filament_name}_{printer_name}.pdf")
+            default_path = str(Path.home() / safe_name)
             save_path, _ = QFileDialog.getSaveFileName(
                 dlg,
                 "Enregistrer le rapport PDF",
-                f"neoSlice_{filament_name}_{printer_name}.pdf",
+                default_path,
                 "Fichiers PDF (*.pdf)",
             )
             if not save_path:
                 return
+            if not save_path.lower().endswith(".pdf"):
+                save_path += ".pdf"
             from core.export.pdf_generator import generate_full_report_pdf, generate_filament_pdf
             analysis = self._analysis
             if analysis and hasattr(self, "_current_config"):
@@ -1273,8 +1287,11 @@ class MainWindow(QMainWindow):
                 ok = generate_filament_pdf(filament_name, printer_name, Path(save_path))
             if ok:
                 import os
-                os.startfile(save_path)
-                self._statusbar.set_message("Rapport PDF généré et ouvert", TELE_GREEN)
+                try:
+                    os.startfile(save_path)
+                except Exception:
+                    pass
+                self._statusbar.set_message(f"PDF enregistré : {Path(save_path).name}", TELE_GREEN)
             else:
                 self._statusbar.set_message("Erreur génération PDF — reportlab installé ?", ERROR_RED)
 

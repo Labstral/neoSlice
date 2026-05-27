@@ -3,7 +3,7 @@
 ; Pour compiler : ISCC.exe neoSlice_setup.iss
 
 #define AppName      "neoSlice"
-#define AppVersion   "0.1.0"
+#define AppVersion   "0.1.1"
 #define AppPublisher "Emmanuel Percheron"
 #define AppURL       "https://github.com/neoslice"
 #define AppExeName   "neoSlice.exe"
@@ -26,7 +26,7 @@ DisableProgramGroupPage=yes
 
 ; Fichiers de sortie
 OutputDir={#OutputDir}
-OutputBaseFilename=neoSlice_Setup_v{#AppVersion}-beta
+OutputBaseFilename=neoSlice_Setup_v{#AppVersion}-beta_Windows
 SetupIconFile=..\assets\neoSlice.ico
 
 ; Compression
@@ -50,6 +50,11 @@ VersionInfoCompany={#AppPublisher}
 VersionInfoDescription={#AppName} Setup
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
+
+; Mise à jour — ferme neoSlice automatiquement si ouvert
+CloseApplications=yes
+CloseApplicationsFilter=neoSlice.exe
+RestartApplications=no
 
 ; Désinstalleur
 UninstallDisplayIcon={app}\{#AppExeName}

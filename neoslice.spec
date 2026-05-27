@@ -64,6 +64,7 @@ a = Analysis(
         'loguru',
         'yaml',
         'numpy',
+        'version',
     ],
     hookspath=[],
     hooksconfig={},
@@ -109,13 +110,11 @@ exe = EXE(
 )
 
 # ── Post-build : déploiement automatique de l'EXE ───────────────────────────
-# Copie l'EXE vers tous les emplacements connus (bureau physique + raccourci OneDrive)
-# et met à jour le raccourci .lnk sur le bureau OneDrive.
 import shutil, subprocess
 
 _DIST_EXE = Path(r"C:\neoSlice_dist\neoSlice.exe")
 _DEPLOY_TARGETS = [
-    Path(r"C:\Users\manup\Desktop\neoSlice.exe"),
+    Path(r"C:\Program Files\neoSlice\neoSlice.exe"),   # version installée
 ]
 
 for _dst in _DEPLOY_TARGETS:
@@ -126,7 +125,7 @@ for _dst in _DEPLOY_TARGETS:
     except Exception as _e:
         print(f"[post-build] ERREUR copie vers {_dst} : {_e}")
 
-# Mettre à jour le raccourci .lnk sur le bureau OneDrive
+# Mettre à jour le raccourci .lnk sur le bureau
 _LNK = Path(r"C:\Users\manup\OneDrive\Bureau\neoSlice.lnk")
 _PS = f"""
 $ws = New-Object -ComObject WScript.Shell
@@ -158,7 +157,7 @@ if _ISCC and _ISS.exists():
     out_dir.mkdir(parents=True, exist_ok=True)
     result = subprocess.run([_ISCC, str(_ISS)], capture_output=True, text=True)
     if result.returncode == 0:
-        print("[post-build] Installateur cree : C:\\neoSlice_dist\\installer\\neoSlice_Setup_v0.1.0-beta.exe")
+        print("[post-build] Installateur cree : C:\\neoSlice_dist\\installer\\neoSlice_Setup_v0.1.1-beta_Windows.exe")
     else:
         print(f"[post-build] ERREUR Inno Setup : {result.stderr[-300:]}")
 else:
