@@ -112,27 +112,16 @@ exe = EXE(
 # ── Post-build : déploiement automatique de l'EXE ───────────────────────────
 import shutil, subprocess
 
-_DIST_EXE = Path(r"C:\neoSlice_dist\neoSlice.exe")
-_DEPLOY_TARGETS = [
-    Path(r"C:\Program Files\neoSlice\neoSlice.exe"),   # version installée
-]
-
-for _dst in _DEPLOY_TARGETS:
-    try:
-        _dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(_DIST_EXE, _dst)
-        print(f"[post-build] Copie OK : {_dst}")
-    except Exception as _e:
-        print(f"[post-build] ERREUR copie vers {_dst} : {_e}")
+_DIST_EXE = Path(r"C:\neoSlice\dist\neoSlice.exe")
 
 # Mettre à jour le raccourci .lnk sur le bureau
 _LNK = Path(r"C:\Users\manup\OneDrive\Bureau\neoSlice.lnk")
 _PS = f"""
 $ws = New-Object -ComObject WScript.Shell
 $s  = $ws.CreateShortcut('{_LNK}')
-$s.TargetPath       = 'C:\\neoSlice_dist\\neoSlice.exe'
-$s.WorkingDirectory = 'C:\\neoSlice_dist'
-$s.IconLocation     = 'C:\\neoSlice_dist\\neoSlice.exe,0'
+$s.TargetPath       = 'C:\\neoSlice\\dist\\neoSlice.exe'
+$s.WorkingDirectory = 'C:\\neoSlice\\dist'
+$s.IconLocation     = 'C:\\neoSlice\\dist\\neoSlice.exe,0'
 $s.Save()
 Write-Host '[post-build] Raccourci mis à jour : {_LNK}'
 """
@@ -153,11 +142,11 @@ _ISS = Path(SPEC).parent / "installer" / "neoSlice_setup.iss"
 _ISCC = next((p for p in _ISCC_CANDIDATES if os.path.exists(p)), None)
 
 if _ISCC and _ISS.exists():
-    out_dir = Path(r"C:\neoSlice_dist\installer")
+    out_dir = Path(r"C:\neoSlice\dist\installer")
     out_dir.mkdir(parents=True, exist_ok=True)
     result = subprocess.run([_ISCC, str(_ISS)], capture_output=True, text=True)
     if result.returncode == 0:
-        print("[post-build] Installateur cree : C:\\neoSlice_dist\\installer\\neoSlice_Setup_v0.1.1-beta_Windows.exe")
+        print("[post-build] Installateur cree : C:\\neoSlice\\dist\\installer\\neoSlice_Setup_v0.1.1-beta_Windows.exe")
     else:
         print(f"[post-build] ERREUR Inno Setup : {result.stderr[-300:]}")
 else:

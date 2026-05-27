@@ -7,8 +7,8 @@
 #define AppPublisher "Emmanuel Percheron"
 #define AppURL       "https://github.com/neoslice"
 #define AppExeName   "neoSlice.exe"
-#define SourceExe    "C:\neoSlice_dist\neoSlice.exe"
-#define OutputDir    "C:\neoSlice_dist\installer"
+#define SourceExe    "C:\neoSlice\dist\neoSlice.exe"
+#define OutputDir    "C:\neoSlice\dist\installer"
 
 [Setup]
 AppId={{A3F2C8D1-7B4E-4F9A-B2C6-E8D3A1F5C7B9}
