@@ -38,9 +38,10 @@ from ui.styles.theme import (
     ACCENT, ACCENT_BRIGHT,
     TELE_GREEN, AMBER, ERROR_RED,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_LABEL, INACTIVE,
-    FONT_MONO, FONT_MAIN,
+    FONT_MONO, FONT_MAIN, MANAGER as _T,
 )
 from core.intent.intent_profiles import IntentProfile
+from core.i18n import _
 
 
 # ── Données de configuration ───────────────────────────────────────────────
@@ -50,8 +51,8 @@ class _Preset:
     id: str
     label: str
     desc: str
-    intent: dict = field(default_factory=dict)   # IntentProfile field overrides
-    config: dict = field(default_factory=dict)   # PrintConfig direct overrides
+    intent: dict = field(default_factory=dict)
+    config: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -65,99 +66,107 @@ class SelectionResult:
 
 # ── Définition des groupes et presets ──────────────────────────────────────
 
-_GROUPS: list[tuple[str, list[_Preset]]] = [
-    ("QUALITÉ", [
-        _Preset("quality_draft",  "Brouillon",    "0.28mm — prototype uniquement",
-                intent={"speed": 0.9, "quality": 0.05}),
-        _Preset("quality_std",    "Standard",     "0.20mm — équilibre vitesse / qualité",
-                intent={}),
-        _Preset("quality_fine",   "Fine",         "0.12mm — bonne finition de surface",
-                intent={"quality": 0.8}),
-        _Preset("quality_ultra",  "Ultra Fine",   "0.08mm — finition maximale, lent",
-                intent={"quality": 1.0, "surface_finish": 0.8}),
-    ]),
-    ("RÉSISTANCE", [
-        _Preset("strength_light", "Légère",       "Parois minimales, économie de matière",
-                intent={"strength": 0.05, "filament_saving": 0.9}),
-        _Preset("strength_std",   "Standard",     "Solidité normale pour usage courant",
-                intent={}),
-        _Preset("strength_high",  "Renforcée",    "Parois + infill augmentés (cubic)",
-                intent={"strength": 0.75}),
-        _Preset("strength_ultra", "Ultra Solide", "Résistance maximale — gyroid 80%",
-                intent={"strength": 1.0}),
-    ]),
-    ("VITESSE", [
-        _Preset("speed_std",   "Standard",     "Vitesses Bambu Lab recommandées",
-                intent={}),
-        _Preset("speed_high",  "Rapide",       "+50% vitesse — qualité légèrement réduite",
-                intent={"speed": 0.75}),
-        _Preset("speed_ultra", "Ultra Rapide", "Vitesse maximale — prototype seulement",
-                intent={"speed": 1.0}),
-    ]),
-    ("ADHÉRENCE", [
-        _Preset("brim_none",  "Aucune",       "Pas de brim — pièce stable uniquement",
-                config={"brim_type": "no_brim", "brim_width": 0.0}),
-        _Preset("brim_std",   "Brim 5mm",     "Brim standard — stabilité modérée",
-                config={"brim_type": "outer_only", "brim_width": 5.0}),
-        _Preset("brim_large", "Brim 10mm",    "Brim large — pièces hautes ou fragiles",
-                config={"brim_type": "outer_only", "brim_width": 10.0}),
-    ]),
-    ("USAGE", [
-        _Preset("usage_indoor",   "Intérieur standard", "Paramètres PLA optimaux",
-                intent={}),
-        _Preset("usage_outdoor",  "Extérieur / UV",     "Gyroid renforcé, températures PETG/ASA",
-                intent={"outdoor_resistance": 1.0}),
-        _Preset("usage_visible",  "Finition visible",   "Ironing, coutures dans le dos",
-                intent={"surface_finish": 0.9}),
-        _Preset("usage_precise",  "Assemblage précis",  "Arachne + compensation XY serrée",
-                intent={"precision": 0.9}),
-    ]),
-    ("MODE", [
-        _Preset("mode_normal",     "Standard",           "Aucun mode spécial",
-                intent={}),
-        _Preset("mode_silent",     "Silencieux",         "Vitesses -40% — impression discrète",
-                intent={"silent": 0.9}),
-        _Preset("mode_multicolor", "Multicolore (AMS)",  "Prime tower + flush optimisé",
-                intent={"multicolor": 0.9}),
-    ]),
-]
+def _make_groups() -> list[tuple[str, list[_Preset]]]:
+    return [
+        (_("intent.group_quality"), [
+            _Preset("quality_draft",  _("intent.q_draft"),    _("intent.q_draft_desc"),
+                    intent={"speed": 0.9, "quality": 0.05}),
+            _Preset("quality_std",    _("intent.q_standard"), _("intent.q_standard_desc"),
+                    intent={}),
+            _Preset("quality_fine",   _("intent.q_fine"),     _("intent.q_fine_desc"),
+                    intent={"quality": 0.8}),
+            _Preset("quality_ultra",  _("intent.q_ultra"),    _("intent.q_ultra_desc"),
+                    intent={"quality": 1.0, "surface_finish": 0.8}),
+        ]),
+        (_("intent.group_strength"), [
+            _Preset("strength_light", _("intent.s_light"),    _("intent.s_light_desc"),
+                    intent={"strength": 0.05, "filament_saving": 0.9}),
+            _Preset("strength_std",   _("intent.s_standard"), _("intent.s_standard_desc"),
+                    intent={}),
+            _Preset("strength_high",  _("intent.s_strong"),   _("intent.s_strong_desc"),
+                    intent={"strength": 0.75}),
+            _Preset("strength_ultra", _("intent.s_ultra"),    _("intent.s_ultra_desc"),
+                    intent={"strength": 1.0}),
+        ]),
+        (_("intent.group_speed"), [
+            _Preset("speed_std",   _("intent.sp_standard"), _("intent.sp_standard_desc"),
+                    intent={}),
+            _Preset("speed_high",  _("intent.sp_fast"),     _("intent.sp_fast_desc"),
+                    intent={"speed": 0.75}),
+            _Preset("speed_ultra", _("intent.sp_ultra"),    _("intent.sp_ultra_desc"),
+                    intent={"speed": 1.0}),
+        ]),
+        (_("intent.group_adhesion"), [
+            _Preset("brim_none",  _("intent.a_none"),   _("intent.a_none_desc"),
+                    config={"brim_type": "no_brim", "brim_width": 0.0}),
+            _Preset("brim_std",   _("intent.a_brim5"),  _("intent.a_brim5_desc"),
+                    config={"brim_type": "outer_only", "brim_width": 5.0}),
+            _Preset("brim_large", _("intent.a_brim10"), _("intent.a_brim10_desc"),
+                    config={"brim_type": "outer_only", "brim_width": 10.0}),
+        ]),
+        (_("intent.group_usage"), [
+            _Preset("usage_indoor",   _("intent.u_indoor"),     _("intent.u_indoor_desc"),
+                    intent={}),
+            _Preset("usage_outdoor",  _("intent.u_outdoor"),    _("intent.u_outdoor_desc"),
+                    intent={"outdoor_resistance": 1.0}),
+            _Preset("usage_visible",  _("intent.u_visible"),    _("intent.u_visible_desc"),
+                    intent={"surface_finish": 0.9}),
+            _Preset("usage_precise",  _("intent.u_precision"),  _("intent.u_precision_desc"),
+                    intent={"precision": 0.9}),
+        ]),
+        (_("intent.group_mode"), [
+            _Preset("mode_normal",     _("intent.m_standard"),   _("intent.m_standard_desc"),
+                    intent={}),
+            _Preset("mode_silent",     _("intent.m_silent"),     _("intent.m_silent_desc"),
+                    intent={"silent": 0.9}),
+            _Preset("mode_multicolor", _("intent.m_multicolor"), _("intent.m_multicolor_desc"),
+                    intent={"multicolor": 0.9}),
+        ]),
+    ]
+
+
+_GROUPS: list[tuple[str, list[_Preset]]] = _make_groups()
+
 
 # ── Règles de conflit inter-groupes ────────────────────────────────────────
-# (id1, id2, sévérité, message, compromis)
 
-_CONFLICTS: list[tuple[str, str, str, str, str]] = [
-    ("quality_ultra", "speed_ultra", "error",
-     "Ultra Fine + Ultra Rapide sont incompatibles — la qualité sera celle du Brouillon.",
-     "Essayez : Fine + Rapide  ou  Standard + Ultra Rapide"),
+def _make_conflicts() -> list[tuple[str, str, str, str, str]]:
+    return [
+        ("quality_ultra", "speed_ultra", "error",
+         _("intent.conflict_ultra_fine_ultra_fast"),
+         _("intent.conflict_ultra_fine_ultra_fast_hint")),
 
-    ("quality_ultra", "speed_high", "warning",
-     "Ultra Fine avec vitesse Rapide peut dégrader légèrement la finition.",
-     "Compromis : Fine + Rapide pour un bon équilibre"),
+        ("quality_ultra", "speed_high", "warning",
+         _("intent.conflict_fine_fast_warn"),
+         _("intent.conflict_fine_fast_hint")),
 
-    ("quality_fine", "speed_ultra", "warning",
-     "Fine + Ultra Rapide donnera effectivement une qualité Standard.",
-     "Compromis : Fine + Rapide  ou  Standard + Ultra Rapide"),
+        ("quality_fine", "speed_ultra", "warning",
+         _("intent.conflict_fine_ultra_fast"),
+         _("intent.conflict_fine_ultra_fast_hint")),
 
-    ("strength_ultra", "speed_ultra", "error",
-     "Ultra Solide + Ultra Rapide sont incompatibles — les parois épaisses ont besoin de temps.",
-     "Essayez : Renforcée + Rapide  ou  Ultra Solide + Standard"),
+        ("strength_ultra", "speed_ultra", "error",
+         _("intent.conflict_ultra_solid_ultra_fast"),
+         _("intent.conflict_ultra_solid_ultra_fast_hint")),
 
-    ("strength_ultra", "strength_light", "error",
-     "Ultra Solide et Légère sont contradictoires.",
-     "Choisissez l'un ou l'autre selon votre besoin"),
+        ("strength_ultra", "strength_light", "error",
+         _("intent.conflict_solid_light"),
+         _("intent.conflict_solid_light_hint")),
 
-    ("strength_light", "usage_outdoor", "warning",
-     "Une pièce Légère est déconseillée pour un usage extérieur.",
-     "Recommandé : Standard ou Renforcée + Extérieur"),
+        ("strength_light", "usage_outdoor", "warning",
+         _("intent.conflict_light_outdoor"),
+         _("intent.conflict_light_outdoor_hint")),
 
-    ("quality_draft", "usage_visible", "warning",
-     "Brouillon + Finition visible : la résolution 0.28mm ne donnera pas une belle finition.",
-     "Utilisez au minimum la qualité Standard pour une pièce visible"),
+        ("quality_draft", "usage_visible", "warning",
+         _("intent.conflict_draft_visible"),
+         _("intent.conflict_draft_visible_hint")),
 
-    ("speed_ultra", "usage_visible", "warning",
-     "Ultra Rapide dégrade les coutures et la finition de surface.",
-     "Recommandé : Standard ou Rapide pour une pièce visible"),
-]
+        ("speed_ultra", "usage_visible", "warning",
+         _("intent.conflict_ultra_fast_visible"),
+         _("intent.conflict_ultra_fast_visible_hint")),
+    ]
+
+
+_CONFLICTS: list[tuple[str, str, str, str, str]] = _make_conflicts()
 
 
 def _get_preset_by_id(preset_id: str) -> _Preset | None:
@@ -169,7 +178,6 @@ def _get_preset_by_id(preset_id: str) -> _Preset | None:
 
 
 def _check_conflicts(selected_ids: set[str]) -> list[tuple[str, str, str, str]]:
-    """Retourne la liste des conflits actifs : (sévérité, message, compromis)."""
     found = []
     for id1, id2, severity, msg, compromise in _CONFLICTS:
         if id1 in selected_ids and id2 in selected_ids:
@@ -178,7 +186,6 @@ def _check_conflicts(selected_ids: set[str]) -> list[tuple[str, str, str, str]]:
 
 
 def _build_intent_profile(selected_ids: set[str]) -> IntentProfile:
-    """Fusionne les intent_overrides de tous les presets sélectionnés."""
     merged: dict[str, float] = {
         "strength": 0.0, "speed": 0.0, "quality": 0.0,
         "filament_saving": 0.0, "outdoor_resistance": 0.0, "surface_finish": 0.0,
@@ -189,12 +196,10 @@ def _build_intent_profile(selected_ids: set[str]) -> IntentProfile:
         if p:
             for k, v in p.intent.items():
                 merged[k] = max(merged.get(k, 0.0), v)
-
     return IntentProfile(**merged)
 
 
 def _build_config_overrides(selected_ids: set[str]) -> dict:
-    """Fusionne les config overrides directs (dernier sélectionné gagne par groupe)."""
     overrides: dict = {}
     for pid in selected_ids:
         p = _get_preset_by_id(pid)
@@ -208,7 +213,7 @@ def _build_config_overrides(selected_ids: set[str]) -> dict:
 class _ChoiceBtn(QWidget):
     """Carte cliquable représentant un preset dans un groupe."""
 
-    clicked = Signal(str)  # émet l'id du preset
+    clicked = Signal(str)
 
     def __init__(self, preset: _Preset, parent=None):
         super().__init__(parent)
@@ -244,32 +249,33 @@ class _ChoiceBtn(QWidget):
         layout.addWidget(self._check)
 
     def _apply_style(self):
+        p = _T.palette()
         if self._selected:
             self.setStyleSheet(f"""
                 _ChoiceBtn, QWidget {{
-                    background: {BG_ELEVATED};
-                    border-left: 3px solid {TELE_GREEN};
+                    background: {p['BG_ELEVATED']};
+                    border-left: 3px solid {p['TELE_GREEN']};
                     border-radius: 2px;
                 }}
             """)
-            self._title_lbl.setStyleSheet(f"color: {TELE_GREEN}; background: transparent;")
-            self._desc_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+            self._title_lbl.setStyleSheet(f"color: {p['TELE_GREEN']}; background: transparent;")
+            self._desc_lbl.setStyleSheet(f"color: {p['TEXT_SECONDARY']}; background: transparent;")
             self._check.setText("✓")
-            self._check.setStyleSheet(f"color: {TELE_GREEN}; background: transparent;")
+            self._check.setStyleSheet(f"color: {p['TELE_GREEN']}; background: transparent;")
         else:
             self.setStyleSheet(f"""
                 _ChoiceBtn, QWidget {{
-                    background: {BG_SURFACE};
+                    background: {p['BG_SURFACE']};
                     border-left: 3px solid transparent;
                     border-radius: 2px;
                 }}
                 _ChoiceBtn:hover, QWidget:hover {{
-                    background: {BG_ELEVATED};
-                    border-left: 3px solid {INACTIVE};
+                    background: {p['BG_ELEVATED']};
+                    border-left: 3px solid {p['INACTIVE']};
                 }}
             """)
-            self._title_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent;")
-            self._desc_lbl.setStyleSheet(f"color: {TEXT_LABEL}; background: transparent;")
+            self._title_lbl.setStyleSheet(f"color: {p['TEXT_PRIMARY']}; background: transparent;")
+            self._desc_lbl.setStyleSheet(f"color: {p['TEXT_LABEL']}; background: transparent;")
             self._check.setText("")
             self._check.setStyleSheet("background: transparent;")
 
@@ -283,11 +289,12 @@ class _ChoiceBtn(QWidget):
 
     def enterEvent(self, event):
         if not self._selected:
+            p = _T.palette()
             self.setStyleSheet(f"""
-                QWidget {{ background: {BG_ELEVATED}; border-left: 3px solid {INACTIVE}; border-radius: 2px; }}
+                QWidget {{ background: {p['BG_ELEVATED']}; border-left: 3px solid {p['INACTIVE']}; border-radius: 2px; }}
             """)
-            self._title_lbl.setStyleSheet(f"color: {ACCENT_BRIGHT}; background: transparent;")
-            self._desc_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+            self._title_lbl.setStyleSheet(f"color: {p['ACCENT_BRIGHT']}; background: transparent;")
+            self._desc_lbl.setStyleSheet(f"color: {p['TEXT_SECONDARY']}; background: transparent;")
 
     def leaveEvent(self, event):
         if not self._selected:
@@ -363,10 +370,8 @@ class _Group(QWidget):
         arrow = "▼" if self._open else "▶"
         self._header.setText(f"  {arrow}   {self._title}")
         if self._open:
-            # Lever la contrainte pour que sizeHint() soit calculé correctement
             self._content.setMaximumHeight(16777215)
             target_h = self._content.sizeHint().height()
-            # Fallback si sizeHint() n'est pas encore calculé (widget pas encore affiché)
             if target_h <= 0:
                 target_h = len(self._presets) * 58
             self._content.setMaximumHeight(0)
@@ -379,7 +384,6 @@ class _Group(QWidget):
 
     def _on_choice(self, preset_id: str):
         if self._selected_id == preset_id:
-            # Déselectionner
             self._buttons[preset_id].set_selected(False)
             self._selected_id = None
         else:
@@ -390,7 +394,6 @@ class _Group(QWidget):
         self.selection_changed.emit()
 
     def select_preset(self, preset_id: str):
-        """Sélectionne un preset sans passer par un clic utilisateur."""
         if preset_id in self._buttons:
             self._on_choice(preset_id)
 
@@ -404,20 +407,31 @@ class _Group(QWidget):
         return None
 
     def mark_conflict(self, has_conflict: bool, severity: str = "warning"):
+        _mp = _T.palette()
         if has_conflict:
-            color = ERROR_RED if severity == "error" else AMBER
-            self._header.setStyleSheet(self._header.styleSheet().replace(
-                f"border-left: 3px solid {ACCENT};",
-                f"border-left: 3px solid {color};",
-            ))
-        else:
-            # Reset style
+            color = _mp["ERROR_RED"] if severity == "error" else _mp["AMBER"]
             self._header.setStyleSheet(f"""
                 QPushButton {{
-                    background: {BG_ELEVATED};
+                    background: {_mp['BG_ELEVATED']};
                     border: none;
-                    border-left: 3px solid {ACCENT};
-                    color: {ACCENT_BRIGHT};
+                    border-left: 3px solid {color};
+                    color: {_mp['ACCENT_BRIGHT']};
+                    text-align: left; padding: 0 10px;
+                    font-family: 'Segoe UI'; font-size: 8px;
+                    font-weight: bold; letter-spacing: 2px;
+                }}
+                QPushButton:hover {{
+                    background: {_mp['BG_SURFACE']};
+                    border-left: 3px solid {color};
+                }}
+            """)
+        else:
+            self._header.setStyleSheet(f"""
+                QPushButton {{
+                    background: {_mp['BG_ELEVATED']};
+                    border: none;
+                    border-left: 3px solid {_mp['ACCENT']};
+                    color: {_mp['ACCENT_BRIGHT']};
                     text-align: left;
                     padding: 0 10px;
                     font-family: 'Segoe UI';
@@ -426,8 +440,8 @@ class _Group(QWidget):
                     letter-spacing: 2px;
                 }}
                 QPushButton:hover {{
-                    background: {BG_SURFACE};
-                    border-left: 3px solid {ACCENT_BRIGHT};
+                    background: {_mp['BG_SURFACE']};
+                    border-left: 3px solid {_mp['ACCENT_BRIGHT']};
                 }}
             """)
 
@@ -459,7 +473,6 @@ class _ConflictBanner(QWidget):
             self.hide()
             return
 
-        # Prendre le conflit le plus sévère
         errors = [c for c in conflicts if c[0] == "error"]
         warnings = [c for c in conflicts if c[0] == "warning"]
         worst = errors[0] if errors else warnings[0]
@@ -480,7 +493,6 @@ class _ConflictBanner(QWidget):
             self._icon_msg.setText(f"⚠  {msg}")
             self._icon_msg.setStyleSheet(f"color: {AMBER}; background: transparent;")
 
-        # Afficher tous les compromis
         all_compromises = [c[2] for c in conflicts if c[2]]
         comp_color = ERROR_RED if errors else AMBER
         self._compromise.setText("\n".join(f"→  {c}" for c in all_compromises[:2]))
@@ -529,12 +541,13 @@ class _PresetChip(QWidget):
 class IntentSelector(QWidget):
     """Sélecteur d'intentions par presets accordéon."""
 
-    intent_submitted = Signal(object)  # émet un SelectionResult
+    intent_submitted = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._groups: list[_Group] = []
         self._is_locked = True
+        self._nozzle_diameter: float = 0.4
         self._setup_ui()
         self._apply_lock(True)
 
@@ -543,33 +556,33 @@ class IntentSelector(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(1)
 
-        # Bandeau de verrouillage (affiché avant chargement du STL)
+        _lp = _T.palette()
         self._lock_banner = QWidget()
         self._lock_banner.setStyleSheet(
-            f"background: rgba(26,53,80,0.6); border-radius: 2px;"
+            f"background: {_lp['BG_SURFACE']}; border-radius: 2px;"
         )
         banner_layout = QVBoxLayout(self._lock_banner)
         banner_layout.setContentsMargins(10, 10, 10, 10)
         banner_layout.setSpacing(4)
 
-        lock_icon = QLabel("⊘")
-        lock_icon.setFont(QFont("Segoe UI", 18))
-        lock_icon.setAlignment(Qt.AlignCenter)
-        lock_icon.setStyleSheet(f"color: {INACTIVE}; background: transparent;")
-        banner_layout.addWidget(lock_icon)
+        self._lock_icon_lbl = QLabel("⊘")
+        self._lock_icon_lbl.setFont(QFont("Segoe UI", 18))
+        self._lock_icon_lbl.setAlignment(Qt.AlignCenter)
+        self._lock_icon_lbl.setStyleSheet(f"color: {_lp['INACTIVE']}; background: transparent;")
+        banner_layout.addWidget(self._lock_icon_lbl)
 
-        lock_msg = QLabel("Chargez un fichier STL\npour accéder aux réglages")
-        lock_msg.setFont(QFont(FONT_MONO, 8))
-        lock_msg.setAlignment(Qt.AlignCenter)
-        lock_msg.setStyleSheet(f"color: {INACTIVE}; background: transparent;")
-        lock_msg.setWordWrap(True)
-        banner_layout.addWidget(lock_msg)
+        self._lock_msg_lbl = QLabel(_("intent.lock_msg"))
+        self._lock_msg_lbl.setFont(QFont(FONT_MONO, 8))
+        self._lock_msg_lbl.setAlignment(Qt.AlignCenter)
+        self._lock_msg_lbl.setStyleSheet(f"color: {_lp['TEXT_SECONDARY']}; background: transparent;")
+        self._lock_msg_lbl.setWordWrap(True)
+        banner_layout.addWidget(self._lock_msg_lbl)
 
-        lock_step = QLabel("← Étape ②")
-        lock_step.setFont(QFont(FONT_MONO, 7))
-        lock_step.setAlignment(Qt.AlignCenter)
-        lock_step.setStyleSheet(f"color: {INACTIVE}; background: transparent;")
-        banner_layout.addWidget(lock_step)
+        self._lock_step_lbl = QLabel(_("intent.lock_step"))
+        self._lock_step_lbl.setFont(QFont(FONT_MONO, 7))
+        self._lock_step_lbl.setAlignment(Qt.AlignCenter)
+        self._lock_step_lbl.setStyleSheet(f"color: {_lp['TEXT_LABEL']}; background: transparent;")
+        banner_layout.addWidget(self._lock_step_lbl)
 
         root.addWidget(self._lock_banner)
 
@@ -580,7 +593,7 @@ class IntentSelector(QWidget):
         ps_layout.setContentsMargins(8, 6, 8, 6)
         ps_layout.setSpacing(4)
 
-        ps_header = QLabel("★  MES PRÉSETS")
+        ps_header = QLabel(_("intent.presets_header"))
         ps_header.setFont(QFont("Segoe UI", 7, QFont.Bold))
         ps_header.setStyleSheet(f"color: {ACCENT_BRIGHT}; letter-spacing: 2px;")
         ps_layout.addWidget(ps_header)
@@ -597,16 +610,17 @@ class IntentSelector(QWidget):
 
         # Bannière auto-sélection
         self._auto_banner = QWidget()
+        _ab_pal = _T.palette()
         self._auto_banner.setStyleSheet(
-            f"background: rgba(0,255,159,0.07); border-left: 3px solid {TELE_GREEN}; border-radius: 2px;"
+            f"background: rgba(0,200,100,0.07); border-left: 3px solid {_ab_pal['TELE_GREEN']}; border-radius: 2px;"
         )
         ab_layout = QHBoxLayout(self._auto_banner)
         ab_layout.setContentsMargins(10, 6, 10, 6)
-        ab_lbl = QLabel("✦  Réglages pré-sélectionnés selon l'analyse — modifiez-les si besoin")
-        ab_lbl.setFont(QFont("Segoe UI", 7))
-        ab_lbl.setStyleSheet(f"color: {TELE_GREEN}; background: transparent;")
-        ab_lbl.setWordWrap(True)
-        ab_layout.addWidget(ab_lbl)
+        self._ab_lbl = QLabel(_("intent.auto_select_msg"))
+        self._ab_lbl.setFont(QFont("Segoe UI", 7))
+        self._ab_lbl.setStyleSheet(f"color: {_ab_pal['TELE_GREEN']}; background: transparent;")
+        self._ab_lbl.setWordWrap(True)
+        ab_layout.addWidget(self._ab_lbl)
         self._auto_banner.hide()
         root.addWidget(self._auto_banner)
 
@@ -626,7 +640,7 @@ class IntentSelector(QWidget):
         btns_row.setSpacing(4)
         btns_row.setContentsMargins(0, 6, 0, 0)
 
-        self._save_btn = QPushButton("★  SAUVEGARDER")
+        self._save_btn = QPushButton(_("intent.btn_save"))
         self._save_btn.setFont(QFont("Segoe UI", 8, QFont.Bold))
         self._save_btn.setFixedHeight(38)
         self._save_btn.setEnabled(False)
@@ -645,7 +659,7 @@ class IntentSelector(QWidget):
         self._save_btn.clicked.connect(self._on_save_preset)
         btns_row.addWidget(self._save_btn)
 
-        self._btn = QPushButton("GÉNÉRER CONFIGURATION →")
+        self._btn = QPushButton(_("intent.btn_generate"))
         self._btn.setFont(QFont("Segoe UI", 9, QFont.Bold))
         self._btn.setFixedHeight(38)
         self._btn.setEnabled(False)
@@ -672,14 +686,12 @@ class IntentSelector(QWidget):
         selected_ids = self._get_selected_ids()
         conflicts = _check_conflicts(selected_ids)
 
-        # Mettre à jour la bannière
         self._conflict_banner.show_conflicts(conflicts)
 
-        # Marquer les groupes en conflit
         conflict_ids = set()
-        for _, presets in _GROUPS:
+        for _grp, presets in _GROUPS:
             for p in presets:
-                for id1, id2, severity, *_ in _CONFLICTS:
+                for id1, id2, severity, *_rest in _CONFLICTS:
                     if (p.id == id1 and id2 in selected_ids) or \
                        (p.id == id2 and id1 in selected_ids):
                         if p.id in selected_ids:
@@ -693,29 +705,33 @@ class IntentSelector(QWidget):
             else:
                 g.mark_conflict(False)
 
-        # Activer les boutons si au moins un choix et pas de conflit bloquant
         has_error = any(c[0] == "error" for c in conflicts)
         self._btn.setEnabled(bool(selected_ids) and not has_error)
         self._save_btn.setEnabled(bool(selected_ids))
+        _bp = _T.palette()
         if has_error:
-            self._btn.setStyleSheet(self._btn.styleSheet().replace(
-                f"background: {ACCENT};", f"background: {INACTIVE};"
-            ))
-            self._btn.setText("⛔  RÉSOLVEZ LES CONFLITS")
+            self._btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: {_bp['INACTIVE']};
+                    color: {_bp['TEXT_LABEL']};
+                    border: none; border-radius: 3px; letter-spacing: 1px; margin-top: 6px;
+                }}
+            """)
+            self._btn.setText(_("intent.btn_conflicts"))
         else:
             self._btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: {ACCENT};
-                    color: #020408;
+                    background: {_bp['ACCENT']};
+                    color: {_bp['EXPORT_FG']};
                     border: none;
                     border-radius: 3px;
                     letter-spacing: 1px;
                     margin-top: 6px;
                 }}
-                QPushButton:hover {{ background: {ACCENT_BRIGHT}; }}
-                QPushButton:disabled {{ background: {INACTIVE}; color: {TEXT_LABEL}; }}
+                QPushButton:hover {{ background: {_bp['ACCENT_BRIGHT']}; }}
+                QPushButton:disabled {{ background: {_bp['INACTIVE']}; color: {_bp['TEXT_LABEL']}; }}
             """)
-            self._btn.setText("GÉNÉRER CONFIGURATION →")
+            self._btn.setText(_("intent.btn_generate"))
 
     def _get_selected_ids(self) -> set[str]:
         ids = set()
@@ -725,6 +741,9 @@ class IntentSelector(QWidget):
                 ids.add(sid)
         return ids
 
+    def update_nozzle(self, diameter: float) -> None:
+        self._nozzle_diameter = diameter
+
     def _on_generate(self):
         selected_ids = self._get_selected_ids()
         if not selected_ids:
@@ -732,6 +751,7 @@ class IntentSelector(QWidget):
 
         intent_profile = _build_intent_profile(selected_ids)
         config_overrides = _build_config_overrides(selected_ids)
+        config_overrides["nozzle_diameter"] = self._nozzle_diameter
 
         labels = [lbl for g in self._groups
                   if (lbl := g.get_selected_label()) is not None]
@@ -755,7 +775,7 @@ class IntentSelector(QWidget):
         labels = [lbl for g in self._groups if (lbl := g.get_selected_label())]
         default_name = " + ".join(p.split(": ", 1)[1] for p in labels[:3])
         name, ok = QInputDialog.getText(
-            self, "Sauvegarder le préset", "Nom du préset :", text=default_name
+            self, _("intent.save_dialog_title"), _("intent.save_dialog_label"), text=default_name
         )
         if not ok or not name.strip():
             return
@@ -767,7 +787,7 @@ class IntentSelector(QWidget):
     def _on_load_preset(self, preset: dict):
         for g in self._groups:
             if g.get_selected_id():
-                g._on_choice(g.get_selected_id())  # désélectionner
+                g._on_choice(g.get_selected_id())
         for pid in preset.get("selected_ids", []):
             for g in self._groups:
                 if pid in g._buttons:
@@ -785,13 +805,13 @@ class IntentSelector(QWidget):
     def _refresh_presets_ui(self):
         presets = _load_saved_presets()
         layout = self._presets_chips.layout()
-        while layout.count() > 1:  # garder le stretch
+        while layout.count() > 1:
             item = layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
         if not presets:
-            empty = QLabel("Aucun préset — sauvegardez vos réglages favoris")
+            empty = QLabel(_("intent.presets_empty"))
             empty.setFont(QFont(FONT_MONO, 7))
             empty.setStyleSheet(f"color: {INACTIVE};")
             layout.insertWidget(0, empty)
@@ -805,8 +825,66 @@ class IntentSelector(QWidget):
 
     # ── API publique ────────────────────────────────────────────────────────
 
+    def refresh_theme(self):
+        pal = _T.palette()
+        self.setStyleSheet(f"background: {pal['BG_PANEL']}")
+        if hasattr(self, '_auto_banner'):
+            self._auto_banner.setStyleSheet(
+                f"background: rgba(0,200,100,0.07); border-left: 3px solid {pal['TELE_GREEN']}; border-radius: 2px;"
+            )
+        if hasattr(self, '_ab_lbl'):
+            self._ab_lbl.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
+        if hasattr(self, '_lock_banner'):
+            self._lock_banner.setStyleSheet(f"background: {pal['BG_SURFACE']}; border-radius: 2px;")
+        if hasattr(self, '_lock_icon_lbl'):
+            self._lock_icon_lbl.setStyleSheet(f"color: {pal['INACTIVE']}; background: transparent;")
+        if hasattr(self, '_lock_msg_lbl'):
+            self._lock_msg_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        if hasattr(self, '_lock_step_lbl'):
+            self._lock_step_lbl.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
+        if hasattr(self, '_presets_section'):
+            self._presets_section.setStyleSheet(f"background: {pal['BG_ELEVATED']};")
+        if hasattr(self, '_save_btn'):
+            self._save_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: {pal['BG_ELEVATED']};
+                    color: {pal['ACCENT_BRIGHT']};
+                    border: 1px solid {pal['ACCENT']};
+                    border-radius: 3px;
+                    padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: {pal['BG_SURFACE']}; }}
+                QPushButton:disabled {{ color: {pal['INACTIVE']}; border-color: {pal['INACTIVE']}; }}
+            """)
+        for group in self.findChildren(QWidget):
+            if hasattr(group, "_header") and hasattr(group, "_content"):
+                try:
+                    group._header.setStyleSheet(f"""
+                        QPushButton {{
+                            background: {pal["BG_ELEVATED"]};
+                            border: none;
+                            border-left: 3px solid {pal["ACCENT"]};
+                            color: {pal["ACCENT_BRIGHT"]};
+                            text-align: left; padding: 0 10px;
+                            font-family: 'Segoe UI'; font-size: 8px;
+                            font-weight: bold; letter-spacing: 2px;
+                        }}
+                        QPushButton:hover {{
+                            background: {pal["BG_SURFACE"]};
+                            border-left: 3px solid {pal["ACCENT_BRIGHT"]};
+                        }}
+                    """)
+                    group._content.setStyleSheet(f"background: {pal['BG_PANEL']}")
+                except Exception:
+                    pass
+        for btn in self.findChildren(_ChoiceBtn):
+            try:
+                btn._apply_style()
+            except Exception:
+                pass
+        self.update()
+
     def set_locked(self, locked: bool):
-        """Verrouille / déverrouille le panneau d'instructions."""
         self._is_locked = locked
         self._apply_lock(locked)
 
@@ -828,9 +906,9 @@ class IntentSelector(QWidget):
         self._btn.setEnabled(not loading)
         self._save_btn.setEnabled(not loading)
         if loading:
-            self._btn.setText("◌  GÉNÉRATION EN COURS...")
+            self._btn.setText(_("intent.btn_loading"))
         else:
-            self._on_selection_changed()  # recalcule l'état
+            self._on_selection_changed()
 
     def enable_generate(self, enabled: bool):
         ids = self._get_selected_ids()
@@ -846,19 +924,15 @@ class IntentSelector(QWidget):
         fragile   = getattr(report, "has_fragile_zones", False)
         large_flat = getattr(report, "is_large_flat_part", False)
 
-        # Qualité → Standard (safe pour débutants)
         self._groups[0].select_preset("quality_std")
 
-        # Résistance → renforcée si pièce fragile ou surplombs importants
         if fragile or overhang > 0.5:
             self._groups[1].select_preset("strength_high")
         else:
             self._groups[1].select_preset("strength_std")
 
-        # Vitesse → standard (toujours plus sûr pour un débutant)
         self._groups[2].select_preset("speed_std")
 
-        # Adhérence → selon stabilité et forme
         if large_flat or stability < 0.35:
             self._groups[3].select_preset("brim_large")
         elif brim_mm > 0 or stability < 0.65:
@@ -866,7 +940,6 @@ class IntentSelector(QWidget):
         else:
             self._groups[3].select_preset("brim_none")
 
-        # Usage → Intérieur standard
         self._groups[4].select_preset("usage_indoor")
 
         self._on_selection_changed()
@@ -875,7 +948,6 @@ class IntentSelector(QWidget):
             self._auto_banner.show()
 
     def reset_selection(self):
-        """Déselectionne tous les presets et cache la bannière auto."""
         for g in self._groups:
             sid = g.get_selected_id()
             if sid:

@@ -13,7 +13,7 @@ from version import __version__ as CURRENT_VERSION
 # Fichier latest.json hébergé sur GitHub — mis à jour à chaque release.
 # Format : {"version": "0.2.0", "download_url": "...", "notes": ""}
 UPDATE_CHECK_URL = (
-    "https://gist.githubusercontent.com/Labstral/73d8c1bc62235780b4822ef2301edd45/raw/latest.json"
+    "https://raw.githubusercontent.com/Labstral/neoSlice/main/latest.json"
 )
 
 

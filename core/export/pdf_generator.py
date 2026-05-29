@@ -1,11 +1,19 @@
 """Génère la fiche de réglages filament et le rapport complet en PDF avec reportlab."""
 from __future__ import annotations
 
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
+
+
+def _assets_dir() -> Path:
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass is not None:
+        return Path(meipass) / "assets"
+    return Path(__file__).parent.parent.parent / "assets"
 
 if TYPE_CHECKING:
     from core.geometry.analysis_report import AnalysisReport
@@ -24,7 +32,7 @@ def generate_filament_pdf(
         from reportlab.lib.units import cm
         from reportlab.platypus import (
             SimpleDocTemplate, Table, TableStyle, Paragraph,
-            Spacer, HRFlowable,
+            Spacer, HRFlowable, KeepTogether, Image,
         )
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.enums import TA_LEFT, TA_CENTER
@@ -33,6 +41,7 @@ def generate_filament_pdf(
         return False
 
     from data.filaments import FILAMENTS
+    from core.i18n import _
 
     fil = FILAMENTS.get(filament_name)
     if not fil:
@@ -89,10 +98,10 @@ def generate_filament_pdf(
     def _table(rows, highlight_rows: set | None = None):
         highlight_rows = highlight_rows or set()
         header = [
-            Paragraph("Paramètre", style("hdr", 8, C_MUTED, bold=True)),
-            Paragraph("Valeur",    style("hdr", 8, C_MUTED, bold=True)),
-            Paragraph("Unité",     style("hdr", 8, C_MUTED, bold=True)),
-            Paragraph("Note",      style("hdr", 8, C_MUTED, bold=True)),
+            Paragraph(_("pdf.col_param"), style("hdr", 8, C_MUTED, bold=True)),
+            Paragraph(_("pdf.col_value"), style("hdr", 8, C_MUTED, bold=True)),
+            Paragraph(_("pdf.col_unit"),  style("hdr", 8, C_MUTED, bold=True)),
+            Paragraph(_("pdf.col_note"),  style("hdr", 8, C_MUTED, bold=True)),
         ]
         data = [header] + rows
         ts = TableStyle([
@@ -107,7 +116,7 @@ def generate_filament_pdf(
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ])
         for i in highlight_rows:
-            row_idx = i + 1  # +1 pour le header
+            row_idx = i + 1
             ts.add("BACKGROUND", (0, row_idx), (-1, row_idx), C_ACCENT)
         t = Table(data, colWidths=COL_W, repeatRows=1)
         t.setStyle(ts)
@@ -120,23 +129,30 @@ def generate_filament_pdf(
             HRFlowable(width="100%", thickness=0.5, color=C_ACCENT, spaceAfter=4),
         ]
 
+    def yn(v):
+        return _("pdf.yes") if v else _("pdf.no")
+
     # ── Contenu ───────────────────────────────────────────────────────────
     story = []
 
-    # En-tête
     story.append(Spacer(1, 0.3*cm))
-    story.append(Paragraph("◈  NEOSLICE", s_title))
+    _logo_path = _assets_dir() / "neoSlice.png"
+    if _logo_path.exists():
+        _logo = Image(str(_logo_path), width=2.8*cm, height=2.8*cm)
+        _logo.hAlign = "CENTER"
+        story.append(_logo)
+    else:
+        story.append(Paragraph("◈  NEOSLICE", s_title))
     story.append(Spacer(1, 0.15*cm))
-    story.append(Paragraph("Fiche de réglages filament", style("sub2", 11, C_TEXT, align=TA_CENTER)))
+    story.append(Paragraph(_("pdf.filament_subtitle"), style("sub2", 11, C_TEXT, align=TA_CENTER)))
     story.append(Spacer(1, 0.15*cm))
     date_str = datetime.now().strftime("%d/%m/%Y")
     story.append(Paragraph(
-        f"Filament : <b>{filament_name}</b>  |  Imprimante : <b>{printer_name}</b>  |  {date_str}",
+        _("pdf.header_fmt", filament=filament_name, printer=printer_name, date=date_str),
         s_sub,
     ))
     story.append(Spacer(1, 0.5*cm))
 
-    # Warnings
     warnings = fil.get("warnings", [])
     if warnings:
         for w in warnings:
@@ -145,87 +161,78 @@ def generate_filament_pdf(
         story.append(Spacer(1, 0.2*cm))
 
     # ── Section 1 : Informations de base ──────────────────────────────────
-    story.extend(_section_title("Onglet Filament › Informations de base"))
     rapport = fil.get("rapport_debit", 0.98)
     hl_rapport = {0} if rapport != 1.0 else set()
-    story.append(_table([
-        _row("Rapport de débit",        f"{rapport:.2f}", "",   "Ajuster si sous/sur-extrusion", rapport != 1.0),
-        _row("Température de ramollissement", fil.get("ramollissement", "—"), "°C", ""),
-    ], hl_rapport))
+    story.append(KeepTogether(_section_title(_("pdf.sec_base")) + [
+        _table([
+            _row(_("pdf.flow_ratio"),       f"{rapport:.2f}", "",   _("pdf.flow_note"), rapport != 1.0),
+            _row(_("pdf.softening_temp"),   fil.get("ramollissement", "—"), "°C", ""),
+        ], hl_rapport)
+    ]))
 
     # ── Section 2 : Températures ──────────────────────────────────────────
-    story.extend(_section_title("Onglet Filament › Température d'impression"))
-    story.append(_table([
-        _row("Textured PEI Plate — 1ère couche",  fil.get("plateau", "—"),       "°C", "HIGHLIGHT", True),
-        _row("Textured PEI Plate — autres couches", fil.get("plateau", "—"),     "°C", "HIGHLIGHT", True),
-        _row("Buse — 1ère couche",                 fil.get("buse_1ere", "—"),    "°C", "HIGHLIGHT", True),
-        _row("Buse — Autres couches",               fil.get("buse_autres", "—"), "°C", "HIGHLIGHT", True),
-    ], {0, 1, 2, 3}))
+    story.append(KeepTogether(_section_title(_("pdf.sec_temp")) + [
+        _table([
+            _row(_("pdf.bed_first"),    fil.get("plateau", "—"),     "°C", "HIGHLIGHT", True),
+            _row(_("pdf.bed_other"),    fil.get("plateau", "—"),     "°C", "HIGHLIGHT", True),
+            _row(_("pdf.nozzle_first"), fil.get("buse_1ere", "—"),   "°C", "HIGHLIGHT", True),
+            _row(_("pdf.nozzle_other"), fil.get("buse_autres", "—"), "°C", "HIGHLIGHT", True),
+        ], {0, 1, 2, 3})
+    ]))
 
     # ── Section 3 : Vitesse volumétrique ─────────────────────────────────
-    story.extend(_section_title("Onglet Filament › Vitesse volumétrique"))
-    story.append(_table([
-        _row("Vitesse volumétrique maximale",   fil.get("volumetrique_max", "—"), "mm³/s", ""),
-        _row("Vitesse volumétrique adaptative", "Désactivée", "", ""),
+    story.append(KeepTogether(_section_title(_("pdf.sec_vol")) + [
+        _table([
+            _row(_("pdf.vol_max"),      fil.get("volumetrique_max", "—"), "mm³/s", ""),
+            _row(_("pdf.vol_adaptive"), _("pdf.vol_disabled"), "", ""),
+        ])
     ]))
 
     # ── Section 4 : Ventilateur ───────────────────────────────────────────
-    story.extend(_section_title("Onglet Refroidissement › Ventilateur de pièce"))
-
-    def yn(v): return "Oui" if v else "Non"
-
-    vent_rows = [
-        _row("Ventilateur 1ère couche",           "0",                                    "%",    "Ne jamais ventiler 1ère couche"),
-        _row("Seuil mini du ventilateur",          fil.get("ventilateur_seuil_mini", "—"), "%",    ""),
-        _row("Seuil vitesse MAX ventilateur",      fil.get("ventilateur_max", "—"),        "%",    "", True),
-        _row("Ventilation toujours active",        yn(fil.get("ventilation_active")),      "",     "", True),
-        _row("Ralentir pour refroidir",            yn(fil.get("ralentir_refroidir")),      "",     ""),
-        _row("Ne pas ralentir parois externes",    yn(fil.get("ne_pas_ralentir_parois")), "",     "", True),
-        _row("Vitesse d'impression minimale",      fil.get("vitesse_min_impression", "—"), "mm/s", ""),
-        _row("Forcer ventilation surplombs",       yn(fil.get("forcer_ventilation_surplombs")), "", ""),
-        _row("Ventiler surplombs dépassant",       fil.get("ventiler_surplombs_depassant", "—"), "%", ""),
-        _row("Vitesse ventilateur surplombs",      fil.get("ventilateur_surplombs", "—"), "%",    ""),
-    ]
-    story.append(_table(vent_rows, {2, 3, 5}))
+    story.append(KeepTogether(_section_title(_("pdf.sec_fan")) + [
+        _table([
+            _row(_("pdf.fan_first_layer"),  "0",                                           "%",    _("pdf.fan_first_note")),
+            _row(_("pdf.fan_min"),          fil.get("ventilateur_seuil_mini", "—"),        "%",    ""),
+            _row(_("pdf.fan_max_thresh"),   fil.get("ventilateur_max", "—"),               "%",    "", True),
+            _row(_("pdf.fan_always"),       yn(fil.get("ventilation_active")),             "",     "", True),
+            _row(_("pdf.fan_slow_cool"),    yn(fil.get("ralentir_refroidir")),             "",     ""),
+            _row(_("pdf.fan_no_slow_outer"),yn(fil.get("ne_pas_ralentir_parois")),         "",     "", True),
+            _row(_("pdf.fan_min_speed"),    fil.get("vitesse_min_impression", "—"),        "mm/s", ""),
+            _row(_("pdf.fan_force_oh"),     yn(fil.get("forcer_ventilation_surplombs")),   "",     ""),
+            _row(_("pdf.fan_oh_thresh"),    fil.get("ventiler_surplombs_depassant", "—"),  "%",    ""),
+            _row(_("pdf.fan_oh_speed"),     fil.get("ventilateur_surplombs", "—"),         "%",    ""),
+        ], {2, 3, 5})
+    ]))
 
     # ── Section 5 : Rétraction ────────────────────────────────────────────
-    story.extend(_section_title("Onglet Forçage des réglages › Rétraction"))
-
-    ret_lon = fil.get("retraction_longueur")
-    ret_vit = fil.get("retraction_vitesse")
-    ret_rei = fil.get("retraction_reinsertion")
+    ret_lon  = fil.get("retraction_longueur")
+    ret_vit  = fil.get("retraction_vitesse")
+    ret_rei  = fil.get("retraction_reinsertion")
     ret_dist = fil.get("retraction_distance_coupe")
     force_ret = ret_lon is not None
 
-    ret_rows = [
-        _row("Longueur de rétraction",     f"{ret_lon} mm" if ret_lon else "N/A (géré auto)", "",     "FORCER si indiqué" if force_ret else "", force_ret),
-        _row("Vitesse de rétraction",      f"{ret_vit}" if ret_vit else "N/A",                "mm/s", "", force_ret),
-        _row("Vitesse de réinsertion",     f"{ret_rei}" if ret_rei else "N/A",                "mm/s", "", force_ret),
-        _row("Rétraction longue (coupe)",  yn(fil.get("retraction_longue_coupe", False)),     "",     ""),
-        _row("Distance rétraction coupe",  f"{ret_dist}" if ret_dist else "N/A",              "mm",   ""),
-    ]
-    hl_ret = {0, 1, 2} if force_ret else set()
-    story.append(_table(ret_rows, hl_ret))
+    story.append(KeepTogether(_section_title(_("pdf.sec_retract")) + [
+        _table([
+            _row(_("pdf.retract_len"),   f"{ret_lon} mm" if ret_lon else _("pdf.na_auto"), "", _("pdf.retract_force") if force_ret else "", force_ret),
+            _row(_("pdf.retract_speed"), f"{ret_vit}" if ret_vit else _("pdf.na"),  "mm/s", "", force_ret),
+            _row(_("pdf.retract_dsp"),   f"{ret_rei}" if ret_rei else _("pdf.na"),  "mm/s", "", force_ret),
+            _row(_("pdf.retract_long"),  yn(fil.get("retraction_longue_coupe", False)), "",  ""),
+            _row(_("pdf.retract_long_dist"), f"{ret_dist}" if ret_dist else _("pdf.na"), "mm", ""),
+        ], {0, 1, 2} if force_ret else set())
+    ]))
 
-    # Note séchage
     sechage = fil.get("sechage", "")
     if sechage:
         story.append(Spacer(1, 0.3*cm))
-        story.append(Paragraph(f"Séchage recommandé : {sechage}", style("sech", 9, C_AMBER)))
+        story.append(Paragraph(_("pdf.drying", value=sechage), style("sech", 9, C_AMBER)))
 
-    # Note finale
     story.append(Spacer(1, 0.5*cm))
     story.append(HRFlowable(width="100%", thickness=0.3, color=C_INACTIVE))
     story.append(Spacer(1, 0.15*cm))
-    story.append(Paragraph(
-        "Les paramètres d'impression (qualité, vitesse, supports, adhérence) sont intégrés "
-        "dans le fichier 3MF généré par neoSlice et ne nécessitent pas de configuration "
-        "manuelle dans Bambu Studio.",
-        s_note,
-    ))
+    story.append(Paragraph(_("pdf.footer_note"), s_note))
     story.append(Spacer(1, 0.2*cm))
     from version import __version__
-    story.append(Paragraph(f"Généré par neoSlice v{__version__}", s_footer))
+    story.append(Paragraph(_("pdf.generated_by", version=__version__), s_footer))
 
     # ── Build PDF ─────────────────────────────────────────────────────────
     doc = SimpleDocTemplate(
@@ -260,7 +267,7 @@ def generate_full_report_pdf(
         from reportlab.lib.units import cm
         from reportlab.platypus import (
             SimpleDocTemplate, Table, TableStyle, Paragraph,
-            Spacer, HRFlowable,
+            Spacer, HRFlowable, KeepTogether, Image,
         )
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.enums import TA_LEFT, TA_CENTER
@@ -269,6 +276,7 @@ def generate_full_report_pdf(
         return False
 
     from data.filaments import FILAMENTS
+    from core.i18n import _
 
     fil = FILAMENTS.get(filament_name, {})
 
@@ -310,8 +318,12 @@ def generate_full_report_pdf(
 
     def _table(rows, hl_rows=None):
         hl_rows = hl_rows or set()
-        hdr = [Paragraph(h, style(f"h{h}", 8, C_MUTED, bold=True))
-               for h in ("Paramètre", "Valeur", "Unité", "Note")]
+        hdr = [
+            Paragraph(_("pdf.col_param"), style(f"hp", 8, C_MUTED, bold=True)),
+            Paragraph(_("pdf.col_value"), style(f"hv", 8, C_MUTED, bold=True)),
+            Paragraph(_("pdf.col_unit"),  style(f"hu", 8, C_MUTED, bold=True)),
+            Paragraph(_("pdf.col_note"),  style(f"hn", 8, C_MUTED, bold=True)),
+        ]
         data = [hdr] + rows
         ts = TableStyle([
             ("BACKGROUND", (0,0), (-1,0), C_ELEVATED),
@@ -343,49 +355,71 @@ def generate_full_report_pdf(
             return C_AMBER
         return C_RED
 
+    def yn(v):
+        return _("pdf.yes") if v else _("pdf.no")
+
     story = []
 
     # ── En-tête ───────────────────────────────────────────────────────────
     story.append(Spacer(1, 0.3*cm))
-    story.append(Paragraph("◈  NEOSLICE", s_title))
+    _logo_path = _assets_dir() / "neoSlice.png"
+    if _logo_path.exists():
+        _logo = Image(str(_logo_path), width=2.8*cm, height=2.8*cm)
+        _logo.hAlign = "CENTER"
+        story.append(_logo)
+    else:
+        story.append(Paragraph("◈  NEOSLICE", s_title))
     story.append(Spacer(1, 0.1*cm))
-    story.append(Paragraph("Rapport d'impression complet", style("sub2", 11, C_TEXT, align=TA_CENTER)))
+    story.append(Paragraph(_("pdf.full_subtitle"), style("sub2", 11, C_TEXT, align=TA_CENTER)))
     story.append(Spacer(1, 0.1*cm))
     date_str = datetime.now().strftime("%d/%m/%Y %H:%M")
     story.append(Paragraph(
-        f"Filament : <b>{filament_name}</b>  |  Imprimante : <b>{printer_name}</b>  |  {date_str}",
+        _("pdf.header_fmt", filament=filament_name, printer=printer_name, date=date_str),
         s_sub,
     ))
     story.append(Spacer(1, 0.4*cm))
 
-    warnings = fil.get("warnings", [])
-    for w in warnings:
+    for w in fil.get("warnings", []):
         story.append(Paragraph(f"⚠  {w}", s_warn))
         story.append(Spacer(1, 0.08*cm))
 
+    for w in getattr(analysis, "warnings", []):
+        story.append(Paragraph(f"⚠  {w}", s_warn))
+        story.append(Spacer(1, 0.08*cm))
+
+    if fil.get("warnings") or getattr(analysis, "warnings", []):
+        story.append(Spacer(1, 0.15*cm))
+
     # ── Section 1 : Analyse géométrique ──────────────────────────────────
-    story.extend(_sec("Analyse géométrique"))
     bb = analysis.bounding_box_mm
-    verdict = ("PRÊT À IMPRIMER" if analysis.overall_complexity < 0.25 and not analysis.support_needed
-               else "VÉRIFIER AVANT IMPRESSION" if analysis.overall_complexity < 0.55
-               else "PIÈCE COMPLEXE")
+    if analysis.overall_complexity < 0.25 and not analysis.support_needed:
+        verdict = _("pdf.verdict_ok")
+    elif analysis.overall_complexity < 0.55:
+        verdict = _("pdf.verdict_warn")
+    else:
+        verdict = _("pdf.verdict_bad")
+
     geo_rows = [
-        _row("Dimensions (X × Y × Z)", f"{bb[0]:.1f} × {bb[1]:.1f} × {bb[2]:.1f}", "mm"),
-        _row("Volume pièce",  f"{analysis.volume_cm3:.2f}", "cm³"),
-        _row("Surface",       f"{analysis.surface_area_cm2:.1f}", "cm²"),
-        _row("Verdict global", verdict, "", "", True),
-        _row("Surplombs",     f"{analysis.overhang_severity * 100:.0f}%",  "", f"Angle max {analysis.max_overhang_angle:.0f}°"),
-        _row("Stabilité",     f"{analysis.stability_score * 100:.0f}%",    "", ""),
-        _row("Fragilité",     f"{analysis.fragility_severity * 100:.0f}%", "", f"Paroi min {analysis.min_wall_thickness_mm:.1f} mm" if analysis.has_fragile_zones else ""),
-        _row("Supports requis", "OUI" if analysis.support_needed else "NON",
-             "", f"Volume estimé {analysis.estimated_support_ratio*100:.0f}%", analysis.support_needed),
-        _row("Orientation conseillée", analysis.orientation_label or "Actuelle (Z+)", "",
-             f"+{analysis.orientation_improvement_pct:.0f}%" if analysis.orientation_improvement_pct > 1 else ""),
+        _row(_("pdf.dimensions"),  f"{bb[0]:.1f} × {bb[1]:.1f} × {bb[2]:.1f}", "mm"),
+        _row(_("pdf.volume"),      f"{analysis.volume_cm3:.2f}", "cm³"),
+        _row(_("pdf.surface"),     f"{analysis.surface_area_cm2:.1f}", "cm²"),
+        _row(_("pdf.verdict"),     verdict, "", "", True),
+        _row(_("pdf.overhangs"),   f"{analysis.overhang_severity * 100:.0f}%",  "",
+             _("pdf.oh_angle", angle=f"{analysis.max_overhang_angle:.0f}")),
+        _row(_("pdf.stability"),   f"{analysis.stability_score * 100:.0f}%",    "", ""),
+        _row(_("pdf.fragility"),   f"{analysis.fragility_severity * 100:.0f}%", "",
+             _("pdf.min_wall", t=f"{analysis.min_wall_thickness_mm:.1f}") if analysis.has_fragile_zones else ""),
+        _row(_("pdf.supports_needed"),
+             _("pdf.supp_on") if analysis.support_needed else _("pdf.supp_off"),
+             "", _("pdf.supp_vol", r=f"{analysis.estimated_support_ratio*100:.0f}") if analysis.support_needed else "",
+             analysis.support_needed),
+        _row(_("pdf.orient_suggested"),
+             analysis.orientation_label or _("pdf.orient_current"), "",
+             _("pdf.orient_improve", pct=f"{analysis.orientation_improvement_pct:.0f}") if analysis.orientation_improvement_pct > 1 else ""),
     ]
-    story.append(_table(geo_rows, {3}))
+    story.append(KeepTogether(_sec(_("pdf.sec_geometry")) + [_table(geo_rows, {3})]))
 
     # ── Section 2 : Paramètres d'impression ──────────────────────────────
-    story.extend(_sec("Paramètres d'impression (générés par neoSlice)"))
     height_mm = bb[2] if len(bb) > 2 else 20.0
     sup_ratio = analysis.estimated_support_ratio if analysis.support_needed else 0.0
     est_min   = config.estimated_time_minutes(analysis.volume_cm3, height_mm, sup_ratio)
@@ -394,60 +428,63 @@ def generate_full_report_pdf(
     fil_g = config.estimated_filament_g(analysis.volume_cm3)
 
     param_rows = [
-        _row("Temps estimé",        time_str,                             "", "avec supports" if analysis.support_needed else ""),
-        _row("Filament estimé",     f"~{fil_g:.0f}",                     "g"),
-        _row("Hauteur de couche",   f"{config.layer_height:.2f}",        "mm"),
-        _row("Remplissage",         f"{config.infill_density}",          "%"),
-        _row("Boucles de paroi",    f"{config.wall_loops}",              ""),
-        _row("Couches sup./inf.",   f"{config.top_shell_layers} / {config.bottom_shell_layers}", ""),
-        _row("Vitesse paroi ext.",  f"{config.outer_wall_speed}",        "mm/s"),
-        _row("Vitesse remplissage", f"{config.infill_speed}",            "mm/s"),
-        _row("Supports",            "Désactivés" if config.support_type == "none" else "Activés",
+        _row(_("pdf.time_est"),      time_str, "", _("pdf.time_with_supp") if analysis.support_needed else ""),
+        _row(_("pdf.filament_est"),  f"~{fil_g:.0f}", "g"),
+        _row(_("pdf.layer_h"),       f"{config.layer_height:.2f}", "mm"),
+        _row(_("pdf.infill"),        f"{config.infill_density}", "%"),
+        _row(_("pdf.wall_loops"),    f"{config.wall_loops}", ""),
+        _row(_("pdf.top_bot_layers"),f"{config.top_shell_layers} / {config.bottom_shell_layers}", ""),
+        _row(_("pdf.outer_wall_spd"),f"{config.outer_wall_speed}", "mm/s"),
+        _row(_("pdf.infill_spd"),    f"{config.infill_speed}", "mm/s"),
+        _row(_("pdf.supports"),
+             _("pdf.supp_off") if config.support_type == "none" else _("pdf.supp_on"),
              "", "" if config.support_type == "none" else config.support_type),
-        _row("Adhérence (brim)",    f"{config.brim_width}",              "mm"),
-        _row("Profil neoSlice",     config.neoslice_profile_name,        ""),
+        _row(_("pdf.brim"),          f"{config.brim_width}", "mm"),
+        _row(_("pdf.profile_name"),  config.neoslice_profile_name, ""),
     ]
-    story.append(_table(param_rows))
+    story.append(KeepTogether(_sec(_("pdf.sec_params")) + [_table(param_rows)]))
 
     # ── Section 3 : Températures filament ────────────────────────────────
-    story.extend(_sec("Réglages filament — Températures"))
-    story.append(_table([
-        _row("Plateau — 1ère couche",    fil.get("plateau", "—"),       "°C", "", True),
-        _row("Plateau — autres couches", fil.get("plateau", "—"),       "°C", "", True),
-        _row("Buse — 1ère couche",       fil.get("buse_1ere", "—"),     "°C", "", True),
-        _row("Buse — autres couches",    fil.get("buse_autres", "—"),   "°C", "", True),
-    ], {0, 1, 2, 3}))
+    story.append(KeepTogether(_sec(_("pdf.sec_filament_temp")) + [
+        _table([
+            _row(_("pdf.bed_first2"),    fil.get("plateau", "—"),     "°C", "", True),
+            _row(_("pdf.bed_other2"),    fil.get("plateau", "—"),     "°C", "", True),
+            _row(_("pdf.nozzle_first2"), fil.get("buse_1ere", "—"),   "°C", "", True),
+            _row(_("pdf.nozzle_other2"), fil.get("buse_autres", "—"), "°C", "", True),
+        ], {0, 1, 2, 3})
+    ]))
 
     # ── Section 4 : Ventilateur ───────────────────────────────────────────
-    story.extend(_sec("Réglages filament — Ventilateur"))
-    def yn(v): return "Oui" if v else "Non"
-    story.append(_table([
-        _row("Vitesse MAX ventilateur",   fil.get("ventilateur_max", "—"),   "%", "", True),
-        _row("Ventilation toujours active", yn(fil.get("ventilation_active")), "", "", True),
-        _row("Seuil mini ventilateur",    fil.get("ventilateur_seuil_mini", "—"), "%"),
-        _row("Vitesse d'impression min.", fil.get("vitesse_min_impression", "—"), "mm/s"),
-    ], {0, 1}))
+    story.append(KeepTogether(_sec(_("pdf.sec_filament_fan")) + [
+        _table([
+            _row(_("pdf.fan_max"),    fil.get("ventilateur_max", "—"),        "%",    "", True),
+            _row(_("pdf.fan_always2"),yn(fil.get("ventilation_active")),       "",    "", True),
+            _row(_("pdf.fan_min2"),   fil.get("ventilateur_seuil_mini", "—"), "%"),
+            _row(_("pdf.print_min_spd"), fil.get("vitesse_min_impression", "—"), "mm/s"),
+        ], {0, 1})
+    ]))
 
     # ── Section 5 : Rétraction ────────────────────────────────────────────
     ret_lon = fil.get("retraction_longueur")
     ret_vit = fil.get("retraction_vitesse")
     if ret_lon is not None:
-        story.extend(_sec("Réglages filament — Rétraction"))
-        story.append(_table([
-            _row("Longueur de rétraction", f"{ret_lon}", "mm", "FORCER", True),
-            _row("Vitesse de rétraction",  f"{ret_vit}", "mm/s", "", True),
-        ], {0, 1}))
+        story.append(KeepTogether(_sec(_("pdf.sec_filament_ret")) + [
+            _table([
+                _row(_("pdf.retract_len2"),   f"{ret_lon}", "mm",   _("pdf.retract_force2"), True),
+                _row(_("pdf.retract_speed2"), f"{ret_vit}", "mm/s", "",                      True),
+            ], {0, 1})
+        ]))
 
     sechage = fil.get("sechage", "")
     if sechage:
         story.append(Spacer(1, 0.25*cm))
-        story.append(Paragraph(f"Séchage recommandé : {sechage}", style("sech", 9, C_AMBER)))
+        story.append(Paragraph(_("pdf.drying", value=sechage), style("sech", 9, C_AMBER)))
 
     story.append(Spacer(1, 0.5*cm))
     story.append(HRFlowable(width="100%", thickness=0.3, color=C_INACTIVE))
     story.append(Spacer(1, 0.15*cm))
     from version import __version__
-    story.append(Paragraph(f"Généré par neoSlice v{__version__}", s_footer))
+    story.append(Paragraph(_("pdf.generated_by", version=__version__), s_footer))
 
     doc = SimpleDocTemplate(
         str(output_path), pagesize=A4,

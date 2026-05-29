@@ -25,7 +25,11 @@ def load_stl(path: Path) -> trimesh.Trimesh:
     if path.suffix.lower() not in (".stl", ".obj", ".3mf"):
         raise STLLoadError(f"Format non supporté : {path.suffix}")
 
-    raw = trimesh.load(str(path), force="mesh")
+    # force="mesh" fonctionne pour STL/OBJ mais peut échouer sur 3MF (scènes complexes)
+    if path.suffix.lower() == ".3mf":
+        raw = trimesh.load(str(path))
+    else:
+        raw = trimesh.load(str(path), force="mesh")
 
     # Si la scène contient plusieurs objets, on les fusionne
     if isinstance(raw, trimesh.Scene):
@@ -58,25 +62,20 @@ def load_stl(path: Path) -> trimesh.Trimesh:
     if len(mesh.faces) == 0:
         raise STLLoadError("Le mesh est vide après réparation (aucune face valide).")
 
-    # ── Auto-détection des unités ─────────────────────────────────────────
-    # STL n'encode pas les unités. Si le mesh est anormalement petit
-    # (export Blender en mètres, CAO en cm…), on rescale itérativement
-    # jusqu'à atteindre une taille plausible pour une pièce FDM (≥ 20 mm).
-    _orig_max = float(mesh.bounding_box.extents.max())
-    _scale_total = 1.0
-    for _ in range(4):
-        _d = float(mesh.bounding_box.extents.max())
-        if _d < 1.0:          # probablement en mètres
-            mesh.apply_scale(1000.0); _scale_total *= 1000
-        elif _d < 20.0:       # probablement en cm
-            mesh.apply_scale(10.0);  _scale_total *= 10
-        else:
-            break
-    if _scale_total > 1.0:
-        _new_max = float(mesh.bounding_box.extents.max())
+    # ── Vérification des unités (avertissement uniquement, jamais de rescale) ──
+    # STL n'encode pas les unités. neoSlice ne redimensionne JAMAIS la pièce
+    # pour garantir la fidélité dimensionnelle. Si les dimensions semblent
+    # anormales, on log un avertissement pour le débogage.
+    _max_extent = float(mesh.bounding_box.extents.max())
+    if _max_extent < 1.0:
         logger.warning(
-            f"Unité non-mm détectée ({_orig_max:.3f} mm → {_new_max:.1f} mm). "
-            f"Redimensionné ×{_scale_total:.0f} automatiquement."
+            f"Pièce très petite détectée (max extent = {_max_extent:.4f} mm). "
+            f"Le STL est peut-être exporté en mètres — vérifier les unités dans le logiciel source."
+        )
+    elif _max_extent > 500.0:
+        logger.warning(
+            f"Pièce très grande détectée (max extent = {_max_extent:.1f} mm). "
+            f"Le STL est peut-être exporté dans une unité non-mm."
         )
 
     # Normalisation : poser sur Z=0, centrer sur XY

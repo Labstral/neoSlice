@@ -54,61 +54,79 @@ class SplashScreen(QWidget):
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setFixedSize(420, 260)
-        self.setStyleSheet("QWidget { background-color: #070D14; }")
+        self.setFixedSize(720, 400)
 
+        # Fond : splash_bg.png si disponible, sinon couleur unie
+        self._bg_pixmap = None
+        bg_path = _assets_dir() / "splash_bg.png"
+        if bg_path.exists():
+            self._bg_pixmap = QPixmap(str(bg_path)).scaled(
+                720, 400,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        else:
+            self.setStyleSheet("QWidget { background-color: #070D14; }")
+
+        # Couche de contenu par-dessus le fond
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(44, 40, 44, 32)
+        layout.setContentsMargins(0, 60, 0, 36)
         layout.setSpacing(0)
 
         logo = QLabel()
+        logo.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         logo_path = _assets_dir() / "neoSlice.png"
         if logo_path.exists():
             px = QPixmap(str(logo_path)).scaled(
-                180, 90,
+                220, 110,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
             logo.setPixmap(px)
         else:
             logo.setText("neoSlice")
-            logo.setStyleSheet("color: #FFFFFF; font-size: 30px; font-weight: bold;")
+            logo.setStyleSheet("color: #FFFFFF; font-size: 36px; font-weight: bold;")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(logo)
 
-        layout.addSpacing(14)
+        layout.addSpacing(20)
 
-        tagline = QLabel("AI-Powered 3D Print Optimizer")
-        tagline.setStyleSheet("color: #3A6080; font-size: 10px; letter-spacing: 2px;")
+        tagline = QLabel("Slice smarter. Print faster.")
+        tagline.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        tagline.setStyleSheet("color: #FFFFFF; font-size: 13px; letter-spacing: 1px;")
         tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(tagline)
 
         layout.addStretch()
 
-        status = QLabel("Chargement en cours...")
-        status.setStyleSheet("color: #2A4A6A; font-size: 9px;")
-        status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(status)
-
-        layout.addSpacing(10)
-
         bar = QProgressBar()
+        bar.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         bar.setRange(0, 0)
         bar.setTextVisible(False)
         bar.setFixedHeight(3)
+        bar.setContentsMargins(40, 0, 40, 0)
         bar.setStyleSheet("""
             QProgressBar {
-                background: #0D1B2A;
+                background: rgba(255,255,255,0.15);
                 border: none;
+                margin: 0 40px;
             }
             QProgressBar::chunk {
                 background: qlineargradient(
                     x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #1A4A80, stop:1 #4A9EFF
+                    stop:0 #4A9EFF, stop:1 #FFFFFF
                 );
             }
         """)
         layout.addWidget(bar)
+
+    def paintEvent(self, event):
+        if self._bg_pixmap:
+            from PySide6.QtGui import QPainter
+            p = QPainter(self)
+            p.drawPixmap(0, 0, self._bg_pixmap)
+        else:
+            super().paintEvent(event)
 
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(

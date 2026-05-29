@@ -179,15 +179,18 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
     if "enable_prime_tower" in fields:
         overrides["enable_prime_tower"] = "1" if config.enable_prime_tower else "0"
 
-    # Support
-    if "support_type" in fields:
-        if config.support_type == "none":
-            overrides["enable_support"] = "0"
-        else:
-            overrides["enable_support"] = "1"
-            overrides["support_type"] = config.support_type
-            overrides["support_threshold_angle"] = s(int(config.support_threshold_angle))
-            overrides["support_on_build_plate_only"] = "1" if config.support_on_build_plate_only else "0"
+    # Support — toujours explicite (indépendant de model_fields_set)
+    # support_type est assigné après __init__ par le moteur de paramètres → jamais
+    # dans fields. On écrit toujours cette section pour garantir que BS respecte le choix.
+    if config.support_type == "none":
+        overrides["enable_support"] = "0"
+    else:
+        overrides["enable_support"] = "1"
+        overrides["support_type"] = config.support_type
+        overrides["support_style"] = "tree_slim" if "tree" in config.support_type else "default"
+        overrides["support_threshold_angle"] = s(int(config.support_threshold_angle))
+        overrides["support_on_build_plate_only"] = "1" if config.support_on_build_plate_only else "0"
+        overrides["support_angle"] = "0"
 
     return overrides
 
@@ -260,6 +263,7 @@ class ThreeMFBuilder:
         object_name: str = "neoSlice_Object",
         printer_ui_name: str = "X1 Carbon",
         filament_ui_name: str = "PLA",
+        nozzle_diameter_mm: float = 0.4,
     ) -> Path:
         self._template = _find_bambu_template()
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -267,7 +271,7 @@ class ThreeMFBuilder:
         if self._template:
             return self._build_native(
                 mesh, config, output_path, object_name,
-                printer_ui_name, filament_ui_name,
+                printer_ui_name, filament_ui_name, nozzle_diameter_mm,
             )
         else:
             return self._build_fallback(mesh, config, output_path, object_name)
@@ -281,6 +285,7 @@ class ThreeMFBuilder:
         output_path: Path, object_name: str,
         printer_ui_name: str = "X1 Carbon",
         filament_ui_name: str = "PLA",
+        nozzle_diameter_mm: float = 0.4,
     ) -> Path:
         obj_uuid = str(uuid.uuid4())
         comp_uuid = str(uuid.uuid4())
@@ -293,22 +298,62 @@ class ThreeMFBuilder:
         project_settings = dict(self._template)
         project_settings.update(_config_to_bambu_overrides(config))
 
-        # ID machine — corrige la valeur X1C hardcodée dans le template.
-        # On ne surcharge PAS filament_settings_id : Bambu Studio affiche sinon
-        # un dialog "configuration personnalisée" qui déroute les débutants.
-        project_settings["printer_settings_id"] = _UI_TO_PRINTER_ID.get(
-            printer_ui_name, "Bambu Lab X1 Carbon 0.4 nozzle"
-        )
+        # ── Overrides nozzle — valeurs exactes mesurées sur fichiers Bambu Studio réels ──
+        # Données extraites de 4 fichiers BS (0.2/0.4/0.6/0.8 mm).
+        _D = nozzle_diameter_mm
+        _lw = round(_D + 0.02, 2)
+        _ilw = round(_D * 1.25 if _D <= 0.4 else _D + 0.02, 2)
+        _iww = {0.2: 0.22, 0.4: 0.45, 0.6: 0.62, 0.8: 0.82}.get(_D, _lw)
+        project_settings["nozzle_diameter"]                    = [str(_D)]
+        project_settings["line_width"]                         = str(_lw)
+        project_settings["outer_wall_line_width"]              = str(_lw)
+        project_settings["inner_wall_line_width"]              = str(_iww)
+        project_settings["initial_layer_line_width"]           = str(_ilw)
+        project_settings["internal_solid_infill_line_width"]   = str(_lw)
 
-        # Profil procédé :
-        #   Standard  → profil système de l'imprimante cible
-        #   Autre     → profil user "neoSlice - <nom>" installé par BambuProfileInstaller
-        if config.neoslice_profile_name and config.neoslice_profile_name != "standard":
-            project_settings["print_settings_id"] = (
-                f"neoSlice - {config.neoslice_profile_name.replace('_', ' ').title()}"
-            )
-        else:
-            project_settings["print_settings_id"] = f"0.20mm Standard @BBL {bbl_id}"
+        # ID machine — on inclut la taille de buse réelle dans le printer_settings_id.
+        _base_id = _UI_TO_PRINTER_ID.get(printer_ui_name, "Bambu Lab X1 Carbon 0.4 nozzle")
+        project_settings["printer_settings_id"] = _base_id.replace("0.4 nozzle", f"{_D} nozzle")
+
+        # different_settings_to_system : si présent avec slot 1 = '' (vide), BS recharge
+        # le preset système Generic PLA par-dessus project_settings.config → supprimé.
+        project_settings.pop("different_settings_to_system", None)
+
+        # Profil procédé : NE PAS utiliser un preset BS connu.
+        # Si print_settings_id correspond à un preset installé dans BS, BS recharge
+        # ce preset PAR-DESSUS project_settings.config → écrase enable_support='1'.
+        # Avec un ID inconnu de BS, il utilise project_settings.config directement.
+        project_settings["print_settings_id"] = f"neoSlice 0.20mm @BBL {bbl_id}"
+
+        # Remplacer tous les réglages filament par un slot "Generic PLA" neutre.
+        # Bambu Studio exige la présence de ces clés pour charger le fichier sans crasher.
+        # Les valeurs correspondent exactement au profil built-in "Generic PLA" de BS
+        # → pas de dialog "Préréglage Personnalisé", pas de crash.
+        # L'utilisateur configure le filament lui-même dans BS (guidé par la fiche PDF).
+        _filament_strip = [k for k in project_settings
+                           if k.startswith("filament_") or k.startswith("default_filament_")]
+        _filament_strip += [
+            "nozzle_temperature", "nozzle_temperature_initial_layer",
+            "nozzle_temperature_range_high", "nozzle_temperature_range_low",
+            "required_nozzle_HRC",
+        ]
+        for _k in _filament_strip:
+            project_settings.pop(_k, None)
+        project_settings.update({
+            "filament_settings_id":              ["Generic PLA"],
+            "filament_colour":                   ["#FFFFFF"],
+            "filament_type":                     ["PLA"],
+            "filament_diameter":                 ["1.75"],
+            "filament_density":                  ["1.24"],
+            "filament_flow_ratio":               ["0.98"],
+            "filament_is_support":               ["0"],
+            "filament_soluble":                  ["0"],
+            "nozzle_temperature":                ["220"],
+            "nozzle_temperature_initial_layer":  ["220"],
+            "nozzle_temperature_range_high":     ["240"],
+            "nozzle_temperature_range_low":      ["190"],
+            "required_nozzle_HRC":               ["3"],
+        })
 
         # Remplacer tous les réglages filament par un slot "Generic PLA" neutre.
         # Bambu Studio exige la présence de ces clés pour charger le fichier sans crasher.
@@ -373,6 +418,8 @@ class ThreeMFBuilder:
                 )
                 zf.writestr("Metadata/slice_info.config", self._slice_info())
                 zf.writestr("Metadata/cut_information.xml", self._cut_info())
+                zf.writestr("Metadata/filament_sequence.json",
+                           '{"plate_1":{"nozzle_sequence":[],"optimal_assignment":[],"sequence":[]}}')
             tmp_path.replace(output_path)
         except Exception:
             tmp_path.unlink(missing_ok=True)
@@ -424,7 +471,7 @@ class ThreeMFBuilder:
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="{_NS_3MF}" xmlns:BambuStudio="{_NS_BBL}" xmlns:p="{_NS_PROD}" requiredextensions="p">
  <metadata name="Application">BambuStudio-{BAMBU_VERSION}</metadata>
- <metadata name="BambuStudio:3mfVersion">1</metadata>
+ <metadata name="BambuStudio:3mfVersion">1.9.0</metadata>
  <metadata name="CreationDate">{today}</metadata>
  <metadata name="ModificationDate">{today}</metadata>
  <metadata name="Title">{object_name}</metadata>
@@ -497,6 +544,18 @@ class ThreeMFBuilder:
     </model_instance>
   </plate>
 </config>"""
+
+    def _plate_json(self, object_name: str) -> str:
+        data = {
+            "objects": [{"id": "2", "name": object_name}],
+            "bed_type": "textured_plate",
+            "print_sequence": "by_layer",
+            "first_layer_print_sequence": [0],
+            "spiral_mode": False,
+            "timelapse_type": 0,
+            "gcode_file": "",
+        }
+        return json.dumps(data, ensure_ascii=False)
 
     def _slice_info(self) -> str:
         return f"""<?xml version="1.0" encoding="UTF-8"?>

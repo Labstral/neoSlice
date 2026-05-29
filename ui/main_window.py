@@ -9,15 +9,17 @@ from PySide6.QtWidgets import (
     QLabel, QProgressBar, QPushButton, QScrollArea,
     QFrame, QApplication, QMessageBox,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QObject, QTimer, QPoint, QUrl
-from PySide6.QtGui import QFont, QColor, QPainter, QPen, QIcon, QDesktopServices
+from PySide6.QtCore import Qt, QThread, Signal, QObject, QTimer, QPoint, QUrl, QSize
+from PySide6.QtGui import QFont, QColor, QPainter, QPen, QIcon, QDesktopServices, QPixmap
 
 from loguru import logger
 
 from core.geometry.stl_loader import load_stl, mesh_info, STLLoadError
 from core.geometry.analysis_report import AnalysisReport
 from core.geometry.overhang_detector import analyze_overhangs, overhang_face_colors
+from core.geometry.support_detector import detect_support_by_raycast, support_face_colors
 from core.geometry.orientation_optimizer import optimize_orientation
+from core.geometry.layer_slicer import analyze_by_layers
 from core.geometry.stability_analyzer import analyze_stability
 from core.geometry.fragility_detector import detect_fragility
 from core.parameters.parameter_engine import ParameterEngine
@@ -32,13 +34,16 @@ from ui.components.params_preview import ParamsPreview
 from ui.components.filament_printer_selector import FilamentPrinterSelector
 from ui.components.welcome_dialog import WelcomeDialog, should_show_welcome
 from ui.components.tutorial_overlay import TutorialOverlay, should_show_tutorial
+from ui.components.settings_dialog import SettingsDialog
 
 from ui.styles.theme import (
     BG_VOID, BG_PANEL, BG_SURFACE, BG_ELEVATED, BG_INPUT,
     ACCENT, ACCENT_BRIGHT, TELE_GREEN, AMBER, ERROR_RED,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_LABEL, INACTIVE,
-    FONT_MONO,
+    FONT_MONO, MANAGER as _THEME, apply_title_bar_theme,
 )
+from core.i18n import _
+from core.prefs import PREFS
 
 
 # ── Alertes matériau × géométrie ─────────────────────────────────────────
@@ -110,69 +115,156 @@ class AnalysisWorker(QObject):
 
     def run(self):
         try:
+            from core.prefs import PREFS
+            perf_mode = PREFS.get("perf_mode", "full")
+
             t0 = time.perf_counter()
             report = AnalysisReport()
+            report.nozzle_diameter_mm = self._nozzle_mm
 
-            self.progress.emit(10, "Détection des surplombs...")
-            overhang = analyze_overhangs(self._mesh)
-            report.overhang_severity = overhang.severity
-            report.overhang_ratio = overhang.overhang_ratio
-            report.projected_overhang_ratio = overhang.projected_ratio
-            report.max_overhang_angle = overhang.max_angle_deg
-            report.has_floating_regions = overhang.has_floating_regions
+            # ── 1. Surplombs — ray-casting vertical depuis le plateau ────────────
+            # Pour chaque colonne XY, un rayon monte du plateau et détecte chaque
+            # face orientée vers le bas. S'il n'y a pas de matière solide en dessous
+            # (gap > seuil), la face nécessite un support. Même approche que Bambu.
+            self._support_mask = None
+            self.progress.emit(10, "Ray-casting surplombs...")
+            if perf_mode == "lite":
+                # Lite mode: skip expensive ray-cast — set neutral defaults
+                report.overhang_severity        = 0.0
+                report.overhang_ratio           = 0.0
+                report.projected_overhang_ratio = 0.0
+                report.estimated_support_ratio  = 0.0
+                report.support_needed           = False
+                report.has_floating_regions     = False
+            else:
+                try:
+                    rc_mask, rc_ratio, rc_severity = detect_support_by_raycast(self._mesh)
+                    logger.info(f"Ray-cast OK: {rc_mask.sum()} faces, sévérité={rc_severity:.4f}")
+                    report.overhang_severity        = rc_severity
+                    report.overhang_ratio           = rc_ratio
+                    report.projected_overhang_ratio = rc_ratio
+                    report.estimated_support_ratio  = min(0.60, rc_ratio * 2.5)
+                    # Seuil relatif bas + seuil absolu : pour les meshes haute-résolution
+                    # (1.5M faces), même 1% de sévérité = centaines de mm² réels.
+                    n_overhang_faces = int(rc_mask.sum())
+                    report.support_needed = rc_severity > 0.01 or n_overhang_faces > 100
+                    self._support_mask              = rc_mask   # gardé pour la visu
+                    # Régions flottantes via normales (rapide, pas de ray-cast)
+                    try:
+                        from core.geometry.overhang_detector import analyze_overhangs as _ao
+                        ov = _ao(self._mesh, smooth=False, check_floating=True)
+                        report.has_floating_regions = ov.has_floating_regions
+                        if ov.has_floating_regions:
+                            report.support_needed = True
+                    except Exception:
+                        pass
+                except Exception:
+                    logger.exception("Ray-casting surplombs échoué — fallback normales")
+                    try:
+                        from core.geometry.overhang_detector import analyze_overhangs as _ao
+                        ov = _ao(self._mesh)
+                        report.overhang_severity        = ov.severity
+                        report.overhang_ratio           = ov.overhang_ratio
+                        report.projected_overhang_ratio = ov.projected_ratio
+                        report.has_floating_regions     = ov.has_floating_regions
+                        report.estimated_support_ratio  = min(0.60, ov.projected_ratio * 2.0)
+                        report.support_needed           = ov.severity > 0.15 or ov.has_floating_regions
+                    except Exception:
+                        pass
 
-            self.progress.emit(35, "Analyse de la pièce — orientation optimale...")
+            # ── 2. Stabilité + fragilité — analyse par couches Shapely ──────────
+            # Le layer_slicer est meilleur pour la stabilité (empreinte réelle,
+            # centre de masse, ratio hauteur/largeur) et la fragilité (épaisseur).
+            self.progress.emit(35, "Analyse stabilité et fragilité...")
             try:
-                orientation = optimize_orientation(self._mesh, n_fibonacci=24)
-                report.optimal_rotation = orientation.rotation_matrix.flatten().tolist()
-                report.orientation_score = orientation.total_score
-                report.orientation_label = orientation.direction_label
-                report.orientation_improvement_pct = orientation.improvement_pct
+                lr = analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
+                report.stability_score          = lr.stability_score
+                report.center_of_mass           = lr.center_of_mass
+                report.brim_recommendation_mm   = lr.brim_recommendation_mm
+                report.min_wall_thickness_mm    = lr.min_wall_thickness_mm
+                report.fragility_severity       = lr.fragility_severity
+                report.has_fragile_zones        = lr.has_fragile_zones
+                # Surplombs : layer_slicer (méthode FDM réelle couche/couche) est
+                # meilleur que le ray-cast pour les overhangs latéraux sur pièces
+                # connectées (ex: mâchoire de bishop qui dépasse du corps).
+                # On prend le MAX des deux méthodes.
+                if lr.overhang_severity > report.overhang_severity:
+                    report.overhang_severity        = lr.overhang_severity
+                    report.overhang_ratio           = max(report.overhang_ratio, lr.overhang_ratio)
+                    report.projected_overhang_ratio = max(report.projected_overhang_ratio, lr.projected_overhang_ratio)
+                    report.estimated_support_ratio  = max(report.estimated_support_ratio, lr.support_volume_ratio)
+                report.support_needed = (
+                    report.support_needed
+                    or lr.support_needed
+                    or lr.overhang_severity > 0.005
+                    or lr.has_floating_regions
+                )
+                # Régions flottantes : prendre le OR des deux méthodes
+                report.has_floating_regions     = report.has_floating_regions or lr.has_floating_regions
+                if lr.fallback_used:
+                    report.warnings.append(
+                        "Analyse par couches indisponible (shapely manquant) — stabilité heuristique"
+                    )
             except Exception:
-                logger.warning("Optimisation orientation ignorée (géométrie dégénérée)")
-                report.optimal_rotation = np.eye(4).flatten().tolist()
+                logger.exception("Analyse par couches échouée — fallback stabilité")
+                try:
+                    from core.geometry.stability_analyzer import analyze_stability as _as
+                    st = _as(self._mesh)
+                    report.stability_score        = st.score
+                    report.center_of_mass         = st.center_of_mass.tolist()
+                    report.brim_recommendation_mm = st.brim_recommendation_mm
+                except Exception:
+                    pass
+                try:
+                    from core.geometry.fragility_detector import detect_fragility as _df
+                    fr = _df(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
+                    report.has_fragile_zones     = fr.has_fragile_zones
+                    report.min_wall_thickness_mm = fr.min_thickness_mm
+                    report.fragility_severity    = fr.severity
+                except Exception:
+                    pass
+
+            # ── Orientation optimale ──────────────────────────────────────────
+            self.progress.emit(70, "Recherche de l'orientation optimale...")
+            if perf_mode == "full":
+                try:
+                    orientation = optimize_orientation(self._mesh, n_fibonacci=24)
+                    if orientation is None:
+                        raise ValueError("optimize_orientation a retourné None")
+                    report.optimal_rotation            = orientation.rotation_matrix.flatten().tolist()
+                    report.orientation_score           = orientation.total_score
+                    report.orientation_label           = orientation.direction_label
+                    report.orientation_improvement_pct = orientation.improvement_pct
+                except Exception:
+                    logger.warning("Optimisation orientation ignorée (géométrie dégénérée)")
+                    report.optimal_rotation  = np.eye(4).flatten().tolist()
+                    report.orientation_score = 0.5
+                    report.orientation_label = ""
+            else:
+                # balanced / lite: skip orientation optimizer
+                report.optimal_rotation  = np.eye(4).flatten().tolist()
                 report.orientation_score = 0.5
                 report.orientation_label = ""
 
-            self.progress.emit(60, "Analyse de la stabilité...")
-            try:
-                stability = analyze_stability(self._mesh)
-                report.stability_score = stability.score
-                report.center_of_mass = stability.center_of_mass.tolist()
-                report.brim_recommendation_mm = stability.brim_recommendation_mm
-            except Exception:
-                logger.warning("Analyse stabilité ignorée")
-                report.stability_score = 0.7
-                report.brim_recommendation_mm = 0
-
-            self.progress.emit(80, "Détection des zones fragiles...")
-            try:
-                fragility = detect_fragility(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
-                report.has_fragile_zones = fragility.has_fragile_zones
-                report.fragile_zones = fragility.fragile_zones
-                report.min_wall_thickness_mm = fragility.min_thickness_mm
-                report.fragility_severity = fragility.severity
-                report.nozzle_diameter_mm = self._nozzle_mm
-            except Exception:
-                logger.warning("Détection fragilité ignorée")
-
+            # ── Infos géométriques ────────────────────────────────────────────
+            self.progress.emit(95, "Finalisation...")
             info = mesh_info(self._mesh)
-            report.bounding_box_mm = info["bounding_box_mm"]
-            report.volume_cm3 = info["volume_cm3"]
+            report.bounding_box_mm  = info["bounding_box_mm"]
+            report.volume_cm3       = info["volume_cm3"]
             report.surface_area_cm2 = info["surface_area_cm2"]
+            report.face_count       = info["faces"]
 
             bb = report.bounding_box_mm
             max_dim = max(bb)
             report.is_large_flat_part = (max_dim > 100 and bb[2] < max_dim * 0.15)
-            # Seuil calibré empiriquement sur modèles réels :
-            # Benchy=0.10 (pas de support), Bishop=0.23 (support requis) → seuil 0.15
-            report.support_needed = (
-                report.overhang_severity > 0.15
-                or report.has_floating_regions
-            )
-            # Estimation volume support via aire projetée (plus précis que ratio surface brut)
-            report.estimated_support_ratio = min(0.60, overhang.projected_ratio * 2.0)
 
+            # ── Avertissements ────────────────────────────────────────────────
+            if max_dim < 15.0:
+                report.warnings.append(
+                    f"Pièce très petite ({max_dim:.1f} mm) — "
+                    "l'analyse des surplombs n'est pas fiable à cette échelle. "
+                    "Vérifier les supports directement dans Bambu Studio."
+                )
             if not info["is_watertight"]:
                 report.warnings.append("Mesh non-fermé — résultats approximatifs")
             if report.stability_score < 0.35:
@@ -195,6 +287,8 @@ class AnalysisWorker(QObject):
                 )
 
             report.analysis_time_ms = (time.perf_counter() - t0) * 1000
+            if self._support_mask is not None:
+                report.support_face_mask = self._support_mask
             self.progress.emit(100, "Analyse terminée")
             self.analysis_complete.emit(report)
 
@@ -203,67 +297,83 @@ class AnalysisWorker(QObject):
             self.error.emit(str(exc))
 
 
+class OrientationWorker(QObject):
+    done = Signal(object, object)  # (rotated_mesh, overhang_colors | None)
+    error = Signal(str)
+
+    def __init__(self, mesh, rotation_matrix):
+        super().__init__()
+        self._mesh = mesh
+        self._rot = rotation_matrix
+
+    def run(self):
+        try:
+            rotated = self._mesh.copy()
+            rotated.apply_transform(self._rot)
+            rotated.apply_translation(-rotated.bounds[0])  # Z=0
+            cx = (rotated.bounds[1][0]) / 2.0
+            cy = (rotated.bounds[1][1]) / 2.0
+            rotated.apply_translation([-cx, -cy, 0])  # centrer XY
+            try:
+                ov = analyze_overhangs(rotated)
+                colors = overhang_face_colors(rotated, ov)
+            except Exception:
+                colors = None
+            self.done.emit(rotated, colors)
+        except Exception as exc:
+            logger.exception("Erreur application orientation")
+            self.error.emit(str(exc))
+
+
 # ── TopBar ─────────────────────────────────────────────────────────────────
 
 class _TopBar(QWidget):
-    """Barre haute 48px — logo NASA + scan-line animée."""
+    """Barre haute 48px — logo + scan-line animée + sélecteur de thème."""
 
-    coffee_clicked   = Signal()
-    tutorial_clicked = Signal()
+    coffee_clicked    = Signal()
+    tutorial_clicked  = Signal()
     new_piece_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(48)
-        self.setStyleSheet(f"background: {BG_PANEL};")
         self._scanline_y = 0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(80)
         self.destroyed.connect(self._timer.stop)
         self._setup_ui()
+        self.refresh_theme()
 
     def _setup_ui(self):
-        # Layout plat — 1 px de marge bas réservé à la bordure bleue peinte dans paintEvent
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 0, 16, 1)
         layout.setSpacing(12)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.VLine)
-        sep.setStyleSheet(f"color: {ACCENT}; background: transparent;")
-        sep.setFixedHeight(24)
-        layout.addWidget(sep)
+        self._sep = QFrame()
+        self._sep.setFrameShape(QFrame.VLine)
+        self._sep.setFixedHeight(24)
+        layout.addWidget(self._sep)
 
-        logo = QLabel("◈")
-        logo.setFont(QFont("Segoe UI", 16))
-        logo.setStyleSheet(f"color: {ACCENT_BRIGHT}; background: transparent;")
-        layout.addWidget(logo)
+        self._logo = QLabel("◈")
+        self._logo.setFont(QFont("Segoe UI", 16))
+        layout.addWidget(self._logo)
 
-        title = QLabel("NEOSLICE")
-        title.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        title.setStyleSheet(f"color: {TEXT_PRIMARY}; letter-spacing: 4px; background: transparent;")
-        layout.addWidget(title)
+        self._title_lbl = QLabel(_("app.title"))
+        self._title_lbl.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        layout.addWidget(self._title_lbl)
 
-        beta = QLabel("BÊTA")
-        beta.setFont(QFont("Segoe UI", 7, QFont.Bold))
-        beta.setStyleSheet(f"""
-            color: {AMBER};
-            background: rgba(255,184,0,0.10);
-            border: 1px solid {AMBER};
-            border-radius: 3px;
-            padding: 2px 6px;
-        """)
-        layout.addWidget(beta)
+        self._beta = QLabel("BÊTA")
+        self._beta.setFont(QFont("Segoe UI", 7, QFont.Bold))
+        layout.addWidget(self._beta)
 
-        sub = QLabel("AI-POWERED 3D PRINT OPTIMIZER")
-        sub.setFont(QFont("Segoe UI", 7))
-        sub.setStyleSheet(f"color: {TEXT_SECONDARY}; letter-spacing: 3px; background: transparent;")
-        layout.addWidget(sub)
+        self._sub = QLabel(_("app.subtitle"))
+        self._sub.setFont(QFont("Segoe UI", 7))
+        layout.addWidget(self._sub)
 
         layout.addStretch()
 
-        self._new_btn = QPushButton("↺  NOUVELLE PIÈCE")
+        self._new_btn = QPushButton(_("app.btn_new_piece"))
         self._new_btn.setFont(QFont("Segoe UI", 7, QFont.Bold))
         self._new_btn.setFixedHeight(26)
         self._new_btn.setCursor(Qt.PointingHandCursor)
@@ -358,18 +468,46 @@ class _TopBar(QWidget):
     def set_has_stl(self, active: bool):
         self._new_btn.setEnabled(active)
 
+    def refresh_theme(self) -> None:
+        pal = _THEME.palette()
+        self.setStyleSheet(f"background: {pal['BG_PANEL']};")
+        self._sep.setStyleSheet(f"color: {pal['INACTIVE']};")
+        self._logo.setStyleSheet(f"color: {pal['ACCENT']}; background: transparent;")
+        self._title_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent; font-size: 13px; font-weight: bold;")
+        self._beta.setStyleSheet(f"color: {pal['AMBER']}; background: transparent;")
+        self._sub.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
+        self._new_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {pal['INACTIVE']};
+                border: 1px solid {pal['INACTIVE']};
+                border-radius: 3px;
+                padding: 0 10px;
+                letter-spacing: 1px;
+            }}
+            QPushButton:enabled {{
+                color: {pal['TEXT_SECONDARY']};
+                border-color: {pal['INACTIVE']};
+            }}
+            QPushButton:enabled:hover {{
+                background: rgba(30,144,255,0.10);
+                color: {pal['ACCENT']};
+                border-color: {pal['ACCENT']};
+            }}
+        """)
+        self.update()
+
     def _tick(self):
-        self._scanline_y = (self._scanline_y + 1) % max(self.height(), 1)
+        self._scanline_y = (self._scanline_y + 3) % max(self.height(), 1)
         self.update()
 
     def paintEvent(self, event):
         super().paintEvent(event)
+        pal = _THEME.palette()
         painter = QPainter(self)
-        # Ligne bleue continue — protégée par le 1px de margin bas du layout
-        painter.setPen(QPen(QColor(ACCENT), 1))
+        painter.setPen(QPen(QColor(pal["ACCENT"]), 1))
         painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
-        # Scan-line animée — visible à travers les labels transparents
-        painter.setPen(QPen(QColor(30, 144, 255, 25), 1))
+        painter.setPen(QPen(QColor(pal["SCAN_R"], pal["SCAN_G"], pal["SCAN_B"], pal["SCAN_A"]), 1))
         painter.drawLine(0, self._scanline_y, self.width(), self._scanline_y)
 
 
@@ -383,7 +521,6 @@ class _StatusBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(40)
-        self.setStyleSheet(f"background: {BG_PANEL};")
         self._pulse_phase = 0
         self._pulse_timer = QTimer(self)
         self._pulse_timer.timeout.connect(self._pulse_tick)
@@ -400,13 +537,13 @@ class _StatusBar(QWidget):
         self._dot.setStyleSheet(f"color: {TELE_GREEN}; background: transparent;")
         layout.addWidget(self._dot)
 
-        self._msg = QLabel("SYSTÈME PRÊT — SÉLECTIONNER L'IMPRIMANTE CIBLE  ①")
-        self._msg.setFont(QFont(FONT_MONO, 8))
+        self._msg = QLabel(_("status.initial"))
+        self._msg.setFont(QFont(FONT_MONO, 9))
         self._msg.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
         self._msg.setWordWrap(False)
         layout.addWidget(self._msg, 1)
 
-        self._export_btn = QPushButton("↓  EXPORTER .3MF  →  BAMBU STUDIO")
+        self._export_btn = QPushButton(_("export.btn"))
         self._export_btn.setFont(QFont("Segoe UI", 8, QFont.Bold))
         self._export_btn.setFixedHeight(28)
         self._export_btn.setMinimumWidth(260)
@@ -509,11 +646,11 @@ class _StepHeader(QWidget):
         layout.addWidget(self._bar)
 
         self._num = QLabel(number)
-        self._num.setFont(QFont(FONT_MONO, 8, QFont.Bold))
+        self._num.setFont(QFont(FONT_MONO, 11, QFont.Bold))
         layout.addWidget(self._num)
 
         self._lbl = QLabel(title.upper())
-        self._lbl.setFont(QFont("Segoe UI", 7, QFont.Bold))
+        self._lbl.setFont(QFont("Segoe UI", 8, QFont.Bold))
         self._lbl.setStyleSheet("letter-spacing: 2px;")
         layout.addWidget(self._lbl)
 
@@ -560,9 +697,12 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self._mesh = None
+        self._original_mesh = None
         self._analysis: AnalysisReport | None = None
         self._analysis_thread: QThread | None = None
         self._analysis_worker: AnalysisWorker | None = None
+        self._orient_thread: QThread | None = None
+        self._orient_worker: OrientationWorker | None = None
         self._current_config = None
         self._current_selection = None
         self._parameter_engine = ParameterEngine()
@@ -590,7 +730,10 @@ class MainWindow(QMainWindow):
         import os
         os._exit(0)
 
-        QTimer.singleShot(4000, self._check_for_updates)
+    def closeEvent(self, event):
+        event.accept()
+        import os
+        os._exit(0)
 
     # ── Fenêtre ────────────────────────────────────────────────────────────
 
@@ -722,6 +865,7 @@ class MainWindow(QMainWindow):
 
         self._intent_selector = IntentSelector()
         self._intent_selector.intent_submitted.connect(self._on_intent_submitted)
+        self._filament_selector.nozzle_changed.connect(self._intent_selector.update_nozzle)
         layout.addWidget(self._intent_selector)
 
         layout.addStretch()
@@ -761,6 +905,7 @@ class MainWindow(QMainWindow):
         # ── Viewer 3D ──
         self._viewer = Viewer3D()
         self._viewer.apply_orientation.connect(self._on_apply_orientation)
+        self._viewer.reset_orientation.connect(self._on_reset_orientation)
         layout.addWidget(self._viewer, stretch=1)
 
         return container
@@ -791,6 +936,7 @@ class MainWindow(QMainWindow):
     def _show_welcome(self):
         assets = Path(__file__).parent.parent / "assets"
         dlg = WelcomeDialog(self, assets_path=assets)
+        apply_title_bar_theme(dlg)
         dlg.exec()
 
     def _show_welcome_first_launch(self):
@@ -827,66 +973,272 @@ class MainWindow(QMainWindow):
 
     def _check_for_updates(self):
         from core.updater import check_for_update
-        # Utilise un timer single-shot pour ramener le résultat dans le thread Qt
-        self._pending_update_version: str | None = None
 
-        def _on_result(version: str | None):
+        def _on_result(version: str | None, url: str, notes: str):
             if version:
-                self._pending_update_version = version
-                QTimer.singleShot(0, self._show_update_banner)
+                self._pending_update = (version, url, notes)
+                QTimer.singleShot(0, self._show_update_dialog)
 
+        self._pending_update: tuple | None = None
         check_for_update(_on_result)
 
-    def _show_update_banner(self):
-        v = getattr(self, "_pending_update_version", None)
-        if v:
-            self._statusbar.set_message(
-                f"Mise à jour disponible : neoSlice v{v} — téléchargez la nouvelle version",
-                AMBER,
-            )
+    def _show_update_dialog(self):
+        info = getattr(self, "_pending_update", None)
+        if not info:
+            return
+        new_version, download_url, notes = info
+
+        import queue as _queue
+        import threading as _threading
+        import tempfile
+        import subprocess
+        import urllib.request as _urlreq
+        from PySide6.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar
+        )
+        from version import __version__ as cur_version
+
+        pal = _THEME.palette()
+        dlg = QDialog(self)
+        dlg.setWindowTitle(_("update.title"))
+        dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        dlg.setFixedWidth(420)
+        dlg.setStyleSheet(f"""
+            QDialog {{ background: {pal['BG_PANEL']}; }}
+            QLabel  {{ background: transparent; color: {pal['TEXT_PRIMARY']}; }}
+            QProgressBar {{
+                background: {pal['BG_SURFACE']}; border: 1px solid {pal['INACTIVE']};
+                border-radius: 4px; height: 8px; text-align: center;
+            }}
+            QProgressBar::chunk {{ background: {pal['ACCENT']}; border-radius: 3px; }}
+        """)
+
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(28, 24, 28, 20)
+        lay.setSpacing(14)
+
+        # Titre
+        title_lbl = QLabel(_("update.title"))
+        title_lbl.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        title_lbl.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']};")
+        lay.addWidget(title_lbl)
+
+        # Corps
+        body_lbl = QLabel(_("update.body", new=new_version, cur=cur_version))
+        body_lbl.setFont(QFont("Segoe UI", 10))
+        body_lbl.setTextFormat(Qt.RichText)
+        body_lbl.setWordWrap(True)
+        lay.addWidget(body_lbl)
+
+        # Notes de version (optionnel)
+        if notes:
+            notes_title = QLabel(_("update.notes_label"))
+            notes_title.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            notes_title.setStyleSheet(f"color: {pal['TEXT_LABEL']};")
+            lay.addWidget(notes_title)
+            notes_lbl = QLabel(notes)
+            notes_lbl.setFont(QFont("Segoe UI", 9))
+            notes_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']};")
+            notes_lbl.setWordWrap(True)
+            lay.addWidget(notes_lbl)
+
+        lay.addSpacing(4)
+
+        # Zone progression (cachée au départ)
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0, 100)
+        progress_bar.setValue(0)
+        progress_bar.setFixedHeight(8)
+        progress_bar.setTextVisible(False)
+        progress_bar.hide()
+        lay.addWidget(progress_bar)
+
+        status_lbl = QLabel("")
+        status_lbl.setFont(QFont("Segoe UI", 9))
+        status_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']};")
+        status_lbl.setAlignment(Qt.AlignCenter)
+        status_lbl.hide()
+        lay.addWidget(status_lbl)
+
+        lay.addSpacing(2)
+
+        # Boutons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+
+        later_btn = QPushButton(_("update.btn_later"))
+        later_btn.setFont(QFont("Segoe UI", 9))
+        later_btn.setFixedHeight(32)
+        later_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {pal['TEXT_SECONDARY']};
+                border: 1px solid {pal['INACTIVE']}; border-radius: 4px; padding: 0 14px;
+            }}
+            QPushButton:hover {{ color: {pal['TEXT_PRIMARY']}; border-color: {pal['TEXT_SECONDARY']}; }}
+        """)
+        later_btn.clicked.connect(dlg.reject)
+
+        install_btn = QPushButton(_("update.btn_install"))
+        install_btn.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        install_btn.setFixedHeight(32)
+        install_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {pal['ACCENT']}; color: {pal['EXPORT_FG']};
+                border: none; border-radius: 4px; padding: 0 18px;
+            }}
+            QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
+            QPushButton:disabled {{ background: {pal['INACTIVE']}; color: {pal['TEXT_LABEL']}; }}
+        """)
+
+        btn_row.addWidget(later_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(install_btn)
+        lay.addLayout(btn_row)
+
+        # ── Logique de téléchargement ──────────────────────────────────────
+        _q: _queue.Queue = _queue.Queue()
+        _poll_timer = QTimer(dlg)
+
+        def _download():
+            try:
+                req = _urlreq.Request(
+                    download_url,
+                    headers={"User-Agent": f"neoSlice/{new_version}"}
+                )
+                with _urlreq.urlopen(req, timeout=60) as resp:
+                    total = int(resp.headers.get("Content-Length", 0))
+                    tmp = tempfile.mktemp(suffix=".exe", prefix="neoSlice_update_")
+                    downloaded = 0
+                    with open(tmp, "wb") as f:
+                        while True:
+                            chunk = resp.read(65536)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            pct = int(downloaded / total * 100) if total > 0 else -1
+                            _q.put(("progress", pct))
+                _q.put(("done", tmp))
+            except Exception as exc:
+                _q.put(("error", str(exc)))
+
+        def _on_poll():
+            try:
+                kind, val = _q.get_nowait()
+                if kind == "progress":
+                    if val >= 0:
+                        progress_bar.setRange(0, 100)
+                        progress_bar.setValue(val)
+                        status_lbl.setText(_("update.downloading", pct=val))
+                    else:
+                        progress_bar.setRange(0, 0)
+                        status_lbl.setText(_("update.downloading", pct="…"))
+                elif kind == "done":
+                    _poll_timer.stop()
+                    progress_bar.setRange(0, 100)
+                    progress_bar.setValue(100)
+                    status_lbl.setText(_("update.installing"))
+                    QTimer.singleShot(600, lambda: (
+                        subprocess.Popen([val]),
+                        QApplication.quit()
+                    ))
+                elif kind == "error":
+                    _poll_timer.stop()
+                    progress_bar.setRange(0, 100)
+                    progress_bar.setValue(0)
+                    status_lbl.setText(_("update.failed"))
+                    status_lbl.setStyleSheet(f"color: {pal['ERROR_RED']};")
+                    install_btn.setText(_("update.btn_retry"))
+                    install_btn.setEnabled(True)
+                    install_btn.show()
+            except _queue.Empty:
+                pass
+
+        def _start_download():
+            install_btn.setEnabled(False)
+            install_btn.hide()
+            later_btn.setEnabled(False)
+            progress_bar.show()
+            status_lbl.setText(_("update.downloading", pct=0))
+            status_lbl.show()
+            dlg.adjustSize()
+            _poll_timer.timeout.connect(_on_poll)
+            _poll_timer.start(80)
+            _threading.Thread(target=_download, daemon=True).start()
+
+        install_btn.clicked.connect(_start_download)
+
+        apply_title_bar_theme(dlg)
+        dlg.exec()
 
     def _on_apply_orientation(self):
-        """Applique la rotation optimale au mesh et recharge le viewer."""
+        """Applique la rotation optimale au mesh — calcul sur thread séparé."""
         if self._analysis is None or not self._analysis.optimal_rotation:
+            return
+        if self._orient_thread and self._orient_thread.isRunning():
             return
 
         rot = np.array(self._analysis.optimal_rotation).reshape(4, 4)
-        rotated = self._mesh.copy()
-        rotated.apply_transform(rot)
-        rotated.apply_translation(-rotated.bounds[0])  # poser sur Z=0
+        self._viewer.stop_auto_rotate()
+        self._viewer.hide_orient_btn()
+        self._statusbar.set_message(_("status.orient_applying"), AMBER)
 
+        self._orient_thread = QThread()
+        self._orient_worker = OrientationWorker(self._mesh, rot)
+        self._orient_worker.moveToThread(self._orient_thread)
+        self._orient_thread.started.connect(self._orient_worker.run)
+        self._orient_worker.done.connect(self._on_orientation_done)
+        self._orient_worker.error.connect(self._on_orientation_error)
+        self._orient_worker.done.connect(self._orient_thread.quit)
+        self._orient_worker.error.connect(self._orient_thread.quit)
+        self._orient_thread.start()
+
+    def _on_orientation_done(self, rotated, colors):
         self._mesh = rotated
+        self._viewer.load_mesh(self._mesh)
+        if colors is not None:
+            self._viewer.colorize_overhangs(self._mesh, colors)
+        self._viewer.start_auto_rotate()
+        self._analysis_panel.mark_orientation_applied()
+        self._viewer.show_reset_btn()
+        self._statusbar.set_message(_("status.orient_done"), AMBER)
+        # Ré-analyser avec la nouvelle orientation pour montrer les vraies métriques
+        self._start_analysis()
+
+    def _on_orientation_error(self, msg):
+        self._statusbar.set_message(_("status.orient_err", msg=msg), ERROR_RED)
+        self._viewer.start_auto_rotate()
+
+    def _on_reset_orientation(self):
+        if self._original_mesh is None:
+            return
+        self._mesh = self._original_mesh
         self._viewer.stop_auto_rotate()
         self._viewer.load_mesh(self._mesh)
-
-        try:
-            ov = analyze_overhangs(self._mesh)
-            colors = overhang_face_colors(self._mesh, ov)
-            self._viewer.colorize_overhangs(self._mesh, colors)
-        except Exception:
-            pass
-
+        self._viewer.hide_reset_btn()
         self._viewer.start_auto_rotate()
-        self._viewer.hide_orient_btn()
-        self._analysis_panel.mark_orientation_applied()
-        self._statusbar.set_message(
-            "Orientation optimale appliquée — la pièce sera exportée dans cette position",
-            TELE_GREEN,
-        )
+        self._statusbar.set_message(_("status.orient_reset"), AMBER)
+        # Ré-analyser sur le mesh original pour restaurer les métriques d'origine
+        self._start_analysis()
 
     def _on_new_piece(self):
         self._analysis_timeout.stop()
         if self._analysis_thread and self._analysis_thread.isRunning():
             self._analysis_thread.quit()
             self._analysis_thread.wait(2000)
+        if self._orient_thread and self._orient_thread.isRunning():
+            self._orient_thread.quit()
+            self._orient_thread.wait(2000)
 
         self._mesh = None
+        self._original_mesh = None
         self._analysis = None
         self._current_config = None
         self._current_selection = None
 
         self._viewer.stop_auto_rotate()
         self._viewer.hide_orient_btn()
+        self._viewer.hide_reset_btn()
         self._viewer.reset()
         self._analysis_panel.reset()
         self._drop_zone.reset()
@@ -898,9 +1250,7 @@ class MainWindow(QMainWindow):
         self._step_intent.set_pending()
         self._topbar.set_has_stl(False)
         self._statusbar.set_export_enabled(False)
-        self._statusbar.set_message(
-            "PRÊT — GLISSER UN NOUVEAU FICHIER STL", TELE_GREEN
-        )
+        self._statusbar.set_message(_("status.ready"), TELE_GREEN)
 
     def _on_stl_dropped(self, path: Path):
         logger.info(f"STL reçu : {path}")
@@ -908,9 +1258,16 @@ class MainWindow(QMainWindow):
         self._statusbar.set_message(f"Chargement — {path.name}", AMBER)
         self._step_stl.set_active()
 
+        self._viewer.hide_reset_btn()
+        self._original_mesh = None
         try:
             self._mesh = load_stl(path)
+            self._original_mesh = self._mesh.copy()
         except STLLoadError as e:
+            self._statusbar.set_message(f"Erreur chargement : {e}", ERROR_RED)
+            return
+        except Exception as e:
+            logger.exception("Erreur inattendue chargement fichier")
             self._statusbar.set_message(f"Erreur chargement : {e}", ERROR_RED)
             return
         except Exception as e:
@@ -927,7 +1284,8 @@ class MainWindow(QMainWindow):
             _p = _load_prefs(); _p["last_stl"] = str(path); _save_prefs(_p)
         except Exception:
             pass
-        self._statusbar.set_message(f"Modèle chargé — {path.name} — analyse en cours...", AMBER)
+        self._drop_zone.set_recent_file(path)
+        self._statusbar.set_message(_("status.loading", name=path.name), AMBER)
         self._start_analysis()
 
     def _start_analysis(self):
@@ -965,7 +1323,7 @@ class MainWindow(QMainWindow):
         if self._analysis_thread and self._analysis_thread.isRunning():
             self._analysis_thread.quit()
             self._analysis_thread.wait(1000)
-        self._on_analysis_error("Analyse interrompue (timeout 60 s) — relancez l'application si le problème persiste")
+        self._on_analysis_error(_("status.analysis_timeout"))
 
     def _on_analysis_progress(self, percent: int, message: str):
         self._progress_bar.setValue(percent)
@@ -990,30 +1348,28 @@ class MainWindow(QMainWindow):
         # Pré-sélection automatique des presets selon l'analyse
         self._intent_selector.auto_select_from_analysis(report)
 
-        try:
-            ov = analyze_overhangs(self._mesh)
-            colors = overhang_face_colors(self._mesh, ov)
-            self._viewer.colorize_overhangs(self._mesh, colors)
-        except Exception:
-            pass
+        if report.overhang_severity > 0.05:
+            try:
+                mask = report.support_face_mask
+                if mask is not None:
+                    colors = support_face_colors(self._mesh, mask)
+                else:
+                    ov = analyze_overhangs(self._mesh)
+                    colors = overhang_face_colors(self._mesh, ov)
+                self._viewer.colorize_overhangs(self._mesh, colors)
+            except Exception:
+                logger.exception("colorize_overhangs échoué")
 
         self._viewer.start_auto_rotate()
+        self._viewer.hide_orient_btn()
 
-        # Bouton orientation sur le viewer
-        orient_label = report.orientation_label
-        improvement = getattr(report, "orientation_improvement_pct", 0.0)
-        if orient_label and orient_label != "Actuelle (Z+)" and report.optimal_rotation:
-            btn_text = f"Orientation optimale : {orient_label}"
-            if improvement > 1.0:
-                btn_text += f"  (+{improvement:.0f}%)"
-            self._viewer.show_orient_btn(btn_text, clickable=True)
-        elif orient_label:
-            self._viewer.show_orient_btn("✓  Orientation actuelle : optimale", clickable=False)
-        else:
-            self._viewer.hide_orient_btn()
+        if not PREFS.get("auto_rotate", True):
+            self._analysis_panel.hide_orient_btn()
 
+        oh_pct = report.overhang_severity * 100
+        oh_tag = _("status.oh_tag", pct=oh_pct) if oh_pct > 0.1 else ""
         self._statusbar.set_message(
-            f"Analyse OK ({report.analysis_time_ms:.0f} ms) — Réglages suggérés · affinez votre intention ③",
+            _("status.analysis_ok", ms=report.analysis_time_ms, oh_tag=oh_tag),
             TELE_GREEN,
         )
 
@@ -1027,13 +1383,10 @@ class MainWindow(QMainWindow):
         first_line = (message.splitlines()[0] if message else "erreur inconnue").strip()
         if any(kw in first_line.lower() for kw in vtk_keywords):
             first_line = "Avertissement géométrique interne (non critique) — résultats disponibles"
-        self._statusbar.set_message(f"Erreur analyse : {first_line}", ERROR_RED)
+        self._statusbar.set_message(_("status.analysis_err", msg=first_line), ERROR_RED)
 
     def _on_printer_confirmed(self):
-        self._statusbar.set_message(
-            "Imprimante confirmée — sélectionner le filament  ②",
-            TELE_GREEN,
-        )
+        self._statusbar.set_message(_("status.printer_confirmed"), TELE_GREEN)
 
     def _on_filament_printer_changed(self, printer: str, filament: str):
         self._current_printer = printer
@@ -1068,6 +1421,7 @@ class MainWindow(QMainWindow):
                 result.intent_profile, analysis,
                 filament_name=filament,
                 printer_name=printer,
+                nozzle_diameter_mm=self._current_nozzle_mm,
             )
 
             # Appliquer les surcharges directes du sélecteur (support, brim…)
@@ -1093,7 +1447,7 @@ class MainWindow(QMainWindow):
             self._step_intent.set_done()
         except Exception as e:
             logger.exception("Erreur génération paramètres")
-            self._statusbar.set_message(f"Erreur génération : {e}", ERROR_RED)
+            self._statusbar.set_message(_("status.gen_err", msg=e), ERROR_RED)
 
     def _on_export_requested(self):
         if not hasattr(self, "_current_config") or self._mesh is None:
@@ -1102,7 +1456,7 @@ class MainWindow(QMainWindow):
         config = self._current_config
         profile_name = f"neoSlice - {config.neoslice_profile_name.replace('_', ' ').title()}"
 
-        ok, result_msg, _ = self._profile_installer.install_profile(
+        ok, result_msg, _profile_path = self._profile_installer.install_profile(
             config, profile_label=profile_name, printer_ui_name=self._current_printer
         )
 
@@ -1110,11 +1464,15 @@ class MainWindow(QMainWindow):
         from PySide6.QtCore import QStandardPaths
         stl_stem = getattr(self, "_stl_path", None)
         stl_stem = stl_stem.stem if stl_stem else "model"
-        _dl_str = QStandardPaths.writableLocation(
-            QStandardPaths.StandardLocation.DownloadLocation)
-        downloads = Path(_dl_str) if _dl_str else Path.home()
+        _exp_folder = PREFS.get("export_folder", "")
+        if _exp_folder and Path(_exp_folder).is_dir():
+            downloads = Path(_exp_folder)
+        else:
+            _dl_str = QStandardPaths.writableLocation(
+                QStandardPaths.StandardLocation.DownloadLocation)
+            downloads = Path(_dl_str) if _dl_str else Path.home()
         default_name = str(downloads / f"{stl_stem}_neoslice_output.3mf")
-        output_path, _ = QFileDialog.getSaveFileName(
+        output_path, _filter = QFileDialog.getSaveFileName(
             self, "Enregistrer le fichier .3MF",
             default_name, "Fichiers 3MF (*.3mf)",
         )
@@ -1122,12 +1480,14 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            nozzle_mm = self._filament_selector.current_nozzle_diameter_mm()
             path = self._tmf_builder.build(
                 mesh=self._mesh,
                 config=config,
                 output_path=Path(output_path),
                 printer_ui_name=self._current_printer,
                 filament_ui_name=self._current_filament,
+                nozzle_diameter_mm=nozzle_mm,
             )
             logger.info(f"3MF exporté : {path}")
 
@@ -1135,13 +1495,13 @@ class MainWindow(QMainWindow):
             self._show_success_dialog(config, selection, path)
 
             if ok:
-                self._statusbar.set_message(".3MF exporté", TELE_GREEN)
+                self._statusbar.set_message(_("status.export_ok"), TELE_GREEN)
             else:
-                self._statusbar.set_message(f".3MF exporté ({result_msg})", AMBER)
+                self._statusbar.set_message(_("status.export_ok_warn", msg=result_msg), AMBER)
 
         except Exception as e:
             logger.exception("Erreur export")
-            self._statusbar.set_message(f"Erreur export : {e}", ERROR_RED)
+            self._statusbar.set_message(_("status.export_err", msg=e), ERROR_RED)
 
     def _show_success_dialog(self, config, selection: "SelectionResult | None", tmf_path: "Path | None" = None):
         from PySide6.QtWidgets import QDialog, QFileDialog
@@ -1243,16 +1603,58 @@ class MainWindow(QMainWindow):
         btn_hl.setContentsMargins(0, 0, 0, 0)
         btn_hl.setSpacing(10)
 
-        btn_pdf = QPushButton("📄   Télécharger la fiche PDF des réglages")
+        def _make_pdf_icon() -> QIcon:
+            sz = 22
+            px = QPixmap(sz, sz)
+            px.fill(QColor(0, 0, 0, 0))
+            p = QPainter(px)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setBrush(QColor(ERROR_RED))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(0, 0, sz, sz, 4, 4)
+            p.setFont(QFont("Helvetica", 7, QFont.Weight.Bold))
+            p.setPen(QColor("white"))
+            p.drawText(px.rect(), Qt.AlignmentFlag.AlignCenter, "PDF")
+            p.end()
+            return QIcon(px)
+
+        def _make_printer_icon() -> QIcon:
+            sz = 22
+            px = QPixmap(sz, sz)
+            px.fill(QColor(0, 0, 0, 0))
+            p = QPainter(px)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            col = QColor(TELE_GREEN)
+            p.setPen(Qt.PenStyle.NoPen)
+            # Printer body
+            p.setBrush(col)
+            p.drawRoundedRect(0, 6, sz, 10, 2, 2)
+            # Paper input tray (top, darker)
+            p.setBrush(col.darker(150))
+            p.drawRect(4, 1, 14, 6)
+            # Paper output sheet (bottom, light)
+            p.setBrush(QColor("#C8DCF0"))
+            p.drawRect(4, 15, 14, 6)
+            # Lines on paper
+            p.setPen(QPen(QColor(TELE_GREEN).darker(120), 1))
+            p.drawLine(6, 17, 16, 17)
+            p.drawLine(6, 19, 13, 19)
+            p.end()
+            return QIcon(px)
+
+        btn_pdf = QPushButton("  Télécharger la fiche PDF des réglages")
+        btn_pdf.setIcon(_make_pdf_icon())
+        btn_pdf.setIconSize(QSize(18, 18))
         btn_pdf.setFont(QFont("Segoe UI", 9, QFont.Bold))
         btn_pdf.setFixedHeight(34)
         btn_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
+        _ep = _THEME.palette()
         btn_pdf.setStyleSheet(f"""
             QPushButton {{
-                background: {BG_ELEVATED}; color: {ACCENT};
-                border: 1px solid {ACCENT}; border-radius: 4px; padding: 0 16px;
+                background: {_ep['BG_ELEVATED']}; color: {_ep['ERROR_RED']};
+                border: 1px solid {_ep['ERROR_RED']}; border-radius: 4px; padding: 0 16px;
             }}
-            QPushButton:hover {{ background: {ACCENT}; color: #020408; }}
+            QPushButton:hover {{ background: {_ep['ERROR_RED']}; color: {_ep['EXPORT_FG']}; }}
         """)
 
         btn_close = QPushButton("Fermer")
@@ -1261,10 +1663,10 @@ class MainWindow(QMainWindow):
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.setStyleSheet(f"""
             QPushButton {{
-                background: {ACCENT}; color: #020408;
+                background: {_ep['ACCENT']}; color: {_ep['EXPORT_FG']};
                 border: none; border-radius: 4px; padding: 0 24px;
             }}
-            QPushButton:hover {{ background: {ACCENT_BRIGHT}; }}
+            QPushButton:hover {{ background: {_ep['ACCENT_BRIGHT']}; }}
         """)
 
         def _generate_pdf():
@@ -1279,6 +1681,7 @@ class MainWindow(QMainWindow):
             _dl = Path(_dl_str) if _dl_str else Path.home()
             _dl.mkdir(parents=True, exist_ok=True)
             save_path = str(_dl / safe_name)
+            _plate_type = self._filament_selector.current_plate_type()
             try:
                 from core.export.pdf_generator import generate_full_report_pdf, generate_filament_pdf
                 analysis = self._analysis
@@ -1287,9 +1690,13 @@ class MainWindow(QMainWindow):
                         filament_name, printer_name,
                         self._current_config, analysis,
                         Path(save_path),
+                        plate_type=_plate_type,
                     )
                 else:
-                    ok = generate_filament_pdf(filament_name, printer_name, Path(save_path))
+                    ok = generate_filament_pdf(
+                        filament_name, printer_name, Path(save_path),
+                        plate_type=_plate_type,
+                    )
             except Exception as _pdf_err:
                 logger.exception("Erreur génération PDF")
                 QMessageBox.critical(dlg, "Erreur PDF", str(_pdf_err))
@@ -1304,16 +1711,18 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(dlg, "Erreur PDF", "Génération échouée — reportlab installé ?")
 
 
-        btn_bambu = QPushButton("▶   Ouvrir dans Bambu Studio")
+        btn_bambu = QPushButton("  Ouvrir dans Bambu Studio")
+        btn_bambu.setIcon(_make_printer_icon())
+        btn_bambu.setIconSize(QSize(18, 18))
         btn_bambu.setFont(QFont("Segoe UI", 9, QFont.Bold))
         btn_bambu.setFixedHeight(34)
         btn_bambu.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_bambu.setStyleSheet(f"""
             QPushButton {{
-                background: {BG_ELEVATED}; color: {TELE_GREEN};
-                border: 1px solid {TELE_GREEN}; border-radius: 4px; padding: 0 16px;
+                background: {_ep['BG_ELEVATED']}; color: {_ep['TELE_GREEN']};
+                border: 1px solid {_ep['TELE_GREEN']}; border-radius: 4px; padding: 0 16px;
             }}
-            QPushButton:hover {{ background: {TELE_GREEN}; color: #020408; }}
+            QPushButton:hover {{ background: {_ep['TELE_GREEN']}; color: {_ep['EXPORT_FG']}; }}
         """)
         btn_bambu.setVisible(tmf_path is not None and tmf_path.exists())
 
@@ -1335,4 +1744,5 @@ class MainWindow(QMainWindow):
         btn_hl.addWidget(btn_close, 0)
         layout.addWidget(btn_row)
 
+        apply_title_bar_theme(dlg)
         dlg.exec()

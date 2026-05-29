@@ -125,6 +125,7 @@ class FilamentPrinterSelector(QWidget):
     selection_changed  = Signal(str, str)  # printer_name, filament_name
     printer_confirmed  = Signal()          # émis quand l'étape ① est validée
     filament_confirmed = Signal()          # émis quand l'étape ② est validée
+    nozzle_changed     = Signal(float)     # diamètre buse (mm) quand l'utilisateur change
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -162,6 +163,9 @@ class FilamentPrinterSelector(QWidget):
             self._nozzle_combo.addItem(f"O {d:.1f}mm", d)
         self._nozzle_combo.setCurrentIndex(_NOZZLE_SIZES.index(_NOZZLE_DEFAULT))
         self._nozzle_combo.setToolTip("Diamètre de buse installée sur l'imprimante")
+        self._nozzle_combo.currentIndexChanged.connect(
+            lambda _: self.nozzle_changed.emit(float(self._nozzle_combo.currentData()))
+        )
         row_p.addWidget(self._nozzle_combo)
 
         self._btn_confirm_printer = QPushButton("VALIDER →")

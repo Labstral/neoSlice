@@ -50,6 +50,16 @@ def analyze_overhangs(
     smooth=False / check_floating=False pour le mode rapide de l'optimiseur
     d'orientation (évite de multiplier le coût par 32 orientations).
     """
+    # ── Calcul anticipé des aires (nécessaire pour le filtre de cluster adaptatif) ──
+    face_areas = mesh.area_faces
+    total_area = float(face_areas.sum())
+    # Seuils adaptatifs à la taille de la pièce
+    # min_cluster_area : 0.2% de la surface totale, borné entre 0.5 et 8 mm²
+    min_cluster_area = min(max(0.5, total_area * 0.002), _MIN_CLUSTER_AREA_MM2)
+    # max_bridge : 40% de la dimension max, borné à _MAX_BRIDGE_SPAN_MM
+    # Évite que toute une petite pièce soit classée "pont" et ses surplombs ignorés
+    max_bridge_adaptive = min(_MAX_BRIDGE_SPAN_MM, float(mesh.bounding_box.extents.max()) * 0.4)
+
     # ── 1. Lissage des normales (sparse matmul, rapide même sur 1M+ faces) ──
     if smooth:
         normals = _smooth_face_normals(mesh, iters=2)
@@ -66,7 +76,7 @@ def analyze_overhangs(
     # ── 3. Exclusion plateau ─────────────────────────────────────────────────
     z_min = float(mesh.bounds[0][2])
     z_height = float(mesh.bounds[1][2] - z_min)
-    plate_tol = max(0.5, z_height * 0.02)
+    plate_tol = max(0.1, min(0.5, z_height * 0.05))
     face_centroids = mesh.triangles_center
     on_plate = (
         (face_centroids[:, 2] <= z_min + plate_tol)
@@ -78,16 +88,14 @@ def analyze_overhangs(
     if mask.any():
         mask = _filter_clusters_and_bridges(
             mesh, normals, mask,
-            min_area=_MIN_CLUSTER_AREA_MM2,
-            max_bridge=_MAX_BRIDGE_SPAN_MM,
+            min_area=min_cluster_area,
+            max_bridge=max_bridge_adaptive,
         )
 
     # ── 7. Régions flottantes ────────────────────────────────────────────────
     has_floating = _detect_floating_regions(mesh) if check_floating else False
 
     # ── 8. Métriques ─────────────────────────────────────────────────────────
-    face_areas = mesh.area_faces
-    total_area = float(face_areas.sum())
 
     overhang_area = float(face_areas[mask].sum()) if mask.any() else 0.0
     ratio = overhang_area / total_area if total_area > 0 else 0.0

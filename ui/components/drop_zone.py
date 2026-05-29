@@ -8,26 +8,24 @@ from PySide6.QtGui import (
     QDragEnterEvent, QDropEvent, QMouseEvent,
 )
 
+from core.i18n import _
 from ui.styles.theme import (
     BG_SURFACE, ACCENT, ACCENT_BRIGHT, TELE_GREEN,
-    TEXT_SECONDARY, TEXT_LABEL, INACTIVE, FONT_MONO,
+    TEXT_SECONDARY, TEXT_LABEL, INACTIVE, FONT_MONO, MANAGER as _T,
 )
 
 _SUPPORTED = {".stl", ".obj"}
 
 
 class DropZone(QWidget):
-    """Zone drag-and-drop STL — style Mission Control avec coins HUD.
-
-    Démarre en état verrouillé. Appeler set_locked(False) pour l'activer.
-    """
+    """Zone drag-and-drop STL — style Mission Control avec coins HUD."""
 
     file_dropped = Signal(Path)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAcceptDrops(False)          # verrouillé au départ
-        self.setCursor(Qt.ForbiddenCursor)  # curseur interdit au départ
+        self.setAcceptDrops(False)
+        self.setCursor(Qt.ForbiddenCursor)
         self.setMinimumHeight(160)
         self._hovered = False
         self._loaded = False
@@ -46,13 +44,13 @@ class DropZone(QWidget):
         self._icon.setStyleSheet(f"font-size: 22px; color: {INACTIVE}; background: transparent;")
         layout.addWidget(self._icon)
 
-        self._main_label = QLabel("VALIDEZ L'IMPRIMANTE")
+        self._main_label = QLabel(_("drop.main_locked"))
         self._main_label.setAlignment(Qt.AlignCenter)
         self._main_label.setFont(QFont("Segoe UI", 8, QFont.Bold))
         self._main_label.setStyleSheet(f"color: {INACTIVE}; background: transparent; letter-spacing: 1px;")
         layout.addWidget(self._main_label)
 
-        self._sub_label = QLabel("et le filament pour continuer ①②")
+        self._sub_label = QLabel(_("drop.sub_locked"))
         self._sub_label.setAlignment(Qt.AlignCenter)
         self._sub_label.setFont(QFont(FONT_MONO, 8))
         self._sub_label.setStyleSheet(f"color: {INACTIVE}; background: transparent;")
@@ -80,37 +78,27 @@ class DropZone(QWidget):
         self.update()
 
     def _refresh_labels(self):
+        _p = _T.palette()
+        inc = _p["INACTIVE"]; ts = _p["TEXT_SECONDARY"]; tl = _p["TEXT_LABEL"]
         if self._locked:
             self._icon.setText("⊘")
-            self._icon.setStyleSheet(
-                f"font-size: 22px; color: {INACTIVE}; background: transparent;"
-            )
-            self._main_label.setText("VALIDEZ L'IMPRIMANTE")
-            self._main_label.setStyleSheet(
-                f"color: {INACTIVE}; background: transparent; letter-spacing: 1px;"
-            )
-            self._sub_label.setText("et le filament pour continuer ①②")
-            self._sub_label.setStyleSheet(
-                f"color: {INACTIVE}; background: transparent;"
-            )
+            self._icon.setStyleSheet(f"font-size: 22px; color: {inc}; background: transparent;")
+            self._main_label.setText(_("drop.main_locked"))
+            self._main_label.setStyleSheet(f"color: {ts}; background: transparent; letter-spacing: 1px;")
+            self._sub_label.setText(_("drop.sub_locked"))
+            self._sub_label.setStyleSheet(f"color: {tl}; background: transparent;")
         elif self._loaded:
             if hasattr(self, "_recent_btn"):
                 self._recent_btn.hide()
         else:
             self._icon.setText("⬆")
-            self._icon.setStyleSheet(
-                f"font-size: 24px; color: {INACTIVE}; background: transparent;"
-            )
-            self._main_label.setText("GLISSER FICHIER STL")
-            self._main_label.setStyleSheet(
-                f"color: {TEXT_SECONDARY}; background: transparent; letter-spacing: 2px;"
-            )
-            self._sub_label.setText("ou cliquer pour parcourir")
-            self._sub_label.setStyleSheet(
-                f"color: {TEXT_LABEL}; background: transparent;"
-            )
+            self._icon.setStyleSheet(f"font-size: 24px; color: {inc}; background: transparent;")
+            self._main_label.setText(_("drop.main"))
+            self._main_label.setStyleSheet(f"color: {ts}; background: transparent; letter-spacing: 2px;")
+            self._sub_label.setText(_("drop.sub"))
+            self._sub_label.setStyleSheet(f"color: {tl}; background: transparent;")
             if hasattr(self, "_recent_btn") and hasattr(self, "_recent_path") and self._recent_path:
-                self._recent_btn.setText(f"↺  Réouvrir : {self._recent_path.name}")
+                self._recent_btn.setText(_("drop.reopen", name=self._recent_path.name))
                 self._recent_btn.show()
 
     # ── Drag & Drop ────────────────────────────────────────────────────────
@@ -147,8 +135,8 @@ class DropZone(QWidget):
             return
         if event.button() == Qt.LeftButton:
             path, _ = QFileDialog.getOpenFileName(
-                self, "Ouvrir un fichier STL", "",
-                "Fichiers 3D (*.stl *.obj);;Tous les fichiers (*)",
+                self, _("drop.dialog_title"), "",
+                _("drop.dialog_filter"),
             )
             if path:
                 self._set_file(Path(path))
@@ -160,16 +148,14 @@ class DropZone(QWidget):
         self._loaded = True
         self._icon.setText("✓")
         self._icon.setStyleSheet(
-            f"font-size: 22px; color: {TELE_GREEN}; background: transparent;"
+            f"font-size: 22px; color: {_T.palette()['TELE_GREEN']}; background: transparent;"
         )
         self._main_label.setText(path.name)
         self._main_label.setStyleSheet(
-            f"color: {TELE_GREEN}; background: transparent; font-size: 9px;"
+            f"color: {_T.palette()['TELE_GREEN']}; background: transparent; font-size: 9px;"
         )
-        self._sub_label.setText("cliquer pour changer")
-        self._sub_label.setStyleSheet(
-            f"color: {TEXT_LABEL}; background: transparent;"
-        )
+        self._sub_label.setText(_("drop.sub_loaded"))
+        self._sub_label.setStyleSheet(f"color: {_T.palette()['TEXT_LABEL']}; background: transparent;")
         self.update()
         self.file_dropped.emit(path)
 
@@ -179,14 +165,14 @@ class DropZone(QWidget):
         self._current_file = None
         self._refresh_labels()
         if hasattr(self, "_recent_path") and self._recent_path and not self._locked:
-            self._recent_btn.setText(f"↺  Réouvrir : {self._recent_path.name}")
+            self._recent_btn.setText(_("drop.reopen", name=self._recent_path.name))
             self._recent_btn.show()
         self.update()
 
     def set_recent_file(self, path: "Path | None"):
         self._recent_path = path
         if path and not self._locked and not self._loaded:
-            self._recent_btn.setText(f"↺  Réouvrir : {path.name}")
+            self._recent_btn.setText(_("drop.reopen", name=path.name))
             self._recent_btn.show()
         else:
             self._recent_btn.hide()
@@ -197,30 +183,40 @@ class DropZone(QWidget):
 
     # ── Rendu NASA ─────────────────────────────────────────────────────────
 
+    def refresh_theme(self):
+        _p = _T.palette()
+        self._recent_btn.setStyleSheet(f"""
+            QPushButton {{ color: {_p["ACCENT"]}; background: transparent; border: none; }}
+            QPushButton:hover {{ color: {_p["ACCENT_BRIGHT"]}; text-decoration: underline; }}
+        """)
+        if self._loaded:
+            self._sub_label.setStyleSheet(f"color: {_p['TEXT_LABEL']}; background: transparent;")
+        self._refresh_labels()
+        self.update()
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
         rect = self.rect().adjusted(3, 3, -3, -3)
+        pal = _T.palette()
 
-        # Fond
-        bg = QColor(BG_SURFACE)
+        bg = QColor(pal["BG_SURFACE"])
         if self._locked:
             bg.setAlpha(120)
         painter.setPen(Qt.NoPen)
         painter.setBrush(bg)
         painter.drawRect(rect)
 
-        # Bordure dashed
         if self._locked:
-            pen_color = QColor(INACTIVE)
+            pen_color = QColor(pal["INACTIVE"])
             pen_color.setAlpha(80)
         elif self._hovered:
-            pen_color = QColor(ACCENT_BRIGHT)
+            pen_color = QColor(pal["ACCENT_BRIGHT"])
         elif self._loaded:
-            pen_color = QColor(TELE_GREEN)
+            pen_color = QColor(pal["TELE_GREEN"])
         else:
-            pen_color = QColor(INACTIVE)
+            pen_color = QColor(pal["INACTIVE"])
 
         pen = QPen(pen_color, 1, Qt.DashLine)
         pen.setDashPattern([6, 4])
@@ -228,10 +224,9 @@ class DropZone(QWidget):
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(rect)
 
-        # Coins HUD (masqués si verrouillé)
         if not self._locked:
             hud_color = QColor(
-                ACCENT_BRIGHT if (self._hovered or self._loaded) else INACTIVE
+                pal["ACCENT_BRIGHT"] if (self._hovered or self._loaded) else pal["INACTIVE"]
             )
             painter.setPen(QPen(hud_color, 1.5))
             size = 10
@@ -248,8 +243,8 @@ class DropZone(QWidget):
             ]:
                 painter.drawLine(x1, y1, x2, y2)
 
-            # Halo glow au hover
             if self._hovered:
-                glow_pen = QPen(QColor(30, 144, 255, 35), 6)
+                glow_col = (30, 144, 255) if _T.is_dark() else (45, 138, 78)
+                glow_pen = QPen(QColor(*glow_col, 35), 6)
                 painter.setPen(glow_pen)
                 painter.drawRect(rect.adjusted(-2, -2, 2, 2))

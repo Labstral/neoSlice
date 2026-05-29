@@ -13,6 +13,7 @@ pyvista_datas,   pyvista_bins,   pyvista_hidden    = collect_all('pyvista')
 pyvistaqt_datas, pyvistaqt_bins, pyvistaqt_hidden  = collect_all('pyvistaqt')
 vtkmod_datas,    vtkmod_bins,    vtkmod_hidden     = collect_all('vtkmodules')
 mpl_datas,       mpl_bins,       mpl_hidden        = collect_all('matplotlib')
+shapely_datas,   shapely_bins,   shapely_hidden    = collect_all('shapely')
 
 # Dossiers de données du projet
 project_datas = [
@@ -32,6 +33,7 @@ a = Analysis(
         *pyvistaqt_bins,
         *vtkmod_bins,
         *mpl_bins,
+        *shapely_bins,
     ],
     datas=[
         *project_datas,
@@ -40,6 +42,7 @@ a = Analysis(
         *pyvistaqt_datas,
         *vtkmod_datas,
         *mpl_datas,
+        *shapely_datas,
     ],
     hiddenimports=[
         *pyside6_hidden,
@@ -47,6 +50,7 @@ a = Analysis(
         *pyvistaqt_hidden,
         *vtkmod_hidden,
         *mpl_hidden,
+        *shapely_hidden,
         'trimesh',
         'trimesh.creation',
         'trimesh.repair',
@@ -71,6 +75,10 @@ a = Analysis(
         'networkx',
         'lxml',
         'lxml.etree',
+        'shapely',
+        'shapely.geometry',
+        'shapely.ops',
+        'shapely.validation',
         'version',
     ],
     hookspath=[],
@@ -85,6 +93,9 @@ a = Analysis(
         'PySide6.QtWebEngineWidgets',
         'PySide6.QtWebEngineCore',
         'PySide6.QtWebEngineQuick',
+        'PySide6.QtQml',
+        'PySide6.QtQuick',
+        'PySide6.QtQuickWidgets',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -153,7 +164,9 @@ if _ISCC and _ISS.exists():
     out_dir.mkdir(parents=True, exist_ok=True)
     result = subprocess.run([_ISCC, str(_ISS)], capture_output=True, text=True)
     if result.returncode == 0:
-        print("[post-build] Installateur cree : C:\\neoSlice\\dist\\installer\\neoSlice_Setup_v0.1.1-beta_Windows.exe")
+        import re as _re
+        _ver = _re.search(r'#define AppVersion\s+"([^"]+)"', _ISS.read_text()).group(1)
+        print(f"[post-build] Installateur cree : C:\\neoSlice\\dist\\installer\\neoSlice_Setup_v{_ver}-beta_Windows.exe")
     else:
         print(f"[post-build] ERREUR Inno Setup : {result.stderr[-300:]}")
 else:
