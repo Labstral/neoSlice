@@ -232,16 +232,3 @@ TEXT_MUTED       = TEXT_LABEL
 COLOR_SCORE_GOOD   = TELE_GREEN
 COLOR_SCORE_MEDIUM = AMBER
 COLOR_SCORE_BAD    = ERROR_RED
-
-
-def apply_title_bar_theme(widget) -> None:
-    """Applique le thème sombre/clair à la barre de titre Windows (DWMWA)."""
-    try:
-        import ctypes
-        hwnd = int(widget.winId())
-        value = ctypes.c_int(1 if MANAGER.is_dark() else 0)
-        ctypes.windll.dwmapi.DwmSetWindowAttribute(
-            hwnd, 20, ctypes.byref(value), ctypes.sizeof(value)
-        )
-    except Exception:
-        pass

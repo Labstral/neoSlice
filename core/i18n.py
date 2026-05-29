@@ -354,6 +354,20 @@ _FR: dict[str, str] = {
     "splash.loading":       "Chargement en cours...",
     "splash.tagline":       "AI-Powered 3D Print Optimizer",
 
+    # ── Filament / Printer Selector ───────────────────────────────────────────
+    "selector.lbl_printer":        "IMPRIMANTE CIBLE",
+    "selector.lbl_filament":       "FILAMENT",
+    "selector.lbl_plate":          "PLATEAU",
+    "selector.validate_btn":       "VALIDER",
+    "selector.nozzle_tip":         "Diamètre de buse installée sur l'imprimante",
+    "selector.plate_tip":          "Type de surface du plateau installé sur l'imprimante",
+    "selector.hint_printer_first": "→ Validez d'abord votre imprimante",
+    "selector.compat_ok":          "✓  Compatible avec {printer}",
+    "selector.compat_incompat":    "✕  {filament} incompatible avec {printer}",
+    "selector.warn_enclosure":     "Enceinte requise — {printer} est ouvert",
+    "selector.warn_ams":           "AMS incompatible — chargement direct requis",
+    "selector.warn_bed":           "Plateau requis {req}°C > max {max}°C",
+
     # ── Settings Dialog ───────────────────────────────────────────────────────
     "settings.title":           "PARAMÈTRES",
     "settings.sec_appearance":  "APPARENCE",
