@@ -10,9 +10,11 @@ from loguru import logger
 
 from version import __version__ as CURRENT_VERSION
 
-# URL vers un fichier JSON hébergé contenant {"version": "0.1.1", "url": "..."}
-# Laisser vide pour désactiver la vérification.
-UPDATE_CHECK_URL = ""
+# Fichier latest.json hébergé sur GitHub — mis à jour à chaque release.
+# Format : {"version": "0.2.0", "download_url": "...", "notes": ""}
+UPDATE_CHECK_URL = (
+    "https://raw.githubusercontent.com/Labstral/neoSlice/main/latest.json"
+)
 
 
 def _parse_version(v: str) -> tuple[int, ...]:
@@ -22,11 +24,11 @@ def _parse_version(v: str) -> tuple[int, ...]:
         return (0, 0, 0)
 
 
-def check_for_update(callback: Callable[[str | None], None]) -> None:
+def check_for_update(callback: Callable[[str | None, str, str], None]) -> None:
     """Lance la vérification dans un thread daemon.
 
-    callback est appelé avec la nouvelle version (str) si disponible,
-    ou None si déjà à jour ou en cas d'erreur réseau.
+    callback(version, download_url, notes) si une mise à jour est disponible,
+    callback(None, "", "") si déjà à jour ou en cas d'erreur réseau.
     """
     if not UPDATE_CHECK_URL:
         return
@@ -40,12 +42,14 @@ def check_for_update(callback: Callable[[str | None], None]) -> None:
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
             latest = data.get("version", "").strip("v")
+            url    = data.get("download_url", "https://github.com/Labstral/neoSlice/releases/latest")
+            notes  = data.get("notes", "")
             if latest and _parse_version(latest) > _parse_version(CURRENT_VERSION):
-                callback(latest)
+                callback(latest, url, notes)
             else:
-                callback(None)
+                callback(None, "", "")
         except Exception as exc:
             logger.debug(f"Vérification mise à jour : {exc}")
-            callback(None)
+            callback(None, "", "")
 
     Thread(target=_run, daemon=True).start()
