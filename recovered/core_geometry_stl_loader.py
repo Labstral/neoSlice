@@ -25,6 +25,11 @@ def load_stl(path: Path) -> trimesh.Trimesh:
     if path.suffix.lower() not in (".stl", ".obj", ".3mf"):
         raise STLLoadError(f"Format non supporté : {path.suffix}")
 
+    # force="mesh" fonctionne pour STL/OBJ mais peut échouer sur 3MF (scènes complexes)
+    if path.suffix.lower() == ".3mf":
+        raw = trimesh.load(str(path))
+    else:
+        # force="mesh" fonctionne pour STL/OBJ mais peut échouer sur 3MF (scènes complexes)
     if path.suffix.lower() == ".3mf":
         raw = trimesh.load(str(path))
     else:
