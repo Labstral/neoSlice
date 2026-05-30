@@ -1328,7 +1328,6 @@ class MainWindow(QMainWindow):
 
         # ── Feedback instantané (< 1 ms) ────────────────────────────────────
         self._step_stl.set_active()
-        self._viewer.hide_reset_btn()
         self._viewer.stop_auto_rotate()
         self._viewer.set_loading(True, f"CHARGEMENT — {path.name}")
         self._statusbar.set_message(f"Chargement — {path.name}", AMBER)
