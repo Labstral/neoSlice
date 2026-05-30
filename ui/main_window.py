@@ -18,7 +18,6 @@ from core.geometry.stl_loader import load_stl, mesh_info, STLLoadError
 from core.geometry.analysis_report import AnalysisReport
 from core.geometry.overhang_detector import analyze_overhangs, overhang_face_colors
 from core.geometry.support_detector import support_face_colors
-from core.geometry.orientation_optimizer import optimize_orientation
 from core.geometry.layer_slicer import analyze_by_layers
 from core.geometry.stability_analyzer import analyze_stability
 from core.geometry.fragility_detector import detect_fragility
@@ -209,29 +208,16 @@ class AnalysisWorker(QObject):
                         pass
                     return fb
 
-            def _task_orientation():
-                """Optimisation d'orientation (mode Complet uniquement)."""
-                try:
-                    ori = optimize_orientation(self._mesh, n_fibonacci=24)
-                    if ori is None:
-                        raise ValueError("optimize_orientation a retourné None")
-                    return ori
-                except Exception:
-                    logger.warning("Optimisation orientation ignorée (géométrie dégénérée)")
-                    return None
-
             # ── Dispatch parallèle selon le mode ──────────────────────────────
             n_workers = {"full": 3, "balanced": 2, "lite": 1}[perf_mode]
             self.progress.emit(10, "Analyses en cours…")
 
             with ThreadPoolExecutor(max_workers=n_workers) as pool:
-                fut_ov     = pool.submit(_task_overhangs)   if perf_mode != "lite" else None
-                fut_stab   = pool.submit(_task_stability)
-                fut_orient = pool.submit(_task_orientation) if perf_mode == "full" else None
+                fut_ov   = pool.submit(_task_overhangs) if perf_mode != "lite" else None
+                fut_stab = pool.submit(_task_stability)
 
-                ov,  floating   = fut_ov.result()     if fut_ov     else (None, False)
-                lr               = fut_stab.result()
-                orientation      = fut_orient.result() if fut_orient else None
+                ov, floating = fut_ov.result() if fut_ov else (None, False)
+                lr           = fut_stab.result()
 
             self.progress.emit(70, "Fusion des résultats…")
 
@@ -276,17 +262,6 @@ class AnalysisWorker(QObject):
                     "Analyse par couches indisponible (shapely manquant) — stabilité heuristique"
                 )
 
-            # ── Application résultats orientation ─────────────────────────────
-            if orientation is not None:
-                report.optimal_rotation            = orientation.rotation_matrix.flatten().tolist()
-                report.orientation_score           = orientation.total_score
-                report.orientation_label           = orientation.direction_label
-                report.orientation_improvement_pct = orientation.improvement_pct
-            else:
-                report.optimal_rotation  = np.eye(4).flatten().tolist()
-                report.orientation_score = 0.5
-                report.orientation_label = ""
-
             # ── Infos géométriques ────────────────────────────────────────────
             self.progress.emit(95, "Finalisation...")
             info = mesh_info(self._mesh)
@@ -330,34 +305,6 @@ class AnalysisWorker(QObject):
 
         except Exception as exc:
             logger.exception("Erreur pendant l'analyse")
-            self.error.emit(str(exc))
-
-
-class OrientationWorker(QObject):
-    done = Signal(object, object)  # (rotated_mesh, overhang_colors | None)
-    error = Signal(str)
-
-    def __init__(self, mesh, rotation_matrix):
-        super().__init__()
-        self._mesh = mesh
-        self._rot = rotation_matrix
-
-    def run(self):
-        try:
-            rotated = self._mesh.copy()
-            rotated.apply_transform(self._rot)
-            rotated.apply_translation(-rotated.bounds[0])  # Z=0
-            cx = (rotated.bounds[1][0]) / 2.0
-            cy = (rotated.bounds[1][1]) / 2.0
-            rotated.apply_translation([-cx, -cy, 0])  # centrer XY
-            try:
-                ov = analyze_overhangs(rotated)
-                colors = overhang_face_colors(rotated, ov)
-            except Exception:
-                colors = None
-            self.done.emit(rotated, colors)
-        except Exception as exc:
-            logger.exception("Erreur application orientation")
             self.error.emit(str(exc))
 
 
@@ -791,8 +738,6 @@ class MainWindow(QMainWindow):
         self._stl_load_worker: STLLoadWorker | None = None
         self._analysis_thread: QThread | None = None
         self._analysis_worker: AnalysisWorker | None = None
-        self._orient_thread: QThread | None = None
-        self._orient_worker: OrientationWorker | None = None
         self._current_config = None
         self._current_selection = None
         self._parameter_engine = ParameterEngine()
@@ -980,7 +925,6 @@ class MainWindow(QMainWindow):
 
         # ── Analyse géométrique ──
         self._analysis_panel = AnalysisPanel()
-        self._analysis_panel.apply_orientation.connect(self._on_apply_orientation)
         layout.addWidget(self._analysis_panel)
 
         # ── Barre de progression ──
@@ -1001,8 +945,6 @@ class MainWindow(QMainWindow):
 
         # ── Viewer 3D ──
         self._viewer = Viewer3D()
-        self._viewer.apply_orientation.connect(self._on_apply_orientation)
-        self._viewer.reset_orientation.connect(self._on_reset_orientation)
         layout.addWidget(self._viewer, stretch=1)
 
         return container
@@ -1346,68 +1288,11 @@ class MainWindow(QMainWindow):
         apply_title_bar_theme(dlg)
         dlg.exec()
 
-    def _on_apply_orientation(self):
-        """Applique la rotation optimale au mesh — calcul sur thread séparé."""
-        if self._analysis is None or not self._analysis.optimal_rotation:
-            return
-        if self._orient_thread and self._orient_thread.isRunning():
-            return
-
-        rot = np.array(self._analysis.optimal_rotation).reshape(4, 4)
-        self._viewer.stop_auto_rotate()
-        self._viewer.hide_orient_btn()
-        self._statusbar.set_message(_("status.orient_applying"), AMBER)
-
-        self._orient_thread = QThread()
-        self._orient_worker = OrientationWorker(self._mesh, rot)
-        self._orient_worker.moveToThread(self._orient_thread)
-        self._orient_thread.started.connect(self._orient_worker.run)
-        self._orient_worker.done.connect(self._on_orientation_done)
-        self._orient_worker.error.connect(self._on_orientation_error)
-        self._orient_worker.done.connect(self._orient_thread.quit)
-        self._orient_worker.error.connect(self._orient_thread.quit)
-        self._orient_thread.start()
-
-    def _on_orientation_done(self, rotated, colors):
-        self._mesh = rotated
-        self._viewer.load_mesh(self._mesh)
-        if colors is not None:
-            self._viewer.colorize_overhangs(self._mesh, colors)
-        self._viewer.start_auto_rotate()
-        self._analysis_panel.mark_orientation_applied()
-        self._viewer.show_reset_btn()
-        self._statusbar.set_message(_("status.orient_done"), AMBER)
-        # Ré-analyser avec la nouvelle orientation pour montrer les vraies métriques
-        self._start_analysis()
-
-    def _on_orientation_error(self, msg):
-        self._statusbar.set_message(_("status.orient_err", msg=msg), ERROR_RED)
-        self._viewer.start_auto_rotate()
-
-    def _on_reset_orientation(self):
-        if self._original_mesh is None:
-            return
-        self._mesh = self._original_mesh
-        self._viewer.stop_auto_rotate()
-        self._viewer.load_mesh(self._mesh)
-        self._viewer.hide_reset_btn()
-        self._viewer.start_auto_rotate()
-        self._statusbar.set_message(_("status.orient_reset"), AMBER)
-        # Ré-analyser sur le mesh original pour restaurer les métriques d'origine
-        self._start_analysis()
-
     def _on_new_piece(self):
         self._analysis_timeout.stop()
         if self._analysis_thread and self._analysis_thread.isRunning():
             self._analysis_thread.quit()
             self._analysis_thread.wait(2000)
-        if self._orient_thread and self._orient_thread.isRunning():
-            self._orient_thread.quit()
-            self._orient_thread.wait(2000)
-        if self._orient_thread and self._orient_thread.isRunning():
-            self._orient_thread.quit()
-            self._orient_thread.wait(2000)
-
         self._mesh = None
         self._original_mesh = None
         self._analysis = None
@@ -1415,9 +1300,6 @@ class MainWindow(QMainWindow):
         self._current_selection = None
 
         self._viewer.stop_auto_rotate()
-        self._viewer.hide_orient_btn()
-        self._viewer.hide_reset_btn()
-        self._viewer.hide_reset_btn()
         self._viewer.reset()
         self._analysis_panel.reset()
         self._drop_zone.reset()
@@ -1583,10 +1465,6 @@ class MainWindow(QMainWindow):
                 logger.exception("colorize_overhangs échoué")
 
         self._viewer.start_auto_rotate()
-        self._viewer.hide_orient_btn()
-
-        if not PREFS.get("auto_rotate", True):
-            self._analysis_panel.hide_orient_btn()
 
         oh_pct = report.overhang_severity * 100
         oh_tag = _("status.oh_tag", pct=oh_pct) if oh_pct > 0.1 else ""

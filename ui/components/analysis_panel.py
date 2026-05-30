@@ -136,8 +136,6 @@ class _StatusDot(QLabel):
 class AnalysisPanel(QWidget):
     """Panneau d'analyse géométrique — jauges NASA compactes."""
 
-    apply_orientation = Signal()
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self._last_report = None
@@ -163,14 +161,6 @@ class AnalysisPanel(QWidget):
         for g in (getattr(self, "_g_overhangs", None), getattr(self, "_g_stability", None),
                   getattr(self, "_g_fragility", None), getattr(self, "_g_support", None)):
             if g: g.reset()
-        if hasattr(self, "_orient_btn"):
-            self._orient_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: transparent; color: {pal["ACCENT"]};
-                    border: 1px solid {pal["ACCENT"]}; border-radius: 3px; padding: 0 10px;
-                }}
-                QPushButton:hover {{ background: {pal["ACCENT"]}; color: {pal["EXPORT_FG"]}; }}
-            """)
         self.update()
         if hasattr(self, '_last_report') and self._last_report is not None:
             self.update_from_report(self._last_report)
@@ -277,29 +267,6 @@ class AnalysisPanel(QWidget):
         self._status_block.setContentsMargins(0, 0, 0, 0)
         self._status_block.setStyleSheet("background: transparent;")
         root.addWidget(self._status_block)
-
-        # ── Bouton : appliquer l'orientation optimale ──────────────────────
-        self._orient_btn = QPushButton(_("analysis.orient_btn"))
-        self._orient_btn.setFont(QFont("Segoe UI", 8, QFont.Bold))
-        self._orient_btn.setFixedHeight(26)
-        self._orient_btn.setCursor(Qt.PointingHandCursor)
-        self._orient_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                color: {_pi["ACCENT"]};
-                border: 1px solid {_pi["ACCENT"]};
-                border-radius: 3px;
-                padding: 0 10px;
-                letter-spacing: 1px;
-            }}
-            QPushButton:hover {{
-                background: {ACCENT};
-                color: #020408;
-            }}
-        """)
-        self._orient_btn.hide()
-        self._orient_btn.clicked.connect(self.apply_orientation)
-        root.addWidget(self._orient_btn)
 
         # ── Alertes matériau ───────────────────────────────────────────────
         self._material_warn = QLabel()
@@ -426,19 +393,6 @@ class AnalysisPanel(QWidget):
                 f'analyse des surplombs impossible car pièce trop petite.</span>'
             )
 
-        orient_label = report.orientation_label
-        improvement = getattr(report, "orientation_improvement_pct", 0.0)
-        if orient_label and orient_label != "Actuelle (Z+)" and improvement > 22.0:
-            rows.append(
-                f'<span style="color:{_ab};">'
-                + _("analysis.status_orient", label=orient_label, imp=improvement)
-                + '</span>'
-            )
-            self._orient_btn.setText(_("analysis.orient_apply_fmt", label=orient_label, imp=improvement))
-            self._orient_btn.show()
-        else:
-            self._orient_btn.hide()
-
         rows_html = "<br>".join(rows)
         status_html = (
             f'<table width="100%" cellpadding="0" cellspacing="0">'
@@ -506,17 +460,6 @@ class AnalysisPanel(QWidget):
     def set_generation_busy(self):
         self._dot_gen.set_busy()
 
-    def mark_orientation_applied(self) -> None:
-        self._orient_btn.hide()
-
-    def hide_orient_btn(self) -> None:
-        self._orient_btn.hide()
-
-    def reset_orientation_state(self, orient_label: str = "", improvement: float = 0.0) -> None:
-        if orient_label and orient_label != "Actuelle (Z+)" and improvement > 22.0:
-            self._orient_btn.setText(_("analysis.orient_apply_fmt", label=orient_label, imp=improvement))
-            self._orient_btn.show()
-
     def reset(self):
         self._dot_stl.set_inactive()
         self._dot_anlys.set_inactive()
@@ -528,4 +471,3 @@ class AnalysisPanel(QWidget):
         self._status_block.setText("")
         self._material_warn.setText("")
         self._material_warn.setStyleSheet("background: transparent;")
-        self._orient_btn.hide()

@@ -160,9 +160,6 @@ class Viewer3D(QWidget):
     Supporte la colorisation par zones (overhangs, fragilité).
     """
 
-    apply_orientation = Signal()
-    reset_orientation = Signal()
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self._mesh = None
@@ -173,8 +170,6 @@ class Viewer3D(QWidget):
         self._setup_ui()
         self._overlay = _LoadingOverlay(self)
         self._setup_rotation()
-        self._setup_orient_btn()
-        self._setup_reset_btn()
 
     def _apply_rot_checkbox_style(self):
         pal = _T.palette()
@@ -315,12 +310,6 @@ class Viewer3D(QWidget):
         elif hasattr(self, "_rot_checkbox"):
             cw = self._rot_checkbox.sizeHint().width() + 16
             self._rot_checkbox.setGeometry(self.width() - cw - 8, self.height() - 30, cw, 22)
-        if hasattr(self, "_orient_btn_viewer"):
-            bw = self._orient_btn_viewer.sizeHint().width() + 20
-            self._orient_btn_viewer.setGeometry(10, 10, bw, 28)
-        if hasattr(self, "_reset_btn_viewer") and self._reset_btn_viewer.isVisible():
-            bw = self._reset_btn_viewer.sizeHint().width() + 20
-            self._reset_btn_viewer.setGeometry(10, 10, bw, 28)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -395,6 +384,24 @@ class Viewer3D(QWidget):
                     self._plotter.enable_ssao(radius=0.8, bias=0.01, kernel_size=32, blur=True)
                 except Exception:
                     pass
+        # Depth peeling — transparence correcte pour les couches qui se croisent
+        try:
+            self._plotter.renderer.SetUseDepthPeeling(True)
+            self._plotter.renderer.SetMaximumNumberOfPeels(4)
+            self._plotter.renderer.SetOcclusionRatio(0.0)
+        except Exception:
+            pass
+        # Tone mapping VTK — mappage HDR → évite les blancs brûlés, rendu cinématique
+        try:
+            rw = self._plotter.ren_win
+            rw.SetToneMappingType(3)     # GenericFilmic (similaire Unreal)
+            rw.SetExposure(1.0)
+        except Exception:
+            try:
+                rw = self._plotter.ren_win
+                rw.SetToneMappingType(1)  # Reinhard (fallback)
+            except Exception:
+                pass
         # Re-render après les effets pour s'assurer que le fond est toujours correct
         try:
             pal = _T.palette()
@@ -420,29 +427,6 @@ class Viewer3D(QWidget):
             self._plotter.renderer.GetActiveCamera().AddObserver("ModifiedEvent", _cam_cb)
         except Exception:
             pass
-
-    def _setup_orient_btn(self):
-        """Bouton flottant en haut à gauche du viewer — appliquer l'orientation optimale."""
-        self._orient_btn_viewer = QPushButton(_("viewer.orient_btn"), self)
-        self._orient_btn_viewer.setFont(QFont("Segoe UI", 8, QFont.Bold))
-        self._orient_btn_viewer.setFixedHeight(28)
-        self._orient_btn_viewer.setCursor(Qt.PointingHandCursor)
-        self._orient_btn_viewer.setStyleSheet("""
-            QPushButton {
-                background: rgba(6,14,26,200);
-                color: #1E90FF;
-                border: 1px solid #1E90FF;
-                border-radius: 4px;
-                padding: 0 12px;
-                letter-spacing: 1px;
-            }
-            QPushButton:hover {
-                background: #1E90FF;
-                color: #020408;
-            }
-        """)
-        self._orient_btn_viewer.hide()
-        self._orient_btn_viewer.clicked.connect(self.apply_orientation)
 
     def _setup_rotation(self):
         """Timer de rotation automatique (~30fps, 0.3°/frame ≈ 1 tour en 20s)."""
@@ -505,90 +489,8 @@ class Viewer3D(QWidget):
                 self._rot_checkbox.update()
             if hasattr(self, "_plate_checkbox") and self._plate_checkbox.isVisible():
                 self._plate_checkbox.update()
-            if hasattr(self, "_orient_btn_viewer") and self._orient_btn_viewer.isVisible():
-                self._orient_btn_viewer.update()
-            if hasattr(self, "_reset_btn_viewer") and self._reset_btn_viewer.isVisible():
-                self._reset_btn_viewer.update()
         except Exception as _e:
             logger.warning(f"Erreur rotation auto : {_e}")
-
-    def show_orient_btn(self, label: str = "", clickable: bool = True) -> None:
-        """Affiche le bouton d'orientation. clickable=False → info non-cliquable qui disparaît."""
-        if clickable:
-            text = _("viewer.orient_apply_lbl", label=label) if label else _("viewer.orient_btn")
-            self._orient_btn_viewer.setEnabled(True)
-            self._orient_btn_viewer.setCursor(Qt.PointingHandCursor)
-            self._orient_btn_viewer.setStyleSheet("""
-                QPushButton {
-                    background: rgba(6,14,26,200);
-                    color: #1E90FF;
-                    border: 1px solid #1E90FF;
-                    border-radius: 4px;
-                    padding: 0 12px;
-                    letter-spacing: 1px;
-                }
-                QPushButton:hover { background: #1E90FF; color: #020408; }
-            """)
-        else:
-            text = label or _("viewer.orient_optimal")
-            self._orient_btn_viewer.setEnabled(False)
-            self._orient_btn_viewer.setCursor(Qt.ArrowCursor)
-            self._orient_btn_viewer.setStyleSheet("""
-                QPushButton {
-                    background: rgba(6,14,26,180);
-                    color: #2ECC71;
-                    border: 1px solid #2ECC71;
-                    border-radius: 4px;
-                    padding: 0 12px;
-                    letter-spacing: 1px;
-                }
-                QPushButton:disabled { color: #2ECC71; border-color: #2ECC71; }
-            """)
-            QTimer.singleShot(4000, self.hide_orient_btn)
-
-        self._orient_btn_viewer.setText(text)
-        bw = self._orient_btn_viewer.sizeHint().width() + 20
-        self._orient_btn_viewer.setGeometry(10, 10, bw, 28)
-        self._orient_btn_viewer.show()
-        self._orient_btn_viewer.raise_()
-
-    def hide_orient_btn(self) -> None:
-        """Masque le bouton d'orientation."""
-        self._orient_btn_viewer.hide()
-
-    def _setup_reset_btn(self):
-        """Bouton flottant — réinitialiser l'orientation d'origine."""
-        self._reset_btn_viewer = QPushButton(_("viewer.orient_reset"), self)
-        self._reset_btn_viewer.setFont(QFont("Segoe UI", 8, QFont.Bold))
-        self._reset_btn_viewer.setFixedHeight(28)
-        self._reset_btn_viewer.setCursor(Qt.PointingHandCursor)
-        self._reset_btn_viewer.setStyleSheet("""
-            QPushButton {
-                background: rgba(6,14,26,200);
-                color: #F0A500;
-                border: 1px solid #F0A500;
-                border-radius: 4px;
-                padding: 0 12px;
-                letter-spacing: 1px;
-            }
-            QPushButton:hover {
-                background: #F0A500;
-                color: #020408;
-            }
-        """)
-        self._reset_btn_viewer.hide()
-        self._reset_btn_viewer.clicked.connect(self.reset_orientation)
-
-    def show_reset_btn(self) -> None:
-        """Affiche le bouton de réinitialisation de l'orientation."""
-        bw = self._reset_btn_viewer.sizeHint().width() + 20
-        self._reset_btn_viewer.setGeometry(10, 10, bw, 28)
-        self._reset_btn_viewer.show()
-        self._reset_btn_viewer.raise_()
-
-    def hide_reset_btn(self) -> None:
-        """Masque le bouton de réinitialisation."""
-        self._reset_btn_viewer.hide()
 
     def start_auto_rotate(self):
         """Démarre la rotation automatique après analyse (case cochée par défaut)."""
@@ -647,37 +549,47 @@ class Viewer3D(QWidget):
         return False
 
     def _setup_lights(self):
-        """Éclairage studio 6 points — qualité photoréaliste."""
+        """Éclairage studio 8 points — qualité cinématique (type Unreal Engine)."""
         self._plotter.remove_all_lights()
-        # Key — haut-droite-devant, blanc légèrement chaud
+        # Key principale — haut-droite-devant, blanc chaud légèrement soleil
         self._plotter.add_light(pv.Light(
-            position=(5, 3, 12), focal_point=(0, 0, 0),
-            intensity=1.0, color=[1.0, 0.98, 0.95],
+            position=(6, 4, 14), focal_point=(0, 0, 0),
+            intensity=1.20, color=[1.0, 0.97, 0.92],
         ))
-        # Key secondaire — haut-gauche, plus doux (simule aire de lumière large)
+        # Key large — haut-gauche, simule aire de lumière (softbox)
         self._plotter.add_light(pv.Light(
-            position=(-3, 5, 10), focal_point=(0, 0, 0),
-            intensity=0.40, color=[1.0, 0.99, 0.97],
+            position=(-4, 6, 11), focal_point=(0, 0, 0),
+            intensity=0.55, color=[1.0, 0.98, 0.96],
         ))
-        # Fill — gauche, bleu doux, adoucit les ombres dures
+        # Fill — gauche-bas, bleu ciel pour contrebalancer la chaleur de la key
         self._plotter.add_light(pv.Light(
-            position=(-8, -3, 3), focal_point=(0, 0, 0),
-            intensity=0.28, color=[0.80, 0.90, 1.0],
+            position=(-10, -2, 2), focal_point=(0, 0, 0),
+            intensity=0.35, color=[0.75, 0.88, 1.0],
         ))
-        # Rim — contre-jour arrière gauche, révèle les contours
+        # Rim fort — contre-jour arrière, révèle les contours avec éclat
         self._plotter.add_light(pv.Light(
-            position=(-2, -9, 5), focal_point=(0, 0, 0),
-            intensity=0.22, color=[0.85, 0.92, 1.0],
+            position=(-1, -12, 6), focal_point=(0, 0, 0),
+            intensity=0.50, color=[0.82, 0.92, 1.0],
         ))
-        # Top — lumière zénithale neutre, illumine les crevasses
+        # Rim droit — contre-jour droit pour séparer la pièce du fond
         self._plotter.add_light(pv.Light(
-            position=(0, 0, 15), focal_point=(0, 0, 0),
-            intensity=0.18, color=[0.95, 0.97, 1.0],
+            position=(10, -6, 4), focal_point=(0, 0, 0),
+            intensity=0.30, color=[0.90, 0.95, 1.0],
         ))
-        # Bounce — réflexion montante depuis le plateau, très subtile
+        # Top — lumière zénithale, illumine les surfaces horizontales
         self._plotter.add_light(pv.Light(
-            position=(0, 0, -8), focal_point=(0, 0, 0),
-            intensity=0.06, color=[1.0, 0.96, 0.88],
+            position=(0, 0, 18), focal_point=(0, 0, 0),
+            intensity=0.22, color=[0.93, 0.96, 1.0],
+        ))
+        # Bounce — réflexion montante depuis le plateau (GI simulé)
+        self._plotter.add_light(pv.Light(
+            position=(0, 0, -10), focal_point=(0, 0, 0),
+            intensity=0.12, color=[1.0, 0.97, 0.90],
+        ))
+        # Accent latéral — souligne les détails fins sur la droite
+        self._plotter.add_light(pv.Light(
+            position=(12, 2, 0), focal_point=(0, 0, 0),
+            intensity=0.18, color=[1.0, 0.98, 0.88],
         ))
 
     _PLATE_SIZE    = 256.0  # mm — plateau carré fixe (256 × 256)
@@ -931,16 +843,17 @@ class Viewer3D(QWidget):
         mode = PREFS.get("perf_mode", "full")
         _Q = {
             "full": {
-                "metallic": 0.18, "roughness": 0.20, "specular": 0.50,
-                "ambient": 0.05,  "diffuse":  0.90,
-                "feature_angle": 20.0,
-                "ssao": dict(radius=1.2, bias=0.005, kernel_size=128, blur=True),
+                # PBR ultra qualité — lisse comme du PLA brillant, éclairage cinématique
+                "metallic": 0.25, "roughness": 0.10, "specular": 0.80,
+                "ambient": 0.02,  "diffuse":  0.95,
+                "feature_angle": 8.0,
+                "ssao": dict(radius=1.8, bias=0.003, kernel_size=256, blur=True),
             },
             "balanced": {
-                "metallic": 0.08, "roughness": 0.32, "specular": 0.26,
-                "ambient": 0.08,  "diffuse":  0.88,
-                "feature_angle": 30.0,
-                "ssao": dict(radius=0.8, bias=0.010, kernel_size=64,  blur=True),
+                "metallic": 0.10, "roughness": 0.28, "specular": 0.35,
+                "ambient": 0.06,  "diffuse":  0.90,
+                "feature_angle": 25.0,
+                "ssao": dict(radius=0.9, bias=0.010, kernel_size=64,  blur=True),
             },
             "lite": {
                 "metallic": 0.00, "roughness": 0.55, "specular": 0.00,
