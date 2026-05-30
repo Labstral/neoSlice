@@ -24,7 +24,7 @@ from loguru import logger
 _OVERHANG_ANGLE_DEG  = 45.0   # angle depuis l'horizontale (norme FDM)
 _GAP_THRESHOLD_MM    = 0.5    # gap minimum sous une face pour la flaguer
 _BRIDGE_SPAN_MM      = 7.0    # portée max d'un pont sans support (FDM ≈ 7mm fiable)
-_MAX_RAYS            = 8000   # limite le nombre de rayons pour la performance
+_MAX_RAYS            = 3000   # limite le nombre de rayons (réduit pour la perf)
 
 
 def detect_support_by_raycast(
@@ -125,25 +125,21 @@ def detect_support_by_raycast(
     for fi in filtered_set:
         metric_mask[fi] = True
 
-    # ── Métriques calculées sur le masque filtré ─────────────────────────────
+    # ── Métriques calculées sur le masque BRUT (avant filtre bridge) ────────
+    # Le filtre bridge sur-élimine les surplombs sur les pièces organiques
+    # complexes (tentacules, ailes, figurines) → toujours utiliser raw_mask.
+    # Le metric_mask sert seulement de référence interne au filtre.
     face_areas  = mesh.area_faces
     total_area  = float(face_areas.sum())
-    support_area = float(face_areas[metric_mask].sum()) if metric_mask.any() else 0.0
+    support_area = float(face_areas[raw_mask].sum()) if raw_mask.any() else 0.0
     ratio        = support_area / total_area if total_area > 0 else 0.0
 
-    # Sévérité calibrée : ratio × projection verticale
+    # Sévérité calibrée : projection verticale des surplombs bruts
     top_mask  = face_normals[:, 2] > 0.0
     footprint = float((face_areas[top_mask] * face_normals[top_mask, 2]).sum())
-    proj_oh   = float((face_areas[metric_mask] * np.abs(face_normals[metric_mask, 2])).sum()) if metric_mask.any() else 0.0
+    proj_oh   = float((face_areas[raw_mask] * np.abs(face_normals[raw_mask, 2])).sum()) if raw_mask.any() else 0.0
     proj_ratio = proj_oh / max(footprint, 1e-6)
     severity   = min(1.0, proj_ratio * 3.5)
-
-    # Si des surplombs bruts existent mais aucun ne passe le filtre bridge,
-    # on conserve une sévérité minimale pour déclencher la colorisation dans l'UI.
-    if raw_mask.any() and severity == 0.0:
-        raw_proj = float((face_areas[raw_mask] * np.abs(face_normals[raw_mask, 2])).sum())
-        severity = min(0.30, (raw_proj / max(footprint, 1e-6)) * 1.5)
-        ratio    = float(face_areas[raw_mask].sum()) / total_area if total_area > 0 else 0.0
 
     return raw_mask, ratio, severity
 
@@ -153,38 +149,33 @@ def support_face_colors(
     mask: np.ndarray,
     bridge_mask: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Couleurs RGBA par face pour la visualisation des zones de support.
+    """Couleurs RGBA par face pour Viewer3D.colorize_overhangs().
 
-    Gris   = surface correctement supportée.
-    Jaune  = surplomb léger ou pont imprimable (45°–60° depuis horizontal).
-    Orange = surplomb modéré (60°–75°).
-    Rouge  = surplomb critique (> 75° depuis horizontal, soit face quasi-horizontale ↓).
+    Même encodage que overhang_face_colors() :
+    - Canal R = sévérité continue [0→255] pour les faces en surplomb.
+    - Canal G = 128 sur les faces sûres (distingue sev=0 de face safe).
+
+    Sévérité basée sur |nz| : 0.0 à sin(45°), 1.0 à face parfaitement ↓.
     """
     n = len(mesh.faces)
-    colors = np.full((n, 4), [142, 155, 173, 255], dtype=np.uint8)  # gris bleuté
+    colors = np.zeros((n, 4), dtype=np.uint8)
+    colors[:, 1] = 128   # G=128 = marqueur face sûre pour toutes les faces
+    colors[:, 3] = 255
 
     if not mask.any():
         return colors
 
-    normals  = mesh.face_normals
-    # nz négatif = face orientée vers le bas. Pour les faces en mask, nz < -sin(45°).
-    # On grade par |nz| : |nz|=1 (face parfaitement horizontale ↓) = critique.
-    nz_vals = normals[:, 2]  # négatif pour les faces vers le bas
+    normals = mesh.face_normals
+    abs_nz  = np.abs(normals[:, 2])
 
-    # |nz| ∈ [sin(45°)=0.707, 1.0] pour toutes les faces en mask
-    # On découpe ce range en 3 zones :
-    #   |nz| ∈ [0.707, 0.80]  → légèrement incliné (≈ 45°–53°) → jaune
-    #   |nz| ∈ [0.80,  0.92]  → modéré (≈ 53°–67°)             → orange
-    #   |nz| ∈ [0.92,  1.0]   → quasi-horizontal ↓ (> 67°)     → rouge
-    abs_nz = np.abs(nz_vals)
-    mild_mask   = mask & (abs_nz < 0.80)
-    mod_mask    = mask & (abs_nz >= 0.80) & (abs_nz < 0.92)
-    severe_mask = mask & (abs_nz >= 0.92)
+    # Sévérité brute : 0.0 à sin(45°), 1.0 à |nz|=1.0 (plafond pur)
+    sin_45 = math.sin(math.radians(45.0))
+    sev_raw = np.clip((abs_nz - sin_45) / (1.0 - sin_45), 0.0, 1.0)
+    # Boost de visibilité : sev_min=0.30 pour toute face détectée
+    sev = np.where(mask, np.where(sev_raw > 0, 0.30 + 0.70 * sev_raw, 0.0), 0.0)
 
-    colors[mild_mask]   = [212, 168, 32,  255]   # jaune ocre
-    colors[mod_mask]    = [220, 100, 16,  255]   # orange
-    colors[severe_mask] = [204, 32,  16,  255]   # rouge
-
+    colors[:, 0] = (sev * 255).astype(np.uint8)  # R = sévérité encodée
+    colors[mask, 1] = 0   # G=0 pour les faces en surplomb (R encode la sévérité)
     return colors
 
 

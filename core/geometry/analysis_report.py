@@ -54,6 +54,7 @@ class AnalysisReport(BaseModel):
     face_count: int = 0
     warnings: list[str] = Field(default_factory=list)
     support_face_mask: Any = Field(default=None, exclude=True)  # ndarray bool — non sérialisé
+    overhang_result: Any = Field(default=None, exclude=True)    # OverhangResult — non sérialisé
 
     @computed_field
     @property

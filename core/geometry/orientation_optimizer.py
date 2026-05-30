@@ -203,21 +203,20 @@ def _fast_stability(
 
 
 def _fast_flat_base(r_normals: np.ndarray, areas: np.ndarray, r_verts_z: np.ndarray) -> float:
-    """Score de planéité de la base (normales vers le bas proches du sol)."""
-    if r_verts_z.max() < 1e-6:
+    """Score de planéité de la base — faces quasi-horizontales dans la zone basse du mesh."""
+    height = float(r_verts_z.max()) if len(r_verts_z) > 0 else 0.0
+    if height < 1e-6:
         return 0.0
 
-    height = float(r_verts_z.max())
-    # trimesh.triangles_center non disponible ici — on approxime par r_verts_z min
-    # Utiliser le min Z des sommets pour approximer les faces au sol
-    # (pas de centroïde de triangle disponible sans copie mesh)
-    # Heuristique : faces avec normale nz < -0.9 (quasi-horizontales vers le bas)
-    flat_down = r_normals[:, 2] < -0.9
+    # Faces quasi-horizontales vers le bas (nz < -0.85, soit ±32° de tolérance)
+    flat_down = r_normals[:, 2] < -0.85
     if not flat_down.any():
         return 0.0
 
     total = float(areas.sum()) + 1e-9
-    return float(np.clip(areas[flat_down].sum() / total, 0.0, 1.0))
+    # Bonus si la zone plate est grande → ratio élevé est déjà bon
+    flat_area = float(areas[flat_down].sum())
+    return float(np.clip(flat_area / total, 0.0, 1.0))
 
 
 def _point_to_convex_distance(point: np.ndarray, polygon: np.ndarray) -> float:
@@ -284,3 +283,67 @@ def _fibonacci_sphere(n: int) -> list[np.ndarray]:
         if z >= 0:
             dirs.append(np.array([x, y, z]))
     return dirs
+
+
+# ── Détection automatique du socle ────────────────────────────────────────────
+
+def detect_and_orient_flat_base(
+    mesh: trimesh.Trimesh,
+    min_area_ratio: float = 0.04,
+    cos_threshold: float = 0.94,
+) -> np.ndarray | None:
+    """Détecte la plus grande surface plane du mesh et retourne la matrice 4×4
+    pour orienter cette surface vers le bas (posée sur le plateau).
+
+    Algorithme : clustering des normales de faces pondéré par surface.
+    On évalue ~300 graines max, chacune définissant un cluster « toutes les faces
+    dont la normale est à moins de ~20° de la graine ». Le cluster avec la plus
+    grande surface totale est la surface plate dominante.
+
+    Retourne None si aucune surface plate n'atteint min_area_ratio de la surface
+    totale (pas de socle clair → pas de rotation automatique).
+    """
+    normals = mesh.face_normals   # (F, 3)
+    areas   = mesh.area_faces     # (F,)
+    n_faces = len(normals)
+
+    if n_faces < 4:
+        return None
+
+    total_area = float(areas.sum()) + 1e-9
+
+    # Sous-échantillonnage des graines (pas de copie, juste des indices)
+    step = max(1, n_faces // 300)
+    seed_indices = np.arange(0, n_faces, step)
+
+    best_area   = 0.0
+    best_normal: np.ndarray | None = None
+
+    for i in seed_indices:
+        seed_n = normals[i]
+        # Dot product entre la graine et toutes les normales : O(F) numpy
+        dots = normals @ seed_n          # (F,)
+        mask = dots > cos_threshold      # faces dont l'angle < ~20°
+        cluster_area = float(areas[mask].sum())
+
+        if cluster_area > best_area:
+            # Normale moyenne pondérée du cluster
+            w_sum = (normals[mask] * areas[mask, np.newaxis]).sum(axis=0)
+            w_norm = float(np.linalg.norm(w_sum))
+            if w_norm > 1e-9:
+                best_area   = cluster_area
+                best_normal = w_sum / w_norm
+
+    # Vérification du ratio minimal
+    if best_normal is None or best_area / total_area < min_area_ratio:
+        return None
+
+    # Rotation pour que best_normal pointe vers -Z (surface vers le bas)
+    rot4 = _rotation_to_align_up(-best_normal)
+
+    # Ne pas appliquer si la rotation est négligeable (déjà bien orienté)
+    angle = float(np.arccos(np.clip(-best_normal[2], -1.0, 1.0)))
+    if angle < np.radians(5.0):   # < 5° d'écart → déjà correct
+        return None
+
+    return rot4

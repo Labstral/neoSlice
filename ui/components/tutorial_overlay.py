@@ -20,6 +20,7 @@ from PySide6.QtGui import (
 from ui.styles.theme import (
     ACCENT, ACCENT_BRIGHT, TELE_GREEN,
     TEXT_PRIMARY, TEXT_SECONDARY, FONT_MONO,
+    MANAGER as _T,
 )
 
 _BODY_COLOR = "#8AAABF"

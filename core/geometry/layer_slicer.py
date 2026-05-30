@@ -45,7 +45,7 @@ except ImportError:
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 _OVERHANG_ANGLE_DEG  = 45.0   # angle seuil Bambu Studio par défaut
-_N_LAYERS_TARGET     = 150    # nombre de tranches d'analyse
+_N_LAYERS_TARGET     = 80     # nombre de tranches d'analyse (réduit pour la perf)
 _N_WALL_SAMPLE       = 6      # 1 couche sur N pour le calcul d'épaisseur
 _WALL_SEARCH_MIN     = 0.2    # mm — limite basse épaisseur paroi
 _WALL_SEARCH_MAX     = 30.0   # mm — limite haute épaisseur paroi

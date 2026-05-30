@@ -12,12 +12,7 @@ from PySide6.QtCore import Qt, QUrl, QPoint
 from PySide6.QtGui import QFont, QPixmap, QDesktopServices, QMouseEvent
 
 from version import __version__
-from ui.styles.theme import (
-    BG_PANEL, BG_SURFACE, BG_ELEVATED,
-    ACCENT, ACCENT_BRIGHT, TELE_GREEN, AMBER, INACTIVE,
-    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_LABEL,
-    FONT_MONO,
-)
+from ui.styles.theme import FONT_MONO, MANAGER as _T
 
 _PREFS_FILE = Path.home() / ".neoslice" / "prefs.json"
 _COFFEE_URL = "https://buymeacoffee.com/bambulabpourlesnuls"
@@ -50,6 +45,7 @@ class WelcomeDialog(QDialog):
         super().__init__(parent)
         self._assets = assets_path
         self._drag_pos: QPoint | None = None
+        self._pal = _T.palette()
 
         self.setWindowTitle("neoSlice")
         self.setMinimumWidth(480)
@@ -58,8 +54,8 @@ class WelcomeDialog(QDialog):
         self.setAttribute(Qt.WA_TranslucentBackground, False)
         self.setStyleSheet(f"""
             QDialog {{
-                background: {BG_PANEL};
-                border: 1px solid {ACCENT};
+                background: {self._pal['BG_PANEL']};
+                border: 1px solid {self._pal['ACCENT']};
                 border-radius: 6px;
             }}
         """)
@@ -81,6 +77,7 @@ class WelcomeDialog(QDialog):
     # ── UI ─────────────────────────────────────────────────────────────────
 
     def _setup_ui(self):
+        pal = self._pal
         root = QVBoxLayout(self)
         root.setContentsMargins(36, 30, 36, 26)
         root.setSpacing(0)
@@ -103,7 +100,7 @@ class WelcomeDialog(QDialog):
         if not logo_loaded:
             logo_lbl.setText("◈")
             logo_lbl.setFont(QFont("Segoe UI", 72))
-            logo_lbl.setStyleSheet(f"color: {ACCENT_BRIGHT}; background: transparent;")
+            logo_lbl.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;")
 
         root.addWidget(logo_lbl)
         root.addSpacing(8)
@@ -112,7 +109,7 @@ class WelcomeDialog(QDialog):
         title_lbl.setAlignment(Qt.AlignCenter)
         title_lbl.setFont(QFont("Segoe UI", 24, QFont.Bold))
         title_lbl.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; letter-spacing: 6px; background: transparent;"
+            f"color: {pal['TEXT_PRIMARY']}; letter-spacing: 6px; background: transparent;"
         )
         root.addWidget(title_lbl)
 
@@ -120,7 +117,7 @@ class WelcomeDialog(QDialog):
         sub_lbl.setAlignment(Qt.AlignCenter)
         sub_lbl.setFont(QFont(FONT_MONO, 8))
         sub_lbl.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; letter-spacing: 3px; background: transparent;"
+            f"color: {pal['TEXT_SECONDARY']}; letter-spacing: 3px; background: transparent;"
         )
         root.addWidget(sub_lbl)
 
@@ -132,9 +129,9 @@ class WelcomeDialog(QDialog):
         badges.setSpacing(8)
 
         for text, fg, bg, border in [
-            (f"v{__version__}",        ACCENT_BRIGHT, BG_SURFACE,            ACCENT),
-            ("BÊTA",                  AMBER,          "rgba(255,184,0,0.10)", AMBER),
-            ("© 2026 Emmanuel Percheron", INACTIVE,   "transparent",         "transparent"),
+            (f"v{__version__}",           pal['ACCENT_BRIGHT'], pal['BG_SURFACE'], pal['ACCENT']),
+            ("BÊTA",                      pal['AMBER'],         "rgba(255,184,0,0.10)", pal['AMBER']),
+            ("© 2026 Emmanuel Percheron", pal['INACTIVE'],      "transparent",     "transparent"),
         ]:
             lbl = QLabel(text)
             lbl.setFont(QFont(FONT_MONO, 7, QFont.Bold if text == "BÊTA" else QFont.Normal))
@@ -158,7 +155,7 @@ class WelcomeDialog(QDialog):
             "J'espère sincèrement qu'il vous sera utile dans vos projets."
         )
         welcome.setFont(QFont("Segoe UI", 9))
-        welcome.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+        welcome.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         welcome.setWordWrap(True)
         welcome.setAlignment(Qt.AlignCenter)
         root.addWidget(welcome)
@@ -169,15 +166,15 @@ class WelcomeDialog(QDialog):
         beta_box.setStyleSheet(f"""
             QWidget {{
                 background: rgba(255,184,0,0.07);
-                border-left: 3px solid {AMBER};
+                border-left: 3px solid {pal['AMBER']};
                 border-radius: 2px;
             }}
         """)
         beta_lay = QVBoxLayout(beta_box)
         beta_lay.setContentsMargins(12, 8, 12, 8)
         beta_lbl = QLabel(
-            f"<b style='color:{AMBER}'>⚠  Version Bêta</b><br>"
-            f"<span style='color:{TEXT_LABEL}'>Ce logiciel est en développement actif. "
+            f"<b style='color:{pal['AMBER']}'>⚠  Version Bêta</b><br>"
+            f"<span style='color:{pal['TEXT_LABEL']}'>Ce logiciel est en développement actif. "
             "Des correctifs et de nouvelles fonctionnalités seront apportés régulièrement. "
             "Si vous rencontrez un problème, n'hésitez pas à le signaler.</span>"
         )
@@ -194,13 +191,13 @@ class WelcomeDialog(QDialog):
         # ── Buy Me a Coffee ───────────────────────────────────────────────
         coffee_title = QLabel("☕  Ce logiciel est <b>entièrement gratuit</b> et le restera.")
         coffee_title.setFont(QFont("Segoe UI", 9))
-        coffee_title.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+        coffee_title.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         coffee_title.setAlignment(Qt.AlignCenter)
         root.addWidget(coffee_title)
 
         coffee_sub = QLabel("Si vous souhaitez soutenir le développement :")
         coffee_sub.setFont(QFont("Segoe UI", 8))
-        coffee_sub.setStyleSheet(f"color: {TEXT_LABEL}; background: transparent;")
+        coffee_sub.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
         coffee_sub.setAlignment(Qt.AlignCenter)
         root.addWidget(coffee_sub)
 
@@ -238,22 +235,22 @@ class WelcomeDialog(QDialog):
         self._skip_check.setFont(QFont("Segoe UI", 8))
         self._skip_check.setStyleSheet(f"""
             QCheckBox {{
-                color: {TEXT_LABEL};
+                color: {pal['TEXT_LABEL']};
                 background: transparent;
                 spacing: 6px;
             }}
             QCheckBox::indicator {{
                 width: 14px; height: 14px;
-                border: 1px solid {INACTIVE};
+                border: 1px solid {pal['INACTIVE']};
                 border-radius: 2px;
-                background: {BG_SURFACE};
+                background: {pal['BG_SURFACE']};
             }}
             QCheckBox::indicator:checked {{
-                background: {ACCENT};
-                border-color: {ACCENT};
+                background: {pal['ACCENT']};
+                border-color: {pal['ACCENT']};
                 image: none;
             }}
-            QCheckBox::indicator:hover {{ border-color: {ACCENT_BRIGHT}; }}
+            QCheckBox::indicator:hover {{ border-color: {pal['ACCENT_BRIGHT']}; }}
         """)
         footer.addWidget(self._skip_check)
         footer.addStretch()
@@ -265,14 +262,14 @@ class WelcomeDialog(QDialog):
         close_btn.setDefault(True)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background: {ACCENT};
+                background: {pal['ACCENT']};
                 color: #020408;
                 border: none;
                 border-radius: 4px;
                 padding: 0 22px;
                 letter-spacing: 1px;
             }}
-            QPushButton:hover {{ background: {ACCENT_BRIGHT}; }}
+            QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
         """)
         close_btn.clicked.connect(self._on_close)
         footer.addWidget(close_btn)
@@ -282,7 +279,7 @@ class WelcomeDialog(QDialog):
     def _sep(self) -> QFrame:
         f = QFrame()
         f.setFixedHeight(1)
-        f.setStyleSheet(f"background: {INACTIVE};")
+        f.setStyleSheet(f"background: {self._pal['INACTIVE']};")
         return f
 
     def _on_close(self):

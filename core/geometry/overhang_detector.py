@@ -35,8 +35,9 @@ class OverhangResult:
     overhang_ratio: float          # fraction surface en surplomb / surface totale
     projected_ratio: float         # fraction aire XY projetée (≈ méthode Bambu)
     max_angle_deg: float           # angle max depuis l'horizontale (°)
-    critical_face_mask: np.ndarray # masque booléen par face
+    critical_face_mask: np.ndarray # masque booléen par face (filtré — pour métriques)
     has_floating_regions: bool     # composant mesh sans contact plateau
+    display_mask: np.ndarray = None  # masque brut sans filtre pont — pour la visu couleur
 
 
 def analyze_overhangs(
@@ -85,6 +86,7 @@ def analyze_overhangs(
     mask = mask & ~on_plate
 
     # ── 4-6. Clustering scipy + filtre surface + ponts ───────────────────────
+    display_mask = mask.copy()   # masque brut avant filtre pont — pour la visu
     if mask.any():
         mask = _filter_clusters_and_bridges(
             mesh, normals, mask,
@@ -124,6 +126,7 @@ def analyze_overhangs(
         max_angle_deg=max_angle,
         critical_face_mask=mask,
         has_floating_regions=has_floating,
+        display_mask=display_mask,
     )
 
 
@@ -279,20 +282,32 @@ def _detect_floating_regions(mesh: trimesh.Trimesh) -> bool:
 
 
 def overhang_face_colors(mesh: trimesh.Trimesh, result: OverhangResult) -> np.ndarray:
-    """Tableau RGBA par face pour la visualisation colorée des surplombs.
+    """Tableau RGBA par face — sévérité continue encodée dans le canal R.
 
-    Vert = OK · Orange = modéré (45°–60° depuis horizontal) · Rouge = critique (>60°)
+    Canal R = sévérité [0→255] pour les faces en surplomb détectées.
+    Canal G = 128 sur les faces sûres (distingue sev=0 overhang de face safe).
+    Décodé par Viewer3D.colorize_overhangs() via cmap jaune→orange→rouge.
+
+    Sévérité : 1.0 = plafond pur (face vers le bas), 0.0 = seuil 45° ou en-dessous.
     """
-    colors = np.full((len(mesh.faces), 4), [80, 200, 120, 255], dtype=np.uint8)
-
     normals = mesh.face_normals
     z_down = np.array([0.0, 0.0, -1.0])
-    cos_vals = np.clip(normals @ z_down, -1.0, 1.0)
-    angles = np.degrees(np.arccos(cos_vals))
+    cos_down = np.clip(normals @ z_down, -1.0, 1.0)
+    angle_from_down = np.degrees(np.arccos(cos_down))  # 0°=plafond pur, 90°=mur, 180°=sol
 
-    mild_mask   = (angles < 45.0) & (angles >= 30.0) & result.critical_face_mask
-    severe_mask = (angles < 30.0) & result.critical_face_mask
-    colors[mild_mask]   = [255, 165, 0, 255]
-    colors[severe_mask] = [220, 50, 50, 255]
+    # Sévérité brute : 1.0 = plafond pur (0°), 0.0 au seuil 45°
+    sev_raw = np.clip((45.0 - angle_from_down) / 45.0, 0.0, 1.0)
+    # Boost de visibilité : même les surplombs modérés (~45°) apparaissent en jaune.
+    # Sans boost, une face à 44° aurait sev=0.022 → quasi-invisible.
+    # Avec boost : sev_min=0.30 pour toute face détectée, gradient jusqu'à 1.0.
+    sev = np.where(
+        result.critical_face_mask,
+        np.where(sev_raw > 0, 0.30 + 0.70 * sev_raw, 0.0),
+        0.0,
+    )
 
+    colors = np.zeros((len(mesh.faces), 4), dtype=np.uint8)
+    colors[:, 3] = 255
+    colors[:, 0] = (sev * 255).astype(np.uint8)   # R = sévérité encodée
+    colors[~result.critical_face_mask, 1] = 128    # G=128 = marqueur face sûre
     return colors

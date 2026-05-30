@@ -61,16 +61,25 @@ def load_stl(path: Path) -> trimesh.Trimesh:
     if len(mesh.faces) == 0:
         raise STLLoadError("Le mesh est vide après réparation (aucune face valide).")
 
-    # ── Vérification des unités (avertissement uniquement, jamais de rescale) ──
-    # STL n'encode pas les unités. neoSlice ne redimensionne JAMAIS la pièce
-    # pour garantir la fidélité dimensionnelle. Si les dimensions semblent
-    # anormales, on log un avertissement pour le débogage.
+    # ── Détection et correction des unités ──────────────────────────────────
+    # STL n'encode pas les unités. Si les coordonnées semblent être en mètres
+    # (max extent < 1.0) mais auraient du sens en mm (×1000 → 1–500 mm),
+    # on corrige automatiquement. Ce n'est pas un redimensionnement géométrique
+    # mais une correction d'unité (cas typique : export Fusion 360 en mètres).
     _max_extent = float(mesh.bounding_box.extents.max())
     if _max_extent < 1.0:
-        logger.warning(
-            f"Pièce très petite détectée (max extent = {_max_extent:.4f} mm). "
-            f"Le STL est peut-être exporté en mètres — vérifier les unités dans le logiciel source."
-        )
+        _scaled_mm = _max_extent * 1000.0
+        if 1.0 <= _scaled_mm <= 500.0:
+            mesh.apply_scale(1000.0)
+            logger.warning(
+                f"STL en mètres détecté (max extent = {_max_extent:.4f} m) — "
+                f"converti automatiquement en mm (×1000 → {_scaled_mm:.1f} mm)."
+            )
+        else:
+            logger.warning(
+                f"Pièce très petite détectée (max extent = {_max_extent:.4f} mm). "
+                f"Vérifier les unités dans le logiciel source."
+            )
     elif _max_extent > 500.0:
         logger.warning(
             f"Pièce très grande détectée (max extent = {_max_extent:.1f} mm). "

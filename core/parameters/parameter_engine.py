@@ -268,11 +268,8 @@ class ParameterEngine:
                 config.bridge_speed = min(config.bridge_speed, 45)
 
         if analysis.support_needed:
-            # Tree supports pour les surplombs complexes (> 50% sévérité)
-            if analysis.overhang_severity > 0.5:
-                config.support_type = "tree(auto)"
-            else:
-                config.support_type = "normal(auto)"
+            # Arborescents par défaut — plus faciles à retirer, meilleure qualité de surface
+            config.support_type = "tree(auto)"
             # Angle de déclenchement basé sur l'analyse réelle
             raw_angle = 90.0 - analysis.max_overhang_angle
             config.support_threshold_angle = float(max(20.0, min(45.0, raw_angle + 5.0)))

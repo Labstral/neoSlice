@@ -24,7 +24,7 @@ _DARK: dict = {
     "ACCENT":        "#1E90FF",
     "ACCENT_BRIGHT": "#4DAFFF",
 
-    "TELE_GREEN": "#00FF9F",
+    "TELE_GREEN": "#00B870",
     "AMBER":      "#FFB800",
     "ERROR_RED":  "#FF3B3B",
 
@@ -37,9 +37,9 @@ _DARK: dict = {
     "FONT_MONO": "Courier New",
     "RADIUS": 4,
 
-    # Viewer 3D PyVista
-    "VIEWER_BG":     "#030912",
-    "VIEWER_BG_TOP": "#0B1A2E",
+    # Viewer 3D PyVista — fond gris Bambu Studio (identique thème clair/foncé)
+    "VIEWER_BG":     "#606468",
+    "VIEWER_BG_TOP": "#606468",
 
     # paintEvent — grille fond et scan-line (RGBA composantes)
     "GRID_R": 30, "GRID_G": 144, "GRID_B": 255, "GRID_A": 8,
@@ -59,7 +59,7 @@ _LIGHT: dict = {
     "ACCENT":        "#2d8a4e",
     "ACCENT_BRIGHT": "#1f6b3a",
 
-    "TELE_GREEN": "#27ae60",
+    "TELE_GREEN": "#0A9E60",
     "AMBER":      "#e67e22",
     "ERROR_RED":  "#c0392b",
 
@@ -72,8 +72,9 @@ _LIGHT: dict = {
     "FONT_MONO": "Courier New",
     "RADIUS": 4,
 
-    "VIEWER_BG":     "#ececec",
-    "VIEWER_BG_TOP": "#f0f0f0",
+    # Viewer 3D PyVista — fond gris plus clair en thème clair (moins de contraste)
+    "VIEWER_BG":     "#9E9EA2",
+    "VIEWER_BG_TOP": "#9E9EA2",
 
     "GRID_R": 0, "GRID_G": 0, "GRID_B": 0, "GRID_A": 12,
     "SCAN_R": 45, "SCAN_G": 138, "SCAN_B": 78, "SCAN_A": 12,
@@ -203,7 +204,7 @@ BG_INPUT    = _DARK["BG_INPUT"]
 ACCENT        = _DARK["ACCENT"]
 ACCENT_BRIGHT = _DARK["ACCENT_BRIGHT"]
 
-TELE_GREEN = _DARK["TELE_GREEN"]
+TELE_GREEN = _DARK["TELE_GREEN"]   # "#00B870" — vert Bambu
 AMBER      = _DARK["AMBER"]
 ERROR_RED  = _DARK["ERROR_RED"]
 

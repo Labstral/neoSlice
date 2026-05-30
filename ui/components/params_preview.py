@@ -127,6 +127,7 @@ class CollapsibleSection(QWidget):
 class _EmptyState(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setStyleSheet("background: transparent;")
         vl = QVBoxLayout(self)
         vl.setAlignment(Qt.AlignCenter)
         vl.setSpacing(10)

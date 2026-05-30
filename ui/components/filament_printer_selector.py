@@ -447,6 +447,86 @@ class FilamentPrinterSelector(QWidget):
         """Retourne la valeur curr_bed_type Bambu Studio du plateau sélectionné."""
         return self._plate_combo.currentData() or _PLATE_DEFAULT
 
+    def refresh_theme(self):
+        pal = _T.palette()
+        bg_in  = pal["BG_INPUT"];   bg_el = pal["BG_ELEVATED"]
+        tp     = pal["TEXT_PRIMARY"];  ts = pal["TEXT_SECONDARY"]
+        tl     = pal["TEXT_LABEL"];   inc = pal["INACTIVE"]
+        acc    = pal["ACCENT"];     accb = pal["ACCENT_BRIGHT"]
+        tg     = pal["TELE_GREEN"]; amb  = pal["AMBER"]
+
+        combo_style = f"""
+            QComboBox {{
+                background: {bg_in}; color: {tp};
+                border: 1px solid {inc}; border-radius: 3px;
+                padding: 5px 8px; font-size: 13px; font-family: "Segoe UI";
+            }}
+            QComboBox:hover {{ border-color: {acc}; }}
+            QComboBox:disabled {{ background: {bg_el}; color: {inc}; border-color: {inc}; }}
+            QComboBox::drop-down {{ border: none; width: 18px; }}
+            QComboBox::down-arrow {{
+                width: 0; height: 0;
+                border-left: 4px solid transparent; border-right: 4px solid transparent;
+                border-top: 5px solid {ts};
+            }}
+            QComboBox QAbstractItemView {{
+                background: {bg_el}; color: {tp}; border: 1px solid {inc};
+                selection-background-color: {acc}; selection-color: #020408;
+                outline: none; padding: 2px;
+            }}
+        """
+        nozzle_style = f"""
+            QComboBox {{
+                background: {bg_in}; color: {tp};
+                border: 1px solid {inc}; border-radius: 3px;
+                padding: 4px 6px; font-size: 13px; font-family: "Segoe UI";
+                min-width: 68px; max-width: 68px;
+            }}
+            QComboBox:hover {{ border-color: {acc}; }}
+            QComboBox::drop-down {{ border: none; width: 14px; }}
+            QComboBox::down-arrow {{
+                width: 0; height: 0;
+                border-left: 3px solid transparent; border-right: 3px solid transparent;
+                border-top: 4px solid {ts};
+            }}
+            QComboBox QAbstractItemView {{
+                background: {bg_el}; color: {tp}; border: 1px solid {inc};
+                selection-background-color: {acc}; selection-color: #020408; outline: none;
+            }}
+        """
+        for combo in (self._printer_combo, self._filament_combo, self._plate_combo):
+            combo.setStyleSheet(combo_style)
+        self._nozzle_combo.setStyleSheet(nozzle_style)
+
+        label_active = f"color: {tl}; letter-spacing: 2px; background: transparent;"
+        label_dim    = f"color: {inc}; letter-spacing: 2px; background: transparent;"
+        self._lbl_p.setStyleSheet(label_active)
+        self._lbl_f.setStyleSheet(label_active if self._printer_done else label_dim)
+        self._lbl_plate.setStyleSheet(label_active if self._filament_done else label_dim)
+
+        btn_validate = f"""
+            QPushButton {{
+                background: {acc}; color: #020408; border: none; border-radius: 3px;
+                padding: 0 10px; font-size: 10px; font-family: "Segoe UI";
+                font-weight: bold; letter-spacing: 1px;
+            }}
+            QPushButton:hover {{ background: {accb}; }}
+        """
+        btn_done = f"""
+            QPushButton {{
+                background: transparent; color: {tg};
+                border: 1px solid {tg}; border-radius: 3px;
+                padding: 0 8px; font-size: 10px;
+            }}
+        """
+        self._btn_confirm_printer.setStyleSheet(btn_done if self._printer_done else btn_validate)
+        self._btn_confirm_filament.setStyleSheet(btn_done if self._filament_done else btn_validate)
+
+        self._hint_filament.setStyleSheet(f"color: {inc}; background: transparent;")
+        self._plate_warn_lbl.setStyleSheet(f"color: {amb}; background: transparent;")
+        self._compat_badge.setStyleSheet(f"color: {tg}; background: transparent;")
+        self._update_compatibility()
+
 
 # ── Logique compatibilité ──────────────────────────────────────────────────
 

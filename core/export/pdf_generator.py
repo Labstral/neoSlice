@@ -92,11 +92,51 @@ if TYPE_CHECKING:
     from core.parameters.print_config import PrintConfig
 
 
+def _pdf_palette(dark: bool) -> dict:
+    """Retourne les couleurs reportlab selon le thème."""
+    try:
+        from reportlab.lib.colors import HexColor, white
+    except ImportError:
+        return {}
+
+    if dark:
+        return {
+            "BG":       HexColor("#070D14"),
+            "PANEL":    HexColor("#0A1628"),
+            "ELEVATED": HexColor("#0F1F35"),
+            "ACCENT":   HexColor("#1E90FF"),
+            "GREEN":    HexColor("#00FF9F"),
+            "AMBER":    HexColor("#FFB800"),
+            "RED":      HexColor("#FF3B3B"),
+            "TEXT":     HexColor("#C8DCF0"),
+            "MUTED":    HexColor("#4A7A9B"),
+            "INACTIVE": HexColor("#1A3550"),
+            "FOOTER":   HexColor("#2A5070"),
+            "HL_TEXT":  white,
+        }
+    else:
+        return {
+            "BG":       HexColor("#FFFFFF"),
+            "PANEL":    HexColor("#F4F6F8"),
+            "ELEVATED": HexColor("#DDE3EA"),
+            "ACCENT":   HexColor("#2d8a4e"),
+            "GREEN":    HexColor("#27ae60"),
+            "AMBER":    HexColor("#B05F00"),
+            "RED":      HexColor("#c0392b"),
+            "TEXT":     HexColor("#1a1a1a"),
+            "MUTED":    HexColor("#555555"),
+            "INACTIVE": HexColor("#C0CCDA"),
+            "FOOTER":   HexColor("#888888"),
+            "HL_TEXT":  white,
+        }
+
+
 def generate_filament_pdf(
     filament_name: str,
     printer_name: str,
     output_path: Path,
     plate_type: str = "Textured PEI Plate",
+    dark: bool = True,
 ) -> bool:
     """Génère le PDF et retourne True si succès."""
     try:
@@ -122,16 +162,19 @@ def generate_filament_pdf(
         return False
 
     # ── Couleurs ─────────────────────────────────────────────────────────
-    C_BG       = HexColor("#070D14")
-    C_PANEL    = HexColor("#0A1628")
-    C_ELEVATED = HexColor("#0F1F35")
-    C_ACCENT   = HexColor("#1E90FF")
-    C_GREEN    = HexColor("#00FF9F")
-    C_AMBER    = HexColor("#FFB800")
-    C_RED      = HexColor("#FF3B3B")
-    C_TEXT     = HexColor("#C8DCF0")
-    C_MUTED    = HexColor("#4A7A9B")
-    C_INACTIVE = HexColor("#1A3550")
+    p          = _pdf_palette(dark)
+    C_BG       = p["BG"]
+    C_PANEL    = p["PANEL"]
+    C_ELEVATED = p["ELEVATED"]
+    C_ACCENT   = p["ACCENT"]
+    C_GREEN    = p["GREEN"]
+    C_AMBER    = p["AMBER"]
+    C_RED      = p["RED"]
+    C_TEXT     = p["TEXT"]
+    C_MUTED    = p["MUTED"]
+    C_INACTIVE = p["INACTIVE"]
+    C_FOOTER   = p["FOOTER"]
+    C_HL_TEXT  = p["HL_TEXT"]
 
     # ── Styles texte ──────────────────────────────────────────────────────
     def style(name, size=9, color=C_TEXT, bold=False, align=TA_LEFT, leading=None):
@@ -150,10 +193,10 @@ def generate_filament_pdf(
     s_section  = style("section", 10, C_ACCENT,  bold=True)
     s_warn     = style("warn",     9, C_RED,      bold=True)
     s_cell     = style("cell",     8, C_TEXT)
-    s_cell_hl  = style("cell_hl",  8, white,      bold=True)
+    s_cell_hl  = style("cell_hl",  8, C_HL_TEXT, bold=True)
     s_cell_mut = style("cell_mut", 8, C_MUTED)
     s_note     = style("note",     8, C_MUTED)
-    s_footer   = style("footer",   7, C_INACTIVE,             align=TA_CENTER)
+    s_footer   = style("footer",   7, C_FOOTER,              align=TA_CENTER)
 
     # ── Helpers tableaux ──────────────────────────────────────────────────
     COL_W = [5.8*cm, 3.5*cm, 1.5*cm, 5.2*cm]
@@ -336,6 +379,7 @@ def generate_full_report_pdf(
     analysis: "AnalysisReport",
     output_path: Path,
     plate_type: str = "Textured PEI Plate",
+    dark: bool = True,
 ) -> bool:
     """Rapport complet : analyse géométrique + paramètres + filament."""
     try:
@@ -357,16 +401,20 @@ def generate_full_report_pdf(
 
     fil = FILAMENTS.get(filament_name, {})
 
-    C_BG       = HexColor("#070D14")
-    C_PANEL    = HexColor("#0A1628")
-    C_ELEVATED = HexColor("#0F1F35")
-    C_ACCENT   = HexColor("#1E90FF")
-    C_GREEN    = HexColor("#00FF9F")
-    C_AMBER    = HexColor("#FFB800")
-    C_RED      = HexColor("#FF3B3B")
-    C_TEXT     = HexColor("#C8DCF0")
-    C_MUTED    = HexColor("#4A7A9B")
-    C_INACTIVE = HexColor("#1A3550")
+    # ── Couleurs ─────────────────────────────────────────────────────────
+    p          = _pdf_palette(dark)
+    C_BG       = p["BG"]
+    C_PANEL    = p["PANEL"]
+    C_ELEVATED = p["ELEVATED"]
+    C_ACCENT   = p["ACCENT"]
+    C_GREEN    = p["GREEN"]
+    C_AMBER    = p["AMBER"]
+    C_RED      = p["RED"]
+    C_TEXT     = p["TEXT"]
+    C_MUTED    = p["MUTED"]
+    C_INACTIVE = p["INACTIVE"]
+    C_FOOTER   = p["FOOTER"]
+    C_HL_TEXT  = p["HL_TEXT"]
 
     def style(name, size=9, color=C_TEXT, bold=False, align=TA_LEFT, leading=None):
         return ParagraphStyle(
@@ -380,10 +428,10 @@ def generate_full_report_pdf(
     s_section = style("sec", 10, C_ACCENT,  bold=True)
     s_warn    = style("w",    9, C_RED,     bold=True)
     s_cell    = style("c",    8, C_TEXT)
-    s_cellhl  = style("ch",   8, white,     bold=True)
+    s_cellhl  = style("ch",   8, C_HL_TEXT, bold=True)
     s_cellmt  = style("cm",   8, C_MUTED)
     s_note    = style("n",    8, C_MUTED)
-    s_footer  = style("f",    7, C_INACTIVE, align=TA_CENTER)
+    s_footer  = style("f",    7, C_FOOTER,  align=TA_CENTER)
 
     COL_W = [5.8*cm, 3.5*cm, 1.5*cm, 5.2*cm]
 

@@ -175,7 +175,9 @@ def main():
             from ui.main_window import MainWindow
             window = MainWindow()
             _keep_alive.append(window)
-            window.show()
+            window.showMaximized()
+            from ui.styles.theme import apply_title_bar_theme
+            apply_title_bar_theme(window)
             logger.info("Interface prête")
         except Exception as e:
             logger.exception(f"Erreur critique au démarrage : {e}")
