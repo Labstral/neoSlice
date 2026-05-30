@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import numpy as np
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QCheckBox, QPushButton
-from PySide6.QtCore import Qt, QTimer, QRect, QRectF, QEvent, Signal
+from PySide6.QtCore import Qt, QTimer, QRect, QRectF, QEvent, Signal, QThread, QObject
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QLinearGradient
 from loguru import logger
 from ui.styles.theme import MANAGER as _T
@@ -149,6 +149,32 @@ class _LoadingOverlay(QWidget):
         for (ox, oy), (dx, dy) in zip(corners, dirs):
             painter.drawLine(ox, oy, ox + dx * size_hud, oy)
             painter.drawLine(ox, oy, ox, oy + dy * size_hud)
+
+
+# ── Worker préparation mesh (normals en background) ────────────────────────
+
+class _MeshPrepWorker(QObject):
+    """Calcule les normales lissées hors du thread principal (NumPy, pas OpenGL)."""
+    ready = Signal(object)   # émet le pyvista.PolyData prêt, ou None si erreur
+
+    def __init__(self, pv_mesh_raw, feature_angle: float):
+        super().__init__()
+        self._raw = pv_mesh_raw
+        self._angle = feature_angle
+
+    def run(self):
+        try:
+            result = self._raw.compute_normals(
+                cell_normals=False,
+                point_normals=True,
+                feature_angle=self._angle,
+                splitting=True,
+                consistency=True,
+            )
+            self.ready.emit(result)
+        except Exception as exc:
+            logger.warning(f"MeshPrepWorker normals échoué : {exc}")
+            self.ready.emit(self._raw)   # fallback : mesh sans normals recalculées
 
 
 # ── Viewer 3D ──────────────────────────────────────────────────────────────
@@ -665,55 +691,38 @@ class Viewer3D(QWidget):
             pass
 
     def load_mesh(self, mesh) -> None:
-        """Affiche un trimesh.Trimesh dans le viewer."""
+        """Affiche un trimesh.Trimesh — phase 1 immédiate, phase 2 PBR en background."""
         if not HAS_PYVISTA or self._plotter is None:
             return
 
         self._mesh = mesh
-        self._pv_mesh_cache = None   # invalider le cache — nouvelle pièce
+        self._pv_mesh_cache = None
         self._face_colors = None
         self._view_mode = "normal"
         self._plotter.clear()
         self._setup_lights()
         self._add_build_plate(mesh)
 
-        rq = self._render_quality()
-        pv_mesh = self._place_on_plate(self._smooth_normals(self._trimesh_to_pyvista(mesh), rq["feature_angle"]))
-        self._pv_mesh_cache = pv_mesh   # stocker pour réutilisation (changement de thème)
-        _mesh_color = "#e0e0e0"
-
+        # ── Phase 1 : affichage immédiat sans recalcul de normales (< 100 ms) ──
+        raw_pv = self._place_on_plate(self._trimesh_to_pyvista(mesh))
         try:
             self._plotter.add_mesh(
-                pv_mesh,
-                color=_mesh_color,
-                show_edges=False,
-                smooth_shading=True,
-                pbr=True,
-                metallic=rq["metallic"],
-                roughness=rq["roughness"],
-                ambient=rq["ambient"],
-                diffuse=rq["diffuse"],
-                specular=rq["specular"],
-                name="main_mesh",
+                raw_pv, color="#e0e0e0", show_edges=False,
+                smooth_shading=True, name="main_mesh",
             )
-        except Exception as _me:
-            logger.warning(f"add_mesh échoué, retry sans PBR : {_me}")
-            try:
-                self._plotter.add_mesh(pv_mesh, color=_mesh_color,
-                                       smooth_shading=True, name="main_mesh")
-            except Exception as _me2:
-                logger.error(f"add_mesh retry aussi échoué : {_me2}")
-                return
+        except Exception as _e:
+            logger.warning(f"Phase 1 add_mesh échoué : {_e}")
 
+        # Caméra — positionnée dès la phase 1
         try:
             _elev = math.radians(25)
-            _far = 1e6
+            _far  = 1e6
             self._plotter.camera.position = (0.0, -math.cos(_elev) * _far,
                                               math.sin(_elev) * _far)
             self._plotter.camera.focal_point = (0.0, 0.0, 0.0)
             self._plotter.camera.up = (0.0, 0.0, 1.0)
             _pad = float(mesh.bounding_box.extents.max()) * 0.5
-            _pb = pv_mesh.bounds
+            _pb  = raw_pv.bounds
             _pv_b = [_pb[0]-_pad, _pb[1]+_pad, _pb[2]-_pad, _pb[3]+_pad,
                      _pb[4]-_pad*0.2, _pb[5]+_pad*0.5]
             try:
@@ -723,9 +732,46 @@ class Viewer3D(QWidget):
                 self._plotter.camera.zoom(2.0)
             self._plotter.renderer.ResetCameraClippingRange()
         except Exception as _ce:
-            logger.warning(f"camera setup échoué : {_ce}")
+            logger.warning(f"Camera setup échoué : {_ce}")
             self._plotter.reset_camera()
-        self._plotter.render()
+
+        self._plotter.render()   # ← mesh visible immédiatement
+
+        # ── Phase 2 : calcul des normales + PBR en thread de fond ─────────────
+        rq = self._render_quality()
+        self._mesh_prep_thread = QThread()
+        self._mesh_prep_worker = _MeshPrepWorker(raw_pv.copy(), rq["feature_angle"])
+        self._mesh_prep_worker.moveToThread(self._mesh_prep_thread)
+        self._mesh_prep_thread.started.connect(self._mesh_prep_worker.run)
+        self._mesh_prep_worker.ready.connect(lambda pv: self._apply_pbr_mesh(pv, rq))
+        self._mesh_prep_worker.ready.connect(self._mesh_prep_thread.quit)
+        self._mesh_prep_thread.start()
+
+    def _apply_pbr_mesh(self, pv_mesh, rq: dict) -> None:
+        """Reçu sur le main thread — remplace le mesh brut par la version PBR."""
+        if pv_mesh is None or self._mesh is None or self._plotter is None:
+            return
+        if self._view_mode != "normal":
+            return   # l'utilisateur est déjà passé en mode analyse
+        self._pv_mesh_cache = pv_mesh
+        try:
+            self._plotter.add_mesh(
+                pv_mesh,
+                color="#e0e0e0",
+                show_edges=False,
+                smooth_shading=True,
+                pbr=True,
+                metallic=rq["metallic"],
+                roughness=rq["roughness"],
+                ambient=rq["ambient"],
+                diffuse=rq["diffuse"],
+                specular=rq["specular"],
+                name="main_mesh",
+                reset_camera=False,
+            )
+            self._plotter.render()
+        except Exception as _me:
+            logger.warning(f"PBR upgrade échoué : {_me}")
 
     def colorize_overhangs(self, mesh, face_colors: np.ndarray, _keep_camera: bool = False) -> None:
         """Recolorie le mesh selon les zones de surplomb — rendu smooth par vertex."""
