@@ -52,7 +52,20 @@
       "Bash(rm -f dist/neoSlice.exe)",
       "Bash(powershell.exe -Command ' *)",
       "Bash(mkdir -p \"C:/neoSlice_dist\" && echo \"Dossier local créé\")",
-      "Bash(python -c \"from ui.components.tutorial_overlay import TutorialOverlay; print\\('OK'\\)\")"
+      "Bash(python -c \"from ui.components.tutorial_overlay import TutorialOverlay; print\\('OK'\\)\")",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_help.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_guide.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_guide2.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_guide3.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g2.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g3.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g4.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g5.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g6.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g7.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g8.ps1)",
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g9.ps1)"
     ],
     "additionalDirectories": [
       "C:\\Users\\manup\\.neoslice",
