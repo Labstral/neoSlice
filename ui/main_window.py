@@ -35,7 +35,6 @@ from ui.components.filament_printer_selector import FilamentPrinterSelector
 from ui.components.welcome_dialog import WelcomeDialog, should_show_welcome
 from ui.components.tutorial_overlay import TutorialOverlay, should_show_tutorial
 from ui.components.settings_dialog import SettingsDialog
-from ui.components.settings_dialog import SettingsDialog
 
 from ui.styles.theme import (
     BG_VOID, BG_PANEL, BG_SURFACE, BG_ELEVATED, BG_INPUT,
@@ -339,6 +338,7 @@ class _TopBar(QWidget):
     coffee_clicked    = Signal()
     tutorial_clicked  = Signal()
     new_piece_clicked = Signal()
+    settings_clicked  = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -455,11 +455,28 @@ class _TopBar(QWidget):
             QUrl("https://docs.google.com/forms/d/e/1FAIpQLSfCH4GGn26aHaabNBG40FSlPgx_4pljh1z3WDfyWACkmTCeFw/viewform?usp=publish-editor")
         ))
 
+        settings_btn = QPushButton("⚙")
+        settings_btn.setFont(QFont("Segoe UI", 12))
+        settings_btn.setFixedSize(28, 28)
+        settings_btn.setToolTip(_("app.tip_settings"))
+        settings_btn.setCursor(Qt.PointingHandCursor)
+        settings_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {INACTIVE};
+                border: none; border-radius: 14px; padding: 0;
+            }}
+            QPushButton:hover {{
+                background: rgba(30,144,255,0.15); color: {ACCENT_BRIGHT};
+            }}
+        """)
+        settings_btn.clicked.connect(self.settings_clicked)
+
         self.icon_group = QWidget()
         self.icon_group.setStyleSheet("background: transparent;")
         icon_lay = QHBoxLayout(self.icon_group)
         icon_lay.setContentsMargins(0, 0, 0, 0)
         icon_lay.setSpacing(2)
+        icon_lay.addWidget(settings_btn)
         icon_lay.addWidget(feedback_btn)
         icon_lay.addWidget(help_btn)
         icon_lay.addWidget(coffee_btn)
@@ -786,6 +803,7 @@ class MainWindow(QMainWindow):
         self._topbar = _TopBar()
         self._topbar.coffee_clicked.connect(self._show_welcome)
         self._topbar.tutorial_clicked.connect(self._show_tutorial)
+        self._topbar.settings_clicked.connect(self._open_settings)
         self._topbar.new_piece_clicked.connect(self._on_new_piece)
         root.addWidget(self._topbar)
 
@@ -949,6 +967,11 @@ class MainWindow(QMainWindow):
     def _show_welcome(self):
         assets = Path(__file__).parent.parent / "assets"
         dlg = WelcomeDialog(self, assets_path=assets)
+        apply_title_bar_theme(dlg)
+        dlg.exec()
+
+    def _open_settings(self):
+        dlg = SettingsDialog(self)
         apply_title_bar_theme(dlg)
         dlg.exec()
 
