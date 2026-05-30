@@ -1,7 +1,7 @@
 ACCORD DE LICENCE UTILISATEUR FINAL — neoSlice
 ===============================================
-Version 1.0 — Version Bêta de lancement
-Copyright (c) 2025 Emmanuel Percheron. Tous droits réservés.
+Version 0.1.2 — Version Bêta
+Copyright (c) 2026 Emmanuel Percheron. Tous droits réservés.
 
 VEUILLEZ LIRE ATTENTIVEMENT CET ACCORD AVANT D'INSTALLER OU D'UTILISER
 LE LOGICIEL neoSlice.
@@ -155,4 +155,4 @@ En installant ou en utilisant neoSlice, vous confirmez avoir lu,
 compris et accepté l'intégralité des termes du présent accord.
 
 neoSlice — AI-Powered 3D Print Optimizer
-© 2025 Emmanuel Percheron — Tous droits réservés
+© 2026 Emmanuel Percheron — Tous droits réservés

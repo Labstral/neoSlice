@@ -1,6 +1,6 @@
 ==============================================================================
   neoSlice - AI-Powered 3D Print Optimizer
-  Guide d'installation et de démarrage - v0.1.0 Bêta
+  Guide d'installation et de démarrage - v0.1.2 Bêta
 ==============================================================================
   © 2026 Emmanuel Percheron - Tous droits réservés
 
@@ -39,7 +39,7 @@ SOMMAIRE
 2. CONTENU DU PACKAGE
 ------------------------------------------------------------------------------
 
-  neoSlice_Setup_v0.1.0-beta.exe  ->  Installateur Windows
+  neoSlice_Setup_v0.1.2-beta_Windows.exe  ->  Installateur Windows
   README.txt                       ->  Ce guide
   LICENSE.txt                      ->  Accord de licence utilisateur final
 
@@ -58,7 +58,7 @@ SOMMAIRE
 
   ÉTAPE 2 - Lancer l'installateur
   ---------------------------------
-  Double-cliquez sur : neoSlice_Setup_v0.1.0-beta.exe
+  Double-cliquez sur : neoSlice_Setup_v0.1.2-beta_Windows.exe
 
   Si Windows affiche "Windows a protégé votre PC" :
     -> Cliquez sur "Informations complémentaires"
@@ -209,8 +209,8 @@ SOMMAIRE
 ------------------------------------------------------------------------------
 
   Q : neoSlice est-il compatible avec macOS ou Linux ?
-  R : Non. neoSlice est disponible uniquement pour Windows 10 et 11
-      (64 bits). D'autres systèmes pourraient être envisagés à l'avenir.
+  R : Windows 10/11 (64 bits) et macOS sont supportés. Linux n'est
+      pas encore supporté officiellement.
 
   Q : neoSlice est-il gratuit ?
   R : Oui, neoSlice est entièrement gratuit dans sa version actuelle.
