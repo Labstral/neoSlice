@@ -17,6 +17,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -37,3 +38,4 @@ jobs:
           name: neoSlice-macOS
           path: dist/neoSlice-macOS.zip
           retention-days: 30
+          overwrite: true
