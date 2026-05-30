@@ -55,12 +55,12 @@ class SplashScreen(QWidget):
             Qt.WindowType.WindowStaysOnTopHint
         )
 
-        self.setFixedSize(420, 260)
+        self.setFixedSize(740, 416)
         self._bg_pixmap = None
         bg_path = _assets_dir() / "splash_bg.png"
         if bg_path.exists():
             self._bg_pixmap = QPixmap(str(bg_path)).scaled(
-                420, 260,
+                740, 416,
                 Qt.AspectRatioMode.IgnoreAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
