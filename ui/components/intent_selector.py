@@ -335,7 +335,7 @@ class _Group(QWidget):
                 text-align: left;
                 padding: 0 10px;
                 font-family: 'Segoe UI';
-                font-size: 8px;
+                font-size: 10px;
                 font-weight: bold;
                 letter-spacing: 2px;
             }}
@@ -520,9 +520,9 @@ class _PresetChip(QWidget):
         )
 
         lbl = QPushButton(name)
-        lbl.setFont(QFont("Segoe UI", 10))
+        lbl.setFont(QFont("Segoe UI", 9))
         lbl.setStyleSheet(f"""
-            QPushButton {{ color: {_dp['TELE_GREEN']}; background: transparent; border: none; text-align: left; padding: 0; }}
+            QPushButton {{ color: {_dp['AMBER']}; background: transparent; border: none; text-align: left; padding: 0; }}
             QPushButton:hover {{ color: {_dp['TEXT_PRIMARY']}; }}
         """)
         lbl.setCursor(Qt.PointingHandCursor)
@@ -592,23 +592,25 @@ class IntentSelector(QWidget):
 
         root.addWidget(self._lock_banner)
 
-        # ── Section présets sauvegardés ────────────────────────────────────
+        # ── Section présets sauvegardés (accordéon, fermé par défaut) ────────
+        self._presets_open = False
         self._presets_section = QWidget()
         self._presets_section.setStyleSheet(f"background: {BG_ELEVATED};")
         ps_layout = QVBoxLayout(self._presets_section)
-        ps_layout.setContentsMargins(8, 6, 8, 4)
-        ps_layout.setSpacing(4)
+        ps_layout.setContentsMargins(0, 0, 0, 0)
+        ps_layout.setSpacing(0)
 
-        ps_header = QLabel(_("intent.presets_header"))
-        ps_header.setFont(QFont("Segoe UI", 7, QFont.Bold))
-        ps_header.setStyleSheet(f"color: {ACCENT_BRIGHT}; letter-spacing: 2px;")
-        ps_layout.addWidget(ps_header)
+        self._presets_btn = QPushButton()
+        self._presets_btn.setFixedHeight(30)
+        self._presets_btn.setCursor(Qt.PointingHandCursor)
+        self._presets_btn.clicked.connect(self._toggle_presets)
+        ps_layout.addWidget(self._presets_btn)
 
         # Conteneur défilant — chaque préset occupe une ligne
         self._presets_chips = QWidget()
-        self._presets_chips.setStyleSheet("background: transparent;")
+        self._presets_chips.setStyleSheet(f"background: {BG_ELEVATED};")
         chips_layout = QVBoxLayout(self._presets_chips)
-        chips_layout.setContentsMargins(0, 0, 0, 0)
+        chips_layout.setContentsMargins(4, 2, 4, 4)
         chips_layout.setSpacing(2)
         chips_layout.addStretch()
 
@@ -618,7 +620,7 @@ class IntentSelector(QWidget):
         self._presets_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._presets_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._presets_scroll.setFrameShape(QFrame.NoFrame)
-        self._presets_scroll.setMaximumHeight(148)   # ~4 lignes de 34px + spacing
+        self._presets_scroll.setMaximumHeight(0)   # fermé par défaut
         self._presets_scroll.setStyleSheet("background: transparent;")
         ps_layout.addWidget(self._presets_scroll)
 
@@ -634,7 +636,7 @@ class IntentSelector(QWidget):
         ab_layout = QHBoxLayout(self._auto_banner)
         ab_layout.setContentsMargins(10, 6, 10, 6)
         self._ab_lbl = QLabel(_("intent.auto_select_msg"))
-        self._ab_lbl.setFont(QFont("Segoe UI", 7))
+        self._ab_lbl.setFont(QFont("Segoe UI", 9))
         self._ab_lbl.setStyleSheet(f"color: {_ab_pal['TELE_GREEN']}; background: transparent;")
         self._ab_lbl.setWordWrap(True)
         ab_layout.addWidget(self._ab_lbl)
@@ -684,14 +686,14 @@ class IntentSelector(QWidget):
         _dp = _T.palette()
         self._btn.setStyleSheet(f"""
             QPushButton {{
-                background: {TELE_GREEN};
-                color: {_dp['EXPORT_FG']};
+                background: {_dp['ACCENT']};
+                color: #ffffff;
                 border: 1px solid transparent;
                 border-radius: 3px;
                 letter-spacing: 1px;
             }}
-            QPushButton:hover {{ background: {ACCENT_BRIGHT}; color: #ffffff; }}
-            QPushButton:disabled {{ background: {INACTIVE}; color: {TEXT_LABEL}; }}
+            QPushButton:hover {{ background: {_dp['ACCENT_BRIGHT']}; color: #ffffff; }}
+            QPushButton:disabled {{ background: {_dp['INACTIVE']}; color: {_dp['TEXT_LABEL']}; }}
         """)
         self._btn.clicked.connect(self._on_generate)
         btns_row.addWidget(self._btn, 1)
@@ -739,10 +741,11 @@ class IntentSelector(QWidget):
             """)
             self._btn.setText(_("intent.btn_conflicts"))
         else:
+            _btn_bg = _bp['ACCENT'] if _T.is_dark() else _bp['TELE_GREEN']
             self._btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: {_bp['TELE_GREEN']};
-                    color: {_bp['EXPORT_FG']};
+                    background: {_btn_bg};
+                    color: #ffffff;
                     border: 1px solid transparent;
                     border-radius: 3px;
                     letter-spacing: 1px;
@@ -787,6 +790,43 @@ class IntentSelector(QWidget):
 
     # ── Présets sauvegardés ────────────────────────────────────────────────
 
+    def _toggle_presets(self):
+        self._presets_open = not self._presets_open
+        if self._presets_open:
+            presets = _load_saved_presets()
+            h = min(len(presets) * 38 + 8, 152) if presets else 38
+            self._presets_scroll.setMaximumHeight(h)
+        else:
+            self._presets_scroll.setMaximumHeight(0)
+        self._refresh_presets_btn()
+
+    def _refresh_presets_btn(self):
+        presets = _load_saved_presets()
+        count = len(presets)
+        arrow = "▼" if self._presets_open else "▶"
+        suffix = f"  ({count})" if count else ""
+        self._presets_btn.setText(f"  {arrow}   {_('intent.presets_header')}{suffix}")
+        _dp = _T.palette()
+        amber = _dp["AMBER"]
+        self._presets_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {_dp['BG_ELEVATED']};
+                border: none;
+                border-left: 3px solid {amber};
+                color: {amber};
+                text-align: left;
+                padding: 0 10px;
+                font-family: 'Segoe UI';
+                font-size: 10px;
+                font-weight: bold;
+                letter-spacing: 2px;
+            }}
+            QPushButton:hover {{
+                background: {_dp['BG_SURFACE']};
+                border-left: 3px solid {amber};
+            }}
+        """)
+
     def _on_save_preset(self):
         selected_ids = self._get_selected_ids()
         if not selected_ids:
@@ -822,6 +862,7 @@ class IntentSelector(QWidget):
             self._refresh_presets_ui()
 
     def _refresh_presets_ui(self):
+        self._refresh_presets_btn()
         presets = _load_saved_presets()
         layout = self._presets_chips.layout()
         # Vider sauf le stretch final
@@ -837,11 +878,12 @@ class IntentSelector(QWidget):
             empty.setContentsMargins(10, 4, 0, 4)
             empty.setStyleSheet(f"color: {_dp['INACTIVE']}; background: transparent;")
             layout.insertWidget(0, empty)
-            # Réduire la hauteur quand vide
-            self._presets_scroll.setMaximumHeight(36)
+            if self._presets_open:
+                self._presets_scroll.setMaximumHeight(38)
             return
 
-        self._presets_scroll.setMaximumHeight(148)
+        if self._presets_open:
+            self._presets_scroll.setMaximumHeight(min(len(presets) * 38 + 8, 152))
         for idx, preset in enumerate(presets):
             chip = _PresetChip(preset["name"], idx)
             chip.load_requested.connect(lambda p=preset: self._on_load_preset(p))
@@ -873,6 +915,10 @@ class IntentSelector(QWidget):
             self._lock_step_lbl.update()
         if hasattr(self, '_presets_section'):
             self._presets_section.setStyleSheet(f"background: {pal['BG_ELEVATED']};")
+        if hasattr(self, '_presets_chips'):
+            self._presets_chips.setStyleSheet(f"background: {pal['BG_ELEVATED']};")
+        if hasattr(self, '_presets_btn'):
+            self._refresh_presets_ui()   # recrée les chips avec la bonne palette
         if hasattr(self, '_save_btn'):
             self._save_btn.setStyleSheet(f"""
                 QPushButton {{
@@ -911,6 +957,7 @@ class IntentSelector(QWidget):
                 btn._apply_style()
             except Exception:
                 pass
+        self._on_selection_changed()   # reapplique le style du bouton générer
         self.update()
 
     def set_locked(self, locked: bool):

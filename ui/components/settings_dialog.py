@@ -281,6 +281,25 @@ class SettingsDialog(QDialog):
         self._perf_result_lbl.hide()
         lay.addWidget(self._perf_result_lbl)
 
+        # Notice de redémarrage — commune à langue ET mode perf (cachée par défaut)
+        lay.addSpacing(10)
+        restart_row = QHBoxLayout()
+        restart_row.setContentsMargins(0, 0, 0, 0)
+        self._restart_lbl = QLabel(_("settings.restart_notice"))
+        self._restart_lbl.setFont(QFont("Segoe UI", 9))
+        self._restart_lbl.setWordWrap(True)
+        self._restart_lbl.hide()
+        self._restart_btn = QPushButton(_("settings.restart_btn"))
+        self._restart_btn.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        self._restart_btn.setCursor(Qt.PointingHandCursor)
+        self._restart_btn.setFixedHeight(32)
+        self._restart_btn.clicked.connect(self._do_restart)
+        self._restart_btn.hide()
+        restart_row.addWidget(self._restart_lbl, 1)
+        restart_row.addSpacing(6)
+        restart_row.addWidget(self._restart_btn)
+        lay.addLayout(restart_row)
+
         lay.addSpacing(18)
         self._sep_updates = self._make_sep()
         lay.addWidget(self._sep_updates)
@@ -306,26 +325,7 @@ class SettingsDialog(QDialog):
         update_row.addWidget(self._update_status_lbl)
         update_row.addStretch()
         lay.addLayout(update_row)
-
-        lay.addSpacing(10)
-
-        # Notice de redémarrage — commune à langue ET mode perf (cachée par défaut)
-        restart_row = QHBoxLayout()
-        restart_row.setContentsMargins(0, 0, 0, 0)
-        self._restart_lbl = QLabel(_("settings.restart_notice"))
-        self._restart_lbl.setFont(QFont("Segoe UI", 8))
-        self._restart_lbl.setWordWrap(True)
-        self._restart_lbl.hide()
-        self._restart_btn = QPushButton(_("settings.restart_btn"))
-        self._restart_btn.setFont(QFont("Segoe UI", 8))
-        self._restart_btn.setCursor(Qt.PointingHandCursor)
-        self._restart_btn.setFixedHeight(24)
-        self._restart_btn.clicked.connect(self._do_restart)
-        self._restart_btn.hide()
-        restart_row.addWidget(self._restart_lbl, 1)
-        restart_row.addSpacing(6)
-        restart_row.addWidget(self._restart_btn)
-        lay.addLayout(restart_row)
+        lay.addSpacing(8)
 
     # ── Helpers UI ────────────────────────────────────────────────────────────
 
@@ -584,8 +584,8 @@ class SettingsDialog(QDialog):
         self._restart_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {pal['AMBER']}; color: #000000;
-                border: none; border-radius: 3px; padding: 2px 8px;
-                font-family: 'Segoe UI'; font-size: 8px;
+                border: none; border-radius: 4px; padding: 4px 14px;
+                font-family: 'Segoe UI'; font-size: 10px; font-weight: bold;
             }}
             QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; color: #ffffff; }}
         """)

@@ -380,7 +380,7 @@ _FR: dict[str, str] = {
     "settings.folder_ph":       "Dossier Téléchargements (par défaut)",
     "settings.printer_none":    "(aucune)",
     "settings.browse_title":    "Choisir le dossier d'export",
-    "settings.restart_notice":  "⚠  Redémarrage requis pour appliquer la langue",
+    "settings.restart_notice":  "⚠  Redémarrage requis pour appliquer les changements",
 
     # ── Welcome Dialog ────────────────────────────────────────────────────────
     "welcome.title":            "neoSlice",
@@ -623,9 +623,9 @@ _FR: dict[str, str] = {
     "settings.perf_result_full":     "Config rapide — mode Complet recommandé ✓",
     "settings.perf_result_balanced": "Config moyenne — mode Équilibré recommandé",
     "settings.perf_result_lite":     "Config lente — mode Économique recommandé",
-    "settings.perf_full_desc":       "Toutes les analyses sont actives : surplombs, stabilité, fragilité et optimisation d'orientation. Rotation auto activée par défaut.",
+    "settings.perf_full_desc":       "Toutes les analyses sont actives : surplombs, stabilité, fragilité et optimisation d'orientation.",
     "settings.perf_balanced_desc":   "Analyses surplombs et stabilité actives. Optimisation d'orientation désactivée (gain de temps notable).",
-    "settings.perf_lite_desc":       "Seule l'analyse de stabilité est active. Surplombs et orientation désactivés. Rotation auto désactivée. Recommandé pour les PC lents.",
+    "settings.perf_lite_desc":       "Seule l'analyse de stabilité est active. Surplombs et orientation désactivés. Recommandé pour les PC lents.",
     "settings.restart_btn":          "Redémarrer maintenant",
 
     "settings.sec_updates":          "MISES À JOUR",
@@ -992,7 +992,7 @@ _EN: dict[str, str] = {
     "settings.folder_ph":       "Downloads folder (default)",
     "settings.printer_none":    "(none)",
     "settings.browse_title":    "Choose export folder",
-    "settings.restart_notice":  "⚠  Restart required to apply language",
+    "settings.restart_notice":  "⚠  Restart required to apply changes",
 
     # ── Welcome Dialog ────────────────────────────────────────────────────────
     "welcome.title":            "neoSlice",
@@ -1233,9 +1233,9 @@ _EN: dict[str, str] = {
     "settings.perf_result_full":     "Fast config — Full mode recommended ✓",
     "settings.perf_result_balanced": "Mid-range config — Balanced mode recommended",
     "settings.perf_result_lite":     "Slow config — Lite mode recommended",
-    "settings.perf_full_desc":       "All analyses active: overhangs, stability, fragility and orientation optimizer. Auto-rotation enabled by default.",
+    "settings.perf_full_desc":       "All analyses active: overhangs, stability, fragility and orientation optimizer.",
     "settings.perf_balanced_desc":   "Overhang and stability analyses active. Orientation optimizer disabled (significant time saving).",
-    "settings.perf_lite_desc":       "Stability analysis only. Overhangs and orientation disabled. Auto-rotation disabled. Recommended for slow PCs.",
+    "settings.perf_lite_desc":       "Stability analysis only. Overhangs and orientation disabled. Recommended for slow PCs.",
     "settings.restart_btn":          "Restart now",
 
     "settings.sec_updates":          "UPDATES",

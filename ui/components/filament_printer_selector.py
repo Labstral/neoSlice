@@ -63,7 +63,7 @@ _LABEL_STYLE_DIM = f"color: {INACTIVE}; letter-spacing: 2px; background: transpa
 _BTN_VALIDATE = f"""
     QPushButton {{
         background: {ACCENT};
-        color: #020408;
+        color: #ffffff;
         border: none;
         border-radius: 3px;
         padding: 0 10px;
@@ -274,7 +274,7 @@ class FilamentPrinterSelector(QWidget):
         self._plate_warn_lbl = QLabel("")
         self._plate_warn_lbl.setFont(QFont(FONT_MONO, 9))
         self._plate_warn_lbl.setWordWrap(True)
-        self._plate_warn_lbl.setStyleSheet(f"color: {AMBER}; background: transparent;")
+        self._plate_warn_lbl.setStyleSheet(f"color: {_T.palette()['AMBER']}; background: transparent;")
         self._plate_warn_lbl.hide()
         layout.addWidget(self._plate_warn_lbl)
 
@@ -411,7 +411,9 @@ class FilamentPrinterSelector(QWidget):
         if not printer_name or not filament_name:
             self._compat_badge.setText("")
             return
-        status, color, msg = check_compatibility(printer_name, filament_name)
+        pal = _T.palette()
+        status, _, msg = check_compatibility(printer_name, filament_name)
+        color = {"ok": pal["TELE_GREEN"], "warning": pal["AMBER"], "error": pal["ERROR_RED"]}.get(status, pal["AMBER"])
         self._compat_badge.setStyleSheet(f"color: {color}; background: transparent;")
         self._compat_badge.setText(msg)
 
@@ -506,7 +508,7 @@ class FilamentPrinterSelector(QWidget):
 
         btn_validate = f"""
             QPushButton {{
-                background: {acc}; color: #020408; border: none; border-radius: 3px;
+                background: {acc}; color: #ffffff; border: none; border-radius: 3px;
                 padding: 0 10px; font-size: 10px; font-family: "Segoe UI";
                 font-weight: bold; letter-spacing: 1px;
             }}

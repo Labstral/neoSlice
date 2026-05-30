@@ -135,9 +135,10 @@ class DropZone(QWidget):
         if self._locked:
             return
         if event.button() == Qt.LeftButton:
-            path, _ = QFileDialog.getOpenFileName(
-                self.window(), _("drop.dialog_title"), "",
-                _("drop.dialog_filter"),
+            _title  = _("drop.dialog_title")
+            _filter = _("drop.dialog_filter")
+            path, _ext = QFileDialog.getOpenFileName(
+                self.window(), _title, "", _filter,
             )
             if path:
                 self._set_file(Path(path))

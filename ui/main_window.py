@@ -133,44 +133,25 @@ class AnalysisWorker(QObject):
 
     def run(self):
         try:
+            from concurrent.futures import ThreadPoolExecutor
             from core.prefs import PREFS
             perf_mode = PREFS.get("perf_mode", "full")
 
             t0 = time.perf_counter()
             report = AnalysisReport()
             report.nozzle_diameter_mm = self._nozzle_mm
-
-            # ── 1. Surplombs — analyse par normales (fonctionne sur tout mesh) ─
-            # analyze_overhangs() est fiable sur les meshes non-watertight (figurines,
-            # créatures organiques) contrairement au ray-casting (inside tracking brisé).
             self._support_mask = None
             self._ov_result    = None
-            self.progress.emit(10, "Analyse surplombs...")
-            if perf_mode == "lite":
-                report.overhang_severity        = 0.0
-                report.overhang_ratio           = 0.0
-                report.projected_overhang_ratio = 0.0
-                report.estimated_support_ratio  = 0.0
-                report.support_needed           = False
-                report.has_floating_regions     = False
-            else:
+
+            # ── Tâches d'analyse encapsulées pour exécution parallèle ─────────
+            # ThreadPoolExecutor : NumPy/SciPy/Trimesh libèrent le GIL →
+            # vraie parallélisation CPU sur tous les PC (pas de CUDA requis).
+
+            def _task_overhangs():
+                """Surplombs + régions flottantes — lecture seule du mesh."""
                 try:
                     ov = analyze_overhangs(self._mesh, smooth=False, check_floating=False)
-                    logger.info(
-                        f"Overhangs OK: display={ov.display_mask.sum() if ov.display_mask is not None else 0} "
-                        f"faces, sévérité={ov.severity:.4f}"
-                    )
-                    report.overhang_severity        = ov.severity
-                    report.overhang_ratio           = ov.overhang_ratio
-                    report.projected_overhang_ratio = ov.projected_ratio
-                    report.max_overhang_angle       = ov.max_angle_deg
-                    report.estimated_support_ratio  = min(0.60, ov.projected_ratio * 2.0)
-                    report.support_needed           = ov.severity > 0.0 or ov.overhang_ratio > 0.0
-                    # display_mask = masque brut avant filtre pont (pour la visu couleur)
-                    viz_mask = ov.display_mask if ov.display_mask is not None else ov.critical_face_mask
-                    self._support_mask = viz_mask
-                    self._ov_result    = ov
-                    # Régions flottantes — scipy connected_components (O(E), rapide)
+                    floating = False
                     try:
                         from scipy.sparse import csr_matrix
                         from scipy.sparse.csgraph import connected_components as _cc
@@ -186,84 +167,122 @@ class AnalysisWorker(QObject):
                             _ctrs    = self._mesh.triangles_center
                             for _ci in range(_n_comp):
                                 if float(_ctrs[_lbl == _ci, 2].min()) > _z_min_g + _tol:
-                                    report.has_floating_regions = True
-                                    report.support_needed       = True
+                                    floating = True
                                     break
                     except Exception:
                         pass
+                    return ov, floating
                 except Exception:
                     logger.exception("Analyse surplombs échouée")
+                    return None, False
 
-            # ── 2. Stabilité + fragilité — analyse par couches Shapely ──────────
-            # Le layer_slicer est meilleur pour la stabilité (empreinte réelle,
-            # centre de masse, ratio hauteur/largeur) et la fragilité (épaisseur).
-            self.progress.emit(35, "Analyse stabilité et fragilité...")
-            try:
-                lr = analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
-                report.stability_score          = lr.stability_score
-                report.center_of_mass           = lr.center_of_mass
-                report.brim_recommendation_mm   = lr.brim_recommendation_mm
-                report.min_wall_thickness_mm    = lr.min_wall_thickness_mm
-                report.fragility_severity       = lr.fragility_severity
-                report.has_fragile_zones        = lr.has_fragile_zones
-                # Surplombs : layer_slicer (méthode FDM réelle couche/couche) est
-                # meilleur que le ray-cast pour les overhangs latéraux sur pièces
-                # connectées (ex: mâchoire de bishop qui dépasse du corps).
-                # On prend le MAX des deux méthodes.
-                if lr.overhang_severity > report.overhang_severity:
-                    report.overhang_severity        = lr.overhang_severity
-                    report.overhang_ratio           = max(report.overhang_ratio, lr.overhang_ratio)
-                    report.projected_overhang_ratio = max(report.projected_overhang_ratio, lr.projected_overhang_ratio)
-                    report.estimated_support_ratio  = max(report.estimated_support_ratio, lr.support_volume_ratio)
-                report.support_needed = (
-                    report.support_needed
-                    or lr.support_needed
-                    or lr.overhang_severity > 0.005
-                    or lr.has_floating_regions
-                )
-                # Régions flottantes : prendre le OR des deux méthodes
-                report.has_floating_regions     = report.has_floating_regions or lr.has_floating_regions
-                if lr.fallback_used:
-                    report.warnings.append(
-                        "Analyse par couches indisponible (shapely manquant) — stabilité heuristique"
-                    )
-            except Exception:
-                logger.exception("Analyse par couches échouée — fallback stabilité")
+            def _task_stability():
+                """Stabilité + fragilité par couches Shapely."""
                 try:
-                    from core.geometry.stability_analyzer import analyze_stability as _as
-                    st = _as(self._mesh)
-                    report.stability_score        = st.score
-                    report.center_of_mass         = st.center_of_mass.tolist()
-                    report.brim_recommendation_mm = st.brim_recommendation_mm
+                    return analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
                 except Exception:
-                    pass
-                try:
-                    from core.geometry.fragility_detector import detect_fragility as _df
-                    fr = _df(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
-                    report.has_fragile_zones     = fr.has_fragile_zones
-                    report.min_wall_thickness_mm = fr.min_thickness_mm
-                    report.fragility_severity    = fr.severity
-                except Exception:
-                    pass
+                    logger.exception("Analyse par couches échouée — fallback stabilité")
+                    class _Fallback:
+                        stability_score = 0.5; center_of_mass = [0,0,0]
+                        brim_recommendation_mm = 0.0; min_wall_thickness_mm = 99.0
+                        fragility_severity = 0.0; has_fragile_zones = False
+                        overhang_severity = 0.0; overhang_ratio = 0.0
+                        projected_overhang_ratio = 0.0; support_volume_ratio = 0.0
+                        support_needed = False; has_floating_regions = False
+                        fallback_used = True
+                    fb = _Fallback()
+                    try:
+                        from core.geometry.stability_analyzer import analyze_stability as _as
+                        st = _as(self._mesh)
+                        fb.stability_score = st.score
+                        fb.center_of_mass  = st.center_of_mass.tolist()
+                        fb.brim_recommendation_mm = st.brim_recommendation_mm
+                    except Exception:
+                        pass
+                    try:
+                        from core.geometry.fragility_detector import detect_fragility as _df
+                        fr = _df(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
+                        fb.has_fragile_zones     = fr.has_fragile_zones
+                        fb.min_wall_thickness_mm = fr.min_thickness_mm
+                        fb.fragility_severity    = fr.severity
+                    except Exception:
+                        pass
+                    return fb
 
-            # ── Orientation optimale ──────────────────────────────────────────
-            self.progress.emit(70, "Recherche de l'orientation optimale...")
-            if perf_mode == "full":
+            def _task_orientation():
+                """Optimisation d'orientation (mode Complet uniquement)."""
                 try:
-                    orientation = optimize_orientation(self._mesh, n_fibonacci=24)
-                    if orientation is None:
+                    ori = optimize_orientation(self._mesh, n_fibonacci=24)
+                    if ori is None:
                         raise ValueError("optimize_orientation a retourné None")
-                    report.optimal_rotation            = orientation.rotation_matrix.flatten().tolist()
-                    report.orientation_score           = orientation.total_score
-                    report.orientation_label           = orientation.direction_label
-                    report.orientation_improvement_pct = orientation.improvement_pct
+                    return ori
                 except Exception:
                     logger.warning("Optimisation orientation ignorée (géométrie dégénérée)")
-                    report.optimal_rotation  = np.eye(4).flatten().tolist()
-                    report.orientation_score = 0.5
-                    report.orientation_label = ""
+                    return None
+
+            # ── Dispatch parallèle selon le mode ──────────────────────────────
+            n_workers = {"full": 3, "balanced": 2, "lite": 1}[perf_mode]
+            self.progress.emit(10, "Analyses en cours…")
+
+            with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                fut_ov     = pool.submit(_task_overhangs)   if perf_mode != "lite" else None
+                fut_stab   = pool.submit(_task_stability)
+                fut_orient = pool.submit(_task_orientation) if perf_mode == "full" else None
+
+                ov,  floating   = fut_ov.result()     if fut_ov     else (None, False)
+                lr               = fut_stab.result()
+                orientation      = fut_orient.result() if fut_orient else None
+
+            self.progress.emit(70, "Fusion des résultats…")
+
+            # ── Application résultats surplombs ───────────────────────────────
+            if ov is not None:
+                logger.info(
+                    f"Overhangs OK: display={ov.display_mask.sum() if ov.display_mask is not None else 0} "
+                    f"faces, sévérité={ov.severity:.4f}"
+                )
+                report.overhang_severity        = ov.severity
+                report.overhang_ratio           = ov.overhang_ratio
+                report.projected_overhang_ratio = ov.projected_ratio
+                report.max_overhang_angle       = ov.max_angle_deg
+                report.estimated_support_ratio  = min(0.60, ov.projected_ratio * 2.0)
+                report.support_needed           = ov.severity > 0.0 or ov.overhang_ratio > 0.0
+                viz_mask = ov.display_mask if ov.display_mask is not None else ov.critical_face_mask
+                self._support_mask = viz_mask
+                self._ov_result    = ov
+            report.has_floating_regions = floating
+            if floating:
+                report.support_needed = True
+
+            # ── Application résultats stabilité ───────────────────────────────
+            report.stability_score        = lr.stability_score
+            report.center_of_mass         = lr.center_of_mass
+            report.brim_recommendation_mm = lr.brim_recommendation_mm
+            report.min_wall_thickness_mm  = lr.min_wall_thickness_mm
+            report.fragility_severity     = lr.fragility_severity
+            report.has_fragile_zones      = lr.has_fragile_zones
+            if lr.overhang_severity > report.overhang_severity:
+                report.overhang_severity        = lr.overhang_severity
+                report.overhang_ratio           = max(report.overhang_ratio, lr.overhang_ratio)
+                report.projected_overhang_ratio = max(report.projected_overhang_ratio, lr.projected_overhang_ratio)
+                report.estimated_support_ratio  = max(report.estimated_support_ratio, lr.support_volume_ratio)
+            report.support_needed = (
+                report.support_needed or lr.support_needed
+                or lr.overhang_severity > 0.005 or lr.has_floating_regions
+            )
+            report.has_floating_regions = report.has_floating_regions or lr.has_floating_regions
+            if getattr(lr, "fallback_used", False):
+                report.warnings.append(
+                    "Analyse par couches indisponible (shapely manquant) — stabilité heuristique"
+                )
+
+            # ── Application résultats orientation ─────────────────────────────
+            if orientation is not None:
+                report.optimal_rotation            = orientation.rotation_matrix.flatten().tolist()
+                report.orientation_score           = orientation.total_score
+                report.orientation_label           = orientation.direction_label
+                report.orientation_improvement_pct = orientation.improvement_pct
             else:
-                # balanced / lite: skip orientation optimizer
                 report.optimal_rotation  = np.eye(4).flatten().tolist()
                 report.orientation_score = 0.5
                 report.orientation_label = ""
@@ -644,12 +663,13 @@ class _StatusBar(QWidget):
 
     def _pulse_tick(self):
         pal = _THEME.palette()
+        _bg = pal['ACCENT'] if _THEME.is_dark() else pal['TELE_GREEN']
         self._pulse_phase = (self._pulse_phase + 1) % 80
         t = abs(self._pulse_phase - 40) / 40.0
         alpha = int(80 + 120 * (1.0 - t))
         self._export_btn.setStyleSheet(f"""
             QPushButton {{
-                background: {pal['TELE_GREEN']};
+                background: {_bg};
                 color: {pal['EXPORT_FG']};
                 border: 1px solid rgba(255,255,255,{alpha});
                 border-radius: 3px;
@@ -664,6 +684,7 @@ class _StatusBar(QWidget):
 
     def set_export_enabled(self, enabled: bool):
         pal = _THEME.palette()
+        _bg = pal['ACCENT'] if _THEME.is_dark() else pal['TELE_GREEN']
         self._export_btn.setEnabled(enabled)
         if enabled:
             self._pulse_phase = 0
@@ -672,7 +693,7 @@ class _StatusBar(QWidget):
             self._pulse_timer.stop()
             self._export_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: {pal['TELE_GREEN']};
+                    background: {_bg};
                     color: {pal['EXPORT_FG']};
                     border: none;
                     border-radius: 3px;
@@ -724,25 +745,28 @@ class _StepHeader(QWidget):
         layout.addStretch()
         self.set_pending()
 
-    def _set_colors(self, accent_color: str, text_color: str):
-        self._bar.setStyleSheet(f"background: {accent_color}; border-radius: 1px;")
-        self._num.setStyleSheet(f"color: {accent_color}; background: transparent;")
-        self._lbl.setStyleSheet(f"color: {text_color}; letter-spacing: 2px; background: transparent;")
+    def _set_colors(self, bar_color: str, num_color: str):
+        pal = _THEME.palette()
+        self._bar.setStyleSheet(f"background: {bar_color}; border-radius: 1px;")
+        self._num.setStyleSheet(f"color: {num_color}; background: transparent;")
+        self._lbl.setStyleSheet(
+            f"color: {pal['TEXT_PRIMARY']}; letter-spacing: 2px; background: transparent;"
+        )
 
     def set_pending(self):
         self._state = "pending"
         pal = _THEME.palette()
-        self._set_colors(pal["TEXT_LABEL"], pal["TEXT_LABEL"])
+        self._set_colors(pal["INACTIVE"], pal["ACCENT"])
 
     def set_active(self):
         self._state = "active"
         pal = _THEME.palette()
-        self._set_colors(pal["ACCENT"], pal["TEXT_PRIMARY"])
+        self._set_colors(pal["ACCENT"], pal["ACCENT"])
 
     def set_done(self):
         self._state = "done"
         pal = _THEME.palette()
-        self._set_colors(pal["TELE_GREEN"], pal["TELE_GREEN"])
+        self._set_colors(pal["TELE_GREEN"], pal["ACCENT"])
 
     def refresh_theme(self):
         getattr(self, f"set_{self._state}", self.set_pending)()

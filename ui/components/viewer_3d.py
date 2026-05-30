@@ -185,7 +185,7 @@ class Viewer3D(QWidget):
         else:
             bg = 'rgba(240,242,245,200)'; col = '#555555'; hov = '#333333'
             ind_bg = '#ffffff'; ind_br = '#c0c0c0'
-        acc = pal['ACCENT']
+        acc = pal['TELE_GREEN']
         self._rot_checkbox.setStyleSheet(f"""
             QCheckBox {{
                 color: {col}; background: {bg};
@@ -211,7 +211,7 @@ class Viewer3D(QWidget):
         else:
             bg = 'rgba(240,242,245,200)'; col = '#555555'; hov = '#333333'
             ind_bg = '#ffffff'; ind_br = '#c0c0c0'
-        acc = pal['ACCENT']
+        acc = pal['TELE_GREEN']
         self._plate_checkbox.setStyleSheet(f"""
             QCheckBox {{
                 color: {col}; background: {bg};
@@ -266,12 +266,13 @@ class Viewer3D(QWidget):
                 self._add_build_plate(self._mesh)
                 if getattr(self, "_view_mode", "normal") == "normal":
                     _mesh_color = "#e0e0e0"
+                    rq = self._render_quality()
                     self._plotter.remove_actor("main_mesh", render=False)
                     # Réutilise le mesh pyvista en cache — évite de recalculer les normales
                     if self._pv_mesh_cache is not None:
                         pv_mesh = self._pv_mesh_cache
                     else:
-                        pv_mesh = self._place_on_plate(self._smooth_normals(self._trimesh_to_pyvista(self._mesh)))
+                        pv_mesh = self._place_on_plate(self._smooth_normals(self._trimesh_to_pyvista(self._mesh), rq["feature_angle"]))
                         self._pv_mesh_cache = pv_mesh
                     self._plotter.add_mesh(
                         pv_mesh,
@@ -279,11 +280,11 @@ class Viewer3D(QWidget):
                         show_edges=False,
                         smooth_shading=True,
                         pbr=True,
-                        metallic=0.0,
-                        roughness=0.52,
-                        ambient=0.08,
-                        diffuse=1.0,
-                        specular=0.06,
+                        metallic=rq["metallic"],
+                        roughness=rq["roughness"],
+                        ambient=rq["ambient"],
+                        diffuse=rq["diffuse"],
+                        specular=rq["specular"],
                         name="main_mesh",
                         reset_camera=False,
                     )
@@ -366,30 +367,34 @@ class Viewer3D(QWidget):
         """Initialise les effets OpenGL ultra qualité après affichage de la fenêtre."""
         if self._plotter is None:
             return
-        # MSAA 16× — anti-aliasing maximum, élimine tout crénelage
+        # Lissage rasterisation — réduit le crénelage sur les contours et arêtes
         try:
-            self._plotter.ren_win.SetMultiSamples(16)
+            self._plotter.ren_win.SetPolygonSmoothing(True)
+            self._plotter.ren_win.SetLineSmoothing(True)
+            self._plotter.ren_win.SetPointSmoothing(True)
         except Exception:
-            try:
-                self._plotter.ren_win.SetMultiSamples(8)
-            except Exception:
-                pass
-        # FXAA — passe post-process de lissage des arêtes fines
+            pass
+        # MSAA — le SetMultiSamples entre en conflit avec SSAO (FBO), on désactive
+        # pour laisser FXAA + polygon smoothing gérer l'AA
+        try:
+            self._plotter.ren_win.SetMultiSamples(0)
+        except Exception:
+            pass
+        # FXAA — post-process haute qualité, compatible SSAO
         try:
             self._plotter.renderer.SetUseFXAA(True)
         except Exception:
             pass
-        # SSAO — occlusion ambiante photoréaliste dans les crevasses et détails
-        # radius 1.5mm : assez grand pour couvrir les coins et détails de figurines
-        # kernel_size=96 : plus d'échantillons → qualité supérieure sans scintillement
-        # NE PAS activer depth peeling avec SSAO (conflit FBO dans VTK)
-        try:
-            self._plotter.enable_ssao(radius=1.5, bias=0.01, kernel_size=96, blur=True)
-        except Exception:
+        # SSAO — qualité selon le mode de performance
+        ssao = self._render_quality()["ssao"]
+        if ssao is not None:
             try:
-                self._plotter.enable_ssao(radius=0.8, bias=0.02, kernel_size=64, blur=True)
+                self._plotter.enable_ssao(**ssao)
             except Exception:
-                pass
+                try:
+                    self._plotter.enable_ssao(radius=0.8, bias=0.01, kernel_size=32, blur=True)
+                except Exception:
+                    pass
         # Re-render après les effets pour s'assurer que le fond est toujours correct
         try:
             pal = _T.palette()
@@ -760,7 +765,8 @@ class Viewer3D(QWidget):
         self._setup_lights()
         self._add_build_plate(mesh)
 
-        pv_mesh = self._place_on_plate(self._smooth_normals(self._trimesh_to_pyvista(mesh)))
+        rq = self._render_quality()
+        pv_mesh = self._place_on_plate(self._smooth_normals(self._trimesh_to_pyvista(mesh), rq["feature_angle"]))
         self._pv_mesh_cache = pv_mesh   # stocker pour réutilisation (changement de thème)
         _mesh_color = "#e0e0e0"
 
@@ -771,11 +777,11 @@ class Viewer3D(QWidget):
                 show_edges=False,
                 smooth_shading=True,
                 pbr=True,
-                metallic=0.0,
-                roughness=0.32,
-                ambient=0.08,
-                diffuse=0.95,
-                specular=0.28,
+                metallic=rq["metallic"],
+                roughness=rq["roughness"],
+                ambient=rq["ambient"],
+                diffuse=rq["diffuse"],
+                specular=rq["specular"],
                 name="main_mesh",
             )
         except Exception as _me:
@@ -919,17 +925,40 @@ class Viewer3D(QWidget):
         return pv.PolyData(mesh.vertices.astype(np.float32), faces)
 
     @staticmethod
-    def _smooth_normals(pv_mesh: "pv.PolyData") -> "pv.PolyData":
-        """Calcule des normales lissées par vertex — élimine les facettes et artefacts triangulaires.
+    def _render_quality() -> dict:
+        """Paramètres de rendu selon le mode de performance (PREFS)."""
+        from core.prefs import PREFS
+        mode = PREFS.get("perf_mode", "full")
+        _Q = {
+            "full": {
+                "metallic": 0.18, "roughness": 0.20, "specular": 0.50,
+                "ambient": 0.05,  "diffuse":  0.90,
+                "feature_angle": 20.0,
+                "ssao": dict(radius=1.2, bias=0.005, kernel_size=128, blur=True),
+            },
+            "balanced": {
+                "metallic": 0.08, "roughness": 0.32, "specular": 0.26,
+                "ambient": 0.08,  "diffuse":  0.88,
+                "feature_angle": 30.0,
+                "ssao": dict(radius=0.8, bias=0.010, kernel_size=64,  blur=True),
+            },
+            "lite": {
+                "metallic": 0.00, "roughness": 0.55, "specular": 0.00,
+                "ambient": 0.15,  "diffuse":  0.85,
+                "feature_angle": 45.0,
+                "ssao": None,
+            },
+        }
+        return _Q.get(mode, _Q["full"])
 
-        feature_angle=25° : les surfaces < 25° entre faces sont lissées ;
-        les vraies arêtes vives (> 25°) restent nettes.
-        """
+    @staticmethod
+    def _smooth_normals(pv_mesh: "pv.PolyData", feature_angle: float = 20.0) -> "pv.PolyData":
+        """Calcule des normales lissées par vertex — élimine les facettes et artefacts triangulaires."""
         try:
             return pv_mesh.compute_normals(
                 cell_normals=False,
                 point_normals=True,
-                feature_angle=30.0,  # 30° : préserve plus de détails fins (figurines)
+                feature_angle=feature_angle,
                 split_vertices=True,
                 flip_normals=False,
                 consistent_normals=True,
