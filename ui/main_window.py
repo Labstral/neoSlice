@@ -339,8 +339,16 @@ class _TopBar(QWidget):
         self._sep.setFixedHeight(24)
         layout.addWidget(self._sep)
 
-        self._logo = QLabel("◈")
-        self._logo.setFont(QFont("Segoe UI", 22))
+        self._logo = QLabel()
+        _meipass = getattr(__import__("sys"), "_MEIPASS", None)
+        _logo_path = (Path(_meipass) if _meipass else Path(__file__).parent.parent) / "assets" / "neoSlice.png"
+        if _logo_path.exists():
+            _px = QPixmap(str(_logo_path)).scaled(36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self._logo.setPixmap(_px)
+            self._logo.setFixedSize(36, 36)
+        else:
+            self._logo.setText("◈")
+            self._logo.setFont(QFont("Segoe UI", 22))
         layout.addWidget(self._logo)
 
         self._title_lbl = QLabel(_("app.title"))
@@ -467,7 +475,7 @@ class _TopBar(QWidget):
         pal = _THEME.palette()
         self.setStyleSheet(f"background: {pal['BG_PANEL']};")
         self._sep.setStyleSheet(f"color: {pal['INACTIVE']};")
-        self._logo.setStyleSheet(f"color: {pal['ACCENT']}; background: transparent;")
+        self._logo.setStyleSheet("background: transparent;")
         self._title_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent; font-size: 20px; font-weight: bold; letter-spacing: 3px;")
         self._beta.setStyleSheet(
             f"color: {pal['AMBER']}; border: 1px solid {pal['AMBER']}; "
