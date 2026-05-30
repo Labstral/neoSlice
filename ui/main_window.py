@@ -142,96 +142,174 @@ class AnalysisWorker(QObject):
             self._support_mask = None
             self._ov_result    = None
 
-            # ── Tâches d'analyse encapsulées pour exécution parallèle ─────────
-            # ThreadPoolExecutor : NumPy/SciPy/Trimesh libèrent le GIL →
-            # vraie parallélisation CPU sur tous les PC (pas de CUDA requis).
+            # ── Verrou mesh ultra-haute-poly (> 500k faces) ───────────────────
+            # analyze_overhangs + analyze_by_layers sont O(faces) et prennent
+            # plusieurs minutes sur 5M+ faces. On bascule vers les fallbacks rapides.
+            _FACE_LIMIT = 500_000
+            _face_count_raw = len(self._mesh.faces)
 
-            def _task_overhangs():
-                """Surplombs + régions flottantes — lecture seule du mesh."""
+            if _face_count_raw > _FACE_LIMIT:
+                logger.warning(
+                    f"Mesh ultra-haute-poly ({_face_count_raw:,} faces > {_FACE_LIMIT:,}) — "
+                    "analyses lourdes remplacées par fallbacks rapides."
+                )
+                self.progress.emit(15, "Mesh complexe — surplombs rapides…")
+
+                # ── Surplombs rapides : normales de face (numpy, O(n), < 3s) ──
+                ov = None
+                floating = False
                 try:
-                    ov = analyze_overhangs(self._mesh, smooth=False, check_floating=False)
-                    floating = False
-                    try:
-                        from scipy.sparse import csr_matrix
-                        from scipy.sparse.csgraph import connected_components as _cc
-                        _adj = self._mesh.face_adjacency
-                        _n   = len(self._mesh.faces)
-                        _r   = np.concatenate([_adj[:, 0], _adj[:, 1]])
-                        _c   = np.concatenate([_adj[:, 1], _adj[:, 0]])
-                        _g   = csr_matrix((np.ones(len(_r), np.uint8), (_r, _c)), shape=(_n, _n))
-                        _n_comp, _lbl = _cc(_g, directed=False)
-                        if _n_comp > 1:
-                            _z_min_g = float(self._mesh.bounds[0][2])
-                            _tol     = max(0.5, float(self._mesh.extents[2]) * 0.02)
-                            _ctrs    = self._mesh.triangles_center
-                            for _ci in range(_n_comp):
-                                if float(_ctrs[_lbl == _ci, 2].min()) > _z_min_g + _tol:
-                                    floating = True
-                                    break
-                    except Exception:
-                        pass
-                    return ov, floating
+                    from core.geometry.overhang_detector import OverhangResult as _OR
+                    _fn   = self._mesh.face_normals          # calcul cross-product numpy
+                    _cz   = _fn[:, 2]                        # composante Z de chaque normale
+                    # Exclure les faces de la base (posées sur le plateau) :
+                    # on calcule le Z du premier vertex de chaque face (rapide, O(n))
+                    _fz   = self._mesh.vertices[self._mesh.faces[:, 0], 2]
+                    _zmin = float(self._mesh.vertices[:, 2].min())
+                    _zmax = float(self._mesh.vertices[:, 2].max())
+                    _base_tol = max(1.0, (_zmax - _zmin) * 0.025)  # 2.5% hauteur ou 1 mm
+                    _omsk = (_cz < -0.707) & (_fz > _zmin + _base_tol)
+                    _sev  = float(_omsk.mean())
+                    _rat  = float(_omsk.mean())
+                    if _omsk.any():
+                        _sang = np.degrees(np.arcsin(np.clip(-_cz[_omsk], 0.0, 1.0)))
+                        _max  = float(_sang.max())
+                    else:
+                        _max  = 0.0
+                    ov = _OR(
+                        severity           = _sev,
+                        overhang_ratio     = _rat,
+                        projected_ratio    = _rat * 0.5,
+                        max_angle_deg      = _max,
+                        critical_face_mask = _omsk,
+                        has_floating_regions = False,
+                        display_mask       = _omsk,
+                    )
+                    logger.info(
+                        f"Fast overhangs: {_omsk.sum():,}/{_face_count_raw:,} faces "
+                        f"({_rat*100:.1f}%)"
+                    )
                 except Exception:
-                    logger.exception("Analyse surplombs échouée")
-                    return None, False
+                    logger.exception("Fast overhang analysis échouée")
 
-            def _task_stability():
-                """Stabilité + fragilité par couches Shapely — timeout 18s."""
-                import threading as _th
-                _holder = [None]; _ev = _th.Event()
-                def _run_layers():
-                    try:
-                        _holder[0] = analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
-                    except Exception:
-                        pass
-                    finally:
-                        _ev.set()
-                _th.Thread(target=_run_layers, daemon=True).start()
-                _ev.wait(timeout=18.0)
-                if _holder[0] is not None:
-                    return _holder[0]
-                logger.warning("analyze_by_layers timeout (>18s) — fallback stabilité rapide")
+                self.progress.emit(35, "Mesh complexe — stabilité rapide…")
+                class _FastResult:
+                    stability_score = 0.5; center_of_mass = [0, 0, 0]
+                    brim_recommendation_mm = 0.0; min_wall_thickness_mm = 99.0
+                    fragility_severity = 0.0; has_fragile_zones = False
+                    overhang_severity = 0.0; overhang_ratio = 0.0
+                    projected_overhang_ratio = 0.0; support_volume_ratio = 0.0
+                    support_needed = False; has_floating_regions = False
+                    fallback_used = True
+                _fr = _FastResult()
                 try:
-                    raise TimeoutError
+                    from core.geometry.stability_analyzer import analyze_stability as _as
+                    _st = _as(self._mesh)
+                    _fr.stability_score        = _st.score
+                    _fr.center_of_mass         = _st.center_of_mass.tolist()
+                    _fr.brim_recommendation_mm = _st.brim_recommendation_mm
                 except Exception:
-                    logger.exception("Analyse par couches échouée — fallback stabilité")
-                    class _Fallback:
-                        stability_score = 0.5; center_of_mass = [0,0,0]
-                        brim_recommendation_mm = 0.0; min_wall_thickness_mm = 99.0
-                        fragility_severity = 0.0; has_fragile_zones = False
-                        overhang_severity = 0.0; overhang_ratio = 0.0
-                        projected_overhang_ratio = 0.0; support_volume_ratio = 0.0
-                        support_needed = False; has_floating_regions = False
-                        fallback_used = True
-                    fb = _Fallback()
+                    pass
+                try:
+                    from core.geometry.fragility_detector import detect_fragility as _df
+                    _fd = _df(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
+                    _fr.has_fragile_zones      = _fd.has_fragile_zones
+                    _fr.min_wall_thickness_mm  = _fd.min_thickness_mm
+                    _fr.fragility_severity     = _fd.severity
+                except Exception:
+                    pass
+                lr = _fr
+            else:
+                # ── Tâches d'analyse encapsulées pour exécution parallèle ─────
+                # ThreadPoolExecutor : NumPy/SciPy/Trimesh libèrent le GIL →
+                # vraie parallélisation CPU sur tous les PC (pas de CUDA requis).
+
+                def _task_overhangs():
+                    """Surplombs + régions flottantes — lecture seule du mesh."""
                     try:
-                        from core.geometry.stability_analyzer import analyze_stability as _as
-                        st = _as(self._mesh)
-                        fb.stability_score = st.score
-                        fb.center_of_mass  = st.center_of_mass.tolist()
-                        fb.brim_recommendation_mm = st.brim_recommendation_mm
+                        ov = analyze_overhangs(self._mesh, smooth=False, check_floating=False)
+                        floating = False
+                        try:
+                            from scipy.sparse import csr_matrix
+                            from scipy.sparse.csgraph import connected_components as _cc
+                            _adj = self._mesh.face_adjacency
+                            _n   = len(self._mesh.faces)
+                            _r   = np.concatenate([_adj[:, 0], _adj[:, 1]])
+                            _c   = np.concatenate([_adj[:, 1], _adj[:, 0]])
+                            _g   = csr_matrix((np.ones(len(_r), np.uint8), (_r, _c)), shape=(_n, _n))
+                            _n_comp, _lbl = _cc(_g, directed=False)
+                            if _n_comp > 1:
+                                _z_min_g = float(self._mesh.bounds[0][2])
+                                _tol     = max(0.5, float(self._mesh.extents[2]) * 0.02)
+                                _ctrs    = self._mesh.triangles_center
+                                for _ci in range(_n_comp):
+                                    if float(_ctrs[_lbl == _ci, 2].min()) > _z_min_g + _tol:
+                                        floating = True
+                                        break
+                        except Exception:
+                            pass
+                        return ov, floating
                     except Exception:
-                        pass
+                        logger.exception("Analyse surplombs échouée")
+                        return None, False
+
+                def _task_stability():
+                    """Stabilité + fragilité par couches Shapely — timeout 18s."""
+                    import threading as _th
+                    _holder = [None]; _ev = _th.Event()
+                    def _run_layers():
+                        try:
+                            _holder[0] = analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
+                        except Exception:
+                            pass
+                        finally:
+                            _ev.set()
+                    _th.Thread(target=_run_layers, daemon=True).start()
+                    _ev.wait(timeout=18.0)
+                    if _holder[0] is not None:
+                        return _holder[0]
+                    logger.warning("analyze_by_layers timeout (>18s) — fallback stabilité rapide")
                     try:
-                        from core.geometry.fragility_detector import detect_fragility as _df
-                        fr = _df(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
-                        fb.has_fragile_zones     = fr.has_fragile_zones
-                        fb.min_wall_thickness_mm = fr.min_thickness_mm
-                        fb.fragility_severity    = fr.severity
+                        raise TimeoutError
                     except Exception:
-                        pass
-                    return fb
+                        logger.exception("Analyse par couches échouée — fallback stabilité")
+                        class _Fallback:
+                            stability_score = 0.5; center_of_mass = [0, 0, 0]
+                            brim_recommendation_mm = 0.0; min_wall_thickness_mm = 99.0
+                            fragility_severity = 0.0; has_fragile_zones = False
+                            overhang_severity = 0.0; overhang_ratio = 0.0
+                            projected_overhang_ratio = 0.0; support_volume_ratio = 0.0
+                            support_needed = False; has_floating_regions = False
+                            fallback_used = True
+                        fb = _Fallback()
+                        try:
+                            from core.geometry.stability_analyzer import analyze_stability as _as
+                            st = _as(self._mesh)
+                            fb.stability_score        = st.score
+                            fb.center_of_mass         = st.center_of_mass.tolist()
+                            fb.brim_recommendation_mm = st.brim_recommendation_mm
+                        except Exception:
+                            pass
+                        try:
+                            from core.geometry.fragility_detector import detect_fragility as _df
+                            fr = _df(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
+                            fb.has_fragile_zones     = fr.has_fragile_zones
+                            fb.min_wall_thickness_mm = fr.min_thickness_mm
+                            fb.fragility_severity    = fr.severity
+                        except Exception:
+                            pass
+                        return fb
 
-            # ── Dispatch parallèle selon le mode ──────────────────────────────
-            n_workers = {"full": 3, "balanced": 2, "lite": 1}[perf_mode]
-            self.progress.emit(10, "Analyses en cours…")
+                # ── Dispatch parallèle selon le mode ──────────────────────────
+                n_workers = {"full": 3, "balanced": 2, "lite": 1}[perf_mode]
+                self.progress.emit(10, "Analyses en cours…")
 
-            with ThreadPoolExecutor(max_workers=n_workers) as pool:
-                fut_ov   = pool.submit(_task_overhangs) if perf_mode != "lite" else None
-                fut_stab = pool.submit(_task_stability)
+                with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                    fut_ov   = pool.submit(_task_overhangs) if perf_mode != "lite" else None
+                    fut_stab = pool.submit(_task_stability)
 
-                ov, floating = fut_ov.result() if fut_ov else (None, False)
-                lr           = fut_stab.result()
+                    ov, floating = fut_ov.result() if fut_ov else (None, False)
+                    lr           = fut_stab.result()
 
             self.progress.emit(70, "Fusion des résultats…")
 
@@ -271,7 +349,7 @@ class AnalysisWorker(QObject):
                 or lr.overhang_severity > 0.005 or lr.has_floating_regions
             )
             report.has_floating_regions = report.has_floating_regions or lr.has_floating_regions
-            if getattr(lr, "fallback_used", False):
+            if getattr(lr, "fallback_used", False) and _face_count_raw <= _FACE_LIMIT:
                 report.warnings.append(
                     "Analyse par couches indisponible (shapely manquant) — stabilité heuristique"
                 )
@@ -357,17 +435,24 @@ class _TopBar(QWidget):
         _meipass = getattr(__import__("sys"), "_MEIPASS", None)
         _logo_path = (Path(_meipass) if _meipass else Path(__file__).parent.parent) / "assets" / "neoSlice.png"
         if _logo_path.exists():
-            _px = QPixmap(str(_logo_path)).scaled(36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            # Hauteur 46px, largeur proportionnelle (logo 3:2 → ~69px)
+            _px_full = QPixmap(str(_logo_path))
+            _logo_h  = 46
+            _logo_w  = int(_logo_h * _px_full.width() / _px_full.height()) if _px_full.height() else _logo_h
+            _px = _px_full.scaled(_logo_w, _logo_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self._logo.setPixmap(_px)
-            self._logo.setFixedSize(36, 36)
+            self._logo.setFixedSize(_logo_w, _logo_h)
         else:
             self._logo.setText("◈")
             self._logo.setFont(QFont("Segoe UI", 22))
-        layout.addWidget(self._logo)
+
+        # Logo centré entre le séparateur et le titre — widgets séparés,
+        # le layout spacing=12 donne un espace égal des deux côtés.
+        layout.addWidget(self._logo, 0, Qt.AlignVCenter)
 
         self._title_lbl = QLabel(_("app.title"))
-        self._title_lbl.setFont(QFont("Segoe UI", 20, QFont.Bold))
-        layout.addWidget(self._title_lbl)
+        self._title_lbl.setFont(QFont("Segoe UI", 26, QFont.Bold))
+        layout.addWidget(self._title_lbl, 0, Qt.AlignVCenter)
 
         self._beta = QLabel("BÊTA")
         self._beta.setFont(QFont("Segoe UI", 9, QFont.Bold))
@@ -490,7 +575,7 @@ class _TopBar(QWidget):
         self.setStyleSheet(f"background: {pal['BG_PANEL']};")
         self._sep.setStyleSheet(f"color: {pal['INACTIVE']};")
         self._logo.setStyleSheet("background: transparent;")
-        self._title_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent; font-size: 20px; font-weight: bold; letter-spacing: 3px;")
+        self._title_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent; font-size: 26px; font-weight: bold; letter-spacing: 3px;")
         self._beta.setStyleSheet(
             f"color: {pal['AMBER']}; border: 1px solid {pal['AMBER']}; "
             f"border-radius: 2px; padding: 1px 4px; background: rgba(255,184,0,0.10);"
@@ -1348,9 +1433,26 @@ class MainWindow(QMainWindow):
         self._original_mesh = None
 
         # ── Annuler un chargement précédent si encore actif ─────────────────
-        if self._stl_load_thread and self._stl_load_thread.isRunning():
-            self._stl_load_thread.quit()
-            self._stl_load_thread.wait(1000)
+        if self._stl_load_worker:
+            try:
+                self._stl_load_worker.mesh_loaded.disconnect()
+                self._stl_load_worker.error.disconnect()
+            except Exception:
+                pass
+        if self._stl_load_thread:
+            if self._stl_load_thread.isRunning():
+                self._stl_load_thread.quit()
+                # Ne pas wait() — le thread Python continue jusqu'à la fin de load_stl().
+                # On garde la référence dans _zombie_load_threads pour éviter que Python
+                # GC le QThread pendant qu'il tourne (→ crash VTK/Qt).
+                if not hasattr(self, '_zombie_load_threads'):
+                    self._zombie_load_threads = []
+                self._zombie_load_threads.append(self._stl_load_thread)
+            # Nettoyer les zombies déjà terminés
+            if hasattr(self, '_zombie_load_threads'):
+                self._zombie_load_threads = [
+                    t for t in self._zombie_load_threads if t.isRunning()
+                ]
 
         # ── Lancer load_stl() dans un thread dédié ──────────────────────────
         self._stl_load_thread = QThread()

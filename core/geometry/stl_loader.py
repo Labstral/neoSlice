@@ -11,6 +11,25 @@ class STLLoadError(Exception):
     pass
 
 
+# fill_holes est extrêmement lent sur les maillages complexes non-watertight.
+# On le saute dès 100k faces. process=False (pas de merge_vertices) seulement
+# au-dessus de 1M faces — en dessous la topologie doit rester correcte pour l'analyse.
+_FACE_SKIP_FILL_HOLES = 100_000
+_FACE_SKIP_PROCESS    = 1_000_000
+
+
+def _estimate_stl_faces(path: Path) -> int:
+    """Estime le nombre de faces d'un fichier STL binaire via sa taille."""
+    try:
+        size = path.stat().st_size
+        # Format binaire : 80 header + 4 count + N*50 bytes
+        if size > 84:
+            return int((size - 84) / 50)
+    except Exception:
+        pass
+    return 0
+
+
 def load_stl(path: Path) -> trimesh.Trimesh:
     """Charge, valide et normalise un fichier STL.
 
@@ -25,8 +44,28 @@ def load_stl(path: Path) -> trimesh.Trimesh:
     if path.suffix.lower() not in (".stl", ".obj", ".3mf"):
         raise STLLoadError(f"Format non supporté : {path.suffix}")
 
+    # Estimation avant chargement — adapte le niveau de traitement à la taille
+    _is_stl = path.suffix.lower() == ".stl"
+    _estimated_faces = _estimate_stl_faces(path) if _is_stl else 0
+    _skip_process    = _estimated_faces > _FACE_SKIP_PROCESS
+    _skip_fill_holes = _estimated_faces > _FACE_SKIP_FILL_HOLES
+    if _skip_process:
+        logger.info(
+            f"Mesh très grand (~{_estimated_faces:,} faces) — "
+            "chargement rapide sans réparations (process=False)."
+        )
+    elif _skip_fill_holes:
+        logger.info(
+            f"Mesh large (~{_estimated_faces:,} faces) — "
+            "fill_holes désactivé."
+        )
+
     if path.suffix.lower() == ".3mf":
         raw = trimesh.load(str(path))
+    elif _skip_process:
+        # process=False seulement pour les très grands meshes (> 1M faces) :
+        # évite merge_vertices sur 10M+ vertices (prend des minutes).
+        raw = trimesh.load(str(path), force="mesh", process=False)
     else:
         raw = trimesh.load(str(path), force="mesh")
 
@@ -45,18 +84,17 @@ def load_stl(path: Path) -> trimesh.Trimesh:
     if len(mesh.faces) == 0:
         raise STLLoadError("Le mesh est vide (aucune face).")
 
-    # Réparations automatiques — toujours appliquées
-    trimesh.repair.fix_normals(mesh)
-    trimesh.repair.fix_winding(mesh)
-    if not mesh.is_watertight:
-        logger.info("Mesh non-watertight — réparation automatique...")
-        trimesh.repair.fill_holes(mesh)
-    # Fusion des vertices très proches (artefacts export CAO)
-    mesh.merge_vertices(merge_tex=False)
-    unique_mask = trimesh.triangles.area(mesh.triangles) > 1e-10
-    if not unique_mask.all():
-        mesh.update_faces(unique_mask)
-        logger.info(f"Faces dégénérées supprimées : {(~unique_mask).sum()}")
+    if not _skip_process:
+        trimesh.repair.fix_normals(mesh)
+        trimesh.repair.fix_winding(mesh)
+        if not _skip_fill_holes and not mesh.is_watertight:
+            logger.info("Mesh non-watertight — réparation automatique...")
+            trimesh.repair.fill_holes(mesh)
+        mesh.merge_vertices(merge_tex=False)
+        unique_mask = trimesh.triangles.area(mesh.triangles) > 1e-10
+        if not unique_mask.all():
+            mesh.update_faces(unique_mask)
+            logger.info(f"Faces dégénérées supprimées : {(~unique_mask).sum()}")
 
     if len(mesh.faces) == 0:
         raise STLLoadError("Le mesh est vide après réparation (aucune face valide).")

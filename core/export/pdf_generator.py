@@ -254,7 +254,13 @@ def generate_filament_pdf(
     story.append(Spacer(1, 0.3*cm))
     _logo_path = _assets_dir() / "neoSlice.png"
     if _logo_path.exists():
-        _logo = Image(str(_logo_path), width=2.8*cm, height=2.8*cm)
+        try:
+            from PIL import Image as _PilImg
+            _pw, _ph = _PilImg.open(_logo_path).size
+            _logo_h = 2.8*cm * (_ph / _pw) if _pw else 2.8*cm
+        except Exception:
+            _logo_h = 2.8*cm
+        _logo = Image(str(_logo_path), width=2.8*cm, height=_logo_h)
         _logo.hAlign = "CENTER"
         story.append(_logo)
     else:
@@ -489,7 +495,13 @@ def generate_full_report_pdf(
     story.append(Spacer(1, 0.3*cm))
     _logo_path = _assets_dir() / "neoSlice.png"
     if _logo_path.exists():
-        _logo = Image(str(_logo_path), width=2.8*cm, height=2.8*cm)
+        try:
+            from PIL import Image as _PilImg
+            _pw, _ph = _PilImg.open(_logo_path).size
+            _logo_h = 2.8*cm * (_ph / _pw) if _pw else 2.8*cm
+        except Exception:
+            _logo_h = 2.8*cm
+        _logo = Image(str(_logo_path), width=2.8*cm, height=_logo_h)
         _logo.hAlign = "CENTER"
         story.append(_logo)
     else:

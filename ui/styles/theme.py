@@ -37,9 +37,9 @@ _DARK: dict = {
     "FONT_MONO": "Courier New",
     "RADIUS": 4,
 
-    # Viewer 3D PyVista — fond gris Bambu Studio (identique thème clair/foncé)
-    "VIEWER_BG":     "#606468",
-    "VIEWER_BG_TOP": "#606468",
+    # Viewer 3D PyVista — fond studio sombre avec dégradé (bas → haut)
+    "VIEWER_BG":     "#111520",
+    "VIEWER_BG_TOP": "#2a3348",
 
     # paintEvent — grille fond et scan-line (RGBA composantes)
     "GRID_R": 30, "GRID_G": 144, "GRID_B": 255, "GRID_A": 8,
@@ -72,9 +72,9 @@ _LIGHT: dict = {
     "FONT_MONO": "Courier New",
     "RADIUS": 4,
 
-    # Viewer 3D PyVista — fond gris plus clair en thème clair (moins de contraste)
-    "VIEWER_BG":     "#9E9EA2",
-    "VIEWER_BG_TOP": "#9E9EA2",
+    # Viewer 3D PyVista — fond studio clair avec dégradé subtil
+    "VIEWER_BG":     "#8e9aa6",
+    "VIEWER_BG_TOP": "#c8d0d8",
 
     "GRID_R": 0, "GRID_G": 0, "GRID_B": 0, "GRID_A": 12,
     "SCAN_R": 45, "SCAN_G": 138, "SCAN_B": 78, "SCAN_A": 12,

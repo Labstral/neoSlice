@@ -151,30 +151,9 @@ class _LoadingOverlay(QWidget):
             painter.drawLine(ox, oy, ox, oy + dy * size_hud)
 
 
-# ── Worker préparation mesh (normals en background) ────────────────────────
-
-class _MeshPrepWorker(QObject):
-    """Calcule les normales lissées hors du thread principal (NumPy, pas OpenGL)."""
-    ready = Signal(object)   # émet le pyvista.PolyData prêt, ou None si erreur
-
-    def __init__(self, pv_mesh_raw, feature_angle: float):
-        super().__init__()
-        self._raw = pv_mesh_raw
-        self._angle = feature_angle
-
-    def run(self):
-        try:
-            result = self._raw.compute_normals(
-                cell_normals=False,
-                point_normals=True,
-                feature_angle=self._angle,
-                splitting=True,
-                consistency=True,
-            )
-            self.ready.emit(result)
-        except Exception as exc:
-            logger.warning(f"MeshPrepWorker normals échoué : {exc}")
-            self.ready.emit(self._raw)   # fallback : mesh sans normals recalculées
+# _MeshPrepWorker supprimé — compute_normals VTK dans un QThread cause
+# wglMakeCurrent conflicts (error 170). Phase 2 tourne maintenant sur le
+# main thread via QTimer.singleShot avec compteur de génération.
 
 
 # ── Viewer 3D ──────────────────────────────────────────────────────────────
@@ -286,7 +265,7 @@ class Viewer3D(QWidget):
                 self._plotter.remove_actor("build_plate_grid", render=False)
                 self._add_build_plate(self._mesh)
                 if getattr(self, "_view_mode", "normal") == "normal":
-                    _mesh_color = "#e0e0e0"
+                    _mesh_color = "#e8e4de"
                     rq = self._render_quality()
                     self._plotter.remove_actor("main_mesh", render=False)
                     # Réutilise le mesh pyvista en cache — évite de recalculer les normales
@@ -577,48 +556,48 @@ class Viewer3D(QWidget):
     def _setup_lights(self):
         """Éclairage studio 8 points — qualité cinématique (type Unreal Engine)."""
         self._plotter.remove_all_lights()
-        # Key principale — haut-droite-devant, blanc chaud légèrement soleil
+        # Key principale — haut-droite-devant, blanc chaud soleil
         self._plotter.add_light(pv.Light(
             position=(6, 4, 14), focal_point=(0, 0, 0),
-            intensity=1.20, color=[1.0, 0.97, 0.92],
+            intensity=1.50, color=[1.0, 0.97, 0.90],
         ))
-        # Key large — haut-gauche, simule aire de lumière (softbox)
+        # Key large — haut-gauche, softbox secondaire
         self._plotter.add_light(pv.Light(
             position=(-4, 6, 11), focal_point=(0, 0, 0),
-            intensity=0.55, color=[1.0, 0.98, 0.96],
+            intensity=0.65, color=[1.0, 0.98, 0.96],
         ))
-        # Fill — gauche-bas, bleu ciel pour contrebalancer la chaleur de la key
+        # Fill — gauche-bas, bleu ciel froid pour contrebalancer
         self._plotter.add_light(pv.Light(
             position=(-10, -2, 2), focal_point=(0, 0, 0),
-            intensity=0.35, color=[0.75, 0.88, 1.0],
+            intensity=0.28, color=[0.72, 0.86, 1.0],
         ))
-        # Rim fort — contre-jour arrière, révèle les contours avec éclat
+        # Rim fort — contre-jour arrière (separation light), éclat maximal
         self._plotter.add_light(pv.Light(
             position=(-1, -12, 6), focal_point=(0, 0, 0),
-            intensity=0.50, color=[0.82, 0.92, 1.0],
+            intensity=0.80, color=[0.80, 0.90, 1.0],
         ))
-        # Rim droit — contre-jour droit pour séparer la pièce du fond
+        # Rim droit — contre-jour droit, sépare la pièce du fond
         self._plotter.add_light(pv.Light(
             position=(10, -6, 4), focal_point=(0, 0, 0),
-            intensity=0.30, color=[0.90, 0.95, 1.0],
+            intensity=0.40, color=[0.88, 0.94, 1.0],
         ))
-        # Top — lumière zénithale, illumine les surfaces horizontales
+        # Top — zénithale, illumine les surfaces horizontales
         self._plotter.add_light(pv.Light(
             position=(0, 0, 18), focal_point=(0, 0, 0),
-            intensity=0.22, color=[0.93, 0.96, 1.0],
+            intensity=0.28, color=[0.93, 0.96, 1.0],
         ))
         # Bounce — réflexion montante depuis le plateau (GI simulé)
         self._plotter.add_light(pv.Light(
             position=(0, 0, -10), focal_point=(0, 0, 0),
-            intensity=0.12, color=[1.0, 0.97, 0.90],
+            intensity=0.10, color=[1.0, 0.97, 0.90],
         ))
         # Accent latéral — souligne les détails fins sur la droite
         self._plotter.add_light(pv.Light(
             position=(12, 2, 0), focal_point=(0, 0, 0),
-            intensity=0.18, color=[1.0, 0.98, 0.88],
+            intensity=0.20, color=[1.0, 0.98, 0.88],
         ))
 
-    _PLATE_SIZE    = 256.0  # mm — plateau carré fixe (256 × 256)
+    _PLATE_SIZE    = 256.0  # mm — plateau par défaut sans mesh
     _PLATE_GRID    = 10.0   # mm — espacement de la grille
     _PLATE_OPACITY = 0.90   # opacité plateau vue de dessus (0 depuis dessous)
 
@@ -628,8 +607,11 @@ class Viewer3D(QWidget):
             return
         try:
             if mesh is not None:
-                max_dim = float(mesh.bounding_box.extents.max())
-                plate_size = min(max(max_dim * 3.0, 15.0), self._PLATE_SIZE)
+                # Empreinte XY uniquement — ne pas utiliser Z (hauteur) qui rendrait
+                # le plateau minuscule pour les pièces très hautes (arbres, tours, etc.)
+                ext = mesh.bounding_box.extents
+                footprint = float(max(ext[0], ext[1]))
+                plate_size = max(footprint * 2.5, 30.0)
                 raw = plate_size / 10.0
                 magnitude = 10.0 ** int(np.floor(np.log10(max(raw, 1e-9))))
                 spacing = max(round(raw / magnitude) * magnitude, 0.01)
@@ -650,7 +632,7 @@ class Viewer3D(QWidget):
             )
             self._plotter.add_mesh(
                 plate,
-                color="#14181f",
+                color="#2a2b2e",
                 opacity=self._PLATE_OPACITY,
                 show_edges=False,
                 name="build_plate_surface",
@@ -662,23 +644,24 @@ class Viewer3D(QWidget):
             spacing = plate_size / n_cells
             lines = np.linspace(-half, half, n_cells + 1)
 
+            # Z=-0.1 : offset suffisant vs plateau à Z=-0.5 pour éviter le Z-fighting VTK
+            _gz = -0.1
             pts, segs, idx = [], [], 0
             for x in lines:
-                pts += [[x, -half, -0.49], [x, half, -0.49]]
+                pts += [[x, -half, _gz], [x, half, _gz]]
                 segs += [2, idx, idx + 1]
                 idx += 2
             for y in lines:
-                pts += [[-half, y, -0.49], [half, y, -0.49]]
+                pts += [[-half, y, _gz], [half, y, _gz]]
                 segs += [2, idx, idx + 1]
                 idx += 2
 
             grid = pv.PolyData()
             grid.points = np.array(pts, dtype=np.float32)
             grid.lines = np.array(segs, dtype=np.int_)
-            # Thème clair : grille plus claire pour contraster sur le plateau sombre
-            _grid_color   = "#2e3342" if _T.is_dark() else "#5a7090"
-            _grid_opacity = 0.90     if _T.is_dark() else 1.0
-            _grid_width   = 0.8      if _T.is_dark() else 1.2
+            _grid_color   = "#454749" if _T.is_dark() else "#6a6e72"
+            _grid_opacity = 1.0
+            _grid_width   = 1.2      if _T.is_dark() else 1.4
             self._plotter.add_mesh(
                 grid,
                 color=_grid_color,
@@ -690,10 +673,17 @@ class Viewer3D(QWidget):
         except Exception:
             pass
 
+    def _cancel_mesh_prep(self) -> None:
+        """Annule la Phase 2 en cours en incrémentant le compteur de génération."""
+        self._load_gen = getattr(self, '_load_gen', 0) + 1
+
     def load_mesh(self, mesh) -> None:
         """Affiche un trimesh.Trimesh — phase 1 immédiate, phase 2 PBR en background."""
         if not HAS_PYVISTA or self._plotter is None:
             return
+
+        # Arrêter Phase 2 précédente AVANT plotter.clear() — évite wglMakeCurrent conflict
+        self._cancel_mesh_prep()
 
         self._mesh = mesh
         self._pv_mesh_cache = None
@@ -703,12 +693,17 @@ class Viewer3D(QWidget):
         self._setup_lights()
         self._add_build_plate(mesh)
 
-        # ── Phase 1 : affichage immédiat sans recalcul de normales (< 100 ms) ──
+        # ── Phase 1 : affichage immédiat
+        # smooth_shading=False pour les grands meshes : évite le calcul VTK de normales
+        # (30-60s sur 6M faces). Pour les petits meshes (< 100k faces), smooth=True est rapide.
+        _n_faces = len(mesh.faces)
+        _ultra_poly_display = _n_faces > 500_000
+        _phase1_smooth = _n_faces < 100_000
         raw_pv = self._place_on_plate(self._trimesh_to_pyvista(mesh))
         try:
             self._plotter.add_mesh(
-                raw_pv, color="#e0e0e0", show_edges=False,
-                smooth_shading=True, name="main_mesh",
+                raw_pv, color="#e8e4de", show_edges=False,
+                smooth_shading=_phase1_smooth, name="main_mesh",
             )
         except Exception as _e:
             logger.warning(f"Phase 1 add_mesh échoué : {_e}")
@@ -737,15 +732,29 @@ class Viewer3D(QWidget):
 
         self._plotter.render()   # ← mesh visible immédiatement
 
-        # ── Phase 2 : calcul des normales + PBR en thread de fond ─────────────
+        # ── Phase 2 : normales PBR sur main thread via QTimer (évite wglMakeCurrent) ──
+        if _ultra_poly_display:
+            logger.info(f"Phase 2 PBR skippée ({_n_faces:,} faces > 500k)")
+            return
         rq = self._render_quality()
-        self._mesh_prep_thread = QThread()
-        self._mesh_prep_worker = _MeshPrepWorker(raw_pv.copy(), rq["feature_angle"])
-        self._mesh_prep_worker.moveToThread(self._mesh_prep_thread)
-        self._mesh_prep_thread.started.connect(self._mesh_prep_worker.run)
-        self._mesh_prep_worker.ready.connect(lambda pv: self._apply_pbr_mesh(pv, rq))
-        self._mesh_prep_worker.ready.connect(self._mesh_prep_thread.quit)
-        self._mesh_prep_thread.start()
+        self._load_gen = getattr(self, '_load_gen', 0) + 1
+        _gen      = self._load_gen
+        _raw_copy = raw_pv  # pas de .copy() — on réutilise direct (déjà local)
+
+        def _phase2():
+            if getattr(self, '_load_gen', 0) != _gen:
+                return   # un nouveau mesh a été chargé entre-temps
+            try:
+                pv_mesh = _raw_copy.compute_normals(
+                    cell_normals=False,
+                    point_normals=True,
+                    feature_angle=rq["feature_angle"],
+                )
+                self._apply_pbr_mesh(pv_mesh, rq)
+            except Exception as exc:
+                logger.warning(f"Phase 2 normals échouée : {exc}")
+
+        QTimer.singleShot(300, _phase2)
 
     def _apply_pbr_mesh(self, pv_mesh, rq: dict) -> None:
         """Reçu sur le main thread — remplace le mesh brut par la version PBR."""
@@ -757,7 +766,7 @@ class Viewer3D(QWidget):
         try:
             self._plotter.add_mesh(
                 pv_mesh,
-                color="#e0e0e0",
+                color="#e8e4de",
                 show_edges=False,
                 smooth_shading=True,
                 pbr=True,
@@ -890,8 +899,8 @@ class Viewer3D(QWidget):
         _Q = {
             "full": {
                 # PBR ultra qualité — lisse comme du PLA brillant, éclairage cinématique
-                "metallic": 0.25, "roughness": 0.10, "specular": 0.80,
-                "ambient": 0.02,  "diffuse":  0.95,
+                "metallic": 0.08, "roughness": 0.06, "specular": 0.92,
+                "ambient": 0.01,  "diffuse":  0.98,
                 "feature_angle": 8.0,
                 "ssao": dict(radius=1.8, bias=0.003, kernel_size=256, blur=True),
             },
