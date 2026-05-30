@@ -135,9 +135,16 @@ def analyze_by_layers(
         r.footprint_area_mm2 = float((b[1][0] - b[0][0]) * (b[1][1] - b[0][1]))
         return r
 
-    # ── Pitch d'analyse : vise _N_LAYERS_TARGET couches ────────────────────
-    # Limite à 100 couches pour les très grandes pièces (>20s sinon)
-    n_layers_target = min(_N_LAYERS_TARGET, max(30, int(3000 / (height + 1))))
+    # ── Pitch d'analyse : adaptatif selon taille ET complexité du mesh ─────
+    # section_multiplane coûte O(faces × couches) → cap agressif sur gros meshes
+    n_layers_target = min(_N_LAYERS_TARGET, max(20, int(3000 / (height + 1))))
+    face_count = len(mesh.faces)
+    if face_count > 300_000:
+        n_layers_target = min(n_layers_target, 20)
+    elif face_count > 150_000:
+        n_layers_target = min(n_layers_target, 28)
+    elif face_count > 75_000:
+        n_layers_target = min(n_layers_target, 38)
     pitch = max(0.3, height / n_layers_target)
     n_layers = max(10, int(height / pitch))
     pitch = height / n_layers  # recalcul exact

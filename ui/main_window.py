@@ -176,9 +176,23 @@ class AnalysisWorker(QObject):
                     return None, False
 
             def _task_stability():
-                """Stabilité + fragilité par couches Shapely."""
+                """Stabilité + fragilité par couches Shapely — timeout 18s."""
+                import threading as _th
+                _holder = [None]; _ev = _th.Event()
+                def _run_layers():
+                    try:
+                        _holder[0] = analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
+                    except Exception:
+                        pass
+                    finally:
+                        _ev.set()
+                _th.Thread(target=_run_layers, daemon=True).start()
+                _ev.wait(timeout=18.0)
+                if _holder[0] is not None:
+                    return _holder[0]
+                logger.warning("analyze_by_layers timeout (>18s) — fallback stabilité rapide")
                 try:
-                    return analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
+                    raise TimeoutError
                 except Exception:
                     logger.exception("Analyse par couches échouée — fallback stabilité")
                     class _Fallback:
