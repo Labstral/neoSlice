@@ -8,6 +8,9 @@ on:
 jobs:
   build-mac:
     runs-on: macos-latest
+    permissions:
+      actions: write
+      contents: read
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
