@@ -8,6 +8,8 @@ on:
 jobs:
   build-mac:
     runs-on: macos-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
@@ -31,6 +33,47 @@ jobs:
         run: |
           cd dist
           zip -r neoSlice-macOS.zip neoSlice.app
+
+      - name: Delete previous artifact to free quota
+        continue-on-error: true
+        run: |
+          python3 - <<'EOF'
+          import urllib.request, urllib.error, json, os
+
+          token = os.environ.get("GITHUB_TOKEN", "")
+          repo  = os.environ.get("GITHUB_REPOSITORY", "")
+          if not token or not repo:
+              print("Skipping cleanup: no token/repo")
+              raise SystemExit(0)
+
+          url = f"https://api.github.com/repos/{repo}/actions/artifacts?per_page=50"
+          req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
+          try:
+              with urllib.request.urlopen(req) as r:
+                  arts = json.loads(r.read()).get("artifacts", [])
+          except Exception as e:
+              print(f"Could not list artifacts: {e}")
+              raise SystemExit(0)
+
+          deleted = 0
+          for a in arts:
+              if a.get("name") == "neoSlice-macOS":
+                  del_req = urllib.request.Request(
+                      f"https://api.github.com/repos/{repo}/actions/artifacts/{a['id']}",
+                      headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+                      method="DELETE",
+                  )
+                  try:
+                      urllib.request.urlopen(del_req)
+                      size_mb = a.get("size_in_bytes", 0) / 1024 / 1024
+                      print(f"Deleted artifact {a['id']} ({size_mb:.1f} MB)")
+                      deleted += 1
+                  except Exception as e:
+                      print(f"Could not delete {a['id']}: {e}")
+          print(f"Cleanup done: {deleted} artifact(s) deleted")
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
