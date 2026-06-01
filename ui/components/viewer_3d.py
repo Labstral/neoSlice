@@ -821,15 +821,17 @@ class Viewer3D(QWidget):
         v_cnt = np.bincount(flat,               minlength=n_v)
         v_sev /= np.maximum(v_cnt, 1)
 
-        # Passe de diffusion : blend 65% valeur propre + 35% moyenne voisins directs.
-        # Adoucit les transitions entre zones — donne des contours ronds sans artefacts.
+        # Passe de diffusion légère — adoucit les contours sans diluer les zones sévères.
+        # Le max() préserve la valeur haute si un voisin est moins sévère.
         v0, v1, v2 = f[:, 0], f[:, 1], f[:, 2]
         nbr = (
             np.bincount(v0, weights=v_sev[v1] + v_sev[v2], minlength=n_v)
           + np.bincount(v1, weights=v_sev[v0] + v_sev[v2], minlength=n_v)
           + np.bincount(v2, weights=v_sev[v0] + v_sev[v1], minlength=n_v)
         )
-        v_sev = v_sev * 0.65 + (nbr / np.maximum(v_cnt * 2, 1)) * 0.35
+        v_sev_diffused = v_sev * 0.80 + (nbr / np.maximum(v_cnt * 2, 1)) * 0.20
+        # Conserver le maximum pour ne pas dégrader les pics de sévérité élevée
+        v_sev = np.maximum(v_sev, v_sev_diffused)
 
         pv_mesh.point_data["overhang"] = v_sev.astype(np.float32)
         self._plotter.add_mesh(

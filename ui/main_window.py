@@ -1085,7 +1085,12 @@ class MainWindow(QMainWindow):
     # ── Welcome dialog ─────────────────────────────────────────────────────
 
     def _show_welcome(self):
-        assets = Path(__file__).parent.parent / "assets"
+        import sys as _sys
+        _meipass = getattr(_sys, "_MEIPASS", None)
+        if _meipass:
+            assets = Path(_meipass) / "assets"
+        else:
+            assets = Path(__file__).parent.parent / "assets"
         dlg = WelcomeDialog(self, assets_path=assets)
         apply_title_bar_theme(dlg)
         dlg.exec()
@@ -1720,10 +1725,21 @@ class MainWindow(QMainWindow):
                 QStandardPaths.StandardLocation.DownloadLocation)
             downloads = Path(_dl_str) if _dl_str else Path.home()
         default_name = str(downloads / f"{stl_stem}_neoslice_output.3mf")
-        output_path, _filter = QFileDialog.getSaveFileName(
-            self, "Enregistrer le fichier .3MF",
-            default_name, "Fichiers 3MF (*.3mf)",
-        )
+        import sys as _sys
+        if _sys.platform == "darwin":
+            # macOS : le dialog natif ignore le dossier suggéré (utilise le dernier visité)
+            # On force le dossier via QFileDialog objet
+            _dlg = QFileDialog(self, "Enregistrer le fichier .3MF",
+                               default_name, "Fichiers 3MF (*.3mf)")
+            _dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+            _dlg.setDirectory(str(downloads))
+            _dlg.selectFile(f"{stl_stem}_neoslice_output.3mf")
+            output_path = _dlg.selectedFiles()[0] if _dlg.exec() else ""
+        else:
+            output_path, _filter = QFileDialog.getSaveFileName(
+                self, "Enregistrer le fichier .3MF",
+                default_name, "Fichiers 3MF (*.3mf)",
+            )
         if not output_path:
             return
 
