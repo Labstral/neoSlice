@@ -36,22 +36,11 @@ workflows:
         script: |
           pyinstaller --clean -y neoslice_mac.spec
 
-      - name: Create DMG installer (drag-to-Applications)
+      - name: Zip .app for download
         script: |
-          # Préparer le contenu du DMG
-          mkdir -p /tmp/dmg_src
-          cp -r dist/neoSlice.app /tmp/dmg_src/
-          ln -s /Applications /tmp/dmg_src/Applications
-
-          # hdiutil est natif macOS — aucune installation requise
-          hdiutil create \
-            -volname "neoSlice" \
-            -srcfolder /tmp/dmg_src \
-            -ov \
-            -format UDZO \
-            dist/neoSlice-macOS.dmg
-
-          echo "DMG: $(du -sh dist/neoSlice-macOS.dmg)"
+          cd dist
+          zip -r neoSlice-macOS.zip neoSlice.app
+          echo "ZIP: $(du -sh neoSlice-macOS.zip)"
 
     artifacts:
-      - dist/neoSlice-macOS.dmg
+      - dist/neoSlice-macOS.zip
