@@ -86,7 +86,6 @@ class SettingsDialog(QDialog):
         self._orig_lang = PREFS.get("lang", "fr")
         self._orig_perf = PREFS.get("perf_mode", "full")
         self._setup_ui()
-        self._apply_orient_state(self._orig_perf)
         self._apply_theme()
         _T.register(self._apply_theme)
 
@@ -195,18 +194,6 @@ class SettingsDialog(QDialog):
         printer_row.addWidget(self._printer_combo)
         lay.addLayout(printer_row)
         lay.addSpacing(8)
-
-        auto_row = QHBoxLayout()
-        auto_row.setContentsMargins(0, 0, 0, 0)
-        self._auto_lbl = QLabel(_("settings.orient_suggest"))
-        self._auto_lbl.setFont(QFont(FONT_MAIN, 9))
-        self._auto_cb = QCheckBox()
-        self._auto_cb.setChecked(bool(PREFS.get("auto_rotate", True)))
-        self._auto_cb.toggled.connect(lambda v: PREFS.set("auto_rotate", v))
-        auto_row.addWidget(self._auto_lbl)
-        auto_row.addStretch()
-        auto_row.addWidget(self._auto_cb)
-        lay.addLayout(auto_row)
 
         lay.addSpacing(18)
         self._sep_export = self._make_sep()
@@ -437,22 +424,8 @@ class SettingsDialog(QDialog):
         mode = self._perf_combo.currentData()
         PREFS.set("perf_mode", mode)
         self._perf_desc_lbl.setText(self._perf_mode_desc(mode))
-        self._apply_orient_state(mode)
         self._show_restart_notice()
 
-    def _apply_orient_state(self, mode: str):
-        is_lite = (mode == "lite")
-        self._auto_cb.setEnabled(not is_lite)
-        if is_lite:
-            self._auto_cb.blockSignals(True)
-            self._auto_cb.setChecked(False)
-            self._auto_cb.blockSignals(False)
-        else:
-            self._auto_cb.blockSignals(True)
-            self._auto_cb.setChecked(bool(PREFS.get("auto_rotate", True)))
-            self._auto_cb.blockSignals(False)
-        col = _T.palette()["INACTIVE"] if is_lite else _T.palette()["TEXT_PRIMARY"]
-        self._auto_lbl.setStyleSheet(f"color: {col}; background: transparent;")
 
     def _on_check_update(self):
         from core.updater import check_for_update
