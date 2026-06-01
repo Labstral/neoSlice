@@ -2,8 +2,11 @@
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
-# Modules PySide6 NON utilisés par neoSlice — exclus pour réduire la taille
-# (WebEngine seul = ~1.5 Go, Qt3D + QML + Multimedia = ~2 Go de plus)
+# ─────────────────────────────────────────────────────────────────
+#  Filtres d'exclusion — réduction maximale de la taille du bundle
+# ─────────────────────────────────────────────────────────────────
+
+# Modules PySide6 non utilisés par neoSlice
 _PYSIDE6_UNUSED = {
     'Qt3D', 'QtCharts', 'QtDataVisualization', 'QtMultimedia',
     'QtQml', 'QtQuick', 'QtWebEngine', 'QtWebChannel', 'QtWebSockets',
@@ -12,20 +15,77 @@ _PYSIDE6_UNUSED = {
     'QtPdf', 'QtRemoteObjects', 'QtStateMachine', 'QtTest', 'QtSql',
     'QtUiTools', 'QtDesigner', 'QtHelp', 'QtNetwork', 'QtConcurrent',
     'QtNfc', 'QtSCXML', 'QtLottie', 'QtQuickTimeline', 'QtShaderTools',
-    'QtAxContainer', 'QtDBus',
+    'QtAxContainer', 'QtDBus', 'PySide6_Addons',
 }
 
-def _keep(path: str) -> bool:
-    return not any(mod in path for mod in _PYSIDE6_UNUSED)
+# Modules VTK non utilisés (rendering alternatifs, I/O spécialisés, tests)
+_VTK_UNUSED = {
+    'vtkRenderingOpenVR', 'vtkRenderingAnari', 'vtkRenderingWebGPU',
+    'vtkRenderingFreeTypeFontConfig', 'vtkRenderingLOD',
+    'vtkIOMovie', 'vtkIOOggTheora', 'vtkIOFFMPEG',
+    'vtkIOXdmf2', 'vtkIOXdmf3', 'vtkIONetCDF', 'vtkIOEnSight',
+    'vtkIOAMR', 'vtkIOFLUENT', 'vtkIOVeraOut', 'vtkIOTecplotTable',
+    'vtkIOSegY', 'vtkIOParallelXML', 'vtkIOParallelLSDyna',
+    'vtkIOGeometry',  # remplacé par vtkIOLegacy + vtkIOPLY pour STL
+    'vtkDICOM', 'vtkTestingCore', 'vtkTestingRendering',
+    'vtkWebCore', 'vtkWebGLExporter', 'web',
+    'vtkDomainsChemistry', 'vtkDomainsChemistryOpenGL2',
+    'vtkGeovisCore', 'vtkGeovisGDAL',
+    'vtkViewsContext2D', 'vtkViewsInfovis',
+    'vtkRenderingContext2D', 'vtkRenderingContextOpenGL2',
+    'vtkRenderingImage', 'vtkRenderingParallel',
+    'vtkRenderingSceneGraph', 'vtkRenderingVolumeOpenGL2',
+    'vtkFiltersAMR', 'vtkFiltersFlowPaths', 'vtkFiltersParallelImaging',
+    'vtkFiltersParallelStatistics', 'vtkFiltersTemporal',
+    'vtkFiltersTopology', 'vtkFiltersParallel',
+    'vtkInfovisLayout', 'vtkInfovisCore',
+    'vtkChartsCore',
+}
+
+def _keep_pyside6(path: str) -> bool:
+    p = path.replace('\\', '/')
+    if any(mod in p for mod in _PYSIDE6_UNUSED):
+        return False
+    # Supprimer toutes les traductions Qt sauf fr/en
+    if '/translations/' in p and p.endswith('.qm'):
+        name = Path(p).stem
+        if not any(name.endswith(lang) for lang in ('_fr', '_en', '_en_US', '_fr_FR')):
+            return False
+    return True
+
+def _keep_vtk(path: str) -> bool:
+    p = path.replace('\\', '/')
+    return not any(mod in p for mod in _VTK_UNUSED)
+
+def _keep_pyvista(path: str) -> bool:
+    p = path.replace('\\', '/')
+    # Supprimer exemples, datasets de démo et données de tests
+    for skip in ('/examples/', '/datasets/', '/tests/', '/testing/',
+                 '/data/models/', '/_dataset_cache/'):
+        if skip in p:
+            return False
+    return True
+
+# ─────────────────────────────────────────────────────────────────
+#  Collecte filtrée
+# ─────────────────────────────────────────────────────────────────
 
 pyside6_datas_all, pyside6_bins_all, pyside6_hidden_all = collect_all('PySide6')
-pyside6_datas   = [x for x in pyside6_datas_all   if _keep(str(x[0]))]
-pyside6_bins    = [x for x in pyside6_bins_all    if _keep(str(x[0]))]
-pyside6_hidden  = [x for x in pyside6_hidden_all  if _keep(x)]
+pyside6_datas   = [x for x in pyside6_datas_all  if _keep_pyside6(str(x[0]))]
+pyside6_bins    = [x for x in pyside6_bins_all   if _keep_pyside6(str(x[0]))]
+pyside6_hidden  = [x for x in pyside6_hidden_all if _keep_pyside6(x)]
 
-pyvista_datas,   pyvista_bins,   pyvista_hidden    = collect_all('pyvista')
-pyvistaqt_datas, pyvistaqt_bins, pyvistaqt_hidden  = collect_all('pyvistaqt')
-vtkmod_datas,    vtkmod_bins,    vtkmod_hidden      = collect_all('vtkmodules')
+pyvista_datas_all, pyvista_bins_all, pyvista_hidden_all = collect_all('pyvista')
+pyvista_datas   = [x for x in pyvista_datas_all  if _keep_pyvista(str(x[0]))]
+pyvista_bins    = [x for x in pyvista_bins_all   if _keep_pyvista(str(x[0]))]
+pyvista_hidden  = pyvista_hidden_all
+
+pyvistaqt_datas, pyvistaqt_bins, pyvistaqt_hidden = collect_all('pyvistaqt')
+
+vtkmod_datas_all, vtkmod_bins_all, vtkmod_hidden_all = collect_all('vtkmodules')
+vtkmod_datas   = [x for x in vtkmod_datas_all  if _keep_vtk(str(x[0]))]
+vtkmod_bins    = [x for x in vtkmod_bins_all   if _keep_vtk(str(x[0]))]
+vtkmod_hidden  = [x for x in vtkmod_hidden_all if _keep_vtk(x)]
 
 project_datas = [
     ('ui/styles', 'ui/styles'),
@@ -56,32 +116,20 @@ a = Analysis(
         *pyvista_hidden,
         *pyvistaqt_hidden,
         *vtkmod_hidden,
-        'trimesh',
-        'trimesh.creation',
-        'trimesh.repair',
-        'trimesh.smoothing',
-        'trimesh.transformations',
-        'trimesh.voxel',
-        'trimesh.voxel.creation',
-        'trimesh.voxel.ops',
-        'trimesh.proximity',
-        'scipy',
-        'scipy.spatial',
-        'scipy.spatial.qhull',
-        'scipy.sparse',
-        'scipy.sparse.csgraph',
-        'scipy.ndimage',
-        'rtree',
-        'loguru',
-        'yaml',
-        'numpy',
-        'pydantic',
+        'trimesh', 'trimesh.creation', 'trimesh.repair',
+        'trimesh.smoothing', 'trimesh.transformations',
+        'trimesh.voxel', 'trimesh.voxel.creation',
+        'trimesh.voxel.ops', 'trimesh.proximity',
+        'scipy', 'scipy.spatial', 'scipy.spatial.qhull',
+        'scipy.sparse', 'scipy.sparse.csgraph', 'scipy.ndimage',
+        'rtree', 'loguru', 'yaml', 'numpy', 'pydantic',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=['hooks/rthook_pyvistaqt.py'],
     excludes=[
         'IPython', 'jupyter', 'notebook', 'pytest', 'setuptools',
+        'tkinter', 'wx', 'gi',
         'PySide6.QtWebEngineWidgets', 'PySide6.QtWebEngineCore',
         'PySide6.QtWebEngineQuick', 'PySide6.QtQml', 'PySide6.QtQuick',
         'PySide6.QtQuickWidgets', 'PySide6.Qt3DCore', 'PySide6.Qt3DRender',
@@ -95,7 +143,7 @@ a = Analysis(
         'PySide6.QtStateMachine', 'PySide6.QtTest', 'PySide6.QtSql',
         'PySide6.QtUiTools', 'PySide6.QtHelp', 'PySide6.QtNetwork',
         'PySide6.QtNfc', 'PySide6.QtSCXML', 'PySide6.QtShaderTools',
-        'PySide6.QtLottie', 'PySide6.QtQuickTimeline',
+        'PySide6.QtLottie', 'PySide6.QtQuickTimeline', 'PySide6_Addons',
     ],
     noarchive=False,
 )
@@ -109,7 +157,7 @@ exe = EXE(
     exclude_binaries=True,
     name='neoSlice',
     debug=False,
-    strip=True,   # Supprime les symboles debug des .dylib — réduit la taille de 30-50%
+    strip=True,
     upx=False,
     console=False,
 )
