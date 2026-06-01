@@ -26,3 +26,7 @@ desktop.ini
 .idea/
 release.sh
 *.env
+nodex.exe
+test-mcp*.js
+test-mcp*.bat
+context7-mcp.bat
