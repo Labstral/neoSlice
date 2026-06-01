@@ -38,17 +38,21 @@ workflows:
 
       - name: Thin universal2 binaries to arm64 (halves PySide6 size)
         script: |
-          echo "Avant thin: $(du -sh dist/neoSlice.app)"
-          find dist/neoSlice.app -type f \( -name "*.dylib" -o -name "*.so" \) | while read f; do
-            archs=$(lipo -info "$f" 2>/dev/null | grep -oE "(x86_64|arm64)" | tr '\n' ' ' || true)
-            if echo "$archs" | grep -q "x86_64" && echo "$archs" | grep -q "arm64"; then
-              lipo "$f" -thin arm64 -output "$f" 2>/dev/null || true
+          APP="dist/neoSlice.app"
+          echo "Avant thin: $(du -sh $APP)"
+          # Trouver TOUS les binaires Mach-O : .dylib, .so, et binaires sans extension dans .framework
+          find "$APP" -type f | while read f; do
+            file_type=$(file "$f" 2>/dev/null)
+            if echo "$file_type" | grep -q "Mach-O universal binary"; then
+              lipo "$f" -thin arm64 -output "$f" 2>/dev/null && echo "Thinned: $(basename $f)"
             fi
           done
-          echo "Après thin: $(du -sh dist/neoSlice.app)"
+          echo "Après thin: $(du -sh $APP)"
 
       - name: Create DMG (drag-to-Applications)
         script: |
+          echo "=== Contenu dist/ ==="
+          ls -lh dist/
           mkdir -p /tmp/dmg_src
           cp -r dist/neoSlice.app /tmp/dmg_src/
           ln -s /Applications /tmp/dmg_src/Applications
@@ -57,7 +61,8 @@ workflows:
             -srcfolder /tmp/dmg_src \
             -ov -format UDZO \
             dist/neoSlice-macOS.dmg
-          echo "DMG: $(du -sh dist/neoSlice-macOS.dmg)"
+          echo "DMG créé: $(du -sh dist/neoSlice-macOS.dmg)"
+          ls -lh dist/*.dmg
 
     artifacts:
       - dist/neoSlice-macOS.dmg
