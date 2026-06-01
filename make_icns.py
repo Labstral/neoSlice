@@ -1,74 +1,63 @@
-"""Génère neoSlice.icns pour macOS — même logique que make_ico.py."""
+"""Génère neoSlice.icns pour macOS.
+
+Le logo source est 3:2 (paysage). Pour une icône macOS carrée :
+- Fond sombre #070D14 remplit tout le canvas 1024×1024
+- Logo centré, occupe 85 % de la largeur (ou hauteur, selon le côté limitant)
+- Sharpen adaptatif selon la taille cible
+"""
 from pathlib import Path
 from PIL import Image, ImageFilter
 
-SRC = Path("assets/neoSlice.png")
+SRC = Path("assets/neoSlice_transparent.png")  # 256x256, 94% pixels visibles
 DST = Path("assets/neoSlice.icns")
 
-BG_COLOR   = (7, 13, 20)   # #070D14 — fond sombre exact du thème
-MARGIN_RATIO = 0.04         # 4% de marge autour du logo
+BG_COLOR    = (7, 13, 20)   # #070D14 — fond exact du thème
+FILL_RATIO  = 0.82          # le logo occupe 82 % du côté du canvas
 
-# Tailles requises par macOS pour un .icns complet
 SIZES = [16, 32, 64, 128, 256, 512, 1024]
 
 
-def crop_to_content(src_rgba: Image.Image) -> Image.Image:
-    """Recadre au contenu réel + marge, retourne une image RGBA carrée."""
-    bbox = src_rgba.getbbox()
-    if not bbox:
-        return src_rgba
-    left, top, right, bottom = bbox
-    content_size = max(right - left, bottom - top)
-    margin = int(content_size * MARGIN_RATIO)
+def make_size(logo_rgba: Image.Image, canvas_size: int) -> Image.Image:
+    """Compose le logo sur fond sombre, centré, à la bonne taille."""
+    # Taille cible pour le logo (respecte les proportions)
+    max_dim = int(canvas_size * FILL_RATIO)
+    logo_w, logo_h = logo_rgba.size
+    scale = min(max_dim / logo_w, max_dim / logo_h)
+    new_w = int(logo_w * scale)
+    new_h = int(logo_h * scale)
 
-    cx = (left + right) // 2
-    cy = (top + bottom) // 2
-    half = content_size // 2 + margin
-    nl = max(0, cx - half)
-    nt = max(0, cy - half)
-    nr = min(src_rgba.width,  cx + half)
-    nb = min(src_rgba.height, cy + half)
+    logo_resized = logo_rgba.resize((new_w, new_h), Image.LANCZOS)
 
-    cropped = src_rgba.crop((nl, nt, nr, nb))
-    side = max(cropped.width, cropped.height)
-    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    ox = (side - cropped.width)  // 2
-    oy = (side - cropped.height) // 2
-    square.paste(cropped, (ox, oy))
-    return square
-
-
-def make_size(src_rgba: Image.Image, size: int) -> Image.Image:
-    """Composite sur fond sombre + resize LANCZOS + sharpen adaptatif."""
-    bg = Image.new("RGBA", src_rgba.size, (*BG_COLOR, 255))
-    bg.paste(src_rgba, mask=src_rgba.split()[3])
-
-    resized = bg.resize((size, size), Image.LANCZOS)
-
-    if size <= 16:
-        resized = resized.filter(ImageFilter.UnsharpMask(radius=1, percent=300, threshold=1))
-        resized = resized.filter(ImageFilter.SHARPEN)
-    elif size <= 32:
-        resized = resized.filter(ImageFilter.UnsharpMask(radius=1.5, percent=250, threshold=2))
-        resized = resized.filter(ImageFilter.SHARPEN)
-    elif size <= 64:
-        resized = resized.filter(ImageFilter.UnsharpMask(radius=2, percent=200, threshold=2))
+    # Sharpen adaptatif
+    if canvas_size <= 16:
+        logo_resized = logo_resized.filter(
+            ImageFilter.UnsharpMask(radius=1, percent=300, threshold=1))
+        logo_resized = logo_resized.filter(ImageFilter.SHARPEN)
+    elif canvas_size <= 32:
+        logo_resized = logo_resized.filter(
+            ImageFilter.UnsharpMask(radius=1.5, percent=250, threshold=2))
+        logo_resized = logo_resized.filter(ImageFilter.SHARPEN)
+    elif canvas_size <= 64:
+        logo_resized = logo_resized.filter(
+            ImageFilter.UnsharpMask(radius=2, percent=200, threshold=2))
     else:
-        resized = resized.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
+        logo_resized = logo_resized.filter(
+            ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
 
-    return resized.convert("RGBA")
+    # Canvas sombre + logo centré
+    canvas = Image.new("RGBA", (canvas_size, canvas_size), (*BG_COLOR, 255))
+    ox = (canvas_size - new_w) // 2
+    oy = (canvas_size - new_h) // 2
+    canvas.paste(logo_resized, (ox, oy), mask=logo_resized.split()[3])
+    return canvas
 
 
 def main():
     src = Image.open(SRC).convert("RGBA")
-    print(f"Source : {src.size} {src.mode}")
-
-    src = crop_to_content(src)
-    print(f"Après recadrage carré : {src.size}")
+    print(f"Source : {src.size} ({src.size[0]/src.size[1]:.2f} ratio)")
 
     frames = {s: make_size(src, s) for s in SIZES}
 
-    # Pillow génère le .icns directement avec toutes les tailles
     frames[SIZES[-1]].save(
         DST,
         format="ICNS",
@@ -77,6 +66,7 @@ def main():
 
     size_kb = DST.stat().st_size / 1024
     print(f"ICNS généré : {DST} ({size_kb:.1f} KB, tailles : {SIZES})")
+    print(f"Logo occupe {FILL_RATIO*100:.0f}% du canvas — centré sur fond #070D14")
 
 
 if __name__ == "__main__":
