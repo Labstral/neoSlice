@@ -38,30 +38,20 @@ workflows:
 
       - name: Create DMG installer (drag-to-Applications)
         script: |
-          brew install create-dmg --quiet
+          # Préparer le contenu du DMG
+          mkdir -p /tmp/dmg_src
+          cp -r dist/neoSlice.app /tmp/dmg_src/
+          ln -s /Applications /tmp/dmg_src/Applications
 
-          create-dmg \
-            --volname "neoSlice" \
-            --volicon "assets/neoSlice.icns" \
-            --window-pos 200 120 \
-            --window-size 600 380 \
-            --icon-size 128 \
-            --icon "neoSlice.app" 160 180 \
-            --hide-extension "neoSlice.app" \
-            --app-drop-link 440 180 \
-            --no-internet-enable \
-            "dist/neoSlice-macOS.dmg" \
-            "dist/neoSlice.app" || true
+          # hdiutil est natif macOS — aucune installation requise
+          hdiutil create \
+            -volname "neoSlice" \
+            -srcfolder /tmp/dmg_src \
+            -ov \
+            -format UDZO \
+            dist/neoSlice-macOS.dmg
 
-          # Renommer si create-dmg a ajouté un suffixe de version
-          DMG_FOUND=$(ls dist/*.dmg 2>/dev/null | head -1)
-          if [ -n "$DMG_FOUND" ] && [ "$DMG_FOUND" != "dist/neoSlice-macOS.dmg" ]; then
-            mv "$DMG_FOUND" dist/neoSlice-macOS.dmg
-          fi
-
-          echo "=== Contenu dist/ ==="
-          ls -lh dist/*.dmg dist/*.zip dist/*.app 2>/dev/null || ls -lh dist/
-          echo "DMG: $(du -sh dist/neoSlice-macOS.dmg 2>/dev/null || echo 'absent')"
+          echo "DMG: $(du -sh dist/neoSlice-macOS.dmg)"
 
     artifacts:
       - dist/neoSlice-macOS.dmg
