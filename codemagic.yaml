@@ -36,6 +36,17 @@ workflows:
         script: |
           pyinstaller --clean -y neoslice_mac.spec
 
+      - name: Thin universal2 binaries to arm64 (halves PySide6 size)
+        script: |
+          echo "Avant thin: $(du -sh dist/neoSlice.app)"
+          find dist/neoSlice.app -type f \( -name "*.dylib" -o -name "*.so" \) | while read f; do
+            archs=$(lipo -info "$f" 2>/dev/null | grep -oE "(x86_64|arm64)" | tr '\n' ' ' || true)
+            if echo "$archs" | grep -q "x86_64" && echo "$archs" | grep -q "arm64"; then
+              lipo "$f" -thin arm64 -output "$f" 2>/dev/null || true
+            fi
+          done
+          echo "Après thin: $(du -sh dist/neoSlice.app)"
+
       - name: Create DMG (drag-to-Applications)
         script: |
           mkdir -p /tmp/dmg_src
