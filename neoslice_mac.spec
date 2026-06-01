@@ -2,8 +2,6 @@
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
-block_cipher = None
-
 pyside6_datas,   pyside6_bins,   pyside6_hidden   = collect_all('PySide6')
 pyvista_datas,   pyvista_bins,   pyvista_hidden    = collect_all('pyvista')
 pyvistaqt_datas, pyvistaqt_bins, pyvistaqt_hidden  = collect_all('pyvistaqt')
@@ -72,11 +70,10 @@ a = Analysis(
         'PySide6.QtWebEngineCore',
         'PySide6.QtWebEngineQuick',
     ],
-    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
     pyz,

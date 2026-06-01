@@ -1,0 +1,38 @@
+workflows:
+  neoslice-macos:
+    name: neoSlice — Build macOS
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    triggering:
+      events:
+        - push
+        - tag
+      branch_patterns:
+        - pattern: main
+          include: true
+      tag_patterns:
+        - pattern: 'v*'
+          include: true
+
+    environment:
+      python: '3.12'
+
+    scripts:
+      - name: Install dependencies
+        script: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build .app with PyInstaller
+        script: |
+          pyinstaller --clean -y neoslice_mac.spec
+
+      - name: Zip .app for download
+        script: |
+          cd dist
+          zip -r neoSlice-macOS.zip neoSlice.app
+          echo "Build size: $(du -sh neoSlice-macOS.zip)"
+
+    artifacts:
+      - dist/neoSlice-macOS.zip
