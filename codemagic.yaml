@@ -24,18 +24,8 @@ workflows:
 
       - name: Generate .icns icon
         script: |
-          mkdir -p assets/neoSlice.iconset
-          for size in 16 32 64 128 256 512; do
-            sips -z $size $size assets/neoSlice.png \
-              --out assets/neoSlice.iconset/icon_${size}x${size}.png
-          done
-          sips -z 32  32  assets/neoSlice.png --out assets/neoSlice.iconset/icon_16x16@2x.png
-          sips -z 64  64  assets/neoSlice.png --out assets/neoSlice.iconset/icon_32x32@2x.png
-          sips -z 256 256 assets/neoSlice.png --out assets/neoSlice.iconset/icon_128x128@2x.png
-          sips -z 512 512 assets/neoSlice.png --out assets/neoSlice.iconset/icon_256x256@2x.png
-          sips -z 1024 1024 assets/neoSlice.png --out assets/neoSlice.iconset/icon_512x512@2x.png
-          iconutil -c icns assets/neoSlice.iconset -o assets/neoSlice.icns
-          echo "Icon generated: $(du -sh assets/neoSlice.icns)"
+          pip3 install pillow --quiet
+          python3 make_icns.py
 
       - name: Install dependencies
         script: |
