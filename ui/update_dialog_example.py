@@ -169,7 +169,7 @@ class _UpdateDialog(QDialog):
 
         # Titre
         title = QLabel("neoSlice")
-        title.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        title.setFont(QFont(FONT_MAIN, 16, QFont.Bold))
         title.setStyleSheet(f"color: {_L['TEXT_H']}; letter-spacing: 2px;")
         h.addWidget(title)
         h.addStretch()
@@ -209,10 +209,10 @@ class _UpdateDialog(QDialog):
             v.setContentsMargins(0, 0, 0, 0)
             v.setSpacing(2)
             lbl = QLabel(label)
-            lbl.setFont(QFont("Segoe UI", 8))
+            lbl.setFont(QFont(FONT_MAIN, 8))
             lbl.setStyleSheet(f"color: {_L['TEXT_MUTED']};")
             ver = QLabel(version)
-            ver.setFont(QFont("Segoe UI", 18, QFont.Bold))
+            ver.setFont(QFont(FONT_MAIN, 18, QFont.Bold))
             ver.setStyleSheet(
                 f"color: {_L['TEXT_MUTED']};" if muted
                 else f"color: {_L['ACCENT_DARK']};"
@@ -226,7 +226,7 @@ class _UpdateDialog(QDialog):
 
         # Flèche
         arr = QLabel("→")
-        arr.setFont(QFont("Segoe UI", 22))
+        arr.setFont(QFont(FONT_MAIN, 22))
         arr.setStyleSheet(f"color: {_L['BORDER']};")
         h.addWidget(arr)
 
@@ -294,14 +294,14 @@ class _UpdateDialog(QDialog):
         hdr.setSpacing(8)
 
         ver_lbl = QLabel(entry["version"])
-        ver_lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        ver_lbl.setFont(QFont(FONT_MAIN, 11, QFont.Bold))
         ver_lbl.setStyleSheet(f"color: {_L['TEXT_H']};")
         hdr.addWidget(ver_lbl)
 
         # Tag coloré
         tag_bg, tag_fg = _TAG_STYLES.get(entry["tag_style"], (_L["INFO_BG"], _L["INFO_FG"]))
         tag = QLabel(entry["tag"])
-        tag.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        tag.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         tag.setStyleSheet(f"""
             color: {tag_fg};
             background: {tag_bg};
@@ -313,7 +313,7 @@ class _UpdateDialog(QDialog):
         hdr.addStretch()
 
         date_lbl = QLabel(entry["date"])
-        date_lbl.setFont(QFont("Segoe UI", 8))
+        date_lbl.setFont(QFont(FONT_MAIN, 8))
         date_lbl.setStyleSheet(f"color: {_L['TEXT_MUTED']};")
         hdr.addWidget(date_lbl)
         v.addLayout(hdr)
@@ -332,13 +332,13 @@ class _UpdateDialog(QDialog):
             row.setContentsMargins(0, 0, 0, 0)
 
             dot = QLabel("•")
-            dot.setFont(QFont("Segoe UI", 12))
+            dot.setFont(QFont(FONT_MAIN, 12))
             dot.setStyleSheet(f"color: {_L['ACCENT']};")
             dot.setFixedWidth(14)
             row.addWidget(dot, 0, Qt.AlignTop)
 
             txt = QLabel(item)
-            txt.setFont(QFont("Segoe UI", 9))
+            txt.setFont(QFont(FONT_MAIN, 9))
             txt.setStyleSheet(f"color: {_L['TEXT']};")
             txt.setWordWrap(True)
             row.addWidget(txt, 1)
@@ -360,7 +360,7 @@ class _UpdateDialog(QDialog):
 
         # Note de taille
         note = QLabel("Taille : 42 MB  ·  Redémarrage requis")
-        note.setFont(QFont("Segoe UI", 8))
+        note.setFont(QFont(FONT_MAIN, 8))
         note.setStyleSheet(f"color: {_L['TEXT_MUTED']};")
         h.addWidget(note)
         h.addStretch()
@@ -368,7 +368,7 @@ class _UpdateDialog(QDialog):
         btn_later = QPushButton("Plus tard")
         btn_later.setFixedSize(100, 38)
         btn_later.setCursor(Qt.PointingHandCursor)
-        btn_later.setFont(QFont("Segoe UI", 9))
+        btn_later.setFont(QFont(FONT_MAIN, 9))
         btn_later.setStyleSheet(f"""
             QPushButton {{
                 background: {_L['BG']};
@@ -386,7 +386,7 @@ class _UpdateDialog(QDialog):
         btn_update = QPushButton("⬇  Mettre à jour")
         btn_update.setFixedSize(148, 38)
         btn_update.setCursor(Qt.PointingHandCursor)
-        btn_update.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        btn_update.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         btn_update.setStyleSheet(f"""
             QPushButton {{
                 background: {_L['ACCENT']};

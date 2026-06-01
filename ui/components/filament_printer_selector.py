@@ -21,7 +21,7 @@ from ui.styles.theme import (
     BG_INPUT, BG_ELEVATED, BG_SURFACE,
     ACCENT, ACCENT_BRIGHT, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_LABEL, INACTIVE,
     TELE_GREEN, AMBER, ERROR_RED, FONT_MONO, MANAGER as _T,
-)
+    FONT_MAIN,)
 
 _COMBO_STYLE = f"""
     QComboBox {{
@@ -31,7 +31,7 @@ _COMBO_STYLE = f"""
         border-radius: 3px;
         padding: 5px 8px;
         font-size: 13px;
-        font-family: "Segoe UI";
+        font-family: {FONT_MAIN};
     }}
     QComboBox:hover {{ border-color: {ACCENT}; }}
     QComboBox:disabled {{
@@ -68,7 +68,7 @@ _BTN_VALIDATE = f"""
         border-radius: 3px;
         padding: 0 10px;
         font-size: 10px;
-        font-family: "Segoe UI";
+        font-family: {FONT_MAIN};
         font-weight: bold;
         letter-spacing: 1px;
     }}
@@ -133,7 +133,7 @@ _NOZZLE_COMBO_STYLE = f"""
         border-radius: 3px;
         padding: 4px 6px;
         font-size: 13px;
-        font-family: "Segoe UI";
+        font-family: {FONT_MAIN};
         min-width: 68px;
         max-width: 68px;
     }}
@@ -182,7 +182,7 @@ class FilamentPrinterSelector(QWidget):
 
         # ── ① Imprimante ──────────────────────────────────────────────────
         self._lbl_p = QLabel(_("selector.lbl_printer"))
-        self._lbl_p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        self._lbl_p.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._lbl_p.setStyleSheet(_LABEL_STYLE)
         layout.addWidget(self._lbl_p)
 
@@ -208,7 +208,7 @@ class FilamentPrinterSelector(QWidget):
         row_p.addWidget(self._nozzle_combo)
 
         self._btn_confirm_printer = QPushButton(_("selector.validate_btn"))
-        self._btn_confirm_printer.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        self._btn_confirm_printer.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._btn_confirm_printer.setFixedHeight(32)
         self._btn_confirm_printer.setFixedWidth(76)
         self._btn_confirm_printer.setCursor(Qt.PointingHandCursor)
@@ -221,7 +221,7 @@ class FilamentPrinterSelector(QWidget):
 
         # ── ② Filament (verrouillé jusqu'à validation imprimante) ─────────
         self._lbl_f = QLabel(_("selector.lbl_filament"))
-        self._lbl_f.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        self._lbl_f.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._lbl_f.setStyleSheet(_LABEL_STYLE_DIM)
         layout.addWidget(self._lbl_f)
 
@@ -236,7 +236,7 @@ class FilamentPrinterSelector(QWidget):
         row_f.addWidget(self._filament_combo, 1)
 
         self._btn_confirm_filament = QPushButton(_("selector.validate_btn"))
-        self._btn_confirm_filament.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        self._btn_confirm_filament.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._btn_confirm_filament.setFixedHeight(32)
         self._btn_confirm_filament.setFixedWidth(76)
         self._btn_confirm_filament.setEnabled(False)
@@ -257,7 +257,7 @@ class FilamentPrinterSelector(QWidget):
 
         # ── Plateau (verrouillé jusqu'à validation filament) ──────────────
         self._lbl_plate = QLabel(_("selector.lbl_plate"))
-        self._lbl_plate.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        self._lbl_plate.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._lbl_plate.setStyleSheet(_LABEL_STYLE_DIM)
         layout.addWidget(self._lbl_plate)
 
@@ -356,12 +356,12 @@ class FilamentPrinterSelector(QWidget):
             header = QStandardItem(f"── {serie.upper()} ──")
             header.setEnabled(False)
             header.setForeground(QColor(TEXT_SECONDARY))
-            header.setFont(QFont("Segoe UI", 7, QFont.Bold))
+            header.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
             model.appendRow(header)
             for name in by_serie[serie]:
                 item = QStandardItem(f"  {name}")
                 item.setData(name, Qt.UserRole)
-                item.setFont(QFont("Segoe UI", 9))
+                item.setFont(QFont(FONT_MAIN, 9))
                 model.appendRow(item)
 
         self._printer_combo.setModel(model)
@@ -382,12 +382,12 @@ class FilamentPrinterSelector(QWidget):
             header = QStandardItem(f"── {famille.upper()} ──")
             header.setEnabled(False)
             header.setForeground(QColor(TEXT_SECONDARY))
-            header.setFont(QFont("Segoe UI", 7, QFont.Bold))
+            header.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
             model.appendRow(header)
             for name in by_family[famille]:
                 item = QStandardItem(f"  {name}")
                 item.setData(name, Qt.UserRole)
-                item.setFont(QFont("Segoe UI", 9))
+                item.setFont(QFont(FONT_MAIN, 9))
                 model.appendRow(item)
 
         self._filament_combo.setModel(model)
@@ -461,7 +461,7 @@ class FilamentPrinterSelector(QWidget):
             QComboBox {{
                 background: {bg_in}; color: {tp};
                 border: 1px solid {inc}; border-radius: 3px;
-                padding: 5px 8px; font-size: 13px; font-family: "Segoe UI";
+                padding: 5px 8px; font-size: 13px; font-family: {FONT_MAIN};
             }}
             QComboBox:hover {{ border-color: {acc}; }}
             QComboBox:disabled {{ background: {bg_el}; color: {inc}; border-color: {inc}; }}
@@ -481,7 +481,7 @@ class FilamentPrinterSelector(QWidget):
             QComboBox {{
                 background: {bg_in}; color: {tp};
                 border: 1px solid {inc}; border-radius: 3px;
-                padding: 4px 6px; font-size: 13px; font-family: "Segoe UI";
+                padding: 4px 6px; font-size: 13px; font-family: {FONT_MAIN};
                 min-width: 68px; max-width: 68px;
             }}
             QComboBox:hover {{ border-color: {acc}; }}
@@ -509,7 +509,7 @@ class FilamentPrinterSelector(QWidget):
         btn_validate = f"""
             QPushButton {{
                 background: {acc}; color: #ffffff; border: none; border-radius: 3px;
-                padding: 0 10px; font-size: 10px; font-family: "Segoe UI";
+                padding: 0 10px; font-size: 10px; font-family: {FONT_MAIN};
                 font-weight: bold; letter-spacing: 1px;
             }}
             QPushButton:hover {{ background: {accb}; }}

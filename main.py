@@ -116,19 +116,16 @@ def main():
     _configure_logging()
     logger.info("Démarrage de neoSlice")
 
+    # AppUserModelID — requis pour que Windows affiche la bonne icône dans la barre des tâches
     if sys.platform == "win32":
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("neoSlice.app")
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("neoSlice.app")
+        except Exception:
+            pass
 
     os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
     os.environ.setdefault("VTK_SILENCE_GET_VOID_POINTER_WARNINGS", "1")
-    # Supprime les logs VTK niveau ERR (framebuffer non-critique au démarrage)
     os.environ.setdefault("VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN", "0")
-
-    # AppUserModelID — requis pour que Windows affiche la bonne icône dans la barre des tâches
-    try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("neoSlice.app")
-    except Exception:
-        pass
 
     app = QApplication(sys.argv)
     app.setApplicationName("neoSlice")
@@ -136,7 +133,7 @@ def main():
     app.setApplicationVersion(__version__)
     app.setOrganizationName("neoSlice")
 
-    font = QFont("Segoe UI", 10)
+    font = QFont(FONT_MAIN, 10)
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     app.setFont(font)
 
@@ -144,7 +141,7 @@ def main():
     # QPalette fixe la couleur de fond système avant tout rendu — sans ça, Qt peint
     # le fond par défaut (blanc) pendant les ~80 ms avant l'application du stylesheet.
     from PySide6.QtGui import QPalette, QColor as _QC
-    from ui.styles.theme import MANAGER as _THEME_MGR
+    from ui.styles.theme import MANAGER as _THEME_MGR, FONT_MAIN
     _tp = _THEME_MGR.palette()
     _qp = QPalette()
     _qp.setColor(QPalette.ColorRole.Window,        _QC(_tp["BG_VOID"]))

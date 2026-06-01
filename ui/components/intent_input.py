@@ -63,7 +63,7 @@ class IntentInput(QWidget):
 
         # --- Bouton GÉNÉRER ---
         self._btn = QPushButton("GÉNÉRER CONFIGURATION →")
-        self._btn.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        self._btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._btn.setFixedHeight(38)
         self._btn.setEnabled(False)
         self._btn.clicked.connect(self._on_submit)
@@ -87,7 +87,7 @@ class IntentInput(QWidget):
 
         # --- Presets en chips wrapping ---
         chips_label = QLabel("PRESETS RAPIDES")
-        chips_label.setFont(QFont("Segoe UI", 7, QFont.Bold))
+        chips_label.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
         chips_label.setStyleSheet(f"color: {TEXT_LABEL}; letter-spacing: 2px;")
         layout.addWidget(chips_label)
 

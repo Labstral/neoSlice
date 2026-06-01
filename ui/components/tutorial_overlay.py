@@ -21,7 +21,7 @@ from ui.styles.theme import (
     ACCENT, ACCENT_BRIGHT, TELE_GREEN,
     TEXT_PRIMARY, TEXT_SECONDARY, FONT_MONO,
     MANAGER as _T,
-)
+    FONT_MAIN,)
 
 _BODY_COLOR = "#8AAABF"
 
@@ -256,13 +256,13 @@ class TutorialOverlay(QDialog):
         h = _PAD_V + 18 + 14  # top pad + dots row + spacing
 
         td = QTextDocument()
-        td.setDefaultFont(QFont("Segoe UI", 13, QFont.Bold))
+        td.setDefaultFont(QFont(FONT_MAIN, 13, QFont.Bold))
         td.setPlainText(_STEPS[self._idx].title)
         td.setTextWidth(text_w)
         h += int(td.size().height()) + 12 + 1 + 12  # title + sep
 
         bd = QTextDocument()
-        bd.setDefaultFont(QFont("Segoe UI", 9))
+        bd.setDefaultFont(QFont(FONT_MAIN, 9))
         bd.setHtml(
             f"<body style='font-family:Segoe UI;font-size:9pt;color:{_BODY_COLOR};'>"
             f"{self._body_html()}</body>"
@@ -351,6 +351,7 @@ class TutorialOverlay(QDialog):
         cx    = float(self._card_rect.x())
         cy    = float(self._card_rect.y())
         tw    = float(_CARD_W - 2 * _PAD_H)
+        _tp   = _T.palette()
 
         # Fond de carte
         painter.setPen(Qt.NoPen)
@@ -370,7 +371,7 @@ class TutorialOverlay(QDialog):
         y = cy + _PAD_V
 
         # ── Points de progression ──
-        dot_font = QFont("Segoe UI", 9)
+        dot_font = QFont(FONT_MAIN, 9)
         fm = QFontMetrics(dot_font)
         painter.setFont(dot_font)
         dx = cx + _PAD_H
@@ -390,7 +391,7 @@ class TutorialOverlay(QDialog):
 
         # ── Titre ──
         td = QTextDocument()
-        td.setDefaultFont(QFont("Segoe UI", 13, QFont.Bold))
+        td.setDefaultFont(QFont(FONT_MAIN, 13, QFont.Bold))
         td.setDefaultStyleSheet(f"body {{ color: {TEXT_PRIMARY}; }}")
         td.setPlainText(step.title)
         td.setTextWidth(tw)
@@ -407,7 +408,7 @@ class TutorialOverlay(QDialog):
 
         # ── Corps ──
         bd = QTextDocument()
-        bd.setDefaultFont(QFont("Segoe UI", 9))
+        bd.setDefaultFont(QFont(FONT_MAIN, 9))
         _bold_color = _tp['TELE_GREEN'] if not _T.is_dark() else _tp['ACCENT_BRIGHT']
         bd.setDefaultStyleSheet(
             f"body {{ color:{_BODY_COLOR}; }} b {{ color:{_bold_color}; font-weight:bold; }}"
@@ -446,7 +447,7 @@ class TutorialOverlay(QDialog):
             p.setBrush(QColor(_accent_bright if hovered else _accent))
             p.drawRoundedRect(rf, 4.0, 4.0)
             p.setPen(QColor(_text_fg))
-            p.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            p.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         elif variant == "outline":
             _ac = QColor(_accent)
             _ac.setAlpha(40)
@@ -456,13 +457,13 @@ class TutorialOverlay(QDialog):
             p.setPen(QPen(QColor(_accent), 1))
             p.drawRoundedRect(rf.adjusted(.5, .5, -.5, -.5), 4.0, 4.0)
             p.setPen(QColor(_accent))
-            p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            p.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         else:
             p.setBrush(Qt.NoBrush)
             p.setPen(QPen(QColor(_tp["TEXT_SECONDARY"] if hovered else _tp["INACTIVE"]), 1))
             p.drawRoundedRect(rf.adjusted(.5, .5, -.5, -.5), 4.0, 4.0)
             p.setPen(QColor(_tp["TEXT_PRIMARY"] if hovered else _tp["TEXT_SECONDARY"]))
-            p.setFont(QFont("Segoe UI", 8))
+            p.setFont(QFont(FONT_MAIN, 8))
 
         p.drawText(rf, Qt.AlignCenter, text)
 

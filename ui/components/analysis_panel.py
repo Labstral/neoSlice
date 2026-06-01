@@ -12,7 +12,7 @@ from ui.styles.theme import (
     ACCENT, ACCENT_BRIGHT, TELE_GREEN, AMBER, ERROR_RED,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_LABEL, INACTIVE,
     FONT_MONO, score_color, MANAGER as _T,
-)
+    FONT_MAIN,)
 from core.geometry.analysis_report import AnalysisReport
 from core.i18n import _
 
@@ -27,7 +27,7 @@ class _GaugeRow(QWidget):
         layout.setSpacing(8)
 
         self._label = QLabel(label.upper())
-        self._label.setFont(QFont("Segoe UI", 7, QFont.Bold))
+        self._label.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
         _p0 = _T.palette()
         self._label.setStyleSheet(f"color: {_p0['TEXT_LABEL']}; letter-spacing: 1px; background: transparent;")
         self._label.setFixedWidth(88)
@@ -236,7 +236,7 @@ class AnalysisPanel(QWidget):
             col = QVBoxLayout()
             col.setSpacing(1)
             lbl_k = QLabel(key_lbl)
-            lbl_k.setFont(QFont("Segoe UI", 6, QFont.Bold))
+            lbl_k.setFont(QFont(FONT_MAIN, 6, QFont.Bold))
             lbl_k.setStyleSheet(f"color: {_pi['TEXT_LABEL']}; letter-spacing: 1px; background: transparent;")
             lbl_k.setAlignment(Qt.AlignCenter)
             self._geo_keys.append(lbl_k)

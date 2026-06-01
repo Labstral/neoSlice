@@ -12,7 +12,7 @@ from core.i18n import _
 from ui.styles.theme import (
     BG_SURFACE, ACCENT, ACCENT_BRIGHT, TELE_GREEN,
     TEXT_SECONDARY, TEXT_LABEL, INACTIVE, FONT_MONO, MANAGER as _T,
-)
+    FONT_MAIN,)
 
 _SUPPORTED = {".stl", ".obj"}
 
@@ -46,7 +46,7 @@ class DropZone(QWidget):
 
         self._main_label = QLabel(_("drop.main_locked"))
         self._main_label.setAlignment(Qt.AlignCenter)
-        self._main_label.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        self._main_label.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._main_label.setStyleSheet(f"color: {INACTIVE}; background: transparent; letter-spacing: 1px;")
         layout.addWidget(self._main_label)
 

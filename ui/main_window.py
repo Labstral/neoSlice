@@ -40,7 +40,7 @@ from ui.styles.theme import (
     ACCENT, ACCENT_BRIGHT, TELE_GREEN, AMBER, ERROR_RED,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_LABEL, INACTIVE,
     FONT_MONO, MANAGER as _THEME, apply_title_bar_theme,
-)
+    FONT_MAIN,)
 from core.i18n import _
 from core.prefs import PREFS
 
@@ -444,28 +444,28 @@ class _TopBar(QWidget):
             self._logo.setFixedSize(_logo_w, _logo_h)
         else:
             self._logo.setText("◈")
-            self._logo.setFont(QFont("Segoe UI", 22))
+            self._logo.setFont(QFont(FONT_MAIN, 22))
 
         # Logo centré entre le séparateur et le titre — widgets séparés,
         # le layout spacing=12 donne un espace égal des deux côtés.
         layout.addWidget(self._logo, 0, Qt.AlignVCenter)
 
         self._title_lbl = QLabel(_("app.title"))
-        self._title_lbl.setFont(QFont("Segoe UI", 26, QFont.Bold))
+        self._title_lbl.setFont(QFont(FONT_MAIN, 26, QFont.Bold))
         layout.addWidget(self._title_lbl, 0, Qt.AlignVCenter)
 
         self._beta = QLabel("BÊTA")
-        self._beta.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        self._beta.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         layout.addWidget(self._beta)
 
         self._sub = QLabel(_("app.subtitle"))
-        self._sub.setFont(QFont("Segoe UI", 8))
+        self._sub.setFont(QFont(FONT_MAIN, 8))
         layout.addWidget(self._sub)
 
         layout.addStretch()
 
         self._new_btn = QPushButton(_("app.btn_new_piece"))
-        self._new_btn.setFont(QFont("Segoe UI", 7, QFont.Bold))
+        self._new_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
         self._new_btn.setFixedHeight(26)
         self._new_btn.setCursor(Qt.PointingHandCursor)
         self._new_btn.setEnabled(False)
@@ -492,7 +492,7 @@ class _TopBar(QWidget):
         layout.addWidget(self._new_btn)
 
         help_btn = QPushButton("?")
-        help_btn.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        help_btn.setFont(QFont(FONT_MAIN, 11, QFont.Bold))
         help_btn.setFixedSize(28, 28)
         help_btn.setToolTip("Guide d'utilisation")
         help_btn.setCursor(Qt.PointingHandCursor)
@@ -507,7 +507,7 @@ class _TopBar(QWidget):
         """)
         help_btn.clicked.connect(self.tutorial_clicked)
         coffee_btn = QPushButton("☕")
-        coffee_btn.setFont(QFont("Segoe UI", 10))
+        coffee_btn.setFont(QFont(FONT_MAIN, 10))
         coffee_btn.setFixedSize(28, 28)
         coffee_btn.setToolTip("À propos / Soutenir le développement")
         coffee_btn.setCursor(Qt.PointingHandCursor)
@@ -665,7 +665,7 @@ class _StatusBar(QWidget):
         layout.addWidget(self._msg, 1)
 
         self._export_btn = QPushButton(_("export.btn"))
-        self._export_btn.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        self._export_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._export_btn.setFixedHeight(30)
         self._export_btn.setEnabled(False)
         self._export_btn.setCursor(Qt.PointingHandCursor)
@@ -793,7 +793,7 @@ class _StepHeader(QWidget):
         layout.addWidget(self._num)
 
         self._lbl = QLabel(title.upper())
-        self._lbl.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        self._lbl.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         layout.addWidget(self._lbl)
 
         layout.addStretch()
@@ -1243,13 +1243,13 @@ class MainWindow(QMainWindow):
 
         # Titre
         title_lbl = QLabel(_("update.title"))
-        title_lbl.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        title_lbl.setFont(QFont(FONT_MAIN, 13, QFont.Bold))
         title_lbl.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']};")
         lay.addWidget(title_lbl)
 
         # Corps
         body_lbl = QLabel(_("update.body", new=new_version, cur=cur_version))
-        body_lbl.setFont(QFont("Segoe UI", 10))
+        body_lbl.setFont(QFont(FONT_MAIN, 10))
         body_lbl.setTextFormat(Qt.RichText)
         body_lbl.setWordWrap(True)
         lay.addWidget(body_lbl)
@@ -1257,11 +1257,11 @@ class MainWindow(QMainWindow):
         # Notes de version (optionnel)
         if notes:
             notes_title = QLabel(_("update.notes_label"))
-            notes_title.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            notes_title.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
             notes_title.setStyleSheet(f"color: {pal['TEXT_LABEL']};")
             lay.addWidget(notes_title)
             notes_lbl = QLabel(notes)
-            notes_lbl.setFont(QFont("Segoe UI", 9))
+            notes_lbl.setFont(QFont(FONT_MAIN, 9))
             notes_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']};")
             notes_lbl.setWordWrap(True)
             lay.addWidget(notes_lbl)
@@ -1278,7 +1278,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(progress_bar)
 
         status_lbl = QLabel("")
-        status_lbl.setFont(QFont("Segoe UI", 9))
+        status_lbl.setFont(QFont(FONT_MAIN, 9))
         status_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']};")
         status_lbl.setAlignment(Qt.AlignCenter)
         status_lbl.hide()
@@ -1291,7 +1291,7 @@ class MainWindow(QMainWindow):
         btn_row.setSpacing(10)
 
         later_btn = QPushButton(_("update.btn_later"))
-        later_btn.setFont(QFont("Segoe UI", 9))
+        later_btn.setFont(QFont(FONT_MAIN, 9))
         later_btn.setFixedHeight(32)
         later_btn.setStyleSheet(f"""
             QPushButton {{
@@ -1303,7 +1303,7 @@ class MainWindow(QMainWindow):
         later_btn.clicked.connect(dlg.reject)
 
         install_btn = QPushButton(_("update.btn_install"))
-        install_btn.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        install_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         install_btn.setFixedHeight(32)
         install_btn.setStyleSheet(f"""
             QPushButton {{
@@ -1772,13 +1772,13 @@ class MainWindow(QMainWindow):
 
         def _section_lbl(text):
             l = QLabel(text)
-            l.setFont(QFont("Segoe UI", 7, QFont.Bold))
+            l.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
             l.setStyleSheet(f"color: {_dp['TEXT_LABEL']}; letter-spacing: 2px;")
             return l
 
         # ── Titre succès ──
         title = QLabel("✓   Fichier 3MF généré avec succès")
-        title.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        title.setFont(QFont(FONT_MAIN, 12, QFont.Bold))
         title.setStyleSheet(f"color: {_dp['TELE_GREEN']};")
         layout.addWidget(title)
 
@@ -1786,7 +1786,7 @@ class MainWindow(QMainWindow):
 
         # ── Action requise ──
         action_lbl = QLabel("⚠   ACTION REQUISE DANS BAMBU STUDIO")
-        action_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        action_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         action_lbl.setStyleSheet(f"color: {_dp['AMBER']};")
         layout.addWidget(action_lbl)
 
@@ -1795,7 +1795,7 @@ class MainWindow(QMainWindow):
             "Les paramètres du <b>filament</b> (températures, ventilation, débit) doivent être "
             "configurés manuellement dans Bambu Studio."
         )
-        info.setFont(QFont("Segoe UI", 9))
+        info.setFont(QFont(FONT_MAIN, 9))
         info.setTextFormat(Qt.RichText)
         info.setStyleSheet(f"color: {_dp['TEXT_SECONDARY']};")
         info.setWordWrap(True)
@@ -1832,7 +1832,7 @@ class MainWindow(QMainWindow):
         if warnings:
             for w in warnings:
                 wlbl = QLabel(f"⚠  {w}")
-                wlbl.setFont(QFont("Segoe UI", 8))
+                wlbl.setFont(QFont(FONT_MAIN, 8))
                 wlbl.setStyleSheet(f"color: {_dp['ERROR_RED']};")
                 wlbl.setWordWrap(True)
                 layout.addWidget(wlbl)
@@ -1888,7 +1888,7 @@ class MainWindow(QMainWindow):
         btn_pdf = QPushButton("  Télécharger la fiche PDF des réglages")
         btn_pdf.setIcon(_make_pdf_icon())
         btn_pdf.setIconSize(QSize(18, 18))
-        btn_pdf.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        btn_pdf.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         btn_pdf.setFixedHeight(34)
         btn_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
         _ep = _THEME.palette()
@@ -1901,7 +1901,7 @@ class MainWindow(QMainWindow):
         """)
 
         btn_close = QPushButton("Fermer")
-        btn_close.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        btn_close.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         btn_close.setFixedHeight(34)
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.setStyleSheet(f"""
@@ -1960,7 +1960,7 @@ class MainWindow(QMainWindow):
         btn_bambu = QPushButton("  Ouvrir dans Bambu Studio")
         btn_bambu.setIcon(_make_printer_icon())
         btn_bambu.setIconSize(QSize(18, 18))
-        btn_bambu.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        btn_bambu.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         btn_bambu.setFixedHeight(34)
         btn_bambu.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_bambu.setStyleSheet(f"""

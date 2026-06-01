@@ -213,8 +213,9 @@ TEXT_SECONDARY = _DARK["TEXT_SECONDARY"]
 TEXT_LABEL     = _DARK["TEXT_LABEL"]
 INACTIVE       = _DARK["INACTIVE"]
 
-FONT_MAIN = "Segoe UI"
-FONT_MONO = "Courier New"
+import sys as _sys
+FONT_MAIN = "Segoe UI" if _sys.platform == "win32" else "SF Pro Text" if _sys.platform == "darwin" else "Ubuntu"
+FONT_MONO = "Courier New" if _sys.platform == "win32" else "SF Mono" if _sys.platform == "darwin" else "Ubuntu Mono"
 RADIUS = 4
 
 # Aliases backward compat

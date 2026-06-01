@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QCheckBox, QPushButt
 from PySide6.QtCore import Qt, QTimer, QRect, QRectF, QEvent, Signal, QThread, QObject
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QLinearGradient
 from loguru import logger
-from ui.styles.theme import MANAGER as _T
+from ui.styles.theme import MANAGER as _T, FONT_MAIN
 from core.i18n import _
 
 try:
@@ -120,7 +120,7 @@ class _LoadingOverlay(QWidget):
         # ── Texte principal ──
         text_y = cy + R + 22
         painter.setPen(QColor(180, 210, 240, 230))
-        font = QFont("Segoe UI", 9, QFont.Bold)
+        font = QFont(FONT_MAIN, 9, QFont.Bold)
         font.setLetterSpacing(QFont.AbsoluteSpacing, 2)
         painter.setFont(font)
         painter.drawText(QRect(cx - 160, text_y, 320, 26), Qt.AlignCenter, self._text)
@@ -235,10 +235,7 @@ class Viewer3D(QWidget):
             visible = bool(state)
             for name in ("build_plate_surface", "build_plate_grid"):
                 if name in self._plotter.actors:
-                    if visible:
-                        self._plotter.actors[name].VisibilityOn()
-                    else:
-                        self._plotter.actors[name].VisibilityOff()
+                    self._plotter.actors[name].visibility = visible
             self._plotter.render()
         except Exception:
             pass
@@ -376,7 +373,7 @@ class Viewer3D(QWidget):
             pass
         # FXAA — post-process haute qualité, compatible SSAO
         try:
-            self._plotter.renderer.SetUseFXAA(True)
+            self._plotter.enable_anti_aliasing('fxaa')
         except Exception:
             pass
         # SSAO — qualité selon le mode de performance
@@ -391,9 +388,7 @@ class Viewer3D(QWidget):
                     pass
         # Depth peeling — transparence correcte pour les couches qui se croisent
         try:
-            self._plotter.renderer.SetUseDepthPeeling(True)
-            self._plotter.renderer.SetMaximumNumberOfPeels(4)
-            self._plotter.renderer.SetOcclusionRatio(0.0)
+            self._plotter.enable_depth_peeling(number_of_peels=4, occlusion_ratio=0.0)
         except Exception:
             pass
         # Tone mapping VTK — mappage HDR → évite les blancs brûlés, rendu cinématique
@@ -426,7 +421,7 @@ class Viewer3D(QWidget):
                     pos = self._plotter.camera.position
                     actor = self._plotter.actors.get("build_plate_surface")
                     if actor:
-                        actor.GetProperty().SetOpacity(0.0 if pos[2] < 0 else self._PLATE_OPACITY)
+                        actor.prop.opacity = 0.0 if pos[2] < 0 else self._PLATE_OPACITY
                 except Exception:
                     pass
             self._plotter.renderer.GetActiveCamera().AddObserver("ModifiedEvent", _cam_cb)
@@ -445,14 +440,14 @@ class Viewer3D(QWidget):
 
         self._rot_checkbox = QCheckBox(_("viewer.auto_rotate"), self)
         self._rot_checkbox.setChecked(False)
-        self._rot_checkbox.setFont(QFont("Segoe UI", 9))
+        self._rot_checkbox.setFont(QFont(FONT_MAIN, 9))
         self._apply_rot_checkbox_style()
         self._rot_checkbox.hide()
         self._rot_checkbox.stateChanged.connect(self._on_rot_toggle)
 
         self._plate_checkbox = QCheckBox(_("viewer.show_plate"), self)
         self._plate_checkbox.setChecked(True)
-        self._plate_checkbox.setFont(QFont("Segoe UI", 9))
+        self._plate_checkbox.setFont(QFont(FONT_MAIN, 9))
         self._apply_plate_checkbox_style()
         self._plate_checkbox.hide()
         self._plate_checkbox.stateChanged.connect(self._on_plate_toggle)

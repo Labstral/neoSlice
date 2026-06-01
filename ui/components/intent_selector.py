@@ -232,7 +232,7 @@ class _ChoiceBtn(QWidget):
         left.setSpacing(2)
 
         self._title_lbl = QLabel(self._preset.label)
-        self._title_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        self._title_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
 
         self._desc_lbl = QLabel(self._preset.desc)
         self._desc_lbl.setFont(QFont(FONT_MONO, 9))
@@ -243,7 +243,7 @@ class _ChoiceBtn(QWidget):
         layout.addLayout(left, 1)
 
         self._check = QLabel()
-        self._check.setFont(QFont("Segoe UI", 10))
+        self._check.setFont(QFont(FONT_MAIN, 10))
         self._check.setFixedWidth(20)
         self._check.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._check)
@@ -334,7 +334,7 @@ class _Group(QWidget):
                 color: {ACCENT_BRIGHT};
                 text-align: left;
                 padding: 0 10px;
-                font-family: 'Segoe UI';
+                font-family: {FONT_MAIN};
                 font-size: 10px;
                 font-weight: bold;
                 letter-spacing: 2px;
@@ -417,7 +417,7 @@ class _Group(QWidget):
                     border-left: 3px solid {color};
                     color: {_mp['ACCENT_BRIGHT']};
                     text-align: left; padding: 0 10px;
-                    font-family: 'Segoe UI'; font-size: 8px;
+                    font-family: {FONT_MAIN}; font-size: 8px;
                     font-weight: bold; letter-spacing: 2px;
                 }}
                 QPushButton:hover {{
@@ -434,7 +434,7 @@ class _Group(QWidget):
                     color: {_mp['ACCENT_BRIGHT']};
                     text-align: left;
                     padding: 0 10px;
-                    font-family: 'Segoe UI';
+                    font-family: {FONT_MAIN};
                     font-size: 8px;
                     font-weight: bold;
                     letter-spacing: 2px;
@@ -456,11 +456,11 @@ class _ConflictBanner(QWidget):
         layout.setSpacing(4)
 
         self._icon_msg = QLabel()
-        self._icon_msg.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        self._icon_msg.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._icon_msg.setWordWrap(True)
 
         self._compromise = QLabel()
-        self._compromise.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        self._compromise.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._compromise.setStyleSheet(f"color: {TEXT_SECONDARY};")
         self._compromise.setWordWrap(True)
 
@@ -520,7 +520,7 @@ class _PresetChip(QWidget):
         )
 
         lbl = QPushButton(name)
-        lbl.setFont(QFont("Segoe UI", 9))
+        lbl.setFont(QFont(FONT_MAIN, 9))
         lbl.setStyleSheet(f"""
             QPushButton {{ color: {_dp['AMBER']}; background: transparent; border: none; text-align: left; padding: 0; }}
             QPushButton:hover {{ color: {_dp['TEXT_PRIMARY']}; }}
@@ -530,7 +530,7 @@ class _PresetChip(QWidget):
         layout.addWidget(lbl, 1)
 
         del_btn = QPushButton("✕")
-        del_btn.setFont(QFont("Segoe UI", 9))
+        del_btn.setFont(QFont(FONT_MAIN, 9))
         del_btn.setFixedSize(20, 20)
         del_btn.setStyleSheet(f"""
             QPushButton {{ color: {_dp['TEXT_LABEL']}; background: transparent; border: none; }}
@@ -572,7 +572,7 @@ class IntentSelector(QWidget):
         banner_layout.setSpacing(4)
 
         self._lock_icon_lbl = QLabel("⊘")
-        self._lock_icon_lbl.setFont(QFont("Segoe UI", 18))
+        self._lock_icon_lbl.setFont(QFont(FONT_MAIN, 18))
         self._lock_icon_lbl.setAlignment(Qt.AlignCenter)
         self._lock_icon_lbl.setStyleSheet(f"color: {_lp['INACTIVE']}; background: transparent;")
         banner_layout.addWidget(self._lock_icon_lbl)
@@ -636,7 +636,7 @@ class IntentSelector(QWidget):
         ab_layout = QHBoxLayout(self._auto_banner)
         ab_layout.setContentsMargins(10, 6, 10, 6)
         self._ab_lbl = QLabel(_("intent.auto_select_msg"))
-        self._ab_lbl.setFont(QFont("Segoe UI", 9))
+        self._ab_lbl.setFont(QFont(FONT_MAIN, 9))
         self._ab_lbl.setStyleSheet(f"color: {_ab_pal['TELE_GREEN']}; background: transparent;")
         self._ab_lbl.setWordWrap(True)
         ab_layout.addWidget(self._ab_lbl)
@@ -660,7 +660,7 @@ class IntentSelector(QWidget):
         btns_row.setContentsMargins(0, 0, 0, 0)
 
         self._save_btn = QPushButton(_("intent.btn_save"))
-        self._save_btn.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        self._save_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._save_btn.setFixedHeight(38)
         self._save_btn.setEnabled(False)
         self._save_btn.setCursor(Qt.PointingHandCursor)
@@ -679,7 +679,7 @@ class IntentSelector(QWidget):
         btns_row.addWidget(self._save_btn)
 
         self._btn = QPushButton(_("intent.btn_generate"))
-        self._btn.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        self._btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._btn.setFixedHeight(38)
         self._btn.setEnabled(False)
         self._btn.setCursor(Qt.PointingHandCursor)
@@ -816,7 +816,7 @@ class IntentSelector(QWidget):
                 color: {amber};
                 text-align: left;
                 padding: 0 10px;
-                font-family: 'Segoe UI';
+                font-family: {FONT_MAIN};
                 font-size: 10px;
                 font-weight: bold;
                 letter-spacing: 2px;
@@ -874,7 +874,7 @@ class IntentSelector(QWidget):
         _dp = _T.palette()
         if not presets:
             empty = QLabel(_("intent.presets_empty"))
-            empty.setFont(QFont("Segoe UI", 9))
+            empty.setFont(QFont(FONT_MAIN, 9))
             empty.setContentsMargins(10, 4, 0, 4)
             empty.setStyleSheet(f"color: {_dp['INACTIVE']}; background: transparent;")
             layout.insertWidget(0, empty)
@@ -941,7 +941,7 @@ class IntentSelector(QWidget):
                             border-left: 3px solid {pal["ACCENT"]};
                             color: {pal["ACCENT_BRIGHT"]};
                             text-align: left; padding: 0 10px;
-                            font-family: 'Segoe UI'; font-size: 8px;
+                            font-family: {FONT_MAIN}; font-size: 8px;
                             font-weight: bold; letter-spacing: 2px;
                         }}
                         QPushButton:hover {{

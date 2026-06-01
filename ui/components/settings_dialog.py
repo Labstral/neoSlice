@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 from core.i18n import _
 from core.prefs import PREFS
 from data.printers import PRINTERS, SERIES_ORDRE
-from ui.styles.theme import MANAGER as _T
+from ui.styles.theme import MANAGER as _T, FONT_MAIN
 
 
 class _BenchmarkWorker(QThread):
@@ -121,10 +121,10 @@ class SettingsDialog(QDialog):
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 14)
         self._title_lbl = QLabel(_("settings.title"))
-        self._title_lbl.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        self._title_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         self._close_btn = QPushButton("✕")
         self._close_btn.setFixedSize(22, 22)
-        self._close_btn.setFont(QFont("Segoe UI", 9))
+        self._close_btn.setFont(QFont(FONT_MAIN, 9))
         self._close_btn.setCursor(Qt.PointingHandCursor)
         self._close_btn.clicked.connect(self.close)
         title_row.addWidget(self._title_lbl)
@@ -155,7 +155,7 @@ class SettingsDialog(QDialog):
         lang_row = QHBoxLayout()
         lang_row.setContentsMargins(0, 0, 0, 0)
         self._lang_lbl = QLabel(_("settings.language"))
-        self._lang_lbl.setFont(QFont("Segoe UI", 9))
+        self._lang_lbl.setFont(QFont(FONT_MAIN, 9))
         self._lang_combo = QComboBox()
         self._lang_combo.setFixedWidth(120)
         self._lang_combo.addItem("Français", "fr")
@@ -181,7 +181,7 @@ class SettingsDialog(QDialog):
         printer_row = QHBoxLayout()
         printer_row.setContentsMargins(0, 0, 0, 0)
         self._printer_lbl = QLabel(_("settings.printer_default"))
-        self._printer_lbl.setFont(QFont("Segoe UI", 9))
+        self._printer_lbl.setFont(QFont(FONT_MAIN, 9))
         self._printer_combo = QComboBox()
         self._printer_combo.setFixedWidth(160)
         self._populate_printers()
@@ -195,7 +195,7 @@ class SettingsDialog(QDialog):
         auto_row = QHBoxLayout()
         auto_row.setContentsMargins(0, 0, 0, 0)
         self._auto_lbl = QLabel(_("settings.orient_suggest"))
-        self._auto_lbl.setFont(QFont("Segoe UI", 9))
+        self._auto_lbl.setFont(QFont(FONT_MAIN, 9))
         self._auto_cb = QCheckBox()
         self._auto_cb.setChecked(bool(PREFS.get("auto_rotate", True)))
         self._auto_cb.toggled.connect(lambda v: PREFS.set("auto_rotate", v))
@@ -223,11 +223,11 @@ class SettingsDialog(QDialog):
         saved_folder = PREFS.get("export_folder", "")
         if saved_folder:
             self._folder_edit.setText(saved_folder)
-        self._folder_edit.setFont(QFont("Segoe UI", 8))
+        self._folder_edit.setFont(QFont(FONT_MAIN, 8))
         self._browse_btn = QPushButton("📂")
         self._browse_btn.setFixedSize(28, 28)
         self._browse_btn.setCursor(Qt.PointingHandCursor)
-        self._browse_btn.setFont(QFont("Segoe UI", 11))
+        self._browse_btn.setFont(QFont(FONT_MAIN, 11))
         self._browse_btn.clicked.connect(self._on_browse_folder)
         folder_row.addWidget(self._folder_edit)
         folder_row.addWidget(self._browse_btn)
@@ -246,7 +246,7 @@ class SettingsDialog(QDialog):
         perf_mode_row = QHBoxLayout()
         perf_mode_row.setContentsMargins(0, 0, 0, 0)
         self._perf_lbl = QLabel(_("settings.perf_mode"))
-        self._perf_lbl.setFont(QFont("Segoe UI", 9))
+        self._perf_lbl.setFont(QFont(FONT_MAIN, 9))
         self._perf_combo = QComboBox()
         self._perf_combo.setFixedWidth(130)
         self._perf_combo.addItem(_("settings.perf_full"),     "full")
@@ -262,21 +262,21 @@ class SettingsDialog(QDialog):
         lay.addSpacing(4)
 
         self._perf_desc_lbl = QLabel(self._perf_mode_desc(PREFS.get("perf_mode", "full")))
-        self._perf_desc_lbl.setFont(QFont("Segoe UI", 8))
+        self._perf_desc_lbl.setFont(QFont(FONT_MAIN, 8))
         self._perf_desc_lbl.setWordWrap(True)
         lay.addWidget(self._perf_desc_lbl)
         lay.addSpacing(6)
 
         self._perf_test_btn = QPushButton(_("settings.perf_test_btn"))
         self._perf_test_btn.setCursor(Qt.PointingHandCursor)
-        self._perf_test_btn.setFont(QFont("Segoe UI", 10))
+        self._perf_test_btn.setFont(QFont(FONT_MAIN, 10))
         self._perf_test_btn.setFixedHeight(28)
         self._perf_test_btn.clicked.connect(self._on_test_config)
         lay.addWidget(self._perf_test_btn)
         lay.addSpacing(6)
 
         self._perf_result_lbl = QLabel("")
-        self._perf_result_lbl.setFont(QFont("Segoe UI", 8))
+        self._perf_result_lbl.setFont(QFont(FONT_MAIN, 8))
         self._perf_result_lbl.setWordWrap(True)
         self._perf_result_lbl.hide()
         lay.addWidget(self._perf_result_lbl)
@@ -286,11 +286,11 @@ class SettingsDialog(QDialog):
         restart_row = QHBoxLayout()
         restart_row.setContentsMargins(0, 0, 0, 0)
         self._restart_lbl = QLabel(_("settings.restart_notice"))
-        self._restart_lbl.setFont(QFont("Segoe UI", 9))
+        self._restart_lbl.setFont(QFont(FONT_MAIN, 9))
         self._restart_lbl.setWordWrap(True)
         self._restart_lbl.hide()
         self._restart_btn = QPushButton(_("settings.restart_btn"))
-        self._restart_btn.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        self._restart_btn.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
         self._restart_btn.setCursor(Qt.PointingHandCursor)
         self._restart_btn.setFixedHeight(32)
         self._restart_btn.clicked.connect(self._do_restart)
@@ -314,11 +314,11 @@ class SettingsDialog(QDialog):
         update_row.setContentsMargins(0, 0, 0, 0)
         self._update_check_btn = QPushButton(_("settings.update_check_btn"))
         self._update_check_btn.setCursor(Qt.PointingHandCursor)
-        self._update_check_btn.setFont(QFont("Segoe UI", 9))
+        self._update_check_btn.setFont(QFont(FONT_MAIN, 9))
         self._update_check_btn.setFixedHeight(28)
         self._update_check_btn.clicked.connect(self._on_check_update)
         self._update_status_lbl = QLabel("")
-        self._update_status_lbl.setFont(QFont("Segoe UI", 9))
+        self._update_status_lbl.setFont(QFont(FONT_MAIN, 9))
         self._update_status_lbl.hide()
         update_row.addWidget(self._update_check_btn)
         update_row.addSpacing(10)
@@ -337,12 +337,12 @@ class SettingsDialog(QDialog):
 
     def _make_section_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
-        lbl.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+        lbl.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
         return lbl
 
     def _make_checkbox_row(self, label: str, checked: bool):
         lbl = QLabel(label)
-        lbl.setFont(QFont("Segoe UI", 9))
+        lbl.setFont(QFont(FONT_MAIN, 9))
         cb = QCheckBox()
         cb.setChecked(checked)
         return lbl, cb
@@ -351,7 +351,7 @@ class SettingsDialog(QDialog):
         model = QStandardItemModel()
         none_item = QStandardItem(_("settings.printer_none"))
         none_item.setData("", Qt.UserRole)
-        none_item.setFont(QFont("Segoe UI", 10))
+        none_item.setFont(QFont(FONT_MAIN, 10))
         model.appendRow(none_item)
 
         by_serie: dict[str, list[str]] = {}
@@ -365,12 +365,12 @@ class SettingsDialog(QDialog):
             sep = QStandardItem(f"── {serie.upper()} ──")
             sep.setEnabled(False)
             sep.setForeground(QColor(_T.palette()["TEXT_LABEL"]))
-            sep.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+            sep.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
             model.appendRow(sep)
             for name in by_serie[serie]:
                 item = QStandardItem(f"  {name}")
                 item.setData(name, Qt.UserRole)
-                item.setFont(QFont("Segoe UI", 10))
+                item.setFont(QFont(FONT_MAIN, 10))
                 model.appendRow(item)
 
         self._printer_combo.setModel(model)
@@ -568,7 +568,7 @@ class SettingsDialog(QDialog):
             QPushButton {{
                 background: {pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']};
                 border: 1px solid {pal['INACTIVE']}; border-radius: 3px;
-                font-family: 'Segoe UI'; font-size: 11px;
+                font-family: {FONT_MAIN}; font-size: 11px;
                 padding: 4px 14px;
             }}
             QPushButton:hover {{ background: {pal['BG_SURFACE']}; border-color: {pal['ACCENT']}; }}
@@ -585,7 +585,7 @@ class SettingsDialog(QDialog):
             QPushButton {{
                 background: {pal['AMBER']}; color: #000000;
                 border: none; border-radius: 4px; padding: 4px 14px;
-                font-family: 'Segoe UI'; font-size: 10px; font-weight: bold;
+                font-family: {FONT_MAIN}; font-size: 10px; font-weight: bold;
             }}
             QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; color: #ffffff; }}
         """)
@@ -614,7 +614,7 @@ class SettingsDialog(QDialog):
             QComboBox {{
                 background: {pal['BG_INPUT']}; color: {pal['TEXT_PRIMARY']};
                 border: 1px solid {pal['INACTIVE']}; border-radius: 3px;
-                padding: 2px 8px; font-family: 'Segoe UI'; font-size: 11px;
+                padding: 2px 8px; font-family: {FONT_MAIN}; font-size: 11px;
             }}
             QComboBox::drop-down {{ border: none; width: 18px; }}
             QComboBox QAbstractItemView {{
@@ -631,7 +631,7 @@ class SettingsDialog(QDialog):
             QLineEdit {{
                 background: {pal['BG_INPUT']}; color: {pal['TEXT_PRIMARY']};
                 border: 1px solid {pal['INACTIVE']}; border-radius: 3px;
-                padding: 2px 6px; font-family: 'Segoe UI';
+                padding: 2px 6px; font-family: {FONT_MAIN};
             }}
         """)
         self._browse_btn.setStyleSheet(f"""
@@ -645,7 +645,7 @@ class SettingsDialog(QDialog):
             QPushButton {{
                 background: {pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']};
                 border: 1px solid {pal['INACTIVE']}; border-radius: 3px;
-                font-family: 'Segoe UI'; font-size: 11px;
+                font-family: {FONT_MAIN}; font-size: 11px;
             }}
             QPushButton:hover {{ background: {pal['BG_SURFACE']}; border-color: {pal['ACCENT']}; }}
             QPushButton:disabled {{ color: {pal['TEXT_SECONDARY']}; }}

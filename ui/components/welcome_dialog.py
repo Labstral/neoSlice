@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt, QUrl, QPoint
 from PySide6.QtGui import QFont, QPixmap, QDesktopServices, QMouseEvent
 
 from version import __version__
-from ui.styles.theme import FONT_MONO, MANAGER as _T
+from ui.styles.theme import FONT_MONO, MANAGER as _T, FONT_MAIN
 
 _PREFS_FILE = Path.home() / ".neoslice" / "prefs.json"
 _COFFEE_URL = "https://buymeacoffee.com/bambulabpourlesnuls"
@@ -99,7 +99,7 @@ class WelcomeDialog(QDialog):
 
         if not logo_loaded:
             logo_lbl.setText("◈")
-            logo_lbl.setFont(QFont("Segoe UI", 72))
+            logo_lbl.setFont(QFont(FONT_MAIN, 72))
             logo_lbl.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;")
 
         root.addWidget(logo_lbl)
@@ -107,7 +107,7 @@ class WelcomeDialog(QDialog):
 
         title_lbl = QLabel("neoSlice")
         title_lbl.setAlignment(Qt.AlignCenter)
-        title_lbl.setFont(QFont("Segoe UI", 24, QFont.Bold))
+        title_lbl.setFont(QFont(FONT_MAIN, 24, QFont.Bold))
         title_lbl.setStyleSheet(
             f"color: {pal['TEXT_PRIMARY']}; letter-spacing: 6px; background: transparent;"
         )
@@ -154,7 +154,7 @@ class WelcomeDialog(QDialog):
             "l'impression 3D avec les imprimantes Bambu Lab.<br><br>"
             "J'espère sincèrement qu'il vous sera utile dans vos projets."
         )
-        welcome.setFont(QFont("Segoe UI", 9))
+        welcome.setFont(QFont(FONT_MAIN, 9))
         welcome.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         welcome.setWordWrap(True)
         welcome.setAlignment(Qt.AlignCenter)
@@ -178,7 +178,7 @@ class WelcomeDialog(QDialog):
             "Des correctifs et de nouvelles fonctionnalités seront apportés régulièrement. "
             "Si vous rencontrez un problème, n'hésitez pas à le signaler.</span>"
         )
-        beta_lbl.setFont(QFont("Segoe UI", 8))
+        beta_lbl.setFont(QFont(FONT_MAIN, 8))
         beta_lbl.setStyleSheet("background: transparent;")
         beta_lbl.setWordWrap(True)
         beta_lay.addWidget(beta_lbl)
@@ -190,13 +190,13 @@ class WelcomeDialog(QDialog):
 
         # ── Buy Me a Coffee ───────────────────────────────────────────────
         coffee_title = QLabel("☕  Ce logiciel est <b>entièrement gratuit</b> et le restera.")
-        coffee_title.setFont(QFont("Segoe UI", 9))
+        coffee_title.setFont(QFont(FONT_MAIN, 9))
         coffee_title.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         coffee_title.setAlignment(Qt.AlignCenter)
         root.addWidget(coffee_title)
 
         coffee_sub = QLabel("Si vous souhaitez soutenir le développement :")
-        coffee_sub.setFont(QFont("Segoe UI", 8))
+        coffee_sub.setFont(QFont(FONT_MAIN, 8))
         coffee_sub.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
         coffee_sub.setAlignment(Qt.AlignCenter)
         root.addWidget(coffee_sub)
@@ -204,7 +204,7 @@ class WelcomeDialog(QDialog):
         root.addSpacing(10)
 
         coffee_btn = QPushButton("♥   Me soutenir sur Buy Me a Coffee")
-        coffee_btn.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        coffee_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         coffee_btn.setFixedHeight(36)
         coffee_btn.setCursor(Qt.PointingHandCursor)
         coffee_btn.setStyleSheet("""
@@ -232,7 +232,7 @@ class WelcomeDialog(QDialog):
         footer.setSpacing(10)
 
         self._skip_check = QCheckBox("Ne plus afficher ce message")
-        self._skip_check.setFont(QFont("Segoe UI", 8))
+        self._skip_check.setFont(QFont(FONT_MAIN, 8))
         self._skip_check.setStyleSheet(f"""
             QCheckBox {{
                 color: {pal['TEXT_LABEL']};
@@ -256,7 +256,7 @@ class WelcomeDialog(QDialog):
         footer.addStretch()
 
         close_btn = QPushButton("Commencer →")
-        close_btn.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        close_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         close_btn.setFixedHeight(34)
         close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.setDefault(True)

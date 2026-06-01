@@ -43,7 +43,7 @@ class CollapsibleSection(QWidget):
                 color: {pal["ACCENT_BRIGHT"]};
                 text-align: left;
                 padding: 0 10px;
-                font-family: 'Segoe UI';
+                font-family: {FONT_MAIN};
                 font-size: 8px;
                 font-weight: bold;
                 letter-spacing: 2px;
@@ -134,13 +134,13 @@ class _EmptyState(QWidget):
         vl.setContentsMargins(24, 40, 24, 40)
 
         icon = QLabel("⬡")
-        icon.setFont(QFont("Segoe UI", 32))
+        icon.setFont(QFont(FONT_MAIN, 32))
         icon.setStyleSheet(f"color: {INACTIVE};")
         icon.setAlignment(Qt.AlignCenter)
         vl.addWidget(icon)
 
         title = QLabel(_("preview.empty_title"))
-        title.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        title.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         title.setStyleSheet(f"color: {TEXT_LABEL}; letter-spacing: 2px;")
         title.setAlignment(Qt.AlignCenter)
         title.setWordWrap(True)
@@ -257,7 +257,7 @@ class ParamsPreview(QWidget):
         cl.setSpacing(5)
 
         header = QLabel(_("preview.summary_title"))
-        header.setFont(QFont("Segoe UI", 7, QFont.Bold))
+        header.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
         header.setStyleSheet(f"color: {_rp['ACCENT_BRIGHT']}; letter-spacing: 2px; background: transparent;")
         cl.addWidget(header)
 
@@ -295,10 +295,10 @@ class ParamsPreview(QWidget):
             rl.setContentsMargins(0, 0, 0, 0)
             rl.setSpacing(8)
             lbl_k = QLabel(label)
-            lbl_k.setFont(QFont("Segoe UI", 8))
+            lbl_k.setFont(QFont(FONT_MAIN, 8))
             lbl_k.setStyleSheet(f"color: {_rp['TEXT_SECONDARY']}; background: transparent;")
             lbl_v = QLabel(value)
-            lbl_v.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            lbl_v.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
             lbl_v.setStyleSheet(f"color: {_T.palette()['TELE_GREEN']}; background: transparent;")
             lbl_v.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             rl.addWidget(lbl_k, 1)

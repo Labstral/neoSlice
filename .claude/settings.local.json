@@ -65,7 +65,8 @@
       "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g6.ps1)",
       "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g7.ps1)",
       "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g8.ps1)",
-      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g9.ps1)"
+      "Bash(powershell.exe -NonInteractive -NoProfile -File /tmp/shot_g9.ps1)",
+      "mcp__context7__query-docs"
     ],
     "additionalDirectories": [
       "C:\\Users\\manup\\.neoslice",
