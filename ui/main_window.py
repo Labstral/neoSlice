@@ -1361,11 +1361,29 @@ class MainWindow(QMainWindow):
                     _poll_timer.stop()
                     progress_bar.setRange(0, 100)
                     progress_bar.setValue(100)
-                    status_lbl.setText(_("update.installing"))
-                    QTimer.singleShot(600, lambda: (
-                        subprocess.Popen([val]),
-                        QApplication.quit()
-                    ))
+                    import sys as _sys
+                    if _sys.platform == "darwin":
+                        # macOS : ouvrir le .zip dans le Finder, guider l'utilisateur
+                        import subprocess as _sp
+                        try:
+                            _sp.Popen(["open", "-R", val])
+                        except Exception:
+                            pass
+                        status_lbl.setText(
+                            "Décompresse le .zip → glisse neoSlice.app dans Applications"
+                        )
+                        status_lbl.setStyleSheet(f"color: {pal['TELE_GREEN']};")
+                        install_btn.setText("Fermer")
+                        install_btn.setEnabled(True)
+                        install_btn.show()
+                        later_btn.setEnabled(True)
+                    else:
+                        # Windows : lancer l'installeur et quitter
+                        status_lbl.setText(_("update.installing"))
+                        QTimer.singleShot(600, lambda: (
+                            subprocess.Popen([val]),
+                            QApplication.quit()
+                        ))
                 elif kind == "error":
                     _poll_timer.stop()
                     progress_bar.setRange(0, 100)
