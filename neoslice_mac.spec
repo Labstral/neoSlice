@@ -116,7 +116,6 @@ a = Analysis(
         *pyvista_hidden,
         *pyvistaqt_hidden,
         *vtkmod_hidden,
-        'shapely', 'shapely.geometry', 'shapely.ops', 'shapely.validation',
         'reportlab', 'reportlab.pdfgen', 'reportlab.lib', 'reportlab.lib.pagesizes',
         'reportlab.platypus', 'reportlab.lib.styles', 'reportlab.lib.units',
         'trimesh', 'trimesh.creation', 'trimesh.repair',
