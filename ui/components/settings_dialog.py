@@ -553,7 +553,7 @@ class SettingsDialog(QDialog):
         """)
 
         row_lbl_style = f"color: {pal['TEXT_PRIMARY']}; background: transparent;"
-        for lbl in (self._dark_lbl, self._lang_lbl, self._printer_lbl, self._auto_lbl, self._perf_lbl):
+        for lbl in (self._dark_lbl, self._lang_lbl, self._printer_lbl, self._perf_lbl):
             lbl.setStyleSheet(row_lbl_style)
 
         self._perf_desc_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
@@ -580,7 +580,7 @@ class SettingsDialog(QDialog):
             }}
             QCheckBox::indicator:hover {{ border-color: {pal['ACCENT_BRIGHT']}; }}
         """
-        for cb in (self._dark_cb, self._auto_cb):
+        for cb in (self._dark_cb,):
             cb.setStyleSheet(cb_style)
 
         self._dark_cb.blockSignals(True)
