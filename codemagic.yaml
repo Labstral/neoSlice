@@ -65,4 +65,3 @@ workflows:
 
     artifacts:
       - dist/neoSlice-macOS.dmg
-      - dist/*.dmg
