@@ -81,6 +81,7 @@ pyvista_bins    = [x for x in pyvista_bins_all   if _keep_pyvista(str(x[0]))]
 pyvista_hidden  = pyvista_hidden_all
 
 pyvistaqt_datas, pyvistaqt_bins, pyvistaqt_hidden = collect_all('pyvistaqt')
+shapely_datas,   shapely_bins,   shapely_hidden    = collect_all('shapely')
 
 vtkmod_datas_all, vtkmod_bins_all, vtkmod_hidden_all = collect_all('vtkmodules')
 vtkmod_datas   = [x for x in vtkmod_datas_all  if _keep_vtk(str(x[0]))]
@@ -102,6 +103,7 @@ a = Analysis(
         *pyside6_bins,
         *pyvista_bins,
         *pyvistaqt_bins,
+        *shapely_bins,
         *vtkmod_bins,
     ],
     datas=[
@@ -109,13 +111,16 @@ a = Analysis(
         *pyside6_datas,
         *pyvista_datas,
         *pyvistaqt_datas,
+        *shapely_datas,
         *vtkmod_datas,
     ],
     hiddenimports=[
         *pyside6_hidden,
         *pyvista_hidden,
         *pyvistaqt_hidden,
+        *shapely_hidden,
         *vtkmod_hidden,
+        'shapely', 'shapely.geometry', 'shapely.ops', 'shapely.validation',
         'trimesh', 'trimesh.creation', 'trimesh.repair',
         'trimesh.smoothing', 'trimesh.transformations',
         'trimesh.voxel', 'trimesh.voxel.creation',

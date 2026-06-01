@@ -522,8 +522,13 @@ class _TopBar(QWidget):
         """)
         coffee_btn.clicked.connect(self.coffee_clicked)
 
-        feedback_btn = QPushButton("")
-        feedback_btn.setFont(QFont("Segoe MDL2 Assets", 11))
+        import sys as _sys
+        _ICON_FEEDBACK = "" if _sys.platform == "win32" else "✉"
+        _ICON_SETTINGS = "" if _sys.platform == "win32" else "⚙"
+        _FONT_ICON     = QFont("Segoe MDL2 Assets", 11) if _sys.platform == "win32" else QFont(FONT_MAIN, 13)
+
+        feedback_btn = QPushButton(_ICON_FEEDBACK)
+        feedback_btn.setFont(_FONT_ICON)
         feedback_btn.setFixedSize(28, 28)
         feedback_btn.setToolTip("Envoyer un retour / signaler un bug")
         feedback_btn.setCursor(Qt.PointingHandCursor)
@@ -540,8 +545,8 @@ class _TopBar(QWidget):
             QUrl("https://docs.google.com/forms/d/e/1FAIpQLSfCH4GGn26aHaabNBG40FSlPgx_4pljh1z3WDfyWACkmTCeFw/viewform?usp=publish-editor")
         ))
 
-        self._settings_btn = QPushButton("")
-        self._settings_btn.setFont(QFont("Segoe MDL2 Assets", 11))
+        self._settings_btn = QPushButton(_ICON_SETTINGS)
+        self._settings_btn.setFont(_FONT_ICON)
         self._settings_btn.setFixedSize(28, 28)
         self._settings_btn.setToolTip(_("app.tip_settings"))
         self._settings_btn.setCursor(Qt.PointingHandCursor)

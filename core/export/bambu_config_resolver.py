@@ -18,13 +18,22 @@ import json
 import os
 from pathlib import Path
 
+import sys
 from loguru import logger
 
-_APPDATA = Path(os.environ.get("APPDATA", ""))
-_BBL_PROCESS = _APPDATA / "BambuStudio" / "system" / "BBL" / "process"
-_BBL_MACHINE = _APPDATA / "BambuStudio" / "system" / "BBL" / "machine"
-_BBL_FILAMENT = _APPDATA / "BambuStudio" / "system" / "BBL" / "filament"
-_BBL_USER = _APPDATA / "BambuStudio" / "user"
+def _bbl_root() -> Path:
+    """Retourne le dossier racine BambuStudio selon la plateforme."""
+    if sys.platform == "win32":
+        return Path(os.environ.get("APPDATA", "")) / "BambuStudio"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "BambuStudio"
+    return Path.home() / ".config" / "BambuStudio"
+
+_BBL_ROOT     = _bbl_root()
+_BBL_PROCESS  = _BBL_ROOT / "system" / "BBL" / "process"
+_BBL_MACHINE  = _BBL_ROOT / "system" / "BBL" / "machine"
+_BBL_FILAMENT = _BBL_ROOT / "system" / "BBL" / "filament"
+_BBL_USER     = _BBL_ROOT / "user"
 
 # Profils process à fusionner dans l'ordre (du plus général au plus spécifique)
 _PROCESS_CHAIN_0_20 = [
