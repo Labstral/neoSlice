@@ -542,7 +542,7 @@ class _TopBar(QWidget):
             }}
         """)
         feedback_btn.clicked.connect(lambda: QDesktopServices.openUrl(
-            QUrl("https://docs.google.com/forms/d/e/1FAIpQLSfCH4GGn26aHaabNBG40FSlPgx_4pljh1z3WDfyWACkmTCeFw/viewform?usp=publish-editor")
+            QUrl("https://neoslice-ai.com/retour")
         ))
 
         self._settings_btn = QPushButton(_ICON_SETTINGS)
