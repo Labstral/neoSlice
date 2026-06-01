@@ -188,11 +188,11 @@ class BambuProfileInstaller:
 
     def _find_bambu_user_dir(self) -> Path | None:
         """Trouve le dossier utilisateur actif de Bambu Studio."""
-        appdata = Path(os.environ.get("APPDATA", ""))
-        bambu_user = appdata / "BambuStudio" / "user"
+        from .bambu_config_resolver import _bbl_root
+        bambu_user = _bbl_root() / "user"
 
         if not bambu_user.exists():
-            logger.warning("Bambu Studio non trouvé dans AppData")
+            logger.warning("Bambu Studio non trouvé")
             return None
 
         # Priorité aux dossiers numériques (compte connecté)

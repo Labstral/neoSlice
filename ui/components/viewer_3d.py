@@ -301,9 +301,6 @@ class Viewer3D(QWidget):
         super().resizeEvent(event)
         if hasattr(self, "_overlay"):
             self._overlay.resize(self.size())
-        if hasattr(self, "_ctrl_overlay"):
-            self._ctrl_overlay.setGeometry(self.rect())
-            self._ctrl_overlay.raise_()
 
         if hasattr(self, "_rot_checkbox") and hasattr(self, "_plate_checkbox"):
             cw = max(
@@ -330,13 +327,6 @@ class Viewer3D(QWidget):
                 self._plotter.set_background(pal["VIEWER_BG"], top=pal["VIEWER_BG_TOP"])
                 self._plotter.hide_axes()
                 layout.addWidget(self._plotter)
-                # Overlay transparent pour les checkboxes — frère du plotter,
-                # jamais invalidé par le rendu OpenGL/Metal sur macOS
-                self._ctrl_overlay = QWidget(self)
-                self._ctrl_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-                self._ctrl_overlay.setStyleSheet("background: transparent;")
-                self._ctrl_overlay.setGeometry(self.rect())
-                self._ctrl_overlay.raise_()
                 # Forcer le premier rendu (fond) puis les effets OpenGL après affichage
                 QTimer.singleShot(300, self._init_background)
                 QTimer.singleShot(900, self._init_opengl_effects)
@@ -448,18 +438,14 @@ class Viewer3D(QWidget):
         self._resume_timer.setSingleShot(True)
         self._resume_timer.timeout.connect(self._on_resume_rotate)
 
-        # Parent = _ctrl_overlay (frère du plotter) pour éviter le clignotement
-        # macOS/Metal quand VTK invalide la zone OpenGL pendant la rotation
-        _cb_parent = getattr(self, "_ctrl_overlay", self)
-
-        self._rot_checkbox = QCheckBox(_("viewer.auto_rotate"), _cb_parent)
+        self._rot_checkbox = QCheckBox(_("viewer.auto_rotate"), self)
         self._rot_checkbox.setChecked(False)
         self._rot_checkbox.setFont(QFont(FONT_MAIN, 9))
         self._apply_rot_checkbox_style()
         self._rot_checkbox.hide()
         self._rot_checkbox.stateChanged.connect(self._on_rot_toggle)
 
-        self._plate_checkbox = QCheckBox(_("viewer.show_plate"), _cb_parent)
+        self._plate_checkbox = QCheckBox(_("viewer.show_plate"), self)
         self._plate_checkbox.setChecked(True)
         self._plate_checkbox.setFont(QFont(FONT_MAIN, 9))
         self._apply_plate_checkbox_style()
@@ -506,8 +492,13 @@ class Viewer3D(QWidget):
             self._plotter.camera.up = (0.0, 0.0, 1.0)
             self._plotter.renderer.ResetCameraClippingRange()
             self._plotter.render()
-            # Les checkboxes sont dans _ctrl_overlay (frère du plotter) —
-            # pas besoin de update() forcé, VTK ne les invalide plus.
+            # repaint() synchrone évite le flash async de update()
+            if hasattr(self, "_rot_checkbox") and self._rot_checkbox.isVisible():
+                self._rot_checkbox.raise_()
+                self._rot_checkbox.repaint()
+            if hasattr(self, "_plate_checkbox") and self._plate_checkbox.isVisible():
+                self._plate_checkbox.raise_()
+                self._plate_checkbox.repaint()
         except Exception as _e:
             logger.warning(f"Erreur rotation auto : {_e}")
 

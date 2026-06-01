@@ -35,24 +35,28 @@ class _BenchmarkWorker(QThread):
 
         ram_gb = 0.0
         try:
-            import ctypes
-
-            class _MEMSTATUS(ctypes.Structure):
-                _fields_ = [
-                    ("dwLength",               ctypes.c_ulong),
-                    ("dwMemoryLoad",           ctypes.c_ulong),
-                    ("ullTotalPhys",           ctypes.c_ulonglong),
-                    ("ullAvailPhys",           ctypes.c_ulonglong),
-                    ("ullTotalPageFile",       ctypes.c_ulonglong),
-                    ("ullAvailPageFile",       ctypes.c_ulonglong),
-                    ("ullTotalVirtual",        ctypes.c_ulonglong),
-                    ("ullAvailVirtual",        ctypes.c_ulonglong),
-                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-                ]
-            ms = _MEMSTATUS()
-            ms.dwLength = ctypes.sizeof(_MEMSTATUS)
-            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(ms))
-            ram_gb = ms.ullTotalPhys / (1024 ** 3)
+            import sys as _sys
+            if _sys.platform == "win32":
+                import ctypes
+                class _MEMSTATUS(ctypes.Structure):
+                    _fields_ = [
+                        ("dwLength",               ctypes.c_ulong),
+                        ("dwMemoryLoad",           ctypes.c_ulong),
+                        ("ullTotalPhys",           ctypes.c_ulonglong),
+                        ("ullAvailPhys",           ctypes.c_ulonglong),
+                        ("ullTotalPageFile",       ctypes.c_ulonglong),
+                        ("ullAvailPageFile",       ctypes.c_ulonglong),
+                        ("ullTotalVirtual",        ctypes.c_ulonglong),
+                        ("ullAvailVirtual",        ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                    ]
+                ms = _MEMSTATUS()
+                ms.dwLength = ctypes.sizeof(_MEMSTATUS)
+                ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(ms))
+                ram_gb = ms.ullTotalPhys / (1024 ** 3)
+            else:
+                import psutil
+                ram_gb = psutil.virtual_memory().total / (1024 ** 3)
         except Exception:
             pass
 

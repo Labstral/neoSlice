@@ -23,7 +23,8 @@ from ui.styles.theme import (
     MANAGER as _T,
     FONT_MAIN,)
 
-_BODY_COLOR = "#8AAABF"
+def _body_color() -> str:
+    return _T.palette()["TEXT_SECONDARY"] if not _T.is_dark() else "#8AAABF"
 
 
 def should_show_tutorial() -> bool:
@@ -264,7 +265,7 @@ class TutorialOverlay(QDialog):
         bd = QTextDocument()
         bd.setDefaultFont(QFont(FONT_MAIN, 9))
         bd.setHtml(
-            f"<body style='font-family:Segoe UI;font-size:9pt;color:{_BODY_COLOR};'>"
+            f"<body style='font-family:Segoe UI;font-size:9pt;color:{_body_color()};'>"
             f"{self._body_html()}</body>"
         )
         bd.setTextWidth(text_w)
@@ -321,7 +322,7 @@ class TutorialOverlay(QDialog):
         painter.end()
 
     def _paint_dim(self, painter: QPainter):
-        dim  = QColor(4, 8, 16, 215)
+        dim = QColor(4, 8, 16, 215) if _T.is_dark() else QColor(20, 30, 50, 190)
         spot = self._spotlight()
 
         if spot is None:
@@ -335,12 +336,13 @@ class TutorialOverlay(QDialog):
                                 float(spot.width()), float(spot.height()), 6.0, 6.0)
             painter.fillPath(path.subtracted(hole), QBrush(dim))
 
-            glow = QColor(ACCENT)
+            _pal = _T.palette()
+            glow = QColor(_pal["ACCENT"])
             glow.setAlpha(40)
             painter.setPen(QPen(glow, 8))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(QRectF(spot), 6, 6)
-            painter.setPen(QPen(QColor(ACCENT), 2))
+            painter.setPen(QPen(QColor(_pal["ACCENT"]), 2))
             painter.drawRoundedRect(QRectF(spot), 6, 6)
 
     def _paint_card(self, painter: QPainter):
@@ -353,18 +355,19 @@ class TutorialOverlay(QDialog):
         tw    = float(_CARD_W - 2 * _PAD_H)
         _tp   = _T.palette()
 
-        # Fond de carte
+        # Fond de carte — adapté au thème
+        _card_bg = QColor(10, 20, 36) if _T.is_dark() else QColor(_tp["BG_PANEL"])
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(10, 20, 36))
+        painter.setBrush(_card_bg)
         painter.drawRoundedRect(cr, 8.0, 8.0)
 
         # Bordure
         painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(QColor(ACCENT), 1))
+        painter.setPen(QPen(QColor(_tp["ACCENT"]), 1))
         painter.drawRoundedRect(cr.adjusted(0, 0, -1, -1), 8.0, 8.0)
 
         # Barre gauche accent
-        painter.setBrush(QColor(ACCENT))
+        painter.setBrush(QColor(_tp["ACCENT"]))
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(QRectF(cx, cy + 8, 3, cr.height() - 16), 2.0, 2.0)
 
@@ -377,23 +380,26 @@ class TutorialOverlay(QDialog):
         dx = cx + _PAD_H
         for i in range(total):
             ch_str = "●" if i <= idx else "○"
-            color  = TELE_GREEN if i < idx else (ACCENT_BRIGHT if i == idx else "#1A3550")
+            color  = _tp["TELE_GREEN"] if i < idx else (_tp["ACCENT_BRIGHT"] if i == idx else _tp["INACTIVE"])
             painter.setPen(QColor(color))
             painter.drawText(QPointF(dx, y + fm.ascent()), ch_str)
             dx += fm.horizontalAdvance(ch_str) + 8
 
-        painter.setPen(QColor(TEXT_SECONDARY))
+        painter.setPen(QColor(_tp["TEXT_SECONDARY"]))
         painter.setFont(QFont(FONT_MONO, 7))
         painter.drawText(QRectF(cx + _PAD_H, y, tw, float(fm.height())),
                          Qt.AlignRight | Qt.AlignVCenter,
                          f"{idx + 1} / {total}")
         y += 18 + 14
 
-        # ── Titre ──
+        # ── Titre — setHtml avec couleur inline pour forcer l'application du thème ──
+        _title_color = _tp["TEXT_PRIMARY"]
         td = QTextDocument()
         td.setDefaultFont(QFont(FONT_MAIN, 13, QFont.Bold))
-        td.setDefaultStyleSheet(f"body {{ color: {TEXT_PRIMARY}; }}")
-        td.setPlainText(step.title)
+        td.setHtml(
+            f"<span style='color:{_title_color};font-family:{FONT_MAIN};"
+            f"font-size:13pt;font-weight:bold;'>{step.title}</span>"
+        )
         td.setTextWidth(tw)
         painter.save()
         painter.translate(cx + _PAD_H, y)
@@ -401,8 +407,9 @@ class TutorialOverlay(QDialog):
         painter.restore()
         y += td.size().height() + 12
 
-        # ── Séparateur ──
-        painter.setPen(QPen(QColor(30, 60, 90), 1))
+        # ── Séparateur — couleur adaptée aux deux thèmes ──
+        _sep_color = _tp["TEXT_LABEL"] if not _T.is_dark() else _tp["INACTIVE"]
+        painter.setPen(QPen(QColor(_sep_color), 1))
         painter.drawLine(QPointF(cx + _PAD_H, y), QPointF(cx + _CARD_W - _PAD_H, y))
         y += 1 + 12
 
@@ -411,10 +418,10 @@ class TutorialOverlay(QDialog):
         bd.setDefaultFont(QFont(FONT_MAIN, 9))
         _bold_color = _tp['TELE_GREEN'] if not _T.is_dark() else _tp['ACCENT_BRIGHT']
         bd.setDefaultStyleSheet(
-            f"body {{ color:{_BODY_COLOR}; }} b {{ color:{_bold_color}; font-weight:bold; }}"
+            f"body {{ color:{_body_color()}; }} b {{ color:{_bold_color}; font-weight:bold; }}"
         )
         bd.setHtml(
-            f"<body style='font-family:Segoe UI;font-size:9pt;color:{_BODY_COLOR};'>"
+            f"<body style='font-family:Segoe UI;font-size:9pt;color:{_body_color()};'>"
             f"{self._body_html()}</body>"
         )
         bd.setTextWidth(tw)

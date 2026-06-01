@@ -1336,7 +1336,9 @@ class MainWindow(QMainWindow):
                 )
                 with _urlreq.urlopen(req, timeout=60) as resp:
                     total = int(resp.headers.get("Content-Length", 0))
-                    tmp = tempfile.mktemp(suffix=".exe", prefix="neoSlice_update_")
+                    import sys as _sys
+                    _upd_suffix = ".exe" if _sys.platform == "win32" else ".zip" if _sys.platform == "darwin" else ""
+                    tmp = tempfile.mktemp(suffix=_upd_suffix, prefix="neoSlice_update_")
                     downloaded = 0
                     with open(tmp, "wb") as f:
                         while True:
@@ -1953,8 +1955,14 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(dlg, "Erreur PDF", str(_pdf_err))
                 return
             if ok:
+                import sys as _sys
                 try:
-                    subprocess.Popen(f'explorer /select,"{save_path}"')
+                    if _sys.platform == "win32":
+                        subprocess.Popen(f'explorer /select,"{save_path}"')
+                    elif _sys.platform == "darwin":
+                        subprocess.run(["open", "-R", save_path], check=False)
+                    else:
+                        subprocess.run(["xdg-open", str(Path(save_path).parent)], check=False)
                 except Exception:
                     pass
                 self._statusbar.set_message(f"PDF → {save_path}", TELE_GREEN)
@@ -1979,9 +1987,15 @@ class MainWindow(QMainWindow):
 
         def _open_in_bambu():
             if tmf_path and tmf_path.exists():
-                import os as _os
+                import sys as _sys, subprocess as _sp
                 try:
-                    _os.startfile(str(tmf_path))
+                    if _sys.platform == "win32":
+                        import os as _os
+                        _os.startfile(str(tmf_path))
+                    elif _sys.platform == "darwin":
+                        _sp.run(["open", str(tmf_path)], check=False)
+                    else:
+                        _sp.run(["xdg-open", str(tmf_path)], check=False)
                 except Exception:
                     pass
 
