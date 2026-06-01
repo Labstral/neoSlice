@@ -15,14 +15,17 @@ workflows:
         - pattern: 'v*'
           include: true
 
-    environment:
-      python: '3.12'
-
     scripts:
+      - name: Set Python 3.12
+        script: |
+          pyenv install 3.12 --skip-existing
+          pyenv global 3.12
+          python3 --version
+
       - name: Install dependencies
         script: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          pip3 install --upgrade pip
+          pip3 install -r requirements.txt
 
       - name: Build .app with PyInstaller
         script: |
