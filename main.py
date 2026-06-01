@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont, QIcon, QPixmap
 from loguru import logger
 from version import __version__
+from ui.styles.theme import FONT_MAIN
 
 
 def _configure_logging():
@@ -141,7 +142,7 @@ def main():
     # QPalette fixe la couleur de fond système avant tout rendu — sans ça, Qt peint
     # le fond par défaut (blanc) pendant les ~80 ms avant l'application du stylesheet.
     from PySide6.QtGui import QPalette, QColor as _QC
-    from ui.styles.theme import MANAGER as _THEME_MGR, FONT_MAIN
+    from ui.styles.theme import MANAGER as _THEME_MGR
     _tp = _THEME_MGR.palette()
     _qp = QPalette()
     _qp.setColor(QPalette.ColorRole.Window,        _QC(_tp["BG_VOID"]))
