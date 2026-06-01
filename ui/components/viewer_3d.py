@@ -483,18 +483,26 @@ class Viewer3D(QWidget):
         if not self._auto_rotate or self._user_interacting or self._plotter is None:
             return
         try:
-            focal = np.array(self._plotter.camera.focal_point)
+            # Pivot fixe = centre de la pièce, indépendant du pan caméra
+            pivot = getattr(self, '_rotation_pivot',
+                            np.array(self._plotter.camera.focal_point))
+
             pos   = np.array(self._plotter.camera.position)
-            d     = pos - focal
-            # Orbite autour de l'axe Z monde (plateau à plat)
+            focal = np.array(self._plotter.camera.focal_point)
+
             angle = math.radians(0.8)
             cos_a, sin_a = math.cos(angle), math.sin(angle)
-            new_pos = focal + np.array([
-                d[0] * cos_a - d[1] * sin_a,
-                d[0] * sin_a + d[1] * cos_a,
-                d[2],
-            ])
-            self._plotter.camera.position = tuple(new_pos)
+
+            def _rot_xy(p):
+                d = p - pivot
+                return pivot + np.array([
+                    d[0] * cos_a - d[1] * sin_a,
+                    d[0] * sin_a + d[1] * cos_a,
+                    d[2],
+                ])
+
+            self._plotter.camera.position    = tuple(_rot_xy(pos))
+            self._plotter.camera.focal_point = tuple(_rot_xy(focal))
             self._plotter.camera.up = (0.0, 0.0, 1.0)
             self._plotter.renderer.ResetCameraClippingRange()
             self._plotter.render()
@@ -698,6 +706,12 @@ class Viewer3D(QWidget):
         self._plotter.clear()
         self._setup_lights()
         self._add_build_plate(mesh)
+
+        # Centre de rotation fixe = centre XY de la pièce posée sur le plateau
+        # Stocké maintenant pour que _tick_rotate orbite toujours autour de lui,
+        # même si l'utilisateur a pané la caméra entre-temps.
+        _bb = mesh.bounding_box.extents
+        self._rotation_pivot = np.array([0.0, 0.0, float(_bb[2]) * 0.5])
 
         # ── Phase 1 : affichage immédiat
         # smooth_shading=False pour les grands meshes : évite le calcul VTK de normales
