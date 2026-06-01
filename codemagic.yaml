@@ -36,11 +36,24 @@ workflows:
         script: |
           pyinstaller --clean -y neoslice_mac.spec
 
-      - name: Zip .app for download
+      - name: Create DMG installer (drag-to-Applications)
         script: |
-          cd dist
-          zip -r neoSlice-macOS.zip neoSlice.app
-          echo "Build size: $(du -sh neoSlice-macOS.zip)"
+          brew install create-dmg --quiet
+
+          create-dmg \
+            --volname "neoSlice" \
+            --volicon "assets/neoSlice.icns" \
+            --window-pos 200 120 \
+            --window-size 600 380 \
+            --icon-size 128 \
+            --icon "neoSlice.app" 160 180 \
+            --hide-extension "neoSlice.app" \
+            --app-drop-link 440 180 \
+            --no-internet-enable \
+            "dist/neoSlice-macOS.dmg" \
+            "dist/neoSlice.app"
+
+          echo "DMG size: $(du -sh dist/neoSlice-macOS.dmg)"
 
     artifacts:
-      - dist/neoSlice-macOS.zip
+      - dist/neoSlice-macOS.dmg
