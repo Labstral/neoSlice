@@ -8,18 +8,16 @@ Le logo source est 3:2 (paysage). Pour une icône macOS carrée :
 from pathlib import Path
 from PIL import Image, ImageFilter
 
-SRC = Path("assets/neoSlice_transparent.png")  # 256x256, 94% pixels visibles
+SRC = Path("assets/neoSlice_transparent.png")  # 256x256, fond transparent
 DST = Path("assets/neoSlice.icns")
 
-BG_COLOR    = (7, 13, 20)   # #070D14 — fond exact du thème
-FILL_RATIO  = 0.82          # le logo occupe 82 % du côté du canvas
+FILL_RATIO = 0.90   # le logo occupe 90 % du canvas
 
 SIZES = [16, 32, 64, 128, 256, 512, 1024]
 
 
 def make_size(logo_rgba: Image.Image, canvas_size: int) -> Image.Image:
-    """Compose le logo sur fond sombre, centré, à la bonne taille."""
-    # Taille cible pour le logo (respecte les proportions)
+    """Redimensionne le logo sur canvas transparent — pas de fond ajouté."""
     max_dim = int(canvas_size * FILL_RATIO)
     logo_w, logo_h = logo_rgba.size
     scale = min(max_dim / logo_w, max_dim / logo_h)
@@ -44,8 +42,8 @@ def make_size(logo_rgba: Image.Image, canvas_size: int) -> Image.Image:
         logo_resized = logo_resized.filter(
             ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
 
-    # Canvas sombre + logo centré
-    canvas = Image.new("RGBA", (canvas_size, canvas_size), (*BG_COLOR, 255))
+    # Canvas 100% transparent + logo centré
+    canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
     ox = (canvas_size - new_w) // 2
     oy = (canvas_size - new_h) // 2
     canvas.paste(logo_resized, (ox, oy), mask=logo_resized.split()[3])
@@ -66,7 +64,7 @@ def main():
 
     size_kb = DST.stat().st_size / 1024
     print(f"ICNS généré : {DST} ({size_kb:.1f} KB, tailles : {SIZES})")
-    print(f"Logo occupe {FILL_RATIO*100:.0f}% du canvas — centré sur fond #070D14")
+    print(f"Logo occupe {FILL_RATIO*100:.0f}% du canvas — fond transparent")
 
 
 if __name__ == "__main__":
