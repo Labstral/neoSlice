@@ -59,11 +59,30 @@ def _keep_vtk(path: str) -> bool:
 
 def _keep_pyvista(path: str) -> bool:
     p = path.replace('\\', '/')
-    # Supprimer exemples, datasets de démo et données de tests
     for skip in ('/examples/', '/datasets/', '/tests/', '/testing/',
                  '/data/models/', '/_dataset_cache/'):
         if skip in p:
             return False
+    return True
+
+def _keep_shapely(path: str) -> bool:
+    """Garde uniquement les fichiers du package shapely lui-même.
+    Exclut les libs système Homebrew (GEOS, PROJ, GDAL, etc.)
+    qui peuvent ajouter plusieurs Go sur macOS."""
+    p = path.replace('\\', '/')
+    # Garder uniquement ce qui est dans le package shapely pip
+    if '/shapely/' in p or '/shapely-' in p:
+        return True
+    # Rejeter tout ce qui vient de Homebrew ou des libs système
+    homebrew_paths = ('/opt/homebrew/', '/usr/local/lib/', '/usr/lib/',
+                      '/System/', 'libgeos', 'libproj', 'libgdal',
+                      'libsqlite', 'libcurl', 'libssl', 'libcrypto',
+                      'libpq', 'libhdf', 'libnetcdf', 'libexpat',
+                      'libxml', 'libz.', 'liblzma', 'libbz2',
+                      'libpng', 'libtiff', 'libjpeg', 'libopenjp',
+                      'libfreetype', 'libfontconfig', 'libharfbuzz')
+    if any(s in p for s in homebrew_paths):
+        return False
     return True
 
 # ─────────────────────────────────────────────────────────────────
@@ -81,6 +100,11 @@ pyvista_bins    = [x for x in pyvista_bins_all   if _keep_pyvista(str(x[0]))]
 pyvista_hidden  = pyvista_hidden_all
 
 pyvistaqt_datas, pyvistaqt_bins, pyvistaqt_hidden = collect_all('pyvistaqt')
+
+shapely_all_d, shapely_all_b, shapely_all_h = collect_all('shapely')
+shapely_datas   = [x for x in shapely_all_d if _keep_shapely(str(x[0]))]
+shapely_bins    = [x for x in shapely_all_b if _keep_shapely(str(x[0]))]
+shapely_hidden  = shapely_all_h
 
 vtkmod_datas_all, vtkmod_bins_all, vtkmod_hidden_all = collect_all('vtkmodules')
 vtkmod_datas   = [x for x in vtkmod_datas_all  if _keep_vtk(str(x[0]))]
@@ -102,6 +126,7 @@ a = Analysis(
         *pyside6_bins,
         *pyvista_bins,
         *pyvistaqt_bins,
+        *shapely_bins,
         *vtkmod_bins,
     ],
     datas=[
@@ -109,12 +134,14 @@ a = Analysis(
         *pyside6_datas,
         *pyvista_datas,
         *pyvistaqt_datas,
+        *shapely_datas,
         *vtkmod_datas,
     ],
     hiddenimports=[
         *pyside6_hidden,
         *pyvista_hidden,
         *pyvistaqt_hidden,
+        *shapely_hidden,
         *vtkmod_hidden,
         'shapely', 'shapely.geometry', 'shapely.ops', 'shapely.validation',
         'reportlab', 'reportlab.pdfgen', 'reportlab.lib', 'reportlab.lib.pagesizes',
