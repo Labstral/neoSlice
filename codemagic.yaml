@@ -51,9 +51,18 @@ workflows:
             --app-drop-link 440 180 \
             --no-internet-enable \
             "dist/neoSlice-macOS.dmg" \
-            "dist/neoSlice.app"
+            "dist/neoSlice.app" || true
 
-          echo "DMG size: $(du -sh dist/neoSlice-macOS.dmg)"
+          # Renommer si create-dmg a ajouté un suffixe de version
+          DMG_FOUND=$(ls dist/*.dmg 2>/dev/null | head -1)
+          if [ -n "$DMG_FOUND" ] && [ "$DMG_FOUND" != "dist/neoSlice-macOS.dmg" ]; then
+            mv "$DMG_FOUND" dist/neoSlice-macOS.dmg
+          fi
+
+          echo "=== Contenu dist/ ==="
+          ls -lh dist/*.dmg dist/*.zip dist/*.app 2>/dev/null || ls -lh dist/
+          echo "DMG: $(du -sh dist/neoSlice-macOS.dmg 2>/dev/null || echo 'absent')"
 
     artifacts:
       - dist/neoSlice-macOS.dmg
+      - dist/*.dmg
