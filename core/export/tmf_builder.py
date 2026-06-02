@@ -192,6 +192,8 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
         overrides["support_threshold_angle"] = s(int(config.support_threshold_angle))
         overrides["support_on_build_plate_only"] = "1" if config.support_on_build_plate_only else "0"
         overrides["support_angle"] = "0"
+        overrides["support_top_z_distance"] = s(config.support_top_z_distance)
+        overrides["support_bottom_z_distance"] = s(config.support_bottom_z_distance)
 
     return overrides
 

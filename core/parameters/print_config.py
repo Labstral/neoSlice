@@ -58,6 +58,8 @@ class PrintConfig(BaseModel):
     support_type: str = "none"              # none | normal(auto) | tree(auto)
     support_threshold_angle: float = 30.0   # degrés depuis l'horizontale
     support_on_build_plate_only: bool = False
+    support_top_z_distance: float = 0.20    # gap dessus support → pièce (mm)
+    support_bottom_z_distance: float = 0.20 # gap pièce → dessous support (mm)
 
     # --- Températures (suggestions) ---
     nozzle_temperature: int = 220

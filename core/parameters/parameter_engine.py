@@ -395,6 +395,13 @@ class ParameterEngine:
             config.layer_height = round(max(lh_min, min(lh_max, config.layer_height)), 3)
             logger.debug(f"Buse {nozzle_diameter_mm}mm → couche clamped [{lh_min}, {lh_max}] → {config.layer_height}")
 
+            # Distance Z support proportionnelle à la hauteur de couche (≈1.2× layer_height)
+            # → ~1 couche et quart de gap quelle que soit la résolution
+            # Min 0.10mm, Max 0.30mm
+            z_dist = round(max(0.10, min(0.30, config.layer_height * 1.2)), 2)
+            config.support_top_z_distance = z_dist
+            config.support_bottom_z_distance = z_dist
+
         # Première couche
         if "first_layer_height" in fields:
             config.first_layer_height = round(max(0.15, config.first_layer_height), 3)
