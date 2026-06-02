@@ -261,9 +261,16 @@ class ParamsPreview(QWidget):
         header.setStyleSheet(f"color: {_rp['ACCENT_BRIGHT']}; letter-spacing: 2px; background: transparent;")
         cl.addWidget(header)
 
-        support_name = _("preview.support_none")
-        if c.support_type != "none" and "support_type" in c.model_fields_set:
-            support_name = _("preview.support_tree") if "tree" in c.support_type else _("preview.support_classic")
+        mode = getattr(c, "neoslice_support_mode", "auto")
+        if mode == "classic":
+            support_name = _("preview.support_classic")
+        elif mode == "tree":
+            support_name = _("preview.support_tree")
+        elif c.support_type != "none":
+            # Auto — le moteur a décidé d'ajouter des supports
+            support_name = _("preview.support_auto_tree") if "tree" in c.support_type else _("preview.support_auto_normal")
+        else:
+            support_name = _("preview.support_auto_none")
 
         temp_name = ""
         if "nozzle_temperature" in c.model_fields_set:

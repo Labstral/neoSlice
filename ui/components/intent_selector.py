@@ -98,11 +98,11 @@ def _make_groups() -> list[tuple[str, list[_Preset]]]:
         ]),
         (_("intent.group_support"), [
             _Preset("support_auto",    _("intent.sup_auto"),    _("intent.sup_auto_desc"),
-                    config={}),
+                    config={"neoslice_support_mode": "auto"}),
             _Preset("support_classic", _("intent.sup_classic"), _("intent.sup_classic_desc"),
-                    config={"support_type": "normal(auto)"}),
+                    config={"support_type": "normal(auto)", "neoslice_support_mode": "classic"}),
             _Preset("support_tree",    _("intent.sup_tree"),    _("intent.sup_tree_desc"),
-                    config={"support_type": "tree(auto)"}),
+                    config={"support_type": "tree(auto)", "neoslice_support_mode": "tree"}),
         ]),
         (_("intent.group_adhesion"), [
             _Preset("brim_none",  _("intent.a_none"),   _("intent.a_none_desc"),

@@ -294,6 +294,9 @@ _FR: dict[str, str] = {
     "preview.support_tree":         "Arborescent",
     "preview.support_normal":       "Supports normaux",
     "preview.support_classic":      "Classique",
+    "preview.support_auto_none":    "Auto — Sans support",
+    "preview.support_auto_tree":    "Auto — Arborescent",
+    "preview.support_auto_normal":  "Auto — Classique",
     "preview.temps_fmt":            "{nozzle}°C buse / {bed}°C plateau",
 
     # Sections

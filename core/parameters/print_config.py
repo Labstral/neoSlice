@@ -67,6 +67,7 @@ class PrintConfig(BaseModel):
     neoslice_intent_text: str = ""
     neoslice_profile_name: str = ""
     neoslice_confidence: float = 1.0
+    neoslice_support_mode: str = "auto"   # "auto" | "classic" | "tree"
 
     def estimated_filament_g(self, volume_cm3: float) -> float:
         """Estimation du filament en grammes, calibrée sur données Bambu Studio réelles."""
