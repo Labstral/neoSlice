@@ -50,6 +50,7 @@ _PRINTER_PROCESS_PROFILES = {
     "P1P":  "0.20mm Standard @BBL P1P.json",
     "A1":   "0.20mm Standard @BBL A1.json",
     "A1M":  "0.20mm Standard @BBL A1M.json",
+    "A2L":  "0.20mm Standard @BBL A2L.json",
     "H2D":  "0.20mm Standard @BBL H2D.json",
 }
 
@@ -194,6 +195,7 @@ def _find_machine_profile(printer_model: str) -> str | None:
         "P1P": "Bambu Lab P1P 0.4 nozzle.json",
         "A1":  "Bambu Lab A1 0.4 nozzle.json",
         "A1M": "Bambu Lab A1 mini 0.4 nozzle.json",
+        "A2L": "Bambu Lab A2L 0.4 nozzle.json",
         "H2D": "Bambu Lab H2D 0.4 nozzle.json",
     }
     return candidates.get(printer_model)
@@ -207,6 +209,7 @@ def _printer_settings_id(printer_model: str) -> str:
         "P1P": "Bambu Lab P1P 0.4 nozzle",
         "A1":  "Bambu Lab A1 0.4 nozzle",
         "A1M": "Bambu Lab A1 mini 0.4 nozzle",
+        "A2L": "Bambu Lab A2L 0.4 nozzle",
         "H2D": "Bambu Lab H2D 0.4 nozzle",
     }
     return names.get(printer_model, "Bambu Lab X1 Carbon 0.4 nozzle")

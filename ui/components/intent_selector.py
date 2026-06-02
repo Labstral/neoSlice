@@ -114,6 +114,14 @@ def _make_groups() -> list[tuple[str, list[_Preset]]]:
             _Preset("usage_precise",  _("intent.u_precision"),  _("intent.u_precision_desc"),
                     intent={"precision": 0.9}),
         ]),
+        (_("intent.group_support"), [
+            _Preset("support_auto",    _("intent.sup_auto"),    _("intent.sup_auto_desc"),
+                    config={}),
+            _Preset("support_classic", _("intent.sup_classic"), _("intent.sup_classic_desc"),
+                    config={"support_type": "normal(auto)"}),
+            _Preset("support_tree",    _("intent.sup_tree"),    _("intent.sup_tree_desc"),
+                    config={"support_type": "tree(auto)"}),
+        ]),
         (_("intent.group_mode"), [
             _Preset("mode_normal",     _("intent.m_standard"),   _("intent.m_standard_desc"),
                     intent={}),
@@ -644,15 +652,23 @@ class IntentSelector(QWidget):
         root.addWidget(self._auto_banner)
 
         # ── Groupes accordéons ─────────────────────────────────────────────
-        for title, presets in _GROUPS:
+        self._support_group_idx = -1
+        for i, (title, presets) in enumerate(_GROUPS):
             g = _Group(title, presets)
             g.selection_changed.connect(self._on_selection_changed)
             self._groups.append(g)
             root.addWidget(g)
+            # Mémoriser l'index du groupe Supports
+            if any(p.id == "support_auto" for p in presets):
+                self._support_group_idx = i
 
-        # Bannière de conflit
+        # Bannière de conflit — doit exister avant tout select_preset
         self._conflict_banner = _ConflictBanner()
         root.addWidget(self._conflict_banner)
+
+        # Support : Auto par défaut (après _conflict_banner pour éviter AttributeError)
+        if self._support_group_idx >= 0:
+            self._groups[self._support_group_idx].select_preset("support_auto")
 
         # ── Boutons du bas ─────────────────────────────────────────────────
         btns_row = QHBoxLayout()
@@ -1017,6 +1033,10 @@ class IntentSelector(QWidget):
             self._groups[3].select_preset("brim_none")
 
         self._groups[4].select_preset("usage_indoor")
+
+        # Support : toujours Auto après analyse (l'engine décidera)
+        if hasattr(self, "_support_group_idx"):
+            self._groups[self._support_group_idx].select_preset("support_auto")
 
         self._on_selection_changed()
 

@@ -123,6 +123,17 @@ PRINTERS: dict[str, dict] = {
     },
 
     # ── Série A ───────────────────────────────────────────────────────────
+    "A2L": {
+        "serie": "Série A",
+        "nom_complet": "Bambu Lab A2L",
+        "enceinte": False, "ams": True, "multi_couleur": True,
+        "double_extrudeur": False,
+        "plateau_max_temp": 80, "buse_max_temp": 300,
+        "volume": "330×320×325 mm",
+        "couleurs_max": 19,
+        "particularites": ["Bed slinger grand format", "AMS Lite (jusqu'à 19 couleurs)", "Servo PMSM boucle fermée", "Module découpe/dessin modulaire"],
+        "filaments_incompatibles": ["ABS", "ASA", "PC", "Nylon", "PA-CF", "PETG-CF"],
+    },
     "A1": {
         "serie": "Série A",
         "nom_complet": "Bambu Lab A1",

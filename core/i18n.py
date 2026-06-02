@@ -201,6 +201,14 @@ _FR: dict[str, str] = {
     "intent.m_multicolor":      "Multicolore (AMS)",
     "intent.m_multicolor_desc": "Prime tower + flush optimisé",
 
+    "intent.group_support":      "SUPPORTS",
+    "intent.sup_auto":           "Auto",
+    "intent.sup_auto_desc":      "Le logiciel décide selon la géométrie",
+    "intent.sup_classic":        "Classique",
+    "intent.sup_classic_desc":   "Colonnes standards, faciles à retirer",
+    "intent.sup_tree":           "Arborescent",
+    "intent.sup_tree_desc":      "Organique, moins de marques sur la pièce",
+
     # UI
     "intent.lock_msg":          "Chargez un fichier STL\npour accéder aux réglages",
     "intent.lock_step":         "Étape ②",
@@ -819,6 +827,14 @@ _EN: dict[str, str] = {
     "intent.m_silent_desc":     "Speeds -40% — quiet printing",
     "intent.m_multicolor":      "Multicolor (AMS)",
     "intent.m_multicolor_desc": "Prime tower + optimized flush",
+
+    "intent.group_support":      "SUPPORTS",
+    "intent.sup_auto":           "Auto",
+    "intent.sup_auto_desc":      "Software decides based on geometry",
+    "intent.sup_classic":        "Classic",
+    "intent.sup_classic_desc":   "Standard columns, easy to remove",
+    "intent.sup_tree":           "Tree",
+    "intent.sup_tree_desc":      "Organic, fewer marks on the part",
 
     "intent.lock_msg":          "Load an STL file\nto access settings",
     "intent.lock_step":         "Step ②",
