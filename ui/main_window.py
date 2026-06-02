@@ -1997,10 +1997,10 @@ class MainWindow(QMainWindow):
         btn_bambu.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_bambu.setStyleSheet(f"""
             QPushButton {{
-                background: {_ep['TELE_GREEN']}; color: {_ep['EXPORT_FG']};
-                border: none; border-radius: 4px; padding: 0 16px;
+                background: transparent; color: {_ep['TELE_GREEN']};
+                border: 1px solid {_ep['TELE_GREEN']}; border-radius: 4px; padding: 0 16px;
             }}
-            QPushButton:hover {{ background: {_ep['TELE_GREEN']}; color: {_ep['EXPORT_FG']}; }}
+            QPushButton:hover {{ background: {_ep['TELE_GREEN']}; color: {_ep['EXPORT_FG']}; border: none; }}
         """)
         btn_bambu.setVisible(tmf_path is not None and tmf_path.exists())
 
