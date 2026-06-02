@@ -841,6 +841,9 @@ class _GridWidget(QWidget):
 
 class MainWindow(QMainWindow):
 
+    # Signal thread-safe pour la popup de mise à jour (émis depuis thread background)
+    _update_ready = Signal(str, str, str)  # version, url, notes
+
     def __init__(self):
         super().__init__()
         self._mesh = None
@@ -874,6 +877,7 @@ class MainWindow(QMainWindow):
         elif should_show_tutorial():
             QTimer.singleShot(400, self._show_tutorial)
 
+        self._update_ready.connect(self._show_update_dialog_signal)
         QTimer.singleShot(3000, self._check_for_updates)
 
     def closeEvent(self, event):
@@ -1213,11 +1217,15 @@ class MainWindow(QMainWindow):
 
         def _on_result(version: str | None, url: str, notes: str):
             if version:
-                self._pending_update = (version, url, notes)
-                QTimer.singleShot(0, self._show_update_dialog)
+                # Emit thread-safe signal — s'exécute toujours sur le main thread
+                self._update_ready.emit(version, url or "", notes or "")
 
-        self._pending_update: tuple | None = None
         check_for_update(_on_result)
+
+    def _show_update_dialog_signal(self, version: str, url: str, notes: str):
+        """Slot connecté à _update_ready — appelé sur le main thread."""
+        self._pending_update = (version, url, notes)
+        self._show_update_dialog()
 
     def _show_update_dialog(self):
         info = getattr(self, "_pending_update", None)
