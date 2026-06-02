@@ -3,7 +3,7 @@ label: "Fine"
 description: "0.12mm — bonne finition de surface, détails visibles"
 
 layer_height: 0.12
-first_layer_height: 0.15
+first_layer_height: 0.20
 wall_loops: 3
 wall_generator: "arachne"
 wall_sequence: "outer wall/inner wall"
