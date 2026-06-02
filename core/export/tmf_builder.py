@@ -317,6 +317,9 @@ class ThreeMFBuilder:
         _base_id = _UI_TO_PRINTER_ID.get(printer_ui_name, "Bambu Lab X1 Carbon 0.4 nozzle")
         project_settings["printer_settings_id"] = _base_id.replace("0.4 nozzle", f"{_D} nozzle")
 
+        # Profil process par défaut — adapté au printer sélectionné (template peut être X1C)
+        project_settings["default_print_profile"] = f"0.20mm Standard @BBL {bbl_id}"
+
         # different_settings_to_system : si présent avec slot 1 = '' (vide), BS recharge
         # le preset système Generic PLA par-dessus project_settings.config → supprimé.
         project_settings.pop("different_settings_to_system", None)
