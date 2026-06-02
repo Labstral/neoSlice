@@ -96,6 +96,14 @@ def _make_groups() -> list[tuple[str, list[_Preset]]]:
             _Preset("speed_ultra", _("intent.sp_ultra"),    _("intent.sp_ultra_desc"),
                     intent={"speed": 1.0}),
         ]),
+        (_("intent.group_support"), [
+            _Preset("support_auto",    _("intent.sup_auto"),    _("intent.sup_auto_desc"),
+                    config={}),
+            _Preset("support_classic", _("intent.sup_classic"), _("intent.sup_classic_desc"),
+                    config={"support_type": "normal(auto)"}),
+            _Preset("support_tree",    _("intent.sup_tree"),    _("intent.sup_tree_desc"),
+                    config={"support_type": "tree(auto)"}),
+        ]),
         (_("intent.group_adhesion"), [
             _Preset("brim_none",  _("intent.a_none"),   _("intent.a_none_desc"),
                     config={"brim_type": "no_brim", "brim_width": 0.0}),
@@ -113,14 +121,6 @@ def _make_groups() -> list[tuple[str, list[_Preset]]]:
                     intent={"surface_finish": 0.9}),
             _Preset("usage_precise",  _("intent.u_precision"),  _("intent.u_precision_desc"),
                     intent={"precision": 0.9}),
-        ]),
-        (_("intent.group_support"), [
-            _Preset("support_auto",    _("intent.sup_auto"),    _("intent.sup_auto_desc"),
-                    config={}),
-            _Preset("support_classic", _("intent.sup_classic"), _("intent.sup_classic_desc"),
-                    config={"support_type": "normal(auto)"}),
-            _Preset("support_tree",    _("intent.sup_tree"),    _("intent.sup_tree_desc"),
-                    config={"support_type": "tree(auto)"}),
         ]),
         (_("intent.group_mode"), [
             _Preset("mode_normal",     _("intent.m_standard"),   _("intent.m_standard_desc"),

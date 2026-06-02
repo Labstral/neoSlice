@@ -296,8 +296,14 @@ class ThreeMFBuilder:
 
         bbl_id = _UI_TO_BBL.get(printer_ui_name, "X1C")
 
-        # Paramètres : template + overrides neoSlice
-        project_settings = dict(self._template)
+        # Paramètres : charger le template du bon printer si différent du cache
+        # (évite que des valeurs X1C écrasent les valeurs A2L, H2D, etc.)
+        try:
+            from .bambu_config_resolver import resolve_from_system_profiles
+            printer_template = resolve_from_system_profiles(bbl_id) or self._template
+        except Exception:
+            printer_template = self._template
+        project_settings = dict(printer_template)
         project_settings.update(_config_to_bambu_overrides(config))
 
         # ── Overrides nozzle — valeurs exactes mesurées sur fichiers Bambu Studio réels ──
