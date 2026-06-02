@@ -366,11 +366,6 @@ class FilamentPrinterSelector(QWidget):
             PREFS.set("a2l_bs_warning_skip", True)
 
     def _on_confirm_printer(self):
-        # Avertissement BS 2.7.1 si A2L sélectionné
-        current = self._printer_combo.currentData()
-        if current == "A2L":
-            self._show_a2l_warning()
-
         self._printer_done = True
         pal = _T.palette()
         tg = pal["TELE_GREEN"]; tl = pal["TEXT_LABEL"]
@@ -482,6 +477,9 @@ class FilamentPrinterSelector(QWidget):
     def _on_changed(self):
         self._update_compatibility()
         printer = self.current_printer()
+        # Avertissement A2L : affiché dès la sélection (pas seulement à la validation)
+        if printer == "A2L":
+            self._show_a2l_warning()
         filament = self.current_filament()
         if printer and filament:
             self.selection_changed.emit(printer, filament)
