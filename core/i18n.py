@@ -291,8 +291,9 @@ _FR: dict[str, str] = {
     "preview.adhesion_none":        "Sans brim",
     "preview.adhesion_brim":        "Brim {w} mm",
     "preview.support_none":         "Sans support",
-    "preview.support_tree":         "Supports arborescents",
+    "preview.support_tree":         "Arborescent",
     "preview.support_normal":       "Supports normaux",
+    "preview.support_classic":      "Classique",
     "preview.temps_fmt":            "{nozzle}°C buse / {bed}°C plateau",
 
     # Sections
@@ -348,6 +349,7 @@ _FR: dict[str, str] = {
     "preview.lbl_plate_only":   "PLATEAU ONLY",
     "preview.supp_tree":        "Arborescents",
     "preview.supp_normal":      "Normaux",
+    "preview.supp_classic":     "Classique",
     "preview.lbl_prime_tower":  "PRIME TOWER",
     "preview.val_active":       "ACTIVÉE",
     "preview.lbl_flush_ams":    "FLUSH AMS",

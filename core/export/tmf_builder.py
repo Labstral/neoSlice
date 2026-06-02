@@ -31,6 +31,7 @@ _NS_BBL = "http://schemas.bambulab.com/package/2021"
 _NS_PROD = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
 
 _TEMPLATE_CACHE: dict | None = None
+_PRINTER_TEMPLATE_CACHE: dict[str, dict] = {}  # cache par printer_id
 _DATA_DIR = Path(__file__).parent.parent.parent / "data"
 _CACHE_FILE = _DATA_DIR / "bambu_config_template.json"
 _CLEAN_DEFAULTS_FILE = _DATA_DIR / "bambu_defaults_clean.json"
@@ -296,14 +297,15 @@ class ThreeMFBuilder:
 
         bbl_id = _UI_TO_BBL.get(printer_ui_name, "X1C")
 
-        # Paramètres : charger le template du bon printer si différent du cache
-        # (évite que des valeurs X1C écrasent les valeurs A2L, H2D, etc.)
-        try:
-            from .bambu_config_resolver import resolve_from_system_profiles
-            printer_template = resolve_from_system_profiles(bbl_id) or self._template
-        except Exception:
-            printer_template = self._template
-        project_settings = dict(printer_template)
+        # Paramètres : charger le template du bon printer (mis en cache par printer_id)
+        if bbl_id not in _PRINTER_TEMPLATE_CACHE:
+            try:
+                from .bambu_config_resolver import resolve_from_system_profiles
+                resolved = resolve_from_system_profiles(bbl_id)
+                _PRINTER_TEMPLATE_CACHE[bbl_id] = resolved or self._template
+            except Exception:
+                _PRINTER_TEMPLATE_CACHE[bbl_id] = self._template
+        project_settings = dict(_PRINTER_TEMPLATE_CACHE[bbl_id])
         project_settings.update(_config_to_bambu_overrides(config))
 
         # ── Overrides nozzle — valeurs exactes mesurées sur fichiers Bambu Studio réels ──

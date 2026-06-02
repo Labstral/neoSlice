@@ -263,7 +263,7 @@ class ParamsPreview(QWidget):
 
         support_name = _("preview.support_none")
         if c.support_type != "none" and "support_type" in c.model_fields_set:
-            support_name = _("preview.support_tree") if "tree" in c.support_type else _("preview.support_normal")
+            support_name = _("preview.support_tree") if "tree" in c.support_type else _("preview.support_classic")
 
         temp_name = ""
         if "nozzle_temperature" in c.model_fields_set:
@@ -372,7 +372,7 @@ class ParamsPreview(QWidget):
             if "bed_temperature" in fields:
                 s.add_row(_("preview.lbl_bed"),     f"{c.bed_temperature} °C")
             if has_support:
-                label = _("preview.supp_tree") if "tree" in c.support_type else _("preview.supp_normal")
+                label = _("preview.supp_tree") if "tree" in c.support_type else _("preview.supp_classic")
                 s.add_row(_("preview.lbl_supports"),  label)
                 s.add_row(_("preview.lbl_threshold"), f"{c.support_threshold_angle:.0f}°")
                 s.add_row(_("preview.lbl_plate_only"),
