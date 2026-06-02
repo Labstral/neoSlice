@@ -1,6 +1,6 @@
 ==============================================================================
   neoSlice - AI-Powered 3D Print Optimizer
-  Guide d'installation et de démarrage - v0.1.2 Bêta
+  Guide d'installation et de démarrage - v0.1.3 Bêta
 ==============================================================================
   © 2026 Emmanuel Percheron - Tous droits réservés
 
@@ -15,7 +15,8 @@ SOMMAIRE
   5. Premier démarrage
   6. Désinstallation
   7. Questions fréquentes (FAQ)
-  8. Contact et support
+  8. Nouveautés v0.1.3
+  9. Contact et support
 
 
 ------------------------------------------------------------------------------
@@ -39,7 +40,7 @@ SOMMAIRE
 2. CONTENU DU PACKAGE
 ------------------------------------------------------------------------------
 
-  neoSlice_Setup_v0.1.2-beta_Windows.exe  ->  Installateur Windows
+  neoSlice_Setup_v0.1.3-beta_Windows.exe  ->  Installateur Windows
   README.txt                       ->  Ce guide
   LICENSE.txt                      ->  Accord de licence utilisateur final
 
@@ -53,12 +54,11 @@ SOMMAIRE
   Avant de lancer l'installateur, il est fortement recommandé de :
 
     * Fermer tous les programmes ouverts.
-    * Désactiver temporairement votre antivirus (voir section 4).
-    * Vous assurer d'être connecté en tant qu'administrateur Windows.
+    * Désactiver temporairement votre antivirus si nécessaire (voir section 4).
 
   ÉTAPE 2 - Lancer l'installateur
   ---------------------------------
-  Double-cliquez sur : neoSlice_Setup_v0.1.2-beta_Windows.exe
+  Double-cliquez sur : neoSlice_Setup_v0.1.3-beta_Windows.exe
 
   Si Windows affiche "Windows a protégé votre PC" :
     -> Cliquez sur "Informations complémentaires"
@@ -71,7 +71,7 @@ SOMMAIRE
     a) Écran d'accueil        -> Cliquez sur "Suivant"
     b) Accord de licence      -> Lisez et acceptez, puis "Suivant"
     c) Dossier d'installation -> Le dossier par défaut est recommandé :
-                                 C:\Program Files\neoSlice\
+                                 C:\Users\[vous]\AppData\Local\neoSlice\
     d) Raccourcis             -> Laissez "Créer un raccourci sur le Bureau"
                                  coché si vous souhaitez un accès rapide.
     e) Prêt à installer       -> Cliquez sur "Installer"
@@ -131,12 +131,6 @@ SOMMAIRE
 
      1. Cliquez sur "Informations complémentaires" (lien bleu)
      2. Cliquez sur "Exécuter quand même"
-
-
-  "ACCÈS REFUSÉ" OU "DROITS INSUFFISANTS"
-  -----------------------------------------
-  -> Faites un clic droit sur l'installateur
-  -> Choisissez "Exécuter en tant qu'administrateur"
 
 
   L'INSTALLATION S'ARRÊTE OU GÈLE
@@ -223,11 +217,12 @@ SOMMAIRE
       machine.
 
   Q : neoSlice fonctionne-t-il avec toutes les imprimantes Bambu Lab ?
-  R : neoSlice est optimisé pour les imprimantes Bambu Lab (X1, P1, A1
-      et variantes). Les fichiers .3MF sont compatibles avec Bambu Studio.
+  R : neoSlice est optimisé pour les imprimantes Bambu Lab (X1, P1, A1,
+      A2L et variantes). Les fichiers .3MF sont compatibles avec Bambu Studio.
 
   Q : Puis-je utiliser neoSlice sans connexion internet ?
-  R : Oui. neoSlice ne nécessite aucune connexion internet.
+  R : Oui. neoSlice ne nécessite aucune connexion internet pour fonctionner.
+      Une connexion est uniquement utilisée pour vérifier les mises à jour.
 
   Q : Le logiciel plante ou se ferme inopinément - que faire ?
   R : Consultez le fichier journal dans :
@@ -239,13 +234,45 @@ SOMMAIRE
   R : Non. Lancez simplement le nouvel installateur - il remplacera
       automatiquement la version précédente.
 
+  Q : J'ai une imprimante Bambu Lab A2L, dois-je une version spéciale ?
+  R : Non. neoSlice supporte nativement l'A2L depuis la v0.1.3.
+      Sélectionnez simplement "A2L" dans la liste des imprimantes.
+      Bambu Studio 2.7.1 ou supérieur est requis pour l'A2L.
+
 
 ------------------------------------------------------------------------------
-8. CONTACT ET SUPPORT
+8. NOUVEAUTÉS v0.1.3
+------------------------------------------------------------------------------
+
+  🖨️ NOUVELLES IMPRIMANTES
+  -------------------------
+  * Bambu Lab A2L : grand format 330x320x325mm, 19 couleurs, bed slinger.
+    Avertissement automatique si Bambu Studio < 2.7.1.
+
+  ⚙️ CONTRÔLE DES SUPPORTS
+  -------------------------
+  * Nouvelle section "SUPPORTS" dans l'Instruction Mission.
+  * 3 modes disponibles :
+    - Auto      : le moteur décide selon la géométrie de la pièce
+    - Classique : supports colonnes standards
+    - Arborescent : supports organiques, moins de marques sur la pièce
+  * Mode Auto automatiquement réactivé à chaque nouveau fichier STL.
+  * Le résumé des paramètres indique maintenant le mode choisi.
+
+  🐛 CORRECTIONS
+  ---------------
+  * Hauteur de couche incorrecte avec le preset "Fine" (0.12mm → 0.2mm).
+  * Export .3MF : imprimante A2L correctement reconnue par Bambu Studio.
+  * Diamètre de buse non pris en compte en temps réel lors du changement.
+
+
+------------------------------------------------------------------------------
+9. CONTACT ET SUPPORT
 ------------------------------------------------------------------------------
 
   Développeur  : Emmanuel Percheron
-  Email        : manu.percheron@gmail.com
+  Site web     : https://neoslice-ai.com
+  Retours/bugs : https://neoslice-ai.com/retour
 
   Merci d'inclure dans votre message :
     * La version de Windows utilisée

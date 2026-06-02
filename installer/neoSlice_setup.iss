@@ -19,8 +19,8 @@ AppPublisherURL={#AppURL}
 AppSupportURL={#AppURL}
 AppUpdatesURL={#AppURL}
 
-; Répertoire d'installation par défaut
-DefaultDirName={autopf}\{#AppName}
+; Répertoire d'installation dans AppData (pas besoin d'admin, pas de conflit DLL)
+DefaultDirName={localappdata}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 
@@ -37,9 +37,8 @@ LZMANumFastBytes=273
 ; Interface
 WizardStyle=modern
 
-; Droits requis
-PrivilegesRequired=admin
-PrivilegesRequiredOverridesAllowed=dialog
+; Droits requis — AppData ne nécessite pas d'admin
+PrivilegesRequired=lowest
 
 ; License
 LicenseFile=LICENSE.txt
