@@ -103,6 +103,8 @@ def _make_groups() -> list[tuple[str, list[_Preset]]]:
                     config={"support_type": "normal(auto)", "neoslice_support_mode": "classic"}),
             _Preset("support_tree",    _("intent.sup_tree"),    _("intent.sup_tree_desc"),
                     config={"support_type": "tree(auto)", "neoslice_support_mode": "tree"}),
+            _Preset("support_none",    _("intent.sup_none"),    _("intent.sup_none_desc"),
+                    config={"support_type": "none", "neoslice_support_mode": "none"}),
         ]),
         (_("intent.group_adhesion"), [
             _Preset("brim_none",  _("intent.a_none"),   _("intent.a_none_desc"),

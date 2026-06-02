@@ -208,6 +208,8 @@ _FR: dict[str, str] = {
     "intent.sup_classic_desc":   "Colonnes standards, faciles à retirer",
     "intent.sup_tree":           "Arborescent",
     "intent.sup_tree_desc":      "Organique, moins de marques sur la pièce",
+    "intent.sup_none":          "Sans support",
+    "intent.sup_none_desc":     "Force l'absence de supports même si la pièce en a besoin",
 
     # UI
     "intent.lock_msg":          "Chargez un fichier STL\npour accéder aux réglages",
@@ -297,6 +299,7 @@ _FR: dict[str, str] = {
     "preview.support_auto_none":    "Auto — Sans support",
     "preview.support_auto_tree":    "Auto — Arborescent",
     "preview.support_auto_normal":  "Auto — Classique",
+    "preview.support_forced_none":  "Sans support (forcé)",
     "preview.temps_fmt":            "{nozzle}°C buse / {bed}°C plateau",
 
     # Sections
@@ -840,6 +843,8 @@ _EN: dict[str, str] = {
     "intent.sup_classic_desc":   "Standard columns, easy to remove",
     "intent.sup_tree":           "Tree",
     "intent.sup_tree_desc":      "Organic, fewer marks on the part",
+    "intent.sup_none":          "No support",
+    "intent.sup_none_desc":     "Forces no supports even if geometry requires them",
 
     "intent.lock_msg":          "Load an STL file\nto access settings",
     "intent.lock_step":         "Step ②",

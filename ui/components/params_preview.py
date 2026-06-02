@@ -262,12 +262,13 @@ class ParamsPreview(QWidget):
         cl.addWidget(header)
 
         mode = getattr(c, "neoslice_support_mode", "auto")
-        if mode == "classic":
+        if mode == "none":
+            support_name = _("preview.support_forced_none")
+        elif mode == "classic":
             support_name = _("preview.support_classic")
         elif mode == "tree":
             support_name = _("preview.support_tree")
         elif c.support_type != "none":
-            # Auto — le moteur a décidé d'ajouter des supports
             support_name = _("preview.support_auto_tree") if "tree" in c.support_type else _("preview.support_auto_normal")
         else:
             support_name = _("preview.support_auto_none")
