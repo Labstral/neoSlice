@@ -174,7 +174,8 @@ class ParameterEngine:
         # Solidité secondaire → parois + pattern isotrope
         if intent.strength > 0.6 and dom != "strength":
             config.wall_loops = max(config.wall_loops, 3)
-            if config.infill_density >= 30 and config.infill_pattern in ("grid", "honeycomb", "lightning"):
+            # Gyroid dès que résistance est demandée, quelle que soit la densité
+            if config.infill_pattern in ("grid", "honeycomb", "lightning"):
                 config.infill_pattern = "gyroid"
 
         # Résistance extérieure secondaire
