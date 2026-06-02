@@ -25,7 +25,7 @@ from loguru import logger
 
 from ..parameters.print_config import PrintConfig
 
-BAMBU_VERSION = "02.06.00.51"
+BAMBU_VERSION = "02.07.01.57"
 _NS_3MF = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 _NS_BBL = "http://schemas.bambulab.com/package/2021"
 _NS_PROD = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
