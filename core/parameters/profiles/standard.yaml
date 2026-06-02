@@ -11,7 +11,7 @@ top_one_wall_type: "not apply"
 top_shell_layers: 4
 bottom_shell_layers: 3
 infill_density: 15
-infill_pattern: "gyroid"
+infill_pattern: "grid"
 top_surface_pattern: "monotonic"
 ironing_type: "no ironing"
 ironing_speed: 20.0
