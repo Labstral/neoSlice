@@ -666,9 +666,13 @@ class IntentSelector(QWidget):
         self._conflict_banner = _ConflictBanner()
         root.addWidget(self._conflict_banner)
 
-        # Support : Auto pré-sélectionné après init complète (évite AttributeError sur _btn)
+        # Support : Auto pré-sélectionné après init complète
         if self._support_group_idx >= 0:
-            QTimer.singleShot(0, lambda: self._groups[self._support_group_idx].select_preset("support_auto"))
+            idx = self._support_group_idx
+            QTimer.singleShot(0, lambda: (
+                self._groups[idx].select_preset("support_auto")
+                if self._groups[idx].get_selected_id() != "support_auto" else None
+            ))
 
         # ── Boutons du bas ─────────────────────────────────────────────────
         btns_row = QHBoxLayout()
@@ -1034,9 +1038,11 @@ class IntentSelector(QWidget):
 
         self._groups[4].select_preset("usage_indoor")
 
-        # Support : toujours Auto après analyse (l'engine décidera)
+        # Support : reset à Auto sans toggle si déjà sélectionné
         if hasattr(self, "_support_group_idx"):
-            self._groups[self._support_group_idx].select_preset("support_auto")
+            grp = self._groups[self._support_group_idx]
+            if grp.get_selected_id() != "support_auto":
+                grp.select_preset("support_auto")
 
         self._on_selection_changed()
 
