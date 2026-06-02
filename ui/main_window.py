@@ -1365,6 +1365,15 @@ class MainWindow(QMainWindow):
                             downloaded += len(chunk)
                             pct = int(downloaded / total * 100) if total > 0 else -1
                             _q.put(("progress", pct))
+                # Vérifier que c'est un vrai exécutable Windows (magic bytes MZ)
+                with open(tmp, "rb") as _chk:
+                    magic = _chk.read(2)
+                if magic != b"MZ":
+                    import os as _os
+                    try: _os.remove(tmp)
+                    except: pass
+                    _q.put(("error", "Fichier téléchargé invalide (accès refusé ou repo privé). Rendez le repo public ou téléchargez manuellement."))
+                    return
                 _q.put(("done", tmp))
             except Exception as exc:
                 _q.put(("error", str(exc)))
