@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QPushButton, QFrame, QSizePolicy, QInputDialog,
     QScrollArea, QMessageBox,
 )
-from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer
 from PySide6.QtGui import QFont, QColor
 
 _PRESETS_FILE = Path.home() / ".neoslice" / "presets.json"
@@ -666,9 +666,9 @@ class IntentSelector(QWidget):
         self._conflict_banner = _ConflictBanner()
         root.addWidget(self._conflict_banner)
 
-        # Support : Auto par défaut (après _conflict_banner pour éviter AttributeError)
+        # Support : Auto pré-sélectionné après init complète (évite AttributeError sur _btn)
         if self._support_group_idx >= 0:
-            self._groups[self._support_group_idx].select_preset("support_auto")
+            QTimer.singleShot(0, lambda: self._groups[self._support_group_idx].select_preset("support_auto"))
 
         # ── Boutons du bas ─────────────────────────────────────────────────
         btns_row = QHBoxLayout()
