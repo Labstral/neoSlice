@@ -110,6 +110,12 @@ class ParameterEngine:
             config.neoslice_profile_name = "standard"
             return config
 
+        # Score trop faible pour déterminer une intention claire → standard
+        if intent.dominant_score <= 0.5:
+            config = PrintConfig()
+            config.neoslice_profile_name = "standard"
+            return config
+
         intent_name = intent.dominant_intent
         score = intent.dominant_score
 

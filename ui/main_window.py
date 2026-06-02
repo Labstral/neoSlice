@@ -1020,6 +1020,9 @@ class MainWindow(QMainWindow):
         self._intent_selector = IntentSelector()
         self._intent_selector.intent_submitted.connect(self._on_intent_submitted)
         self._filament_selector.nozzle_changed.connect(self._intent_selector.update_nozzle)
+        self._filament_selector.nozzle_changed.connect(
+            lambda d: setattr(self, "_current_nozzle_mm", d)
+        )
         layout.addWidget(self._intent_selector)
 
         layout.addStretch()
