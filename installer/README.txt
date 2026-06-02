@@ -1,6 +1,6 @@
 ==============================================================================
   neoSlice - AI-Powered 3D Print Optimizer
-  Guide d'installation et de démarrage - v0.1.3 Bêta
+  Guide d'installation et de démarrage - v0.1.4 Bêta
 ==============================================================================
   © 2026 Emmanuel Percheron - Tous droits réservés
 
@@ -40,7 +40,7 @@ SOMMAIRE
 2. CONTENU DU PACKAGE
 ------------------------------------------------------------------------------
 
-  neoSlice_Setup_v0.1.3-beta_Windows.exe  ->  Installateur Windows
+  neoSlice_Setup_v0.1.4-beta_Windows.exe  ->  Installateur Windows
   README.txt                       ->  Ce guide
   LICENSE.txt                      ->  Accord de licence utilisateur final
 
@@ -58,7 +58,7 @@ SOMMAIRE
 
   ÉTAPE 2 - Lancer l'installateur
   ---------------------------------
-  Double-cliquez sur : neoSlice_Setup_v0.1.3-beta_Windows.exe
+  Double-cliquez sur : neoSlice_Setup_v0.1.4-beta_Windows.exe
 
   Si Windows affiche "Windows a protégé votre PC" :
     -> Cliquez sur "Informations complémentaires"
@@ -241,7 +241,30 @@ SOMMAIRE
 
 
 ------------------------------------------------------------------------------
-8. NOUVEAUTÉS v0.1.3
+8. NOUVEAUTÉS v0.1.4
+------------------------------------------------------------------------------
+
+  ⚙️ SUPPORTS
+  -----------
+  * Nouvelle option "Sans support" : désactive les supports même si la pièce
+    en a besoin (utile pour tester ou imprimer à la main).
+  * Distance Z support proportionnelle à la hauteur de couche (×1.2).
+    Finition et retrait des supports améliorés.
+
+  🔧 QUALITÉ & VITESSES
+  ---------------------
+  * Profil Fine : remplissage gyroid → classique renforcé pour la résistance.
+  * Vitesses alignées sur les profils officiels Bambu Studio pour tous les
+    niveaux de qualité (Standard, Fine, Ultra, Rapide).
+  * Première couche 0.15→0.20mm sur Fine et Ultra : meilleure accroche plateau.
+
+  🐛 CORRECTIONS
+  ---------------
+  * Profil Standard : remplissage grid (cohérent avec Bambu Studio).
+  * Résistance renforcée : gyroid forcé même à faible densité d'infill.
+
+------------------------------------------------------------------------------
+9. NOUVEAUTÉS v0.1.3
 ------------------------------------------------------------------------------
 
   🖨️ NOUVELLES IMPRIMANTES
