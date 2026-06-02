@@ -289,7 +289,88 @@ class FilamentPrinterSelector(QWidget):
 
     # ── Étapes ─────────────────────────────────────────────────────────────
 
+    def _show_a2l_warning(self):
+        """Avertissement BS 2.7.1 requis pour l'A2L — thème-aware avec case 'Ne plus afficher'."""
+        from core.prefs import PREFS
+        if PREFS.get("a2l_bs_warning_skip", False):
+            return
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox, QPushButton
+        from PySide6.QtGui import QFont as _QFont
+
+        pal = _T.palette()
+        dlg = QDialog(self.window())
+        dlg.setWindowTitle("Bambu Lab A2L")
+        dlg.setMinimumWidth(400)
+        dlg.setStyleSheet(f"QDialog {{ background: {pal['BG_PANEL']}; }}")
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(22, 18, 22, 18)
+        layout.setSpacing(12)
+
+        # Icône + titre
+        title = QLabel("⚠  Bambu Studio 2.7.1 requis")
+        title.setFont(_QFont(FONT_MAIN, 11, QFont.Bold))
+        title.setStyleSheet(f"color: {pal['AMBER']}; background: transparent;")
+        layout.addWidget(title)
+
+        # Message
+        msg = QLabel(
+            "L'imprimante <b>Bambu Lab A2L</b> n'est disponible que dans "
+            "<b>Bambu Studio 2.7.1</b> ou plus récent.<br><br>"
+            "Si vous utilisez une version antérieure, le fichier .3MF généré "
+            "ne s'ouvrira pas correctement dans Bambu Studio."
+        )
+        msg.setFont(_QFont(FONT_MAIN, 9))
+        msg.setTextFormat(Qt.RichText)
+        msg.setWordWrap(True)
+        msg.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+        layout.addWidget(msg)
+
+        # Case "Ne plus afficher"
+        skip_cb = QCheckBox("Ne plus afficher ce message")
+        skip_cb.setFont(_QFont(FONT_MAIN, 8))
+        skip_cb.setStyleSheet(f"""
+            QCheckBox {{ color: {pal['TEXT_SECONDARY']}; background: transparent; spacing: 5px; }}
+            QCheckBox::indicator {{
+                width: 12px; height: 12px;
+                border: 1px solid {pal['INACTIVE']}; border-radius: 2px;
+                background: {pal['BG_INPUT']};
+            }}
+            QCheckBox::indicator:checked {{
+                background: {pal['ACCENT']}; border-color: {pal['ACCENT']};
+            }}
+        """)
+        layout.addWidget(skip_cb)
+
+        # Bouton OK
+        btn = QPushButton("Compris →")
+        btn.setFont(_QFont(FONT_MAIN, 9, QFont.Bold))
+        btn.setFixedHeight(34)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {pal['ACCENT']}; color: {pal['EXPORT_FG']};
+                border: none; border-radius: 4px; padding: 0 20px;
+            }}
+            QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
+        """)
+        btn.clicked.connect(dlg.accept)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(btn)
+        layout.addLayout(btn_row)
+
+        dlg.exec()
+        if skip_cb.isChecked():
+            PREFS.set("a2l_bs_warning_skip", True)
+
     def _on_confirm_printer(self):
+        # Avertissement BS 2.7.1 si A2L sélectionné
+        current = self._printer_combo.currentData()
+        if current == "A2L":
+            self._show_a2l_warning()
+
         self._printer_done = True
         pal = _T.palette()
         tg = pal["TELE_GREEN"]; tl = pal["TEXT_LABEL"]
