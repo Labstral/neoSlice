@@ -213,8 +213,9 @@ _UI_TO_BBL: dict[str, str] = {
     "P1S":           "P1S",
     "P1":            "P1P",
     # Série A
-    "A1":            "A1",
     "A1 Mini":       "A1M",
+    "A1":            "A1",
+    "A2L":           "A2L",
 }
 
 # printer_settings_id exact attendu par Bambu Studio pour chaque modèle
@@ -229,8 +230,9 @@ _UI_TO_PRINTER_ID: dict[str, str] = {
     "P2S":           "Bambu Lab P2S 0.4 nozzle",
     "P1S":           "Bambu Lab P1S 0.4 nozzle",
     "P1":            "Bambu Lab P1P 0.4 nozzle",
-    "A1":            "Bambu Lab A1 0.4 nozzle",
     "A1 Mini":       "Bambu Lab A1 mini 0.4 nozzle",
+    "A1":            "Bambu Lab A1 0.4 nozzle",
+    "A2L":           "Bambu Lab A2L 0.4 nozzle",
 }
 
 # Noms filaments UI → label Bambu Studio (Generic <X> @BBL <printer>)
@@ -340,7 +342,7 @@ class ThreeMFBuilder:
         for _k in _filament_strip:
             project_settings.pop(_k, None)
         project_settings.update({
-            "filament_settings_id":              ["Generic PLA"],
+            "filament_settings_id":              [f"Generic PLA @BBL {bbl_id}"],
             "filament_colour":                   ["#FFFFFF"],
             "filament_type":                     ["PLA"],
             "filament_diameter":                 ["1.75"],
@@ -370,7 +372,7 @@ class ThreeMFBuilder:
         for _k in _filament_strip:
             project_settings.pop(_k, None)
         project_settings.update({
-            "filament_settings_id":              ["Generic PLA"],
+            "filament_settings_id":              [f"Generic PLA @BBL {bbl_id}"],
             "filament_colour":                   ["#FFFFFF"],
             "filament_type":                     ["PLA"],
             "filament_diameter":                 ["1.75"],
@@ -400,7 +402,7 @@ class ThreeMFBuilder:
         for _k in _filament_strip:
             project_settings.pop(_k, None)
         project_settings.update({
-            "filament_settings_id":              ["Generic PLA"],
+            "filament_settings_id":              [f"Generic PLA @BBL {bbl_id}"],
             "filament_colour":                   ["#FFFFFF"],
             "filament_type":                     ["PLA"],
             "filament_diameter":                 ["1.75"],
