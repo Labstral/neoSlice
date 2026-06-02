@@ -342,7 +342,7 @@ class ThreeMFBuilder:
         for _k in _filament_strip:
             project_settings.pop(_k, None)
         project_settings.update({
-            "filament_settings_id":              [f"Generic PLA @BBL {bbl_id}"],
+            "filament_settings_id":              ["Generic PLA"],
             "filament_colour":                   ["#FFFFFF"],
             "filament_type":                     ["PLA"],
             "filament_diameter":                 ["1.75"],
@@ -372,7 +372,7 @@ class ThreeMFBuilder:
         for _k in _filament_strip:
             project_settings.pop(_k, None)
         project_settings.update({
-            "filament_settings_id":              [f"Generic PLA @BBL {bbl_id}"],
+            "filament_settings_id":              ["Generic PLA"],
             "filament_colour":                   ["#FFFFFF"],
             "filament_type":                     ["PLA"],
             "filament_diameter":                 ["1.75"],
@@ -402,7 +402,7 @@ class ThreeMFBuilder:
         for _k in _filament_strip:
             project_settings.pop(_k, None)
         project_settings.update({
-            "filament_settings_id":              [f"Generic PLA @BBL {bbl_id}"],
+            "filament_settings_id":              ["Generic PLA"],
             "filament_colour":                   ["#FFFFFF"],
             "filament_type":                     ["PLA"],
             "filament_diameter":                 ["1.75"],
