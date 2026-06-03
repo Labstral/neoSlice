@@ -705,10 +705,11 @@ class Viewer3D(QWidget):
         self._rotation_pivot = np.array([0.0, 0.0, float(_bb[2]) * 0.5])
 
         # Calcul de l'offset global : centrer XY, poser à Z=0
+        # combined.bounds = [[xmin,ymin,zmin], [xmax,ymax,zmax]]
         b = combined.bounds
-        ox = -float(b[0] + b[1]) / 2
-        oy = -float(b[2] + b[3]) / 2
-        oz = -float(b[4])
+        ox = -(float(b[0][0]) + float(b[1][0])) / 2
+        oy = -(float(b[0][1]) + float(b[1][1])) / 2
+        oz = -float(b[0][2])
 
         _total_faces = sum(len(o.mesh.faces) for o in threemf_data.objects)
         _smooth = _total_faces < 150_000
