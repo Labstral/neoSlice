@@ -1,14 +1,10 @@
 from __future__ import annotations
 import time
-import zipfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
 import trimesh
 from loguru import logger
-
-from .threemf_data import ThreeMFData, MeshObject
 
 
 class STLLoadError(Exception):
@@ -34,96 +30,7 @@ def _estimate_stl_faces(path: Path) -> int:
     return 0
 
 
-def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData | None:
-    """Parse un 3MF Bambu multi-objets et retourne ThreeMFData si multi-objets.
-
-    Lit model_settings.config pour les assignations de slots, construit
-    la liste des MeshObject, et retourne None si fichier mono-objet simple.
-    """
-    if not zipfile.is_zipfile(path):
-        return None
-
-    try:
-        with zipfile.ZipFile(path) as zf:
-            # Lire model_settings.config (assignations slots/extruder)
-            model_settings_xml = ""
-            extruder_by_id: dict[str, int] = {}  # part_id → extruder
-            name_by_id: dict[str, str] = {}
-
-            if "Metadata/model_settings.config" in zf.namelist():
-                model_settings_xml = zf.read("Metadata/model_settings.config").decode("utf-8")
-                root = ET.fromstring(model_settings_xml)
-                for obj in root.findall("object"):
-                    obj_id = obj.get("id", "")
-                    # Extruder au niveau objet (fallback)
-                    obj_extruder = int(obj.get("extruder", 1))
-                    for part in obj.findall("part"):
-                        part_id = part.get("id", obj_id)
-                        # Nom depuis metadata
-                        for meta in part.findall("metadata"):
-                            if meta.get("key") == "name":
-                                name_by_id[part_id] = meta.get("value", f"Part {part_id}")
-                        # Extruder au niveau part (priorité) ou objet
-                        ext_val = obj_extruder
-                        for meta in part.findall("metadata"):
-                            if meta.get("key") == "extruder":
-                                ext_val = int(meta.get("value", 1))
-                        extruder_by_id[part_id] = ext_val
-
-            # Lire 3dmodel.model
-            model_xml = ""
-            if "3D/3dmodel.model" in zf.namelist():
-                model_xml = zf.read("3D/3dmodel.model").decode("utf-8")
-
-    except Exception as e:
-        logger.debug(f"3MF multi-objet parse error : {e}")
-        return None
-
-    meshes = {k: v for k, v in scene.geometry.items() if isinstance(v, trimesh.Trimesh)}
-    if len(meshes) <= 1:
-        return None  # mono-objet, pas besoin de ThreeMFData
-
-    objects: list[MeshObject] = []
-    for geom_id, mesh in meshes.items():
-        # Récupérer le transform depuis le graph de la scène
-        try:
-            _, xform = scene.graph.get(geom_id)
-            if not isinstance(xform, np.ndarray) or xform.shape != (4, 4):
-                xform = np.eye(4)
-        except Exception:
-            xform = np.eye(4)
-
-        extruder = extruder_by_id.get(str(geom_id), 1)
-        name = name_by_id.get(str(geom_id), f"Part {geom_id}")
-
-        objects.append(MeshObject(
-            object_id=str(geom_id),
-            name=name,
-            extruder=extruder,
-            mesh=mesh.copy(),
-            transform=xform,
-        ))
-
-    # Mesh combiné pour l'analyse (applique les transforms)
-    combined_parts = []
-    for obj in objects:
-        m = obj.mesh.copy()
-        if not np.allclose(obj.transform, np.eye(4)):
-            m.apply_transform(obj.transform)
-        combined_parts.append(m)
-    combined = trimesh.util.concatenate(combined_parts) if combined_parts else objects[0].mesh
-
-    logger.info(f"3MF multi-objets : {len(objects)} parties · {len({o.extruder for o in objects})} slot(s)")
-    return ThreeMFData(
-        combined_mesh=combined,
-        objects=objects,
-        source_path=path,
-        model_settings_xml=model_settings_xml,
-        model_xml=model_xml,
-    )
-
-
-def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
+def load_stl(path: Path) -> trimesh.Trimesh:
     """Charge, valide et normalise un fichier STL.
 
     Retourne un Trimesh centré sur l'origine, orienté avec Z vers le haut,
@@ -155,12 +62,6 @@ def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
 
     if path.suffix.lower() == ".3mf":
         raw = trimesh.load(str(path))
-        # Tentative de parse multi-objets avant la fusion
-        if isinstance(raw, trimesh.Scene) and len(raw.geometry) > 1:
-            threemf = _parse_threemf_multiobject(path, raw)
-            if threemf is not None:
-                logger.info(f"3MF multi-objets chargé : {threemf.summary()}")
-                return threemf
     elif _skip_process:
         # process=False seulement pour les très grands meshes (> 1M faces) :
         # évite merge_vertices sur 10M+ vertices (prend des minutes).

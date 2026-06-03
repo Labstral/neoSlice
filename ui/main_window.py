@@ -125,11 +125,10 @@ class AnalysisWorker(QObject):
     analysis_complete = Signal(object)
     error = Signal(str)
 
-    def __init__(self, mesh, nozzle_diameter_mm: float = 0.4, multipart: bool = False):
+    def __init__(self, mesh, nozzle_diameter_mm: float = 0.4):
         super().__init__()
         self._mesh = mesh
         self._nozzle_mm = float(nozzle_diameter_mm)
-        self._multipart = multipart
 
     def run(self):
         try:
@@ -260,7 +259,7 @@ class AnalysisWorker(QObject):
                     _holder = [None]; _ev = _th.Event()
                     def _run_layers():
                         try:
-                            _holder[0] = analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm, multipart=self._multipart)
+                            _holder[0] = analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
                         except Exception:
                             pass
                         finally:
@@ -849,7 +848,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._mesh = None
         self._original_mesh = None
-        self._threemf_data = None          # ThreeMFData si 3MF multicolore
         self._analysis: AnalysisReport | None = None
         self._stl_load_thread: QThread | None = None
         self._stl_load_worker: STLLoadWorker | None = None
@@ -997,7 +995,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(sep0)
 
         # ── Étape ② — Import STL ──
-        self._step_stl = _StepHeader("②", "Import STL / 3MF")
+        self._step_stl = _StepHeader("②", "Import STL")
         layout.addWidget(self._step_stl)
 
         self._drop_zone = DropZone()
@@ -1521,17 +1519,7 @@ class MainWindow(QMainWindow):
 
     def _on_stl_load_done(self, mesh):
         """Appelé dans le thread principal quand load_stl() est terminé."""
-        from core.geometry.threemf_data import ThreeMFData
         path = self._stl_path
-
-        # 3MF multi-objets → extraire le mesh combiné, stocker les données multicolores
-        if isinstance(mesh, ThreeMFData):
-            self._threemf_data = mesh          # sauvegardé pour l'export passthrough
-            mesh = mesh.combined_mesh          # le reste du code utilise le mesh fusionné
-            logger.info(f"3MF multicolore : {self._threemf_data.summary()}")
-        else:
-            self._threemf_data = None          # mono-objet classique
-
         self._mesh = mesh
         self._original_mesh = mesh.copy()
 
@@ -1579,7 +1567,6 @@ class MainWindow(QMainWindow):
         self._analysis_worker = AnalysisWorker(
             self._mesh,
             nozzle_diameter_mm=self._current_nozzle_mm,
-            multipart=self._threemf_data is not None,
         )
         self._analysis_worker.moveToThread(self._analysis_thread)
 
@@ -1785,7 +1772,6 @@ class MainWindow(QMainWindow):
                 printer_ui_name=self._current_printer,
                 filament_ui_name=self._current_filament,
                 nozzle_diameter_mm=nozzle_mm,
-                threemf_data=getattr(self, "_threemf_data", None),
             )
             logger.info(f"3MF exporté : {path}")
 

@@ -62,7 +62,7 @@ _FR: dict[str, str] = {
     # ── DropZone ─────────────────────────────────────────────────────────────
     "drop.main_locked":     "VALIDEZ L'IMPRIMANTE",
     "drop.sub_locked":      "et le filament pour continuer\nÉtape ①",
-    "drop.main":            "GLISSER STL / 3MF",
+    "drop.main":            "GLISSER FICHIER STL",
     "drop.sub":             "ou cliquer pour parcourir",
     "drop.dialog_title":    "Ouvrir un fichier STL",
     "drop.dialog_filter":   "Fichiers 3D (*.stl *.obj);;Tous les fichiers (*)",
@@ -71,7 +71,7 @@ _FR: dict[str, str] = {
 
     # ── AnalysisPanel ────────────────────────────────────────────────────────
     "analysis.dot_system":  "SYSTÈME",
-    "analysis.dot_stl":     "MODELE",
+    "analysis.dot_stl":     "STL",
     "analysis.dot_analysis":"ANALYSE",
     "analysis.dot_gen":     "GÉNÉRATION",
     "analysis.gauge_oh":    "Surplombs",
@@ -271,7 +271,7 @@ _FR: dict[str, str] = {
     # ── ParamsPreview ────────────────────────────────────────────────────────
     "preview.empty_title":  "AUCUN PARAMÈTRE GÉNÉRÉ",
     "preview.empty_desc":   (
-        "Importez un fichier STL ou 3MF\npuis décrivez votre intention\n"
+        "Importez un fichier STL\npuis décrivez votre intention\n"
         "pour générer la configuration."
     ),
     "preview.summary_title":        "EN RÉSUMÉ",
@@ -429,7 +429,7 @@ _FR: dict[str, str] = {
 
     "tuto.0.title": "Bienvenue dans neoSlice",
     "tuto.0.body":  (
-        "neoSlice analyse votre fichier STL ou 3MF et génère automatiquement les paramètres "
+        "neoSlice analyse votre fichier STL et génère automatiquement les paramètres "
         "d'impression optimaux pour vos imprimantes Bambu Lab.\n\n"
         "Ce guide vous présente les étapes du workflow.\n"
         "Adaptez le <b>mode de performance</b> dans les paramètres "
@@ -444,9 +444,9 @@ _FR: dict[str, str] = {
         "Faites de même pour votre <b>filament</b>.\n\n"
         "neoSlice adapte automatiquement les paramètres selon le matériau choisi."
     ),
-    "tuto.2.title": "② Import STL / 3MF",
+    "tuto.2.title": "② Import STL",
     "tuto.2.body":  (
-        "Glissez votre <b>fichier STL ou 3MF</b> dans cette zone, ou cliquez pour ouvrir "
+        "Glissez votre <b>fichier STL</b> dans cette zone, ou cliquez pour ouvrir "
         "l'explorateur de fichiers.\n\n"
         "neoSlice analyse automatiquement la géométrie :\n"
         "<b>surplombs · stabilité · zones fragiles</b>\n"
@@ -704,7 +704,7 @@ _EN: dict[str, str] = {
     # ── DropZone ─────────────────────────────────────────────────────────────
     "drop.main_locked":     "CONFIRM PRINTER",
     "drop.sub_locked":      "and filament to continue\nStep ①",
-    "drop.main":            "DROP STL / 3MF",
+    "drop.main":            "DROP STL FILE",
     "drop.sub":             "or click to browse",
     "drop.dialog_title":    "Open an STL file",
     "drop.dialog_filter":   "3D Files (*.stl *.obj);;All files (*)",
@@ -713,7 +713,7 @@ _EN: dict[str, str] = {
 
     # ── AnalysisPanel ────────────────────────────────────────────────────────
     "analysis.dot_system":  "SYSTEM",
-    "analysis.dot_stl":     "MODEL",
+    "analysis.dot_stl":     "STL",
     "analysis.dot_analysis":"ANALYSIS",
     "analysis.dot_gen":     "GENERATION",
     "analysis.gauge_oh":    "Overhangs",
@@ -904,7 +904,7 @@ _EN: dict[str, str] = {
     # ── ParamsPreview ────────────────────────────────────────────────────────
     "preview.empty_title":  "NO PARAMETERS GENERATED",
     "preview.empty_desc":   (
-        "Import an STL or 3MF file\nthen describe your intent\n"
+        "Import an STL file\nthen describe your intent\n"
         "to generate the configuration."
     ),
     "preview.summary_title":        "SUMMARY",
@@ -1051,7 +1051,7 @@ _EN: dict[str, str] = {
 
     "tuto.0.title": "Welcome to neoSlice",
     "tuto.0.body":  (
-        "neoSlice analyzes your STL or 3MF file and automatically generates optimal print "
+        "neoSlice analyzes your STL file and automatically generates optimal print "
         "parameters for your Bambu Lab printers.\n\n"
         "This guide walks you through the workflow.\n"
         "Adjust the <b>performance mode</b> in settings "
@@ -1066,9 +1066,9 @@ _EN: dict[str, str] = {
         "Do the same for your <b>filament</b>.\n\n"
         "neoSlice automatically adapts parameters based on the chosen material."
     ),
-    "tuto.2.title": "② STL / 3MF Import",
+    "tuto.2.title": "② STL Import",
     "tuto.2.body":  (
-        "Drag your <b>STL or 3MF file</b> into this area, or click to open the file browser.\n\n"
+        "Drag your <b>STL file</b> into this area, or click to open the file browser.\n\n"
         "neoSlice automatically analyzes the geometry:\n"
         "<b>overhangs · stability · fragile zones</b>\n"
         "<b>volume & dimensions · optimal orientation</b>\n\n"

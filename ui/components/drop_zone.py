@@ -14,7 +14,7 @@ from ui.styles.theme import (
     TEXT_SECONDARY, TEXT_LABEL, INACTIVE, FONT_MONO, MANAGER as _T,
     FONT_MAIN,)
 
-_SUPPORTED = {".stl", ".obj", ".3mf"}
+_SUPPORTED = {".stl", ".obj"}
 
 
 class DropZone(QWidget):
