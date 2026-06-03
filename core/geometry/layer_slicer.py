@@ -96,6 +96,7 @@ def analyze_by_layers(
     mesh: trimesh.Trimesh,
     nozzle_diameter_mm: float = 0.4,
     overhang_angle_deg: float = _OVERHANG_ANGLE_DEG,
+    multipart: bool = False,
 ) -> LayerSliceResult:
     """Analyse complète d'un mesh par simulation de couches FDM.
 
@@ -250,12 +251,7 @@ def analyze_by_layers(
     # Pour les meshes multi-composantes (3MF multicolore), les empreintes
     # sont de petits polygones séparés. On utilise la coque convexe globale
     # pour représenter l'empreinte réelle de l'ensemble imprimé.
-    try:
-        body_count = len(mesh.split(only_watertight=False))
-    except Exception:
-        body_count = 1
-
-    if body_count > 1 and ground_geoms:
+    if multipart and ground_geoms:
         from shapely.ops import unary_union as _uu
         from shapely.geometry import MultiPolygon as _MP
         combined = _uu(ground_geoms)

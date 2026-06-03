@@ -125,10 +125,11 @@ class AnalysisWorker(QObject):
     analysis_complete = Signal(object)
     error = Signal(str)
 
-    def __init__(self, mesh, nozzle_diameter_mm: float = 0.4):
+    def __init__(self, mesh, nozzle_diameter_mm: float = 0.4, multipart: bool = False):
         super().__init__()
         self._mesh = mesh
         self._nozzle_mm = float(nozzle_diameter_mm)
+        self._multipart = multipart
 
     def run(self):
         try:
@@ -259,7 +260,7 @@ class AnalysisWorker(QObject):
                     _holder = [None]; _ev = _th.Event()
                     def _run_layers():
                         try:
-                            _holder[0] = analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
+                            _holder[0] = analyze_by_layers(self._mesh, nozzle_diameter_mm=self._nozzle_mm, multipart=self._multipart)
                         except Exception:
                             pass
                         finally:
@@ -1578,6 +1579,7 @@ class MainWindow(QMainWindow):
         self._analysis_worker = AnalysisWorker(
             self._mesh,
             nozzle_diameter_mm=self._current_nozzle_mm,
+            multipart=self._threemf_data is not None,
         )
         self._analysis_worker.moveToThread(self._analysis_thread)
 
