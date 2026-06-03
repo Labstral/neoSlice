@@ -255,7 +255,7 @@ def analyze_by_layers(
     except Exception:
         body_count = 1
 
-    if body_count > 3 and ground_geoms:
+    if body_count > 1 and ground_geoms:
         from shapely.ops import unary_union as _uu
         from shapely.geometry import MultiPolygon as _MP
         combined = _uu(ground_geoms)
