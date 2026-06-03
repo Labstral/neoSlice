@@ -682,10 +682,95 @@ class Viewer3D(QWidget):
         """Annule la Phase 2 en cours en incrémentant le compteur de génération."""
         self._load_gen = getattr(self, '_load_gen', 0) + 1
 
+    # Couleurs de prévisualisation par slot AMS (neutres, distinctes)
+    _SLOT_COLORS = {
+        1: "#DCDCD4", 2: "#7EC4E8", 3: "#E89C6C", 4: "#7CD4A0",
+        5: "#C07CE0", 6: "#E0E07C", 7: "#E07C7C", 8: "#7CE0E0",
+    }
+
+    def _load_multipart_mesh(self, threemf_data) -> None:
+        """Affiche un 3MF multi-objets — chaque objet = acteur séparé coloré par slot."""
+        from core.geometry.threemf_data import ThreeMFData
+
+        combined = threemf_data.combined_mesh
+        self._mesh = combined
+        self._pv_mesh_cache = None
+        self._face_colors = None
+        self._view_mode = "normal"
+        self._plotter.clear()
+        self._setup_lights()
+        self._add_build_plate(combined)
+
+        _bb = combined.bounding_box.extents
+        self._rotation_pivot = np.array([0.0, 0.0, float(_bb[2]) * 0.5])
+
+        # Calcul de l'offset global : centrer XY, poser à Z=0
+        b = combined.bounds
+        ox = -float(b[0] + b[1]) / 2
+        oy = -float(b[2] + b[3]) / 2
+        oz = -float(b[4])
+
+        _total_faces = sum(len(o.mesh.faces) for o in threemf_data.objects)
+        _smooth = _total_faces < 150_000
+
+        for obj in threemf_data.objects:
+            try:
+                m = obj.mesh.copy()
+                if not np.allclose(obj.transform, np.eye(4)):
+                    m.apply_transform(obj.transform)
+                m.apply_translation([ox, oy, oz])
+                pv_obj = self._trimesh_to_pyvista(m)
+                color = self._SLOT_COLORS.get(obj.extruder, "#AABBCC")
+                actor_name = f"obj_{obj.object_id}"
+                self._plotter.add_mesh(
+                    pv_obj, color=color, show_edges=False,
+                    smooth_shading=_smooth,
+                    pbr=False, ambient=0.15, diffuse=0.85,
+                    name=actor_name,
+                )
+            except Exception as _e:
+                logger.warning(f"Objet {obj.name} non affiché : {_e}")
+
+        # Caméra basée sur le mesh combiné
+        try:
+            _elev = math.radians(25)
+            _far  = 1e6
+            self._plotter.camera.position = (0.0, -math.cos(_elev) * _far,
+                                              math.sin(_elev) * _far)
+            self._plotter.camera.focal_point = (0.0, 0.0, 0.0)
+            self._plotter.camera.up = (0.0, 0.0, 1.0)
+            _pad = float(combined.bounding_box.extents.max()) * 0.5
+            # Bounds approximatifs du mesh centré
+            _hw = float(combined.bounding_box.extents[0]) / 2 + _pad
+            _hd = float(combined.bounding_box.extents[1]) / 2 + _pad
+            _ht = float(combined.bounding_box.extents[2]) + _pad
+            _pv_b = [-_hw, _hw, -_hd, _hd, -_pad * 0.2, _ht]
+            try:
+                self._plotter.reset_camera(bounds=_pv_b)
+            except TypeError:
+                self._plotter.reset_camera()
+            self._plotter.renderer.ResetCameraClippingRange()
+        except Exception as _ce:
+            logger.warning(f"Camera setup multipart échoué : {_ce}")
+            self._plotter.reset_camera()
+
+        self._plotter.render()
+        logger.info(f"3MF multipart affiché : {threemf_data.object_count} objets · {threemf_data.slot_count} slot(s)")
+
     def load_mesh(self, mesh) -> None:
-        """Affiche un trimesh.Trimesh — phase 1 immédiate, phase 2 PBR en background."""
+        """Affiche un trimesh.Trimesh ou ThreeMFData."""
         if not HAS_PYVISTA or self._plotter is None:
             return
+
+        # Route vers le renderer multi-acteurs pour les 3MF multicolores
+        try:
+            from core.geometry.threemf_data import ThreeMFData as _TMF
+            if isinstance(mesh, _TMF):
+                self._cancel_mesh_prep()
+                self._load_multipart_mesh(mesh)
+                return
+        except ImportError:
+            pass
 
         # Arrêter Phase 2 précédente AVANT plotter.clear() — évite wglMakeCurrent conflict
         self._cancel_mesh_prep()

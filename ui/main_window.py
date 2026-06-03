@@ -848,6 +848,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._mesh = None
         self._original_mesh = None
+        self._threemf_data = None
         self._analysis: AnalysisReport | None = None
         self._stl_load_thread: QThread | None = None
         self._stl_load_worker: STLLoadWorker | None = None
@@ -1519,13 +1520,22 @@ class MainWindow(QMainWindow):
 
     def _on_stl_load_done(self, mesh):
         """Appelé dans le thread principal quand load_stl() est terminé."""
+        from core.geometry.threemf_data import ThreeMFData
         path = self._stl_path
-        self._mesh = mesh
-        self._original_mesh = mesh.copy()
 
-        # Charger le mesh pendant que l'overlay est encore affiché — évite le flash plateau vide.
-        # set_loading(False) sera appelé par _on_analysis_complete à la fin de l'analyse.
-        self._viewer.load_mesh(self._mesh)
+        if isinstance(mesh, ThreeMFData):
+            self._threemf_data = mesh
+            self._mesh = mesh.combined_mesh
+            logger.info(f"3MF multicolore : {mesh.summary()}")
+        else:
+            self._threemf_data = None
+            self._mesh = mesh
+
+        self._original_mesh = self._mesh.copy()
+
+        # Passer ThreeMFData au viewer pour affichage multi-acteurs colorés,
+        # ou le mesh simple pour affichage normal.
+        self._viewer.load_mesh(mesh)
         self._topbar.set_has_stl(True)
 
         try:
