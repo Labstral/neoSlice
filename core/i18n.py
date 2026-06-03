@@ -71,7 +71,7 @@ _FR: dict[str, str] = {
 
     # ── AnalysisPanel ────────────────────────────────────────────────────────
     "analysis.dot_system":  "SYSTÈME",
-    "analysis.dot_stl":     "STL",
+    "analysis.dot_stl":     "MODELE",
     "analysis.dot_analysis":"ANALYSE",
     "analysis.dot_gen":     "GÉNÉRATION",
     "analysis.gauge_oh":    "Surplombs",
@@ -713,7 +713,7 @@ _EN: dict[str, str] = {
 
     # ── AnalysisPanel ────────────────────────────────────────────────────────
     "analysis.dot_system":  "SYSTEM",
-    "analysis.dot_stl":     "STL",
+    "analysis.dot_stl":     "MODEL",
     "analysis.dot_analysis":"ANALYSIS",
     "analysis.dot_gen":     "GENERATION",
     "analysis.gauge_oh":    "Overhangs",
