@@ -2,7 +2,7 @@ name: best_quality
 label: "Meilleure Qualité"
 description: "Finition maximale, détails fins, surfaces parfaites"
 
-layer_height: 0.10
+layer_height: 0.08
 first_layer_height: 0.20
 wall_loops: 4
 wall_generator: "arachne"
