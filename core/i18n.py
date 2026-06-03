@@ -62,7 +62,7 @@ _FR: dict[str, str] = {
     # ── DropZone ─────────────────────────────────────────────────────────────
     "drop.main_locked":     "VALIDEZ L'IMPRIMANTE",
     "drop.sub_locked":      "et le filament pour continuer\nÉtape ①",
-    "drop.main":            "GLISSER FICHIER STL",
+    "drop.main":            "GLISSER STL / 3MF",
     "drop.sub":             "ou cliquer pour parcourir",
     "drop.dialog_title":    "Ouvrir un fichier STL",
     "drop.dialog_filter":   "Fichiers 3D (*.stl *.obj);;Tous les fichiers (*)",
@@ -704,7 +704,7 @@ _EN: dict[str, str] = {
     # ── DropZone ─────────────────────────────────────────────────────────────
     "drop.main_locked":     "CONFIRM PRINTER",
     "drop.sub_locked":      "and filament to continue\nStep ①",
-    "drop.main":            "DROP STL FILE",
+    "drop.main":            "DROP STL / 3MF",
     "drop.sub":             "or click to browse",
     "drop.dialog_title":    "Open an STL file",
     "drop.dialog_filter":   "3D Files (*.stl *.obj);;All files (*)",
