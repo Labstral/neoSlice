@@ -848,6 +848,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._mesh = None
         self._original_mesh = None
+        self._threemf_data = None          # ThreeMFData si 3MF multicolore
         self._analysis: AnalysisReport | None = None
         self._stl_load_thread: QThread | None = None
         self._stl_load_worker: STLLoadWorker | None = None
@@ -1519,7 +1520,17 @@ class MainWindow(QMainWindow):
 
     def _on_stl_load_done(self, mesh):
         """Appelé dans le thread principal quand load_stl() est terminé."""
+        from core.geometry.threemf_data import ThreeMFData
         path = self._stl_path
+
+        # 3MF multi-objets → extraire le mesh combiné, stocker les données multicolores
+        if isinstance(mesh, ThreeMFData):
+            self._threemf_data = mesh          # sauvegardé pour l'export passthrough
+            mesh = mesh.combined_mesh          # le reste du code utilise le mesh fusionné
+            logger.info(f"3MF multicolore : {self._threemf_data.summary()}")
+        else:
+            self._threemf_data = None          # mono-objet classique
+
         self._mesh = mesh
         self._original_mesh = mesh.copy()
 
@@ -1772,6 +1783,7 @@ class MainWindow(QMainWindow):
                 printer_ui_name=self._current_printer,
                 filament_ui_name=self._current_filament,
                 nozzle_diameter_mm=nozzle_mm,
+                threemf_data=getattr(self, "_threemf_data", None),
             )
             logger.info(f"3MF exporté : {path}")
 

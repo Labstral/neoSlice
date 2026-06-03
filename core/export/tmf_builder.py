@@ -269,9 +269,17 @@ class ThreeMFBuilder:
         printer_ui_name: str = "X1 Carbon",
         filament_ui_name: str = "PLA",
         nozzle_diameter_mm: float = 0.4,
+        threemf_data=None,   # ThreeMFData | None — passthrough multicolore
     ) -> Path:
         self._template = _find_bambu_template()
         output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Passthrough multicolore : on copie le 3MF original et on remplace
+        # uniquement project_settings.config avec les paramètres neoSlice
+        if threemf_data is not None:
+            return self._build_multicolor_passthrough(
+                threemf_data, config, output_path, printer_ui_name, nozzle_diameter_mm
+            )
 
         if self._template:
             return self._build_native(
@@ -680,3 +688,78 @@ class ThreeMFBuilder:
         except Exception as e:
             logger.error(f"Impossible de charger le template : {e}")
             return False
+
+    # ------------------------------------------------------------------
+    # Passthrough multicolore
+    # ------------------------------------------------------------------
+
+    def _build_multicolor_passthrough(
+        self,
+        threemf_data,         # ThreeMFData
+        config: PrintConfig,
+        output_path: Path,
+        printer_ui_name: str,
+        nozzle_diameter_mm: float,
+    ) -> Path:
+        """Copie le 3MF original et remplace uniquement project_settings.config.
+
+        Toutes les données multicolores (objets, slots, model_settings) sont
+        préservées à l'identique. Seuls les paramètres d'impression neoSlice
+        sont injectés.
+        """
+        bbl_id = _UI_TO_BBL.get(printer_ui_name, "X1C")
+
+        # Calculer les overrides de paramètres neoSlice
+        try:
+            printer_template = _PRINTER_TEMPLATE_CACHE.get(bbl_id)
+            if not printer_template:
+                from .bambu_config_resolver import resolve_from_system_profiles
+                printer_template = resolve_from_system_profiles(bbl_id) or {}
+                _PRINTER_TEMPLATE_CACHE[bbl_id] = printer_template
+        except Exception:
+            printer_template = {}
+
+        project_settings = dict(printer_template)
+        project_settings.update(_config_to_bambu_overrides(config))
+
+        # Identifiants machine
+        _base_id = _UI_TO_PRINTER_ID.get(printer_ui_name, "Bambu Lab X1 Carbon 0.4 nozzle")
+        _D = nozzle_diameter_mm
+        project_settings["printer_settings_id"] = _base_id.replace("0.4 nozzle", f"{_D} nozzle")
+        project_settings["default_print_profile"] = f"0.20mm Standard @BBL {bbl_id}"
+        project_settings.pop("different_settings_to_system", None)
+        project_settings["print_settings_id"] = f"neoSlice 0.20mm @BBL {bbl_id}"
+
+        # Nozzle overrides
+        _lw = round(_D + 0.02, 2)
+        _ilw = round(_D * 1.25 if _D <= 0.4 else _D + 0.02, 2)
+        _iww = {0.2: 0.22, 0.4: 0.45, 0.6: 0.62, 0.8: 0.82}.get(_D, _lw)
+        project_settings["nozzle_diameter"] = [str(_D)]
+        project_settings["line_width"] = str(_lw)
+        project_settings["outer_wall_line_width"] = str(_lw)
+        project_settings["inner_wall_line_width"] = str(_iww)
+        project_settings["initial_layer_line_width"] = str(_ilw)
+        project_settings["internal_solid_infill_line_width"] = str(_lw)
+
+        # Filament neutre (pas de dialog Préréglage Personnalisé)
+        project_settings["filament_settings_id"] = ["Generic PLA"]
+        project_settings.pop("different_settings_to_system", None)
+
+        # Copier le 3MF source et remplacer project_settings.config
+        with zipfile.ZipFile(threemf_data.source_path, "r") as src:
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as dst:
+                for item in src.infolist():
+                    if item.filename == "Metadata/project_settings.config":
+                        # Remplacer par nos paramètres
+                        dst.writestr(item.filename, json.dumps(
+                            project_settings, indent=2, ensure_ascii=False
+                        ))
+                    else:
+                        # Copier tel quel (objets, couleurs, model_settings…)
+                        dst.writestr(item, src.read(item.filename))
+
+        logger.info(
+            f"3MF multicolore exporté : {output_path.name} "
+            f"({threemf_data.object_count} objets · {threemf_data.slot_count} slots)"
+        )
+        return output_path
