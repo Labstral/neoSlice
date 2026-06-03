@@ -996,7 +996,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(sep0)
 
         # ── Étape ② — Import STL ──
-        self._step_stl = _StepHeader("②", "Import STL")
+        self._step_stl = _StepHeader("②", "Import STL / 3MF")
         layout.addWidget(self._step_stl)
 
         self._drop_zone = DropZone()
