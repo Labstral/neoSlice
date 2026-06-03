@@ -247,6 +247,24 @@ def analyze_by_layers(
     # ── Calcul de la couche sol (empreinte pour stabilité) ─────────────────
     ground_geoms = [g for z, g in layer_geoms if z <= z_min + pitch * 3 and g is not None]
 
+    # Pour les meshes multi-composantes (3MF multicolore), les empreintes
+    # sont de petits polygones séparés. On utilise la coque convexe globale
+    # pour représenter l'empreinte réelle de l'ensemble imprimé.
+    try:
+        body_count = len(mesh.split(only_watertight=False))
+    except Exception:
+        body_count = 1
+
+    if body_count > 3 and ground_geoms:
+        from shapely.ops import unary_union as _uu
+        from shapely.geometry import MultiPolygon as _MP
+        combined = _uu(ground_geoms)
+        hull = combined.convex_hull
+        if not hull.is_empty and hull.area > combined.area * 1.05:
+            # Remplacer les petits polygones par la coque convexe globale
+            ground_geoms = [hull]
+            logger.debug(f"Stabilité : {body_count} corps → empreinte convexe globale")
+
     # ── Agrégation des résultats ───────────────────────────────────────────
     _compute_overhang_metrics(result, total_area, total_overhang_area,
                                total_projected_ov, pitch, mesh)
