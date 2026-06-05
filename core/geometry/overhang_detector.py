@@ -61,50 +61,60 @@ def analyze_overhangs(
     # Évite que toute une petite pièce soit classée "pont" et ses surplombs ignorés
     max_bridge_adaptive = min(_MAX_BRIDGE_SPAN_MM, float(mesh.bounding_box.extents.max()) * 0.4)
 
-    # ── 1. Lissage des normales (sparse matmul, rapide même sur 1M+ faces) ──
+    # ── 1. Normales brutes (toujours) + lissées pour les métriques ──────────
+    normals_raw = mesh.face_normals.copy()
     if smooth:
-        normals = _smooth_face_normals(mesh, iters=2)
+        normals_smooth = _smooth_face_normals(mesh, iters=2)
     else:
-        normals = mesh.face_normals.copy()
+        normals_smooth = normals_raw
 
     # ── 2. Filtre angulaire ──────────────────────────────────────────────────
     z_down = np.array([0.0, 0.0, -1.0])
-    cos_vals = np.clip(normals @ z_down, -1.0, 1.0)
-    angles_from_zdown = np.degrees(np.arccos(cos_vals))
     cutoff = 90.0 - angle_threshold_deg       # 45° pour threshold=45°
-    mask = angles_from_zdown < cutoff
+
+    # Masque display : normales BRUTES → pas de bleeding sur les murs verticaux adjacents
+    cos_raw = np.clip(normals_raw @ z_down, -1.0, 1.0)
+    angles_from_zdown = np.degrees(np.arccos(cos_raw))
+    disp_init = angles_from_zdown < cutoff
+
+    # Masque métriques : normales lissées → réduction du bruit de tessellation
+    cos_smooth = np.clip(normals_smooth @ z_down, -1.0, 1.0)
+    angles_smooth = np.degrees(np.arccos(cos_smooth))
+    mask = angles_smooth < cutoff
 
     # ── 3. Exclusion plateau ─────────────────────────────────────────────────
     z_min = float(mesh.bounds[0][2])
     z_height = float(mesh.bounds[1][2] - z_min)
-    # Tolérance adaptative. Bornée à 35% de z_height pour ne pas masquer les vrais surplombs
-    # de pièces basses (ex: liner poubelle 9mm, coques iPhone 10mm).
     _aspect = z_height / max(float(mesh.bounding_box.extents[0]),
                               float(mesh.bounding_box.extents[1]), 1.0)
-    # Pièces hautes (aspect ≥ 0.4) : tolérance standard. Plates : un peu plus généreuse.
     _base_tol = 5.0 if _aspect < 0.4 else 3.0
     plate_tol = min(
         max(_base_tol, z_height * 0.08),
-        z_height * 0.35,  # jamais plus de 35% de la hauteur totale
+        z_height * 0.35,
     )
     face_centroids = mesh.triangles_center
     on_plate = (
         (face_centroids[:, 2] <= z_min + plate_tol)
-        & (normals[:, 2] < -0.20)
+        & (normals_raw[:, 2] < -0.20)
     )
-    mask = mask & ~on_plate
-
-    # Note: le filtre internal_flat a été retiré — il excluait incorrectement
-    # le dessous de modèles plats (coques, plaques) qui ont aussi nz ≈ -1.0.
+    disp_init = disp_init & ~on_plate
+    mask     = mask     & ~on_plate
 
     # ── 4-6. Clustering scipy + filtre surface + ponts ───────────────────────
-    display_mask = mask.copy()   # masque brut avant filtre pont — pour la visu
+    # display_mask : filtre angulaire brut uniquement — pas de filtre pont/cluster.
+    # Montre TOUTES les faces géométriquement en surplomb (filets de vis, arêtes,
+    # petits détails). L'absence de lissage évite le bleeding sur les murs verticaux.
+    display_mask = disp_init.copy()
+
+    # critical_face_mask : normales lissées + filtre pont + filtre cluster → métriques
     if mask.any():
         mask = _filter_clusters_and_bridges(
-            mesh, normals, mask,
+            mesh, normals_smooth, mask,
             min_area=min_cluster_area,
             max_bridge=max_bridge_adaptive,
         )
+
+    normals = normals_raw  # alias pour les calculs suivants (angles, métriques)
 
     # ── 7. Régions flottantes ────────────────────────────────────────────────
     has_floating = _detect_floating_regions(mesh) if check_floating else False

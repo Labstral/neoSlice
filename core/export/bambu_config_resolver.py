@@ -126,19 +126,16 @@ def resolve_from_system_profiles(printer_model: str | None = None) -> dict | Non
         else:
             logger.warning(f"Profil système manquant : {filename}")
 
-    # 2. Profil printer-specific — fallback sur le profil de base générique si absent
-    _generic_base = list(_PRINTER_PROCESS_PROFILES.values())[0]  # premier profil disponible
-    printer_profile = _PRINTER_PROCESS_PROFILES.get(printer_model, _generic_base)
-    path = _BBL_PROCESS / printer_profile
-    if path.exists():
-        data = _load_json_flat(path)
-        merged.update(data)
-        logger.info(f"Profil process chargé : {printer_profile}")
-    else:
-        # Fallback sur X1C si le profil printer n'existe pas
-        fallback = _BBL_PROCESS / _PRINTER_PROCESS_PROFILES["X1C"]
-        if fallback.exists():
-            merged.update(_load_json_flat(fallback))
+    # 2. Profil printer-specific — pas de fallback X1C, chaque printer garde son identité
+    printer_profile = _PRINTER_PROCESS_PROFILES.get(printer_model)
+    if printer_profile:
+        path = _BBL_PROCESS / printer_profile
+        if path.exists():
+            data = _load_json_flat(path)
+            merged.update(data)
+            logger.info(f"Profil process chargé : {printer_profile}")
+        else:
+            logger.warning(f"Profil process introuvable pour {printer_model} : {printer_profile}")
 
     # 3. Ajouter les clés filament (PLA générique)
     for filename in _GENERIC_PLA_CHAIN:
@@ -218,4 +215,4 @@ def _printer_settings_id(printer_model: str) -> str:
         "A2L": "Bambu Lab A2L 0.4 nozzle",
         "H2D": "Bambu Lab H2D 0.4 nozzle",
     }
-    return names.get(printer_model, "Bambu Lab X1 Carbon 0.4 nozzle")
+    return names.get(printer_model, f"Bambu Lab {printer_model} 0.4 nozzle")

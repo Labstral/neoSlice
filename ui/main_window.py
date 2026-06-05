@@ -1647,11 +1647,13 @@ class MainWindow(QMainWindow):
         # Pré-sélection automatique des presets selon l'analyse
         self._intent_selector.auto_select_from_analysis(report)
 
-        if report.overhang_severity > 0.0 or report.support_needed:
+        _is_multipart = self._threemf_data is not None and self._threemf_data.object_count > 1
+        # Pour les 3MF multi-objets : toujours coloriser — l'analyse du mesh combiné
+        # sous-estime les surplombs (plate_tol trop grande car z_height = hauteur de la plus
+        # grande pièce, excluant les surplombs des petites pièces).
+        if _is_multipart or report.overhang_severity > 0.0 or report.support_needed or report.overhang_ratio > 0.0:
             try:
-                # Pour les 3MF multi-objets : analyser chaque objet séparément
-                # pour éviter les interférences entre meshes dans l'analyse combinée.
-                if self._threemf_data is not None and self._threemf_data.object_count > 1:
+                if _is_multipart:
                     colors = self._build_multipart_overhang_colors()
                 else:
                     ov = report.overhang_result
@@ -1704,19 +1706,18 @@ class MainWindow(QMainWindow):
         from core.geometry.overhang_detector import analyze_overhangs, overhang_face_colors
 
         td = self._threemf_data
-        per_obj: list[tuple] = []  # (mesh, colors, overhang_ratio, n_faces)
+        per_obj: list[tuple] = []  # (mesh, colors, overhang_ratio, viewer_n_faces)
 
-        # Utiliser le mesh propre (min faces) pour toutes les copies similaires
-        _face_counts = [len(o.mesh.faces) for o in td.objects]
-        _min_fc = min(_face_counts) if _face_counts else 0
-        _clean_ref = td.objects[_face_counts.index(_min_fc)].mesh if _face_counts else None
+        # Face count corrigé du viewer (même logique que _load_multipart_mesh)
+        _raw_fc  = [len(o.mesh.faces) for o in td.objects]
+        _min_fc  = min(_raw_fc) if _raw_fc else 0
 
         for obj in td.objects:
-            _fc = len(obj.mesh.faces)
-            _dev = abs(_fc - _min_fc) / max(_min_fc, 1) if _min_fc > 0 else 0
-            _src = (_clean_ref.copy() if _dev > 0 and _dev < 0.05 and _clean_ref is not None
-                    else obj.mesh.copy())
-            m = _src
+            orig_fc = len(obj.mesh.faces)
+            dev = abs(orig_fc - _min_fc) / max(_min_fc, 1) if _min_fc > 0 else 0
+            viewer_fc = _min_fc if (dev > 0 and dev < 0.05) else orig_fc
+
+            m = obj.mesh.copy()
             if not np.allclose(obj.transform, np.eye(4)):
                 m.apply_transform(obj.transform)
             m.apply_translation([0.0, 0.0, -float(m.bounds[0][2])])
@@ -1731,11 +1732,20 @@ class MainWindow(QMainWindow):
                     display_mask=ov.display_mask,
                 )
                 colors = overhang_face_colors(m, visu_ov)
-                per_obj.append((m, colors, float(ov.overhang_ratio), len(m.faces)))
+                # Adapter au face count du viewer si correction appliquée
+                if len(colors) != viewer_fc:
+                    if len(colors) > viewer_fc:
+                        colors = colors[:viewer_fc]
+                    else:
+                        extra = viewer_fc - len(colors)
+                        pad = np.zeros((extra, 4), dtype=np.uint8)
+                        pad[:, 1] = 128; pad[:, 3] = 255
+                        colors = np.vstack([colors, pad])
+                per_obj.append((m, colors, float(ov.overhang_ratio), viewer_fc))
             except Exception:
-                safe = np.zeros((len(m.faces), 4), dtype=np.uint8)
+                safe = np.zeros((viewer_fc, 4), dtype=np.uint8)
                 safe[:, 1] = 128; safe[:, 3] = 255
-                per_obj.append((m, safe, 0.0, len(m.faces)))
+                per_obj.append((m, safe, 0.0, viewer_fc))
 
         if not per_obj:
             return np.zeros((len(self._mesh.faces), 4), dtype=np.uint8)
@@ -1745,39 +1755,9 @@ class MainWindow(QMainWindow):
         # Le filtre internal_flat dans analyze_overhangs (nz < -0.92 à mi-hauteur)
         # + l'utilisation du mesh propre (min faces) suffisent pour éliminer le cylindre.
 
-        # Symétrie : pour les copies similaires du même modèle, utiliser l'analyse
-        # du mesh avec le MOINS de faces (le "propre", non modifié par boolean ops).
-        # Ex: negative_part BS crée des faces supplémentaires sur 1 copie → artefact jaune.
         all_colors = []
-        face_counts = [e[3] for e in per_obj]
-        min_fc = min(face_counts)
-        avg_fc = sum(face_counts) / len(face_counts)
-
-        # Référence = objet avec le moins de faces (non modifié par boolean ops)
-        # Utilisé pour TOUS les objets similaires (±5% de la taille min)
-        ref_idx = face_counts.index(min_fc)
-        ref_colors = per_obj[ref_idx][1]
-
         for i, (m, colors, ratio, nf) in enumerate(per_obj):
-            deviation = abs(nf - min_fc) / max(min_fc, 1)
-            if deviation < 0.05:
-                if nf == min_fc:
-                    # Objet de référence — utiliser ses propres couleurs
-                    all_colors.append(ref_colors)
-                else:
-                    # Mesh avec faces boolean supplémentaires :
-                    # Utiliser les couleurs de la référence (490,639 faces)
-                    # pour les premières faces, et marquer "safe" les faces en excès.
-                    # Les faces boolean sont typiquement ajoutées EN FIN de liste par BS.
-                    extra = nf - min_fc  # = 1,440 faces boolean
-                    safe_extra = np.zeros((extra, 4), dtype=np.uint8)
-                    safe_extra[:, 1] = 128
-                    safe_extra[:, 3] = 255
-                    colors_fixed = np.vstack([ref_colors, safe_extra])
-                    logger.info(f"Groupe {i}: {extra} faces boolean masquées (safe)")
-                    all_colors.append(colors_fixed)
-            else:
-                all_colors.append(colors)
+            all_colors.append(colors)
 
         return np.vstack(all_colors) if all_colors else np.zeros((len(self._mesh.faces), 4), dtype=np.uint8)
 

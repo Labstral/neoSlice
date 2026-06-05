@@ -1332,64 +1332,43 @@ class Viewer3D(QWidget):
         self._plotter.clear()
         self._setup_lights()
         self._add_build_plate(mesh)
-        # NB : compute_normals avec split_vertices=False pour garder n_points
-        # identique au array v_sev. smooth_shading=True gère le lissage visuel.
         pv_mesh = self._place_on_plate(self._trimesh_to_pyvista(mesh))
 
-        # ── Vertex scalars avec pondération par fraction surplomb ────────────────
-        # Principe anti-spike : un vertex frontière (partagé entre face surplomb et
-        # grande face safe) reçoit une valeur proportionnelle à la FRACTION d'aire
-        # de ses faces surplombs. Ex: 1 petite face surplomb + 5 grandes faces safe
-        # → fraction ≈ 0.05 → valeur ≈ 0.05 × sévérité → gradient invisible.
+        # Safety : face count mismatch (ex: per-object analysis vs viewer mesh corrigé)
+        # → re-calculer les couleurs sur le mesh du viewer directement
+        if len(face_colors) != len(mesh.faces):
+            logger.warning(
+                f"colorize_overhangs: mismatch {len(face_colors)} colors vs {len(mesh.faces)} faces — recalcul"
+            )
+            try:
+                from core.geometry.overhang_detector import analyze_overhangs, overhang_face_colors as _ofc
+                _ov = analyze_overhangs(mesh, smooth=True, check_floating=False)
+                face_colors = _ofc(mesh, _ov)
+                self._face_colors = face_colors
+            except Exception:
+                self._plotter.render()
+                return
 
-        face_sev_raw = face_colors[:, 0].astype(np.float64) / 255.0
-        ovh_mask_f   = (face_colors[:, 1] == 0).astype(np.float64)  # 1=surplomb, 0=safe
+        # ── Scalaires par FACE (cell_data) — aucun bleeding entre faces ────────
+        # Chaque face reçoit sa propre valeur de sévérité. Zéro interpolation possible
+        # entre face surplomb et face safe adjacente. Même approche que Bambu Studio.
+        face_sev_raw = face_colors[:, 0].astype(np.float32) / 255.0
+        ovh_mask     = face_colors[:, 1] == 0   # True = face surplomb
 
-        n_v   = len(mesh.vertices)
-        f     = mesh.faces
-        flat  = f.ravel()
-        v0, v1, v2 = f[:, 0], f[:, 1], f[:, 2]
-        face_areas = mesh.area_faces.astype(np.float64)
+        # Sévérité par face : valeur brute uniquement sur les faces surplombs
+        face_sev = np.where(ovh_mask, face_sev_raw, 0.0).astype(np.float32)
 
-        # Aire surplomb et aire totale par vertex
-        ovh_area  = np.bincount(flat, weights=np.repeat(face_areas * ovh_mask_f, 3), minlength=n_v)
-        tot_area  = np.bincount(flat, weights=np.repeat(face_areas,              3), minlength=n_v)
-        ovh_frac  = (ovh_area / np.maximum(tot_area, 1e-10)).astype(np.float32)
-
-        # Sévérité area-weighted depuis les faces surplombs uniquement
-        wsum = np.bincount(flat, weights=np.repeat(face_sev_raw * ovh_mask_f * face_areas, 3), minlength=n_v)
-        v_sev = np.where(ovh_area > 1e-10, wsum / np.maximum(ovh_area, 1e-10), 0.0).astype(np.float32)
-
-        # Pondérer par fraction → vertices frontière atténués naturellement
-        v_sev *= ovh_frac
-
-        # 1 passe de lissage léger — réduit les artefacts triangulaires sans
-        # propager la couleur vers les surfaces plates adjacentes (ex: intérieur coque)
-        v_sev_orig = v_sev.copy()
-        n_conn = np.maximum(np.bincount(flat, minlength=n_v) * 2, 1).astype(np.float32)
-        nbr = (
-            np.bincount(v0, weights=v_sev[v1] + v_sev[v2], minlength=n_v)
-          + np.bincount(v1, weights=v_sev[v0] + v_sev[v2], minlength=n_v)
-          + np.bincount(v2, weights=v_sev[v0] + v_sev[v1], minlength=n_v)
-        )
-        v_sev_s = v_sev * 0.85 + (nbr / n_conn).astype(np.float32) * 0.15
-        # Préserver les pics (zones sévères ≥ 0.40), lisser les frontières
-        v_sev = np.where(v_sev_orig >= 0.40,
-                         np.maximum(v_sev_s, v_sev_orig * 0.92),
-                         v_sev_s)
-
-        pv_mesh.point_data["overhang"] = v_sev.astype(np.float32)
+        pv_mesh.cell_data["overhang"] = face_sev
         self._plotter.add_mesh(
             pv_mesh,
             scalars="overhang",
             cmap=_OVERHANG_CMAP_DARK if _T.is_dark() else _OVERHANG_CMAP_LIGHT,
             clim=[0.0, 1.0],
             show_scalar_bar=False,
-            smooth_shading=True,
-            # ambient élevé = couleurs surplomb dominent, triangles de shading invisibles
-            # (même principe que BS/PrusaSlicer pour leur vue surplombs)
-            ambient=0.88,
-            diffuse=0.12,
+            smooth_shading=False,
+            # ambient élevé = couleurs surplomb dominent
+            ambient=0.82,
+            diffuse=0.18,
             specular=0.0,
             name="main_mesh",
         )
