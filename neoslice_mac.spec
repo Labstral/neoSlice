@@ -1,6 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
+import sys as _sys
+_sys.path.insert(0, str(Path('.').resolve()))
+from version import __version__ as _APP_VERSION
 
 # ─────────────────────────────────────────────────────────────────
 #  Filtres d'exclusion — réduction maximale de la taille du bundle
@@ -208,8 +211,8 @@ app = BUNDLE(
     icon='assets/neoSlice.icns',
     bundle_identifier='com.emmanuelpercheron.neoslice',
     info_plist={
-        'CFBundleShortVersionString': '0.1.2',
-        'CFBundleVersion': '0.1.2',
+        'CFBundleShortVersionString': _APP_VERSION,
+        'CFBundleVersion': _APP_VERSION,
         'NSHighResolutionCapable': True,
         'LSMinimumSystemVersion': '12.0',
     },

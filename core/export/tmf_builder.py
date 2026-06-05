@@ -188,7 +188,7 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
     else:
         overrides["enable_support"] = "1"
         overrides["support_type"] = config.support_type
-        overrides["support_style"] = "tree_slim" if "tree" in config.support_type else "default"
+        overrides["support_style"] = "default"   # "default" = style normal BS, "tree_slim" = buisson dense
         overrides["support_threshold_angle"] = s(int(config.support_threshold_angle))
         overrides["support_on_build_plate_only"] = "1" if config.support_on_build_plate_only else "0"
         overrides["support_angle"] = "0"
@@ -204,8 +204,8 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
 _UI_TO_BBL: dict[str, str] = {
     # Série H2
     "H2D":           "H2D",
-    "H2C":           "H2D",    # pas de profils H2C distincts dans BS
-    "H2S":           "H2D",
+    "H2C":           "H2C",    # BS a ses propres profils H2C (machine/Bambu Lab H2C 0.4 nozzle.json)
+    "H2S":           "H2S",
     "H2D Pro":       "H2D",
     # Série X
     "X1 Carbon":     "X1C",
@@ -224,9 +224,9 @@ _UI_TO_BBL: dict[str, str] = {
 # printer_settings_id exact attendu par Bambu Studio pour chaque modèle
 _UI_TO_PRINTER_ID: dict[str, str] = {
     "H2D":           "Bambu Lab H2D 0.4 nozzle",
-    "H2C":           "Bambu Lab H2D 0.4 nozzle",
-    "H2S":           "Bambu Lab H2D 0.4 nozzle",
-    "H2D Pro":       "Bambu Lab H2D 0.4 nozzle",
+    "H2C":           "Bambu Lab H2C 0.4 nozzle",
+    "H2S":           "Bambu Lab H2S 0.4 nozzle",
+    "H2D Pro":       "Bambu Lab H2D Pro 0.4 nozzle",
     "X1 Carbon":     "Bambu Lab X1 Carbon 0.4 nozzle",
     "X1E":           "Bambu Lab X1E 0.4 nozzle",
     "X2D":           "Bambu Lab X2D 0.4 nozzle",
@@ -281,6 +281,82 @@ class ThreeMFBuilder:
         else:
             return self._build_fallback(mesh, config, output_path, object_name)
 
+    def inject_settings_into_3mf(
+        self,
+        source_path: Path,
+        config: PrintConfig,
+        output_path: Path,
+        printer_ui_name: str = "X1 Carbon",
+        filament_ui_name: str = "PLA",
+        nozzle_diameter_mm: float = 0.4,
+    ) -> Path:
+        """Injecte les paramètres neoSlice dans un 3MF existant sans toucher à la géométrie.
+
+        Copie le 3MF source tel quel (préserve modifier_part, components, toute la structure
+        originale) et remplace uniquement project_settings.config avec les paramètres générés.
+        Évite la reconstruction depuis zéro qui perd les modifier_part → Generic-Cubes solides.
+        """
+        import shutil, json
+        self._template = _find_bambu_template()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Copier le 3MF source → output
+        shutil.copy2(source_path, output_path)
+
+        # Lire le project_settings.config ORIGINAL du 3MF source comme base.
+        # On MERGE nos overrides dessus — ça préserve max_volumetric_speed,
+        # filament_settings_id et les autres clés que neoSlice ne touche pas.
+        # Évite les warnings BS "Vitesse volumétrique max trop faible".
+        _original_ps = {}
+        try:
+            with zipfile.ZipFile(source_path, "r") as _zsrc:
+                if "Metadata/project_settings.config" in _zsrc.namelist():
+                    _original_ps = json.loads(_zsrc.read("Metadata/project_settings.config"))
+        except Exception:
+            pass
+
+        # Partir des settings originaux + overrides neoSlice (pas depuis le template BS)
+        bbl_id = _UI_TO_BBL.get(printer_ui_name, printer_ui_name)
+        project_settings = dict(_original_ps)  # base = settings originaux du fichier
+        project_settings.update(_config_to_bambu_overrides(config))
+
+        _D = nozzle_diameter_mm
+        _lw = round(_D + 0.02, 2)
+        project_settings["nozzle_diameter"] = [str(_D)]
+        project_settings["line_width"] = str(_lw)
+
+        _base_id = _UI_TO_PRINTER_ID.get(printer_ui_name,
+                                          f"Bambu Lab {printer_ui_name} 0.4 nozzle")
+        project_settings["printer_settings_id"] = _base_id.replace("0.4 nozzle",
+                                                                      f"{_D} nozzle")
+        project_settings.pop("different_settings_to_system", None)
+
+        _lh_val = project_settings.get("layer_height", "0.20")
+        try:
+            _lh_display = f"{float(_lh_val):.2f}"
+        except (ValueError, TypeError):
+            _lh_display = "0.20"
+        project_settings["print_settings_id"] = f"neoSlice {_lh_display}mm @BBL {bbl_id}"
+
+        # Injecter dans le ZIP en remplaçant uniquement project_settings.config
+        tmp = output_path.with_suffix(".tmp")
+        try:
+            with zipfile.ZipFile(output_path, "r") as zin, \
+                 zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    if item.filename == "Metadata/project_settings.config":
+                        zout.writestr(item, json.dumps(project_settings,
+                                                       indent=4, ensure_ascii=False))
+                    else:
+                        zout.writestr(item, zin.read(item.filename))
+            tmp.replace(output_path)
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
+
+        logger.info(f"3MF injecté (structure originale préservée) → {output_path}")
+        return output_path
+
     # ------------------------------------------------------------------
     # Build natif Bambu Studio (avec template)
     # ------------------------------------------------------------------
@@ -297,7 +373,16 @@ class ThreeMFBuilder:
         item_uuid = str(uuid.uuid4())
         build_uuid = str(uuid.uuid4())
 
-        bbl_id = _UI_TO_BBL.get(printer_ui_name, "X1C")
+        # bbl_id : si le printer n'est pas dans le dict c'est un bug de code à corriger,
+        # pas à masquer avec un fallback silencieux. On log l'erreur et on tente quand même.
+        bbl_id = _UI_TO_BBL.get(printer_ui_name)
+        if bbl_id is None:
+            logger.error(
+                f"Printer '{printer_ui_name}' absent de _UI_TO_BBL — "
+                "ajouter ce modèle dans tmf_builder.py. "
+                "Export tenté avec le nom UI comme bbl_id."
+            )
+            bbl_id = printer_ui_name  # utiliser le nom tel quel, BS le rejettera proprement
 
         # Paramètres : charger le template du bon printer (mis en cache par printer_id)
         if bbl_id not in _PRINTER_TEMPLATE_CACHE:
@@ -323,8 +408,11 @@ class ThreeMFBuilder:
         project_settings["initial_layer_line_width"]           = str(_ilw)
         project_settings["internal_solid_infill_line_width"]   = str(_lw)
 
-        # ID machine — on inclut la taille de buse réelle dans le printer_settings_id.
-        _base_id = _UI_TO_PRINTER_ID.get(printer_ui_name, "Bambu Lab X1 Carbon 0.4 nozzle")
+        # ID machine — jamais de fallback X1C. Si inconnu, construire depuis le nom UI.
+        _base_id = _UI_TO_PRINTER_ID.get(printer_ui_name)
+        if _base_id is None:
+            _base_id = f"Bambu Lab {printer_ui_name} 0.4 nozzle"
+            logger.warning(f"printer_settings_id inconnu pour '{printer_ui_name}' — construit: {_base_id}")
         project_settings["printer_settings_id"] = _base_id.replace("0.4 nozzle", f"{_D} nozzle")
 
         # Profil process par défaut — adapté au printer sélectionné (template peut être X1C)
@@ -338,73 +426,16 @@ class ThreeMFBuilder:
         # Si print_settings_id correspond à un preset installé dans BS, BS recharge
         # ce preset PAR-DESSUS project_settings.config → écrase enable_support='1'.
         # Avec un ID inconnu de BS, il utilise project_settings.config directement.
-        project_settings["print_settings_id"] = f"neoSlice 0.20mm @BBL {bbl_id}"
+        # Utiliser la vraie hauteur de couche dans l'ID pour que BS affiche la bonne résolution.
+        # L'ID doit rester INCONNU de BS (préfixe "neoSlice") pour éviter l'écrasement du preset.
+        _lh_val = project_settings.get("layer_height", "0.20")  # déjà mis à jour par _config_to_bambu_overrides
+        try:
+            _lh_display = f"{float(_lh_val):.2f}"
+        except (ValueError, TypeError):
+            _lh_display = "0.20"
+        project_settings["print_settings_id"] = f"neoSlice {_lh_display}mm @BBL {bbl_id}"
 
-        # Remplacer tous les réglages filament par un slot "Generic PLA" neutre.
-        # Bambu Studio exige la présence de ces clés pour charger le fichier sans crasher.
-        # Les valeurs correspondent exactement au profil built-in "Generic PLA" de BS
-        # → pas de dialog "Préréglage Personnalisé", pas de crash.
-        # L'utilisateur configure le filament lui-même dans BS (guidé par la fiche PDF).
-        _filament_strip = [k for k in project_settings
-                           if k.startswith("filament_") or k.startswith("default_filament_")]
-        _filament_strip += [
-            "nozzle_temperature", "nozzle_temperature_initial_layer",
-            "nozzle_temperature_range_high", "nozzle_temperature_range_low",
-            "required_nozzle_HRC",
-        ]
-        for _k in _filament_strip:
-            project_settings.pop(_k, None)
-        project_settings.update({
-            "filament_settings_id":              ["Generic PLA"],
-            "filament_colour":                   ["#FFFFFF"],
-            "filament_type":                     ["PLA"],
-            "filament_diameter":                 ["1.75"],
-            "filament_density":                  ["1.24"],
-            "filament_flow_ratio":               ["0.98"],
-            "filament_is_support":               ["0"],
-            "filament_soluble":                  ["0"],
-            "nozzle_temperature":                ["220"],
-            "nozzle_temperature_initial_layer":  ["220"],
-            "nozzle_temperature_range_high":     ["240"],
-            "nozzle_temperature_range_low":      ["190"],
-            "required_nozzle_HRC":               ["3"],
-        })
-
-        # Remplacer tous les réglages filament par un slot "Generic PLA" neutre.
-        # Bambu Studio exige la présence de ces clés pour charger le fichier sans crasher.
-        # Les valeurs correspondent exactement au profil built-in "Generic PLA" de BS
-        # → pas de dialog "Préréglage Personnalisé", pas de crash.
-        # L'utilisateur configure le filament lui-même dans BS (guidé par la fiche PDF).
-        _filament_strip = [k for k in project_settings
-                           if k.startswith("filament_") or k.startswith("default_filament_")]
-        _filament_strip += [
-            "nozzle_temperature", "nozzle_temperature_initial_layer",
-            "nozzle_temperature_range_high", "nozzle_temperature_range_low",
-            "required_nozzle_HRC",
-        ]
-        for _k in _filament_strip:
-            project_settings.pop(_k, None)
-        project_settings.update({
-            "filament_settings_id":              ["Generic PLA"],
-            "filament_colour":                   ["#FFFFFF"],
-            "filament_type":                     ["PLA"],
-            "filament_diameter":                 ["1.75"],
-            "filament_density":                  ["1.24"],
-            "filament_flow_ratio":               ["0.98"],
-            "filament_is_support":               ["0"],
-            "filament_soluble":                  ["0"],
-            "nozzle_temperature":                ["220"],
-            "nozzle_temperature_initial_layer":  ["220"],
-            "nozzle_temperature_range_high":     ["240"],
-            "nozzle_temperature_range_low":      ["190"],
-            "required_nozzle_HRC":               ["3"],
-        })
-
-        # Remplacer tous les réglages filament par un slot "Generic PLA" neutre.
-        # Bambu Studio exige la présence de ces clés pour charger le fichier sans crasher.
-        # Les valeurs correspondent exactement au profil built-in "Generic PLA" de BS
-        # → pas de dialog "Préréglage Personnalisé", pas de crash.
-        # L'utilisateur configure le filament lui-même dans BS (guidé par la fiche PDF).
+        # Slot filament Generic PLA neutre — BS exige ces clés pour charger sans crash.
         _filament_strip = [k for k in project_settings
                            if k.startswith("filament_") or k.startswith("default_filament_")]
         _filament_strip += [
@@ -441,17 +472,13 @@ class ThreeMFBuilder:
             with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr("[Content_Types].xml", self._content_types())
                 zf.writestr("_rels/.rels", self._rels(has_thumbnail=False))
+                # Géométrie INLINE dans 3dmodel.model (pas de fichier séparé object_1.model).
+                # Un fichier séparé + _rels pointant dessus causait un double-chargement par BS :
+                # le mesh apparaissait 2× (une fois à Z=0 + une fois placé), créant un intérieur
+                # ouvert avec des supports partout dedans.
                 zf.writestr(
                     "3D/3dmodel.model",
-                    self._main_model(obj_uuid, comp_uuid, item_uuid, build_uuid, transform, object_name),
-                )
-                zf.writestr(
-                    "3D/_rels/3dmodel.model.rels",
-                    self._model_rels(),
-                )
-                zf.writestr(
-                    "3D/Objects/object_1.model",
-                    self._object_model(mesh),
+                    self._inline_model(mesh, obj_uuid, item_uuid, build_uuid, transform, object_name),
                 )
                 zf.writestr(
                     "Metadata/model_settings.config",
@@ -534,8 +561,64 @@ class ThreeMFBuilder:
  </build>
 </model>"""
 
+    def _inline_model(
+        self, mesh: trimesh.Trimesh,
+        obj_uuid: str, item_uuid: str, build_uuid: str,
+        transform: str, object_name: str,
+    ) -> str:
+        """Modèle 3MF complet avec géométrie inline — évite le double-chargement BS."""
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        # Merger les vertices AVANT export — critique pour les meshes chargés avec process=False.
+        # Sans merge, chaque triangle a 3 vertices uniques → aucune arête partagée → BS
+        # voit le mesh comme totalement ouvert → supports générés à l'intérieur du modèle.
+        export_mesh = mesh
+        n_before = len(mesh.vertices)
+        if len(mesh.vertices) > len(mesh.faces):
+            # Ratio verts/faces > 1 = vertices non-mergés (3 par face) → merger nécessaire
+            try:
+                export_mesh = mesh.copy()
+                export_mesh.merge_vertices(merge_tex=False)
+                logger.info(f"Export: merge_vertices {n_before} → {len(export_mesh.vertices)} vertices")
+            except Exception as _me:
+                logger.warning(f"merge_vertices export échoué ({_me}) — utilisation mesh brut")
+                export_mesh = mesh
+
+        verts_lines = "\n".join(
+            f'      <vertex x="{v[0]:.4f}" y="{v[1]:.4f}" z="{v[2]:.4f}"/>'
+            for v in export_mesh.vertices
+        )
+        tris_lines = "\n".join(
+            f'      <triangle v1="{f[0]}" v2="{f[1]}" v3="{f[2]}"/>'
+            for f in export_mesh.faces
+        )
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="{_NS_3MF}" xmlns:BambuStudio="{_NS_BBL}" xmlns:p="{_NS_PROD}" requiredextensions="p">
+ <metadata name="Application">BambuStudio-{BAMBU_VERSION}</metadata>
+ <metadata name="BambuStudio:3mfVersion">1.9.0</metadata>
+ <metadata name="CreationDate">{today}</metadata>
+ <metadata name="ModificationDate">{today}</metadata>
+ <metadata name="Title">{object_name}</metadata>
+ <resources>
+  <object id="1" p:UUID="{obj_uuid}" type="model" name="{object_name}">
+   <mesh>
+    <vertices>
+{verts_lines}
+    </vertices>
+    <triangles>
+{tris_lines}
+    </triangles>
+   </mesh>
+   <BambuStudio:Stats edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0"/>
+  </object>
+ </resources>
+ <build p:UUID="{build_uuid}">
+  <item objectid="1" p:UUID="{item_uuid}" transform="{transform}" printable="1"/>
+ </build>
+</model>"""
+
     def _object_model(self, mesh: trimesh.Trimesh) -> str:
-        """Géométrie dans 3D/Objects/object_1.model."""
+        """Géométrie dans 3D/Objects/object_1.model (gardé pour compatibilité fallback)."""
         verts_lines = "\n".join(
             f'    <vertex x="{v[0]:.4f}" y="{v[1]:.4f}" z="{v[2]:.4f}"/>'
             for v in mesh.vertices
@@ -561,9 +644,10 @@ class ThreeMFBuilder:
 </model>"""
 
     def _model_settings(self, face_count: int, object_name: str) -> str:
+        # object id="1" : cohérent avec la géométrie inline dans _inline_model.
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <config>
-  <object id="2">
+  <object id="1">
     <metadata key="name" value="{object_name}"/>
     <metadata key="extruder" value="1"/>
     <metadata face_count="{face_count}"/>
@@ -579,16 +663,12 @@ class ThreeMFBuilder:
       <mesh_stat face_count="{face_count}" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>
     </part>
   </object>
-  <plate>
+  <plate index="0">
     <metadata key="plater_id" value="1"/>
     <metadata key="plater_name" value=""/>
     <metadata key="locked" value="false"/>
     <metadata key="thumbnail_file" value=""/>
-    <model_instance>
-      <metadata key="object_id" value="2"/>
-      <metadata key="instance_id" value="0"/>
-      <metadata key="identify_id" value="1"/>
-    </model_instance>
+    <model_instance objectid="1" instance_id="0" identify_id="0" plater_id="0" printable="true"/>
   </plate>
 </config>"""
 

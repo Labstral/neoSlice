@@ -62,10 +62,10 @@ _FR: dict[str, str] = {
     # ── DropZone ─────────────────────────────────────────────────────────────
     "drop.main_locked":     "VALIDEZ L'IMPRIMANTE",
     "drop.sub_locked":      "et le filament pour continuer\nÉtape ①",
-    "drop.main":            "GLISSER FICHIER STL",
+    "drop.main":            "GLISSER FICHIER STL / 3MF",
     "drop.sub":             "ou cliquer pour parcourir",
-    "drop.dialog_title":    "Ouvrir un fichier STL",
-    "drop.dialog_filter":   "Fichiers 3D (*.stl *.obj);;Tous les fichiers (*)",
+    "drop.dialog_title":    "Ouvrir un fichier 3D",
+    "drop.dialog_filter":   "Fichiers 3D (*.stl *.obj *.3mf);;Tous les fichiers (*)",
     "drop.reopen":          "↺  Réouvrir : {name}",
     "drop.sub_loaded":      "cliquer pour changer",
 
@@ -129,8 +129,8 @@ _FR: dict[str, str] = {
     "viewer.loading_default":   "ANALYSE EN COURS...",
     "viewer.loading_sub":       "CALCUL EN COURS — VEUILLEZ PATIENTER",
     "viewer.no_pyvista":        "Visualisation 3D\n\nInstallez pyvistaqt pour activer le viewer :\npip install pyvistaqt",
-    "viewer.show_plate":        "▦  Plateau",
-    "viewer.auto_rotate":       "⟳  Rotation auto",
+    "viewer.show_plate":        "Plateau",
+    "viewer.auto_rotate":       "Rotation auto",
     "viewer.orient_btn":        "↻  Appliquer l'orientation optimale",
     "viewer.orient_optimal":    "✓  Orientation actuelle : optimale",
     "viewer.orient_apply_lbl":  "↻  {label}",
@@ -437,29 +437,26 @@ _FR: dict[str, str] = {
         " selon votre machine.\n"
         "Cliquez sur <b>Suivant</b> pour commencer."
     ),
-    "tuto.1.title": "① Configuration — Imprimante & Filament",
+    "tuto.1.title": "① Configuration — Imprimante, Filament & Plateau",
     "tuto.1.body":  (
         "Sélectionnez votre <b>imprimante cible</b> et votre <b>diamètre de buse</b>, "
-        "puis cliquez sur <b>VALIDER →</b>.\n"
+        "puis cliquez sur <b>VALIDER</b>.\n"
         "Faites de même pour votre <b>filament</b>.\n\n"
-        "neoSlice adapte automatiquement les paramètres selon le matériau choisi."
+        "Choisissez ensuite votre <b>type de plateau</b> — neoSlice adapte "
+        "automatiquement les températures et l'adhérence."
     ),
-    "tuto.2.title": "② Import STL",
+    "tuto.2.title": "② Import STL / OBJ / 3MF",
     "tuto.2.body":  (
-        "Glissez votre <b>fichier STL</b> dans cette zone, ou cliquez pour ouvrir "
+        "Glissez votre <b>fichier STL, OBJ ou 3MF</b> dans cette zone, ou cliquez pour ouvrir "
         "l'explorateur de fichiers.\n\n"
         "neoSlice analyse automatiquement la géométrie :\n"
         "<b>surplombs · stabilité · zones fragiles</b>\n"
-        "<b>volume & dimensions · orientation optimale</b>\n\n"
-        "En <b>mode Économique</b>, l'analyse des surplombs est désactivée — "
-        "vérifiez les supports directement dans Bambu Studio.\n\n"
-        "Une suggestion de rotation est affichée si elle améliore significativement "
-        "l'imprimabilité."
+        "<b>volume & dimensions · orientation optimale</b>"
     ),
     "tuto.3.title": "③ Instruction Mission",
     "tuto.3.body":  (
         "Ouvrez chaque accordéon pour choisir vos critères :\n"
-        "<b>Qualité · Résistance · Vitesse · Adhérence · Usage · Mode</b>\n\n"
+        "<b>Qualité · Résistance · Vitesse · Supports · Adhérence · Usage · Mode</b>\n\n"
         "Le groupe <b>Mode</b> permet d'activer :\n"
         "— <b>Silencieux</b> : vitesses –40 % pour moins de bruit\n"
         "— <b>Multicolore AMS</b> : active la <b>prime tower</b> "
@@ -704,10 +701,10 @@ _EN: dict[str, str] = {
     # ── DropZone ─────────────────────────────────────────────────────────────
     "drop.main_locked":     "CONFIRM PRINTER",
     "drop.sub_locked":      "and filament to continue\nStep ①",
-    "drop.main":            "DROP STL FILE",
+    "drop.main":            "DROP STL / 3MF FILE",
     "drop.sub":             "or click to browse",
-    "drop.dialog_title":    "Open an STL file",
-    "drop.dialog_filter":   "3D Files (*.stl *.obj);;All files (*)",
+    "drop.dialog_title":    "Open a 3D file",
+    "drop.dialog_filter":   "3D Files (*.stl *.obj *.3mf);;All files (*)",
     "drop.reopen":          "↺  Reopen: {name}",
     "drop.sub_loaded":      "click to change",
 
@@ -771,8 +768,8 @@ _EN: dict[str, str] = {
     "viewer.loading_default":   "ANALYZING...",
     "viewer.loading_sub":       "COMPUTING — PLEASE WAIT",
     "viewer.no_pyvista":        "3D Viewer\n\nInstall pyvistaqt to enable the viewer:\npip install pyvistaqt",
-    "viewer.show_plate":        "▦  Build plate",
-    "viewer.auto_rotate":       "⟳  Auto rotate",
+    "viewer.show_plate":        "Build plate",
+    "viewer.auto_rotate":       "Auto rotate",
     "viewer.orient_btn":        "↻  Apply optimal orientation",
     "viewer.orient_optimal":    "✓  Current orientation: optimal",
     "viewer.orient_apply_lbl":  "↻  {label}",
@@ -1059,27 +1056,25 @@ _EN: dict[str, str] = {
         " to match your machine.\n"
         "Click <b>Next</b> to get started."
     ),
-    "tuto.1.title": "① Configuration — Printer & Filament",
+    "tuto.1.title": "① Configuration — Printer, Filament & Bed",
     "tuto.1.body":  (
         "Select your <b>target printer</b> and <b>nozzle diameter</b>, "
-        "then click <b>CONFIRM →</b>.\n"
+        "then click <b>CONFIRM</b>.\n"
         "Do the same for your <b>filament</b>.\n\n"
-        "neoSlice automatically adapts parameters based on the chosen material."
+        "Then choose your <b>bed plate type</b> — neoSlice will automatically "
+        "adapt temperatures and adhesion settings."
     ),
-    "tuto.2.title": "② STL Import",
+    "tuto.2.title": "② STL / OBJ / 3MF Import",
     "tuto.2.body":  (
-        "Drag your <b>STL file</b> into this area, or click to open the file browser.\n\n"
+        "Drag your <b>STL, OBJ or 3MF file</b> into this area, or click to open the file browser.\n\n"
         "neoSlice automatically analyzes the geometry:\n"
         "<b>overhangs · stability · fragile zones</b>\n"
-        "<b>volume & dimensions · optimal orientation</b>\n\n"
-        "In <b>Lite mode</b>, overhang analysis is disabled — "
-        "check supports directly in Bambu Studio.\n\n"
-        "An orientation suggestion is displayed if it significantly improves printability."
+        "<b>volume & dimensions · optimal orientation</b>"
     ),
     "tuto.3.title": "③ Mission Instruction",
     "tuto.3.body":  (
         "Open each accordion to choose your criteria:\n"
-        "<b>Quality · Strength · Speed · Adhesion · Usage · Mode</b>\n\n"
+        "<b>Quality · Strength · Speed · Supports · Adhesion · Usage · Mode</b>\n\n"
         "The <b>Mode</b> group lets you enable:\n"
         "— <b>Silent</b>: speeds –40% for quieter printing\n"
         "— <b>Multicolor AMS</b>: enables the <b>prime tower</b> "

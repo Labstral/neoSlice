@@ -60,7 +60,7 @@ def _t_to_sev(
     Pour buse 0.6 mm (sig_t0=2.025) : seuils ×1.5 — pièce fine = 1.8 mm.
     """
     t = np.asarray(t_mm, dtype=np.float64)
-    return 1.0 / (1.0 + np.exp(_SIG_K * (t - sig_t0)))
+    return 1.0 / (1.0 + np.exp(np.clip(_SIG_K * (t - sig_t0), -500.0, 500.0)))
 
 
 # ── Dataclass résultat ────────────────────────────────────────────────────────
@@ -79,7 +79,9 @@ def detect_fragility(
     mesh: trimesh.Trimesh,
     n_samples: int = 2000,
     nozzle_diameter_mm: float = _DEFAULT_NOZZLE_MM,
+    fast: bool = False,
 ) -> FragilityResult:
+    """fast=True réduit la résolution voxel (~8x plus rapide) pour les previews."""
     """Détecte les zones fragiles en tenant compte du diamètre de buse.
 
     Les seuils d'épaisseur sont calculés relativement à la buse :
@@ -91,6 +93,44 @@ def detect_fragility(
     sig_t0  = _F_SIG_T0   * nozzle   # ex: 1.35 mm à 0.4 mm
     spike_t = _F_SPIKE    * nozzle   # ex: 2.0 mm à 0.4 mm
 
+    # ── Détection rapide par aire moyenne des faces ────────────────────────
+    # Les structures de fils/lattices ont des milliers de micro-triangles
+    # (aire moyenne très petite). Une pièce solide a de grandes faces.
+    # Seuil : si aire_moy < (nozzle × 2)² → structure probablement fine.
+    try:
+        _n_faces = len(mesh.faces)
+        if _n_faces > 100:
+            _total_sa = float(mesh.area)
+            _avg_face_area = _total_sa / _n_faces  # mm²/face
+            # Seuil : aire d'une face sur structure fine ≈ (nozzle*2)² / 2
+            _area_threshold = (nozzle * 2.0) ** 2  # ex: 0.64 mm² à 0.4mm buse
+            if _avg_face_area < _area_threshold:
+                # Aires très petites = micro-géométrie = fils/lattice = fragile
+                _area_sev = float(np.clip(
+                    1.0 - _avg_face_area / _area_threshold, 0.0, 1.0
+                ))
+                # Également SA/V si watertight (complément)
+                if mesh.is_watertight:
+                    _vol = abs(float(mesh.volume))
+                    if _vol > 0:
+                        _mean_t = 2.0 * _vol / max(_total_sa, 1e-6)
+                        if _mean_t < sig_t0:
+                            _area_sev = max(_area_sev,
+                                            float(np.clip(1.0 - _mean_t/sig_t0, 0.0, 1.0)))
+
+                if _area_sev > 0.3:
+                    _est_t = max(0.1, nozzle * (1.0 - _area_sev))
+                    logger.debug(f"Thin-struct: avg_face={_avg_face_area:.3f}mm² "
+                                 f"(thresh={_area_threshold:.3f}) → sev={_area_sev:.2f}")
+                    return FragilityResult(
+                        has_fragile_zones=True,
+                        fragile_zones=[],
+                        min_thickness_mm=_est_t,
+                        severity=_area_sev,
+                    )
+    except Exception:
+        pass
+
     bb      = mesh.bounding_box.extents
     max_dim = float(max(bb))
     pitch   = float(np.clip(max_dim / 200.0, 0.20, 0.80))
@@ -98,6 +138,7 @@ def detect_fragility(
     try:
         result = _detect_voxel_edt(mesh, pitch, min_t, sig_t0)
         if result is not None:
+            # Combiner avec l'estimation SA/V si disponible
             return result
     except Exception:
         logger.warning("Voxelisation EDT échouée — fallback raycast")

@@ -77,13 +77,25 @@ def analyze_overhangs(
     # ── 3. Exclusion plateau ─────────────────────────────────────────────────
     z_min = float(mesh.bounds[0][2])
     z_height = float(mesh.bounds[1][2] - z_min)
-    plate_tol = max(0.1, min(0.5, z_height * 0.05))
+    # Tolérance adaptative. Bornée à 35% de z_height pour ne pas masquer les vrais surplombs
+    # de pièces basses (ex: liner poubelle 9mm, coques iPhone 10mm).
+    _aspect = z_height / max(float(mesh.bounding_box.extents[0]),
+                              float(mesh.bounding_box.extents[1]), 1.0)
+    # Pièces hautes (aspect ≥ 0.4) : tolérance standard. Plates : un peu plus généreuse.
+    _base_tol = 5.0 if _aspect < 0.4 else 3.0
+    plate_tol = min(
+        max(_base_tol, z_height * 0.08),
+        z_height * 0.35,  # jamais plus de 35% de la hauteur totale
+    )
     face_centroids = mesh.triangles_center
     on_plate = (
         (face_centroids[:, 2] <= z_min + plate_tol)
-        & (normals[:, 2] < -0.5)
+        & (normals[:, 2] < -0.20)
     )
     mask = mask & ~on_plate
+
+    # Note: le filtre internal_flat a été retiré — il excluait incorrectement
+    # le dessous de modèles plats (coques, plaques) qui ont aussi nz ≈ -1.0.
 
     # ── 4-6. Clustering scipy + filtre surface + ponts ───────────────────────
     display_mask = mask.copy()   # masque brut avant filtre pont — pour la visu
@@ -111,8 +123,10 @@ def analyze_overhangs(
     ) if mask.any() else 0.0
     projected_ratio = overhang_proj / max(total_footprint, 1e-6)
 
-    # Sévérité (calibrée : Benchy~0.10, Bishop~0.23, seuil 0.15)
-    severity = min(1.0, projected_ratio * 3.0)
+    # Sévérité : max entre la méthode projetée (Bambu) et le ratio de faces
+    # Le ratio de faces évite d'afficher 0% quand il y a des surplombs réels
+    # mais une petite surface projetée (ex: arêtes fines, petits overhangs locaux)
+    severity = min(1.0, max(projected_ratio * 3.0, ratio * 0.6))
 
     max_angle = 0.0
     if mask.any():
@@ -290,24 +304,36 @@ def overhang_face_colors(mesh: trimesh.Trimesh, result: OverhangResult) -> np.nd
 
     Sévérité : 1.0 = plafond pur (face vers le bas), 0.0 = seuil 45° ou en-dessous.
     """
+    # Normales lissées depuis le résultat si disponibles, sinon brutes
     normals = mesh.face_normals
     z_down = np.array([0.0, 0.0, -1.0])
     cos_down = np.clip(normals @ z_down, -1.0, 1.0)
     angle_from_down = np.degrees(np.arccos(cos_down))  # 0°=plafond pur, 90°=mur, 180°=sol
 
-    # Sévérité brute : 1.0 = plafond pur (0°), 0.0 au seuil 45°
+    # Sévérité brute linéaire : 1.0 à 0° (plafond), 0.0 à 45° (seuil)
     sev_raw = np.clip((45.0 - angle_from_down) / 45.0, 0.0, 1.0)
-    # Boost de visibilité : même les surplombs modérés (~45°) apparaissent en jaune.
-    # Sans boost, une face à 44° aurait sev=0.022 → quasi-invisible.
-    # Avec boost : sev_min=0.30 pour toute face détectée, gradient jusqu'à 1.0.
+
+    # Courbe non-linéaire (puissance 0.55) : transitions visuelles claires.
+    #   ~43° (sev_raw=0.05) → sev~0.20 (jaune clair)
+    #   ~30° (sev_raw=0.33) → sev~0.56 (orange)
+    #   ~10° (sev_raw=0.78) → sev~0.85 (rouge-orange)
+    #    0° (sev_raw=1.00)  → sev=1.00 (rouge)
+    sev_curved = np.power(sev_raw, 0.55)
+
+    # critical_face_mask pour les couleurs 3D (post-filtrage pont/cluster).
+    # Évite de montrer les surplombs bridgeables (bords de socle, plafonds de trous hexagonaux)
+    # en orange/rouge alors qu'ils ne nécessitent pas de support.
+    # display_mask reste utilisé pour la JAUGE (cohérence numérique).
+    critical = result.critical_face_mask
+
     sev = np.where(
-        result.critical_face_mask,
-        np.where(sev_raw > 0, 0.30 + 0.70 * sev_raw, 0.0),
+        critical & (sev_raw > 0.04),
+        np.maximum(sev_curved, 0.20),
         0.0,
     )
 
     colors = np.zeros((len(mesh.faces), 4), dtype=np.uint8)
     colors[:, 3] = 255
     colors[:, 0] = (sev * 255).astype(np.uint8)   # R = sévérité encodée
-    colors[~result.critical_face_mask, 1] = 128    # G=128 = marqueur face sûre
+    colors[~critical, 1] = 128                      # G=128 = marqueur face sûre
     return colors

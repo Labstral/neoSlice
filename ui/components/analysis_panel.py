@@ -85,6 +85,37 @@ class _GaugeRow(QWidget):
             }}
         """)
 
+    def set_independent_mode(self, max_score: float = 0.0) -> None:
+        """Mode 'analyse indépendante par lot' — barre colorée, % masqué."""
+        _ps = _T.palette()
+        pct = max(1, int(max_score * 100)) if max_score > 0.01 else 1
+        color = score_color(1.0 - max_score)
+
+        anim = QPropertyAnimation(self._bar, b"value", self)
+        anim.setDuration(500)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.setEndValue(pct)
+        anim.start(QPropertyAnimation.DeleteWhenStopped)
+
+        # Texte court sur 2 lignes pour tenir dans la largeur fixe (44px)
+        self._val.setText("indép.")
+        self._val.setStyleSheet(
+            f"color: {_ps.get('TELE_BLUE', '#4A9EBF')}; background: transparent; "
+            "font-size: 7px;"
+        )
+        self._bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: {_ps["INACTIVE"]};
+                border: none; border-radius: 2px;
+            }}
+            QProgressBar::chunk {{
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                    stop:0 {_ps.get('TELE_BLUE','#4A9EBF')},
+                    stop:1 {_ps.get('ACCENT','#00AAFF')});
+                border-radius: 2px;
+            }}
+        """)
+
     def set_disabled(self):
         _pd = _T.palette()
         self._bar.setValue(0)
@@ -291,9 +322,22 @@ class AnalysisPanel(QWidget):
             self._g_support.set_disabled()
         else:
             oh_sev = report.overhang_severity
-            self._g_overhangs.set_value(oh_sev,
-                                         f"{int(oh_sev*100)}%",
-                                         color_score=1.0 - oh_sev)
+            # Utiliser le ratio réel de faces détectées (display_mask) si dispo
+            # → la jauge reflète exactement ce qu'on voit dans le viewer
+            oh_ratio = oh_sev
+            ov = getattr(report, "overhang_result", None)
+            if ov is not None:
+                dm = getattr(ov, "display_mask", None)
+                if dm is not None and len(dm) > 0:
+                    oh_ratio = float(dm.sum()) / len(dm)
+            # Minimum 1% si des surplombs sont visibles (évite "0%" trompeur)
+            oh_display = max(oh_ratio, 0.01) if oh_ratio > 0 else 0.0
+            oh_pct = oh_display * 100
+            oh_label = (f"< 1%" if 0 < oh_pct < 1.5
+                        else f"{round(oh_pct)}%")
+            self._g_overhangs.set_value(oh_display,
+                                         oh_label,
+                                         color_score=1.0 - oh_ratio)
             self._g_support.set_value(report.estimated_support_ratio,
                                        f"{int(report.estimated_support_ratio*100)}%",
                                        color_score=1.0 - report.estimated_support_ratio)
@@ -353,7 +397,13 @@ class AnalysisPanel(QWidget):
             rows.append(f'<span style="color:{_am};">{_("analysis.lite_mode_warn")}</span>')
         else:
             oh_sev = report.overhang_severity
-            ovh_pct = int(oh_sev * 100)
+            # Même calcul que la jauge : ratio de faces display_mask
+            _ov2 = getattr(report, "overhang_result", None)
+            _dm2 = getattr(_ov2, "display_mask", None)
+            _ratio2 = (float(_dm2.sum()) / len(_dm2)
+                       if _dm2 is not None and len(_dm2) > 0
+                       else oh_sev)
+            ovh_pct = max(1, round(_ratio2 * 100)) if _ratio2 > 0 else 0
             has_floating = getattr(report, "has_floating_regions", False)
             _is_tiny = max(report.bounding_box_mm) < 10.0
             if _is_tiny:
@@ -459,6 +509,10 @@ class AnalysisPanel(QWidget):
 
     def set_generation_busy(self):
         self._dot_gen.set_busy()
+
+    def set_fragility_independent(self, max_score: float = 0.0) -> None:
+        """Passe la jauge fragilité en mode 'analyse indépendante par lot'."""
+        self._g_fragility.set_independent_mode(max_score)
 
     def reset(self):
         self._dot_stl.set_inactive()

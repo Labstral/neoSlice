@@ -61,10 +61,12 @@ _GENERIC_PLA_CHAIN = [
 ]
 
 
-def detect_printer_model() -> str:
-    """Détecte le modèle d'imprimante depuis les profils utilisateur existants."""
+def detect_printer_model() -> str | None:
+    """Détecte le modèle d'imprimante depuis les profils utilisateur existants.
+    Retourne None si aucun profil n'est trouvé (l'appelant doit gérer le cas).
+    """
     if not _BBL_USER.exists():
-        return "X1C"
+        return None
 
     # Chercher printer_settings_id dans les profils utilisateur
     for user_dir in _BBL_USER.iterdir():
@@ -94,7 +96,7 @@ def detect_printer_model() -> str:
                     logger.info(f"Imprimante détectée depuis nom de profil : {model}")
                     return model
 
-    return "X1C"  # fallback le plus courant
+    return None  # aucune imprimante détectée
 
 
 def resolve_from_system_profiles(printer_model: str | None = None) -> dict | None:
@@ -109,6 +111,9 @@ def resolve_from_system_profiles(printer_model: str | None = None) -> dict | Non
 
     if printer_model is None:
         printer_model = detect_printer_model()
+    if printer_model is None:
+        logger.warning("Aucune imprimante détectée — résolution impossible.")
+        return None
 
     merged: dict = {}
 
@@ -121,8 +126,9 @@ def resolve_from_system_profiles(printer_model: str | None = None) -> dict | Non
         else:
             logger.warning(f"Profil système manquant : {filename}")
 
-    # 2. Ajouter le profil printer-specific
-    printer_profile = _PRINTER_PROCESS_PROFILES.get(printer_model, _PRINTER_PROCESS_PROFILES["X1C"])
+    # 2. Profil printer-specific — fallback sur le profil de base générique si absent
+    _generic_base = list(_PRINTER_PROCESS_PROFILES.values())[0]  # premier profil disponible
+    printer_profile = _PRINTER_PROCESS_PROFILES.get(printer_model, _generic_base)
     path = _BBL_PROCESS / printer_profile
     if path.exists():
         data = _load_json_flat(path)

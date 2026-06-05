@@ -35,15 +35,43 @@ def _save_prefs(prefs: dict) -> None:
 
 
 def should_show_welcome() -> bool:
-    return not _load_prefs().get("skip_welcome", False)
+    prefs = _load_prefs()
+    if prefs.get("last_seen_version") != __version__:
+        return True
+    return not prefs.get("skip_welcome", False)
+
+
+def is_update() -> bool:
+    """True si la version a changé depuis le dernier lancement (mise à jour)."""
+    prefs = _load_prefs()
+    lsv = prefs.get("last_seen_version")
+    return lsv is not None and lsv != __version__
+
+
+_WHATS_NEW_FR = [
+    ("🆕 Import de fichiers 3MF Bambu Studio",
+     "Chargez directement vos fichiers .3mf depuis Bambu Studio — neoSlice affiche toutes vos pièces, "
+     "respecte la disposition multi-plateau et génère un fichier optimisé qui préserve la structure d'origine."),
+    ("🆕 Barres de fragilité par lot",
+     "Une barre de fragilité flottante s'affiche au-dessus de chaque groupe de pièces, "
+     "visible depuis n'importe quel angle de caméra."),
+    ("🔧 Corrections",
+     "• Imprimante H2C — bon modèle transmis à Bambu Studio\n"
+     "• Supports — style par défaut corrigé (les différents types restent disponibles)\n"
+     "• Angle de support — seuil minimum corrigé à 30°\n"
+     "• Hauteurs de couche — cohérentes avec les préréglages Bambu\n"
+     "• Avertissements Bambu Studio — supprimés à l'ouverture du fichier généré"),
+]
 
 
 class WelcomeDialog(QDialog):
     """Fenêtre de bienvenue modale, sans cadre natif, déplaçable."""
 
-    def __init__(self, parent=None, assets_path: Path | None = None):
+    def __init__(self, parent=None, assets_path: Path | None = None,
+                 show_whats_new: bool = False):
         super().__init__(parent)
         self._assets = assets_path
+        self._show_whats_new = show_whats_new
         self._drag_pos: QPoint | None = None
         self._pal = _T.palette()
 
@@ -93,7 +121,7 @@ class WelcomeDialog(QDialog):
                 px = QPixmap(str(px_path))
                 if not px.isNull():
                     logo_lbl.setPixmap(
-                        px.scaled(110, 110, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        px.scaled(160, 160, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     )
                     logo_loaded = True
 
@@ -146,73 +174,69 @@ class WelcomeDialog(QDialog):
         root.addWidget(self._sep())
         root.addSpacing(16)
 
-        # ── Message de bienvenue ──────────────────────────────────────────
+        # ── Quoi de neuf (uniquement après une mise à jour) ───────────────
+        if self._show_whats_new:
+            wn_title = QLabel(f"✨  Nouveautés de la v{__version__}")
+            wn_title.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
+            wn_title.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;")
+            wn_title.setAlignment(Qt.AlignCenter)
+            root.addWidget(wn_title)
+            root.addSpacing(12)
+
+            for title, body in _WHATS_NEW_FR:
+                t = QLabel(title)
+                t.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+                t.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+                t.setWordWrap(True)
+                root.addWidget(t)
+
+                b = QLabel(body)
+                b.setFont(QFont(FONT_MAIN, 8))
+                b.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+                b.setWordWrap(True)
+                root.addWidget(b)
+                root.addSpacing(8)
+
+            root.addSpacing(4)
+            root.addWidget(self._sep())
+            root.addSpacing(14)
+
+        # ── Message principal ─────────────────────────────────────────────
         welcome = QLabel(
-            "Merci d'avoir téléchargé <b>neoSlice</b> !<br>"
-            "Ce logiciel a été entièrement conçu et développé par "
-            "<b>Emmanuel Percheron</b>, pour simplifier et optimiser "
-            "l'impression 3D avec les imprimantes Bambu Lab.<br><br>"
-            "J'espère sincèrement qu'il vous sera utile dans vos projets."
+            "Si <b>neoSlice</b> te plaît et te fait gagner du temps,<br>"
+            "ton soutien compte vraiment pour ce projet."
         )
-        welcome.setFont(QFont(FONT_MAIN, 9))
-        welcome.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        welcome.setFont(QFont(FONT_MAIN, 10))
+        welcome.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
         welcome.setWordWrap(True)
         welcome.setAlignment(Qt.AlignCenter)
         root.addWidget(welcome)
-        root.addSpacing(14)
-
-        # Encart bêta
-        beta_box = QWidget()
-        beta_box.setStyleSheet(f"""
-            QWidget {{
-                background: rgba(255,184,0,0.07);
-                border-left: 3px solid {pal['AMBER']};
-                border-radius: 2px;
-            }}
-        """)
-        beta_lay = QVBoxLayout(beta_box)
-        beta_lay.setContentsMargins(12, 8, 12, 8)
-        beta_lbl = QLabel(
-            f"<b style='color:{pal['AMBER']}'>⚠  Version Bêta</b><br>"
-            f"<span style='color:{pal['TEXT_LABEL']}'>Ce logiciel est en développement actif. "
-            "Des correctifs et de nouvelles fonctionnalités seront apportés régulièrement. "
-            "Si vous rencontrez un problème, n'hésitez pas à le signaler.</span>"
-        )
-        beta_lbl.setFont(QFont(FONT_MAIN, 8))
-        beta_lbl.setStyleSheet("background: transparent;")
-        beta_lbl.setWordWrap(True)
-        beta_lay.addWidget(beta_lbl)
-        root.addWidget(beta_box)
-
-        root.addSpacing(16)
-        root.addWidget(self._sep())
-        root.addSpacing(14)
-
-        # ── Buy Me a Coffee ───────────────────────────────────────────────
-        coffee_title = QLabel("☕  Ce logiciel est <b>entièrement gratuit</b> et le restera.")
-        coffee_title.setFont(QFont(FONT_MAIN, 9))
-        coffee_title.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
-        coffee_title.setAlignment(Qt.AlignCenter)
-        root.addWidget(coffee_title)
-
-        coffee_sub = QLabel("Si vous souhaitez soutenir le développement :")
-        coffee_sub.setFont(QFont(FONT_MAIN, 8))
-        coffee_sub.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
-        coffee_sub.setAlignment(Qt.AlignCenter)
-        root.addWidget(coffee_sub)
-
         root.addSpacing(10)
 
-        coffee_btn = QPushButton("♥   Me soutenir sur Buy Me a Coffee")
-        coffee_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
-        coffee_btn.setFixedHeight(36)
+        gratuit_lbl = QLabel("Ce logiciel est <b>100% gratuit</b> et le restera toujours.")
+        gratuit_lbl.setFont(QFont(FONT_MAIN, 9))
+        gratuit_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        gratuit_lbl.setAlignment(Qt.AlignCenter)
+        root.addWidget(gratuit_lbl)
+
+        geste_lbl = QLabel("Même un tout petit geste fait vraiment la différence.")
+        geste_lbl.setFont(QFont(FONT_MAIN, 9))
+        geste_lbl.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
+        geste_lbl.setAlignment(Qt.AlignCenter)
+        root.addWidget(geste_lbl)
+
+        root.addSpacing(16)
+
+        coffee_btn = QPushButton("☕ M'offrir un café")
+        coffee_btn.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
+        coffee_btn.setFixedHeight(40)
         coffee_btn.setCursor(Qt.PointingHandCursor)
         coffee_btn.setStyleSheet("""
             QPushButton {
                 background: #FFDD00;
                 color: #1A1A1A;
                 border: none;
-                border-radius: 4px;
+                border-radius: 5px;
                 padding: 0 20px;
             }
             QPushButton:hover { background: #FFE840; }
@@ -222,6 +246,30 @@ class WelcomeDialog(QDialog):
             lambda: QDesktopServices.openUrl(QUrl(_COFFEE_URL))
         )
         root.addWidget(coffee_btn)
+
+        root.addSpacing(12)
+
+        # Encart bêta (discret)
+        beta_box = QWidget()
+        beta_box.setStyleSheet(f"""
+            QWidget {{
+                background: rgba(255,184,0,0.06);
+                border-left: 3px solid {pal['AMBER']};
+                border-radius: 2px;
+            }}
+        """)
+        beta_lay = QVBoxLayout(beta_box)
+        beta_lay.setContentsMargins(12, 7, 12, 7)
+        beta_lbl = QLabel(
+            f"<b style='color:{pal['AMBER']}'>⚠  Version Bêta</b>"
+            f"<span style='color:{pal['TEXT_LABEL']}'> — Des mises à jour régulières sont prévues. "
+            "N'hésitez pas à signaler tout problème rencontré.</span>"
+        )
+        beta_lbl.setFont(QFont(FONT_MAIN, 8))
+        beta_lbl.setStyleSheet("background: transparent;")
+        beta_lbl.setWordWrap(True)
+        beta_lay.addWidget(beta_lbl)
+        root.addWidget(beta_box)
 
         root.addSpacing(18)
         root.addWidget(self._sep())
@@ -283,8 +331,9 @@ class WelcomeDialog(QDialog):
         return f
 
     def _on_close(self):
+        prefs = _load_prefs()
+        prefs["last_seen_version"] = __version__  # ne plus réafficher pour cette version
         if self._skip_check.isChecked():
-            prefs = _load_prefs()
             prefs["skip_welcome"] = True
-            _save_prefs(prefs)
+        _save_prefs(prefs)
         self.accept()

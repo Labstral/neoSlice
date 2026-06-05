@@ -64,11 +64,12 @@ _STEPS: list[_Step] = [
     ),
     _Step(
         "config",
-        "① Configuration — Imprimante & Filament",
+        "① Configuration — Imprimante, Filament & Plateau",
         "Sélectionnez votre <b>imprimante cible</b> et votre <b>diamètre de buse</b>, "
-        "puis cliquez sur <b>VALIDER →</b>.\n"
+        "puis cliquez sur <b>VALIDER</b>.\n"
         "Faites de même pour votre <b>filament</b>.\n\n"
-        "neoSlice adapte automatiquement les paramètres selon le matériau choisi.",
+        "Choisissez ensuite votre <b>type de plateau</b> — neoSlice adapte "
+        "automatiquement les températures et l'adhérence.",
         pad=12,
     ),
     _Step(
@@ -78,16 +79,14 @@ _STEPS: list[_Step] = [
         "ou cliquez pour ouvrir l'explorateur de fichiers.\n\n"
         "neoSlice analyse automatiquement la géométrie :\n"
         "<b>surplombs · stabilité · zones fragiles</b>\n"
-        "<b>volume & dimensions · orientation optimale</b>\n\n"
-        "Une suggestion de rotation est affichée si elle améliore "
-        "significativement l'imprimabilité.",
+        "<b>volume & dimensions · orientation optimale</b>",
         pad=12,
     ),
     _Step(
         "intent",
         "③ Instruction Mission",
         "Ouvrez chaque accordéon pour choisir vos critères :\n"
-        "<b>Qualité · Résistance · Vitesse · Adhérence · Usage · Mode</b>\n\n"
+        "<b>Qualité · Résistance · Vitesse · Supports · Adhérence · Usage · Mode</b>\n\n"
         "Le groupe <b>Mode</b> permet d'activer :\n"
         "— <b>Silencieux</b> : vitesses –40 % pour moins de bruit\n"
         "— <b>Multicolore AMS</b> : active la <b>prime tower</b> (tour de purge "

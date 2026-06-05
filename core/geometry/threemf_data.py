@@ -23,6 +23,7 @@ class MeshObject:
     mesh: "trimesh.Trimesh"
     transform: np.ndarray = field(        # matrice 4×4
         default_factory=lambda: np.eye(4))
+    plate_index: int = 0                  # plateau BS 0-based (0 = premier)
 
 
 @dataclass
@@ -41,6 +42,8 @@ class ThreeMFData:
     source_path: Path
     model_settings_xml: str = ""
     model_xml: str = ""
+    plate_count: int = 1
+    modifier_meshes: "list[MeshObject]" = field(default_factory=list)
 
     @property
     def object_count(self) -> int:
@@ -55,7 +58,9 @@ class ThreeMFData:
         return self.slot_count > 1
 
     def summary(self) -> str:
+        parts = f"{self.object_count} objet(s)"
         if self.is_multicolor:
-            return (f"{self.object_count} objet(s) · "
-                    f"{self.slot_count} couleur(s)")
-        return f"{self.object_count} objet(s)"
+            parts += f" · {self.slot_count} couleur(s)"
+        if self.plate_count > 1:
+            parts += f" · {self.plate_count} plateaux"
+        return parts

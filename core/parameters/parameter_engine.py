@@ -278,8 +278,9 @@ class ParameterEngine:
             # Arborescents par défaut — plus faciles à retirer, meilleure qualité de surface
             config.support_type = "tree(auto)"
             # Angle de déclenchement basé sur l'analyse réelle
+            # Minimum 30° (valeur BS par défaut). 20° génère des supports sur toute la pièce.
             raw_angle = 90.0 - analysis.max_overhang_angle
-            config.support_threshold_angle = float(max(20.0, min(45.0, raw_angle + 5.0)))
+            config.support_threshold_angle = float(max(30.0, min(45.0, raw_angle + 5.0)))
             # Toujours False : impossible de déterminer fiablement si les surplombs
             # sont tous au-dessus du plateau sans simulation couche par couche
             config.support_on_build_plate_only = False
@@ -439,6 +440,6 @@ class ParameterEngine:
 
         # Cohérence support : threshold entre 20° et 60°
         if "support_threshold_angle" in fields:
-            config.support_threshold_angle = max(20.0, min(60.0, config.support_threshold_angle))
+            config.support_threshold_angle = max(30.0, min(60.0, config.support_threshold_angle))
 
         return config

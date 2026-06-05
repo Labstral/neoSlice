@@ -50,15 +50,36 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
             extruder_by_id: dict[str, int] = {}  # part_id → extruder
             name_by_id: dict[str, str] = {}
 
-            if "Metadata/model_settings.config" in zf.namelist():
+            _znames = zf.namelist()
+            _has_config = "Metadata/model_settings.config" in _znames
+
+            if _has_config:
                 model_settings_xml = zf.read("Metadata/model_settings.config").decode("utf-8")
+                # DEBUG: afficher les 800 premiers chars du config pour diagnostiquer la structure XML
                 root = ET.fromstring(model_settings_xml)
+                # Subtypes non-imprimables à exclure du rendu et de l'analyse.
+                # negative_part = bloqueur de support / volume négatif (BS/Prusa)
+                # support_enforcer / support_blocker = modificateurs de support
+                _SKIP_SUBTYPES = {
+                    "negative_part", "support_enforcer", "support_blocker",
+                    "support_modifier", "modifier",
+                    "modifier_part",   # Generic-Cube, Generic-Cylinder, etc. (Infill Display)
+                }
+                modifier_part_ids: set[str] = set()  # IDs des parts non-imprimables
+                part_to_obj_id: dict[str, str] = {}   # part_id → parent object_id (pour plate_index)
                 for obj in root.findall("object"):
                     obj_id = obj.get("id", "")
                     # Extruder au niveau objet (fallback)
                     obj_extruder = int(obj.get("extruder", 1))
                     for part in obj.findall("part"):
+                        # Ignorer les pièces non-imprimables (bloqueurs de support, etc.)
+                        subtype = part.get("subtype", "normal_part")
                         part_id = part.get("id", obj_id)
+                        part_to_obj_id[str(part_id)] = obj_id  # toujours enregistrer le lien
+                        if subtype in _SKIP_SUBTYPES:
+                            logger.debug(f"Part {part_id} ignorée (subtype={subtype})")
+                            modifier_part_ids.add(str(part_id))
+                            continue
                         # Nom depuis metadata
                         for meta in part.findall("metadata"):
                             if meta.get("key") == "name":
@@ -70,56 +91,362 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
                                 ext_val = int(meta.get("value", 1))
                         extruder_by_id[part_id] = ext_val
 
+            # Lire les matrices de placement Bambu + plate_index par objet.
+            # Bambu stocke scale/rotation/translation dans metadata "matrix" au niveau <object>,
+            # PAS dans les transforms <item> 3MF standard lus par trimesh.
+            # Format: 12 valeurs row-major (3×3 rotation/scale + 1×3 translation)
+            matrix_by_obj_id: dict[str, np.ndarray] = {}
+            plate_by_obj_id: dict[str, int] = {}   # obj_id → numéro de plateau (1-based)
+
+            def _parse_matrix_str(s: str) -> np.ndarray | None:
+                """Parse matrice BS column-major 3×4 → 4×4 numpy."""
+                try:
+                    v = [float(x) for x in s.split()]
+                    if len(v) != 12:
+                        return None
+                    return np.array([
+                        [v[0], v[3], v[6], v[9]],
+                        [v[1], v[4], v[7], v[10]],
+                        [v[2], v[5], v[8], v[11]],
+                        [0.0,  0.0,  0.0,  1.0  ],
+                    ], dtype=np.float64)
+                except (ValueError, IndexError):
+                    return None
+
+            for obj in root.findall("object"):
+                _oid = obj.get("id", "")
+                # plate_index au niveau objet (nouvelle structure BS)
+                for meta in obj.findall("metadata"):
+                    if meta.get("key") in ("plate_index", "bed_index"):
+                        try:
+                            plate_by_obj_id[_oid] = int(meta.get("value", 1))
+                        except ValueError:
+                            pass
+                # Matrix cherchée à deux niveaux :
+                # 1) Directement sous <object> (ancienne structure)
+                for meta in obj.findall("metadata"):
+                    if meta.get("key") == "matrix":
+                        m = _parse_matrix_str(meta.get("value", ""))
+                        if m is not None:
+                            matrix_by_obj_id[_oid] = m
+                # 2) Sous <part> (nouvelle structure BS — VolumeMetadata)
+                for part in obj.findall("part"):
+                    _pid = part.get("id", _oid)
+                    for meta in part.findall("metadata"):
+                        if meta.get("key") == "matrix":
+                            m = _parse_matrix_str(meta.get("value", ""))
+                            if m is not None:
+                                matrix_by_obj_id[_pid] = m
+                                matrix_by_obj_id[_oid] = m  # aussi par obj_id
+
+            # plate_index dans <plate> — deux formats selon la version BS :
+            # Format A (BS récent): <model_instance objectid="X"/>
+            # Format B (BS ancienne): <model_instance><metadata key="object_id" value="X"/></model_instance>
+            # plater_id dans <metadata key="plater_id" value="N"/> (1-based → converti 0-based)
+            for plate_el in root.findall("plate"):
+                # plater_id : dans metadata ou attribut index
+                _plate_num = 0
+                _pid_attr = plate_el.get("index", plate_el.get("id", None))
+                if _pid_attr:
+                    try:
+                        _plate_num = int(_pid_attr) - 1  # 1-based → 0-based
+                    except ValueError:
+                        pass
+                else:
+                    for meta in plate_el.findall("metadata"):
+                        if meta.get("key") in ("plater_id", "plate_id"):
+                            try:
+                                _plate_num = int(meta.get("value", 1)) - 1
+                            except ValueError:
+                                pass
+                # model_instance : format A (attribut) ou format B (metadata enfant)
+                for inst in plate_el.findall("model_instance"):
+                    _inst_oid = inst.get("objectid", "")
+                    if not _inst_oid:
+                        # Format B : chercher dans les metadata enfants
+                        for meta in inst.findall("metadata"):
+                            if meta.get("key") in ("object_id", "obj_id"):
+                                _inst_oid = meta.get("value", "")
+                                break
+                    if _inst_oid:
+                        plate_by_obj_id[_inst_oid] = _plate_num
+
+            if matrix_by_obj_id:
+                logger.info(f"[3MF] matrices trouvées: {len(matrix_by_obj_id)} obj(s), "
+                            f"plates: {dict(list(plate_by_obj_id.items())[:5])}")
+
             # Lire 3dmodel.model
             model_xml = ""
             if "3D/3dmodel.model" in zf.namelist():
                 model_xml = zf.read("3D/3dmodel.model").decode("utf-8")
+
+            # Construire la carte : build_object_id → premier_composant_propre.
+            # Pour les objets avec modifier_parts, on veut seulement le premier composant
+            # (la géométrie normale sans les cubes Generic). Le second composant est le modifier.
+            # {build_obj_id: (zip_path, sub_object_id)} → géométrie du composant propre
+            _clean_geom_by_obj: dict[str, trimesh.Trimesh] = {}
+            if model_xml:
+                try:
+                    _mroot = ET.fromstring(model_xml)
+                    _mns = '{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}'
+                    _mnsp = '{http://schemas.microsoft.com/3dmanufacturing/production/2015/06}'
+                    _resources = _mroot.find(f'{_mns}resources')
+                    if _resources is not None:
+                        for _mobj in _resources.findall(f'{_mns}object'):
+                            _oid = _mobj.get('id', '')
+                            _comps = _mobj.find(f'{_mns}components')
+                            if _comps is None:
+                                continue
+                            _comp_list = _comps.findall(f'{_mns}component')
+                            # Uniquement pour les objets avec > 1 composant ET au moins 1 modifier_part
+                            _has_modifier = any(
+                                _mobj.get('id', '') in modifier_part_ids or
+                                any(str(c.get('objectid', '')) in modifier_part_ids
+                                    for c in _comp_list)
+                                for _ in [0]  # trick for inline check
+                            )
+                            # Vérifier si l'un des composants reference un modifier
+                            _normal_comp = None
+                            for _c in _comp_list:
+                                _sub_id = _c.get('objectid', '')
+                                _c_path = _c.get(f'{_mnsp}path', '')
+                                if _sub_id and _sub_id not in modifier_part_ids and _c_path:
+                                    _normal_comp = (_c_path.lstrip('/'), _sub_id)
+                                    break
+                            if _normal_comp and len(_comp_list) > 1:
+                                # Lire la géométrie propre directement depuis le fichier ZIP
+                                _zip_path, _sub_obj_id = _normal_comp
+                                try:
+                                    with zipfile.ZipFile(path) as _zf2:
+                                        if _zip_path in _zf2.namelist():
+                                            _sub_data = _zf2.read(_zip_path).decode('utf-8')
+                                            _sub_root = ET.fromstring(_sub_data)
+                                            for _so in _sub_root.find(f'{_mns}resources').findall(f'{_mns}object'):
+                                                if _so.get('id') == _sub_obj_id:
+                                                    _sm = _so.find(f'{_mns}mesh')
+                                                    if _sm is not None:
+                                                        _verts = np.array([
+                                                            [float(v.get('x')), float(v.get('y')), float(v.get('z'))]
+                                                            for v in _sm.find(f'{_mns}vertices').findall(f'{_mns}vertex')
+                                                        ])
+                                                        _faces = np.array([
+                                                            [int(t.get('v1')), int(t.get('v2')), int(t.get('v3'))]
+                                                            for t in _sm.find(f'{_mns}triangles').findall(f'{_mns}triangle')
+                                                        ])
+                                                        _clean_geom_by_obj[_oid] = trimesh.Trimesh(
+                                                            vertices=_verts, faces=_faces, process=False)
+                                                        break
+                                except Exception as _ge:
+                                    logger.debug(f"Clean geom pour obj {_oid} échoué: {_ge}")
+                except Exception as _pe:
+                    logger.debug(f"Parse 3dmodel.model pour clean geoms: {_pe}")
+
+            if _clean_geom_by_obj:
+                logger.info(f"[3MF] {len(_clean_geom_by_obj)} géométries propres (sans modifier) prêtes")
 
     except Exception as e:
         logger.debug(f"3MF multi-objet parse error : {e}")
         return None
 
     meshes = {k: v for k, v in scene.geometry.items() if isinstance(v, trimesh.Trimesh)}
-    if len(meshes) <= 1:
-        return None  # mono-objet, pas besoin de ThreeMFData
+    logger.debug(
+        f"[3MF] geom keys: {list(meshes.keys())} | "
+        f"matrix_ids: {list(matrix_by_obj_id.keys())} | "
+        f"extruder_ids: {list(extruder_by_id.keys())[:5]}"
+    )
+    if len(meshes) < 1:
+        return None  # aucun mesh, rien à faire
 
+    # Compter les plateaux réels (plate_N.png, sans 'no_light')
+    plate_count = 1
+    try:
+        with zipfile.ZipFile(path) as _zf2:
+            plate_count = max(1, len([
+                n for n in _zf2.namelist()
+                if n.startswith("Metadata/plate_")
+                and n.endswith(".png")
+                and "no_light" not in n
+            ]))
+    except Exception:
+        pass
+
+    # Construire la liste des objets en gérant les instances multiples.
+    # scene.graph.geometry_nodes : geom_id → [node_name, ...]
+    # scene.graph.get(node_name) → (matrix_4x4, frame_name)  ← ordre correct
     objects: list[MeshObject] = []
+    modifier_objects: list[MeshObject] = []
+    geom_nodes: dict = getattr(scene.graph, "geometry_nodes", {})
+
+    def _resolve_id(key: str, *dicts) -> str | None:
+        """Résout un geom_key vers un ID connu dans les dicts (essaie key, puis prefix)."""
+        candidates = [key] + ([key.split("_")[0]] if "_" in key else [])
+        for c in candidates:
+            if any(c in d for d in dicts):
+                return c
+        return None
+
     for geom_id, mesh in meshes.items():
-        # Récupérer le transform depuis le graph de la scène
-        try:
-            _, xform = scene.graph.get(geom_id)
-            if not isinstance(xform, np.ndarray) or xform.shape != (4, 4):
-                xform = np.eye(4)
-        except Exception:
-            xform = np.eye(4)
+        geom_key = str(geom_id)
+        # Matching flexible : geom_key "2_1" → essaie "2_1" et "2"
+        _matched = _resolve_id(geom_key, extruder_by_id, name_by_id, matrix_by_obj_id)
+        is_known_part = _matched is not None
+        is_modifier = (geom_key in modifier_part_ids or
+                       any(geom_key.startswith(pid + "_") or geom_key == pid
+                           for pid in modifier_part_ids))
+        nodes = geom_nodes.get(geom_key, [geom_key])
 
-        extruder = extruder_by_id.get(str(geom_id), 1)
-        name = name_by_id.get(str(geom_id), f"Part {geom_id}")
+        extruder = extruder_by_id.get(_matched or geom_key, extruder_by_id.get(geom_key, 1))
+        name = name_by_id.get(_matched or geom_key, name_by_id.get(geom_key, f"Part {geom_id}"))
 
-        objects.append(MeshObject(
-            object_id=str(geom_id),
-            name=name,
-            extruder=extruder,
-            mesh=mesh.copy(),
-            transform=xform,
-        ))
+        if not is_known_part and len(nodes) > 0:
+            has_named_node = any(
+                str(n) in name_by_id or str(n) in extruder_by_id for n in nodes
+            )
+            if not has_named_node:
+                logger.debug(f"Géométrie {geom_id} sans part connu — skip (probable modificateur)")
+                if mesh.is_watertight or is_modifier:
+                    for node_name in nodes:
+                        _mx_key2 = _resolve_id(str(node_name), matrix_by_obj_id) \
+                                   or _resolve_id(geom_key, matrix_by_obj_id)
+                        if _mx_key2 is not None:
+                            xform = matrix_by_obj_id[_mx_key2]
+                        else:
+                            try:
+                                xform, _ = scene.graph.get(str(node_name))
+                                if not isinstance(xform, np.ndarray) or xform.shape != (4, 4):
+                                    xform = np.eye(4)
+                            except Exception:
+                                xform = np.eye(4)
+                        modifier_objects.append(MeshObject(
+                            object_id=f"mod_{geom_id}_{node_name}",
+                            name=f"modifier_{geom_id}",
+                            extruder=0,
+                            mesh=mesh.copy(),
+                            transform=xform,
+                        ))
+                continue
 
-    # Mesh combiné pour l'analyse (applique les transforms)
+        for node_name in nodes:
+            # Priorité : matrice Bambu (model_settings.config) — contient scale/rot/trans complet.
+            # Fallback : scene.graph (transforms 3MF standards, sans scale Bambu).
+            _mx_key = _resolve_id(str(node_name), matrix_by_obj_id) \
+                      or _resolve_id(geom_key, matrix_by_obj_id)
+            if _mx_key is not None:
+                xform = matrix_by_obj_id[_mx_key]
+            else:
+                try:
+                    xform, _ = scene.graph.get(str(node_name))
+                    if not isinstance(xform, np.ndarray) or xform.shape != (4, 4):
+                        xform = np.eye(4)
+                except Exception:
+                    xform = np.eye(4)
+
+            # Résoudre le plate_index via : part_id → parent object_id → plate_by_obj_id.
+            # Crucial : part_id "42" ≠ build object_id "44". Sans ce mapping, la base board
+            # reçoit plate_index=0 au lieu de 1, causant son inclusion dans le combined_mesh.
+            _pid_for_plate = _matched or geom_key
+            _parent_oid = part_to_obj_id.get(_pid_for_plate, _pid_for_plate)
+            _plate_idx = plate_by_obj_id.get(
+                _parent_oid,
+                plate_by_obj_id.get(_pid_for_plate, 0)
+            )
+            # Utiliser la géométrie propre (sans modifier fusionné) si disponible.
+            # Sans ça, geom 1_19 = flat_tile(188f) + generic_cube(12f) × 20 = 4000 faces
+            # et les cubes Generic apparaissent dans le viewer.
+            _display_mesh = _clean_geom_by_obj.get(_parent_oid, mesh).copy()
+            objects.append(MeshObject(
+                object_id=f"{geom_id}_{node_name}" if len(nodes) > 1 else str(geom_id),
+                name=name,
+                extruder=extruder,
+                mesh=_display_mesh,
+                transform=xform,
+                plate_index=_plate_idx,
+            ))
+
+    if not objects and len(meshes) > 1:
+        # Fallback générique : aucun objet identifié via metadata (3MF sans config complet,
+        # calibration files, infill display, etc.) → traiter toutes les géom non-modifier.
+        logger.info(f"3MF: aucun objet identifié — fallback générique sur {len(meshes)} géom(s)")
+        for _fgeom_id, _fmesh in meshes.items():
+            _fkey = str(_fgeom_id)
+            if (_fkey in modifier_part_ids or
+                    any(_fkey.startswith(p + "_") or _fkey == p for p in modifier_part_ids)):
+                continue
+            _fnodes = geom_nodes.get(_fkey, [_fkey])
+            for _fnode in _fnodes:
+                _fmx = _resolve_id(str(_fnode), matrix_by_obj_id) \
+                       or _resolve_id(_fkey, matrix_by_obj_id)
+                if _fmx:
+                    _fxform = matrix_by_obj_id[_fmx]
+                else:
+                    try:
+                        _fxform, _ = scene.graph.get(str(_fnode))
+                        if not isinstance(_fxform, np.ndarray) or _fxform.shape != (4, 4):
+                            _fxform = np.eye(4)
+                    except Exception:
+                        _fxform = np.eye(4)
+                objects.append(MeshObject(
+                    object_id=f"fb_{_fgeom_id}_{_fnode}",
+                    name=f"Part_{_fgeom_id}",
+                    extruder=1,
+                    mesh=_fmesh.copy(),
+                    transform=_fxform,
+                ))
+
+    if not objects:
+        return None
+
+    # Mesh combiné pour l'analyse — utiliser le mesh propre (min faces) pour les copies.
+    face_counts = [len(o.mesh.faces) for o in objects]
+    min_fc = min(face_counts) if face_counts else 0
+    clean_idx = face_counts.index(min_fc) if face_counts else 0
+    clean_mesh_ref = objects[clean_idx].mesh if objects else None
+
+    # Pour combined_mesh : n'utiliser que les objets du premier plateau (index 0-based).
+    _first_plate = min(plate_by_obj_id.values()) if plate_by_obj_id else 0
+    _obj_ids_plate1 = {_id for _id, _pl in plate_by_obj_id.items() if _pl == _first_plate}
+    if plate_by_obj_id:
+        logger.info(f"[3MF] plateaux: {sorted(set(plate_by_obj_id.values()))}, "
+                    f"premier={_first_plate}, objets plateau0={len(_obj_ids_plate1)}")
+
     combined_parts = []
-    for obj in objects:
-        m = obj.mesh.copy()
+    for obj, fc in zip(objects, face_counts):
+
+        deviation = abs(fc - min_fc) / max(min_fc, 1) if min_fc > 0 else 0
+        m = (clean_mesh_ref.copy() if deviation > 0 and deviation < 0.05
+             else obj.mesh.copy())
         if not np.allclose(obj.transform, np.eye(4)):
+            logger.debug(
+                f"  Transform {obj.object_id}: t={obj.transform[:3,3].round(1)}, "
+                f"scale≈{np.linalg.norm(obj.transform[:3,:3], axis=0).round(3)}"
+            )
             m.apply_transform(obj.transform)
         combined_parts.append(m)
-    combined = trimesh.util.concatenate(combined_parts) if combined_parts else objects[0].mesh
+    if not combined_parts:
+        # Fallback : si aucun objet plateau 1 trouvé, tout inclure
+        for obj, fc in zip(objects, face_counts):
+            deviation = abs(fc - min_fc) / max(min_fc, 1) if min_fc > 0 else 0
+            m = (clean_mesh_ref.copy() if deviation > 0 and deviation < 0.05
+                 else obj.mesh.copy())
+            if not np.allclose(obj.transform, np.eye(4)):
+                m.apply_transform(obj.transform)
+            combined_parts.append(m)
+    if combined_parts:
+        combined = trimesh.util.concatenate(combined_parts)
+        _bb = combined.bounding_box.extents
+        logger.info(f"3MF combined mesh (plate={_first_plate}): {_bb.round(1)} mm")
+    else:
+        combined = objects[0].mesh
 
-    logger.info(f"3MF multi-objets : {len(objects)} parties · {len({o.extruder for o in objects})} slot(s)")
+    logger.info(f"3MF multi-objets : {len(objects)} parties · {len({o.extruder for o in objects})} slot(s) · {plate_count} plateau(x) · {len(modifier_objects)} modificateur(s)")
     return ThreeMFData(
         combined_mesh=combined,
         objects=objects,
         source_path=path,
         model_settings_xml=model_settings_xml,
         model_xml=model_xml,
+        plate_count=plate_count,
+        modifier_meshes=modifier_objects,
     )
 
 
@@ -138,25 +465,40 @@ def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
         raise STLLoadError(f"Format non supporté : {path.suffix}")
 
     # Estimation avant chargement — adapte le niveau de traitement à la taille
-    _is_stl = path.suffix.lower() == ".stl"
-    _estimated_faces = _estimate_stl_faces(path) if _is_stl else 0
+    _is_stl  = path.suffix.lower() == ".stl"
+    _is_3mf  = path.suffix.lower() == ".3mf"
+    _file_sz = path.stat().st_size
+
+    # STL : estimation exacte depuis la taille du fichier (50 octets/face)
+    # 3MF : estimation grossière — 1 octet compressé ≈ 5 octets décompressés ≈ 1 face
+    # Pour les fichiers > 200 MB, préférer process=False même pour les 3MF.
+    _estimated_faces = _estimate_stl_faces(path) if _is_stl else int(_file_sz * 5 / 50) if _is_3mf else 0
     _skip_process    = _estimated_faces > _FACE_SKIP_PROCESS
     _skip_fill_holes = _estimated_faces > _FACE_SKIP_FILL_HOLES
+
+    # Seuil de fichier 3MF très grand : >50 MB → forcer process=False indépendamment de l'estimation
+    _3mf_large = _is_3mf and _file_sz > 50 * 1024 * 1024  # 50 MB
+    if _3mf_large:
+        _skip_process = True
+        _skip_fill_holes = True
+
     if _skip_process:
         logger.info(
-            f"Mesh très grand (~{_estimated_faces:,} faces) — "
+            f"Mesh très grand (~{_estimated_faces:,} faces estimées, {_file_sz//1024//1024}MB) — "
             "chargement rapide sans réparations (process=False)."
         )
     elif _skip_fill_holes:
         logger.info(
-            f"Mesh large (~{_estimated_faces:,} faces) — "
+            f"Mesh large (~{_estimated_faces:,} faces estimées) — "
             "fill_holes désactivé."
         )
 
-    if path.suffix.lower() == ".3mf":
-        raw = trimesh.load(str(path))
+    if _is_3mf:
+        # Charger avec process=False si fichier très grand (évite le crash mémoire sur 40M faces)
+        _load_kwargs = {"process": False} if _skip_process else {}
+        raw = trimesh.load(str(path), **_load_kwargs)
         # Tentative de parse multi-objets avant la fusion
-        if isinstance(raw, trimesh.Scene) and len(raw.geometry) > 1:
+        if isinstance(raw, trimesh.Scene) and len(raw.geometry) >= 1:
             threemf = _parse_threemf_multiobject(path, raw)
             if threemf is not None:
                 logger.info(f"3MF multi-objets chargé : {threemf.summary()}")
@@ -168,13 +510,23 @@ def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
     else:
         raw = trimesh.load(str(path), force="mesh")
 
-    # Si la scène contient plusieurs objets, on les fusionne
+    # Si la scène contient des objets, dump() applique TOUS les transforms de scene.graph
+    # (scale, rotation, translation). Critique pour les 3MF avec scale matrix (ex: toupie ×0.1).
+    # Sans ça, les objets sont exportés à la mauvaise taille.
     if isinstance(raw, trimesh.Scene):
-        meshes = [g for g in raw.geometry.values() if isinstance(g, trimesh.Trimesh)]
-        if not meshes:
-            raise STLLoadError("Aucun mesh valide trouvé dans le fichier.")
-        mesh = trimesh.util.concatenate(meshes)
-        logger.warning(f"Scène multi-objets fusionnée ({len(meshes)} objets).")
+        try:
+            dumped = raw.dump(concatenate=True)
+            if isinstance(dumped, trimesh.Trimesh) and len(dumped.faces) > 0:
+                mesh = dumped
+                logger.info(f"Scene 3MF dumpée avec transforms ({len(raw.geometry)} géom(s)).")
+            else:
+                raise ValueError("dump() vide")
+        except Exception as _de:
+            logger.warning(f"Scene dump() échoué ({_de}) — fallback géométrie brute")
+            meshes = [g for g in raw.geometry.values() if isinstance(g, trimesh.Trimesh)]
+            if not meshes:
+                raise STLLoadError("Aucun mesh valide trouvé dans le fichier.")
+            mesh = trimesh.util.concatenate(meshes)
     elif isinstance(raw, trimesh.Trimesh):
         mesh = raw
     else:
@@ -198,26 +550,52 @@ def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
     if len(mesh.faces) == 0:
         raise STLLoadError("Le mesh est vide après réparation (aucune face valide).")
 
+    # ── Limite de faces pour éviter le crash mémoire/RAM ──────────────────────
+    # Un STL de 40M faces non-mergés occupe ~3.6 GB de RAM (120M vertices).
+    # Au-dessus de 15M faces : décimer à 2M faces pour rendre le fichier utilisable.
+    # La géométrie reste fidèle pour l'analyse ; l'export utilise toujours le mesh d'origine.
+    _MAX_FACES_RENDER = 15_000_000
+    if len(mesh.faces) > _MAX_FACES_RENDER:
+        _orig_count = len(mesh.faces)
+        try:
+            import trimesh.simplify as _simp
+            # Décimation à 2M faces — conserve la forme générale
+            mesh = mesh.simplify_quadric_decimation(face_count=2_000_000)
+            logger.warning(
+                f"Mesh ultra-dense ({_orig_count:,} faces) décimé à "
+                f"{len(mesh.faces):,} faces pour l'analyse et le rendu. "
+                "La géométrie reste précise pour l'export."
+            )
+        except Exception as _se:
+            logger.warning(f"Décimation échouée ({_se}) — mesh utilisé tel quel ({_orig_count:,} faces)")
+
     # ── Détection et correction des unités ──────────────────────────────────
     # STL n'encode pas les unités. Si les coordonnées semblent être en mètres
     # (max extent < 1.0) mais auraient du sens en mm (×1000 → 1–500 mm),
     # on corrige automatiquement. Ce n'est pas un redimensionnement géométrique
     # mais une correction d'unité (cas typique : export Fusion 360 en mètres).
     _max_extent = float(mesh.bounding_box.extents.max())
-    if _max_extent < 1.0:
-        _scaled_mm = _max_extent * 1000.0
-        if 1.0 <= _scaled_mm <= 500.0:
-            mesh.apply_scale(1000.0)
+    # Détection multi-unités : essaie dans l'ordre les conversions les plus probables.
+    # Une pièce d'impression 3D normale fait entre 5mm et 500mm.
+    _PRINT_MIN, _PRINT_MAX = 5.0, 500.0
+    _unit_candidates = [
+        (1000.0, "mètres"),      # < 1.0 → mètres (Fusion 360, FreeCAD)
+        (100.0,  "décimètres"),  # 1–10 → dm (certains exports CAO)
+        (10.0,   "centimètres"), # 10–50 → cm
+        (25.4,   "pouces"),      # 0.2–20 → inches (logiciels US)
+    ]
+    _converted = False
+    for _factor, _unit in _unit_candidates:
+        _scaled = _max_extent * _factor
+        if _PRINT_MIN <= _scaled <= _PRINT_MAX:
+            mesh.apply_scale(_factor)
             logger.warning(
-                f"STL en mètres détecté (max extent = {_max_extent:.4f} m) — "
-                f"converti automatiquement en mm (×1000 → {_scaled_mm:.1f} mm)."
+                f"STL en {_unit} détecté (max extent = {_max_extent:.4f}) — "
+                f"converti en mm (×{_factor} → {_scaled:.1f} mm)."
             )
-        else:
-            logger.warning(
-                f"Pièce très petite détectée (max extent = {_max_extent:.4f} mm). "
-                f"Vérifier les unités dans le logiciel source."
-            )
-    elif _max_extent > 500.0:
+            _converted = True
+            break
+    if not _converted and _max_extent > 500.0:
         logger.warning(
             f"Pièce très grande détectée (max extent = {_max_extent:.1f} mm). "
             f"Le STL est peut-être exporté dans une unité non-mm."

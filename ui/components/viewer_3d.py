@@ -20,8 +20,12 @@ except Exception as e:
 try:
     from matplotlib.colors import LinearSegmentedColormap as _LSC
     # Gradient Bambu-style : gris neutre → jaune → orange → rouge
-    _OVERHANG_CMAP_DARK  = _LSC.from_list("neoslice_oh_dk", ["#8A9BAD", "#FFE000", "#FF6600", "#CC2010"])
-    _OVERHANG_CMAP_LIGHT = _LSC.from_list("neoslice_oh_lt", ["#C8D4DC", "#FFE000", "#FF6600", "#CC2010"])
+    # Gradient : blanc cassé (safe) → jaune → orange → rouge profond
+    # Zones safe = blanc → pièces lisibles, surplombs = couleurs vives
+    _OVERHANG_CMAP_DARK  = _LSC.from_list("neoslice_oh_dk",
+        [(0.0, "#C8C4BE"), (0.22, "#FFE000"), (0.55, "#FF4400"), (0.82, "#CC0000"), (1.0, "#880000")])
+    _OVERHANG_CMAP_LIGHT = _LSC.from_list("neoslice_oh_lt",
+        [(0.0, "#D4D0CA"), (0.22, "#FFE000"), (0.55, "#FF4400"), (0.82, "#CC0000"), (1.0, "#880000")])
 except Exception:
     _OVERHANG_CMAP_DARK  = "RdYlGn_r"
     _OVERHANG_CMAP_LIGHT = "RdYlGn_r"
@@ -233,9 +237,9 @@ class Viewer3D(QWidget):
             return
         try:
             visible = bool(state)
-            for name in ("build_plate_surface", "build_plate_grid"):
-                if name in self._plotter.actors:
-                    self._plotter.actors[name].visibility = visible
+            for name, actor in self._plotter.actors.items():
+                if name.startswith("build_plate_surface") or name.startswith("build_plate_grid"):
+                    actor.visibility = visible
             self._plotter.render()
         except Exception:
             pass
@@ -262,7 +266,7 @@ class Viewer3D(QWidget):
                 self._plotter.remove_actor("build_plate_grid", render=False)
                 self._add_build_plate(self._mesh)
                 if getattr(self, "_view_mode", "normal") == "normal":
-                    _mesh_color = "#e8e4de"
+                    _mesh_color = "#f2ede8"
                     rq = self._render_quality()
                     self._plotter.remove_actor("main_mesh", render=False)
                     # Réutilise le mesh pyvista en cache — évite de recalculer les normales
@@ -402,7 +406,7 @@ class Viewer3D(QWidget):
                 rw.SetToneMappingType(1)  # Reinhard (fallback)
             except Exception:
                 pass
-        # Re-render après les effets pour s'assurer que le fond est toujours correct
+        # Re-render après les effets
         try:
             pal = _T.palette()
             self._plotter.set_background(pal["VIEWER_BG"], top=pal["VIEWER_BG_TOP"])
@@ -518,6 +522,7 @@ class Viewer3D(QWidget):
             return
 
         self._auto_rotate = True
+        self._rot_checkbox.setEnabled(True)
         self._rot_checkbox.blockSignals(True)
         self._rot_checkbox.setChecked(True)
         self._rot_checkbox.blockSignals(False)
@@ -559,79 +564,77 @@ class Viewer3D(QWidget):
         return False
 
     def _setup_lights(self):
-        """Éclairage studio 8 points — qualité cinématique (type Unreal Engine)."""
+        """Éclairage studio cinématique — style Unreal Engine hero shot."""
         self._plotter.remove_all_lights()
-        # Key principale — haut-droite-devant, blanc chaud soleil
+        # Key principale — haut-droite-devant, blanc chaud
         self._plotter.add_light(pv.Light(
-            position=(6, 4, 14), focal_point=(0, 0, 0),
-            intensity=1.50, color=[1.0, 0.97, 0.90],
+            position=(5, 3, 12), focal_point=(0, 0, 0),
+            intensity=1.60, color=[1.0, 0.97, 0.92],
         ))
-        # Key large — haut-gauche, softbox secondaire
+        # Softbox secondaire — haut-gauche, lumière douce de remplissage
         self._plotter.add_light(pv.Light(
-            position=(-4, 6, 11), focal_point=(0, 0, 0),
-            intensity=0.65, color=[1.0, 0.98, 0.96],
+            position=(-5, 5, 9), focal_point=(0, 0, 0),
+            intensity=0.55, color=[0.95, 0.97, 1.0],
         ))
-        # Fill — gauche-bas, bleu ciel froid pour contrebalancer
+        # Fill froid — gauche bas, bleu ciel (cold fill pour contraste chaud/froid)
         self._plotter.add_light(pv.Light(
-            position=(-10, -2, 2), focal_point=(0, 0, 0),
-            intensity=0.28, color=[0.72, 0.86, 1.0],
+            position=(-12, -2, 1), focal_point=(0, 0, 0),
+            intensity=0.30, color=[0.65, 0.82, 1.0],
         ))
-        # Rim fort — contre-jour arrière (separation light), éclat maximal
+        # Rim fort arrière — contre-jour, séparation dramatique du fond
         self._plotter.add_light(pv.Light(
-            position=(-1, -12, 6), focal_point=(0, 0, 0),
-            intensity=0.80, color=[0.80, 0.90, 1.0],
+            position=(-2, -14, 5), focal_point=(0, 0, 0),
+            intensity=1.20, color=[0.75, 0.88, 1.0],
         ))
-        # Rim droit — contre-jour droit, sépare la pièce du fond
+        # Rim droit — éclat latéral pour les surfaces verticales
         self._plotter.add_light(pv.Light(
-            position=(10, -6, 4), focal_point=(0, 0, 0),
-            intensity=0.40, color=[0.88, 0.94, 1.0],
+            position=(14, -5, 3), focal_point=(0, 0, 0),
+            intensity=0.55, color=[0.90, 0.95, 1.0],
         ))
-        # Top — zénithale, illumine les surfaces horizontales
+        # Zénithale — surfaces horizontales (dessus des pièces)
         self._plotter.add_light(pv.Light(
-            position=(0, 0, 18), focal_point=(0, 0, 0),
-            intensity=0.28, color=[0.93, 0.96, 1.0],
+            position=(0, 0, 20), focal_point=(0, 0, 0),
+            intensity=0.35, color=[0.95, 0.97, 1.0],
         ))
-        # Bounce — réflexion montante depuis le plateau (GI simulé)
+        # Bounce GI — lumière montante simulant la réflexion du plateau
         self._plotter.add_light(pv.Light(
-            position=(0, 0, -10), focal_point=(0, 0, 0),
-            intensity=0.10, color=[1.0, 0.97, 0.90],
+            position=(1, 1, -8), focal_point=(0, 0, 0),
+            intensity=0.18, color=[1.0, 0.96, 0.88],
         ))
-        # Accent latéral — souligne les détails fins sur la droite
+        # Accent micro-détails — souligne les détails fins côté droit
         self._plotter.add_light(pv.Light(
-            position=(12, 2, 0), focal_point=(0, 0, 0),
-            intensity=0.20, color=[1.0, 0.98, 0.88],
+            position=(16, 0, 2), focal_point=(0, 0, 0),
+            intensity=0.28, color=[1.0, 0.98, 0.90],
         ))
 
     _PLATE_SIZE    = 256.0  # mm — plateau par défaut sans mesh
     _PLATE_GRID    = 10.0   # mm — espacement de la grille
     _PLATE_OPACITY = 0.90   # opacité plateau vue de dessus (0 depuis dessous)
 
-    def _add_build_plate(self, mesh=None) -> None:
-        """Ajoute un plateau dont la taille s'adapte à la pièce chargée."""
-        if not HAS_PYVISTA or self._plotter is None:
-            return
-        try:
-            if mesh is not None:
-                # Empreinte XY uniquement — ne pas utiliser Z (hauteur) qui rendrait
-                # le plateau minuscule pour les pièces très hautes (arbres, tours, etc.)
-                ext = mesh.bounding_box.extents
-                footprint = float(max(ext[0], ext[1]))
-                plate_size = max(footprint * 2.5, 30.0)
-                raw = plate_size / 10.0
-                magnitude = 10.0 ** int(np.floor(np.log10(max(raw, 1e-9))))
-                spacing = max(round(raw / magnitude) * magnitude, 0.01)
-            else:
-                plate_size = self._PLATE_SIZE
-                spacing = self._PLATE_GRID
-            self._current_plate_size = plate_size
-            half = plate_size / 2.0
+    def _draw_single_plate(self, cx: float, cy: float, plate_size: float,
+                            suffix: str = "",
+                            plate_w: float | None = None,
+                            plate_h: float | None = None) -> None:
+        """Dessine un plateau (surface + grille) centré en (cx, cy, 0).
 
-            # Plateau style Bambu Studio — couleurs identiques quel que soit le thème
+        plate_w / plate_h permettent un plateau rectangulaire ; sinon plate_size carré.
+        """
+        try:
+            pw = float(plate_w) if plate_w is not None else float(plate_size)
+            ph = float(plate_h) if plate_h is not None else float(plate_size)
+            hw, hh = pw / 2.0, ph / 2.0
+
+            # Espacement de grille : cases d'environ 10mm (style BS), min 5mm
+            ref_size = max(pw, ph)
+            raw = ref_size / 30.0   # vise ~30 cases par côté
+            magnitude = 10.0 ** int(np.floor(np.log10(max(raw, 1e-9))))
+            spacing = max(round(raw / magnitude) * magnitude, 5.0)
+
             plate = pv.Plane(
-                center=(0.0, 0.0, -0.5),
+                center=(cx, cy, -0.5),
                 direction=(0, 0, 1),
-                i_size=plate_size,
-                j_size=plate_size,
+                i_size=pw,
+                j_size=ph,
                 i_resolution=1,
                 j_resolution=1,
             )
@@ -640,99 +643,394 @@ class Viewer3D(QWidget):
                 color="#2a2b2e",
                 opacity=self._PLATE_OPACITY,
                 show_edges=False,
-                name="build_plate_surface",
+                name=f"build_plate_surface{suffix}",
                 pickable=False,
             )
 
-            # Grille carrée : forcer spacing à diviser plate_size exactement
-            n_cells = max(2, round(plate_size / spacing))
-            spacing = plate_size / n_cells
-            lines = np.linspace(-half, half, n_cells + 1)
-
-            # Z=-0.1 : offset suffisant vs plateau à Z=-0.5 pour éviter le Z-fighting VTK
+            nx = max(2, round(pw / spacing))
+            ny = max(2, round(ph / spacing))
+            lines_v = np.linspace(cx - hw, cx + hw, nx + 1)
+            lines_h = np.linspace(cy - hh, cy + hh, ny + 1)
             _gz = -0.1
             pts, segs, idx = [], [], 0
-            for x in lines:
-                pts += [[x, -half, _gz], [x, half, _gz]]
+            for x in lines_v:
+                pts += [[x, cy - hh, _gz], [x, cy + hh, _gz]]
                 segs += [2, idx, idx + 1]
                 idx += 2
-            for y in lines:
-                pts += [[-half, y, _gz], [half, y, _gz]]
+            for y in lines_h:
+                pts += [[cx - hw, y, _gz], [cx + hw, y, _gz]]
                 segs += [2, idx, idx + 1]
                 idx += 2
-
             grid = pv.PolyData()
             grid.points = np.array(pts, dtype=np.float32)
             grid.lines = np.array(segs, dtype=np.int_)
-            _grid_color   = "#454749" if _T.is_dark() else "#6a6e72"
-            _grid_opacity = 1.0
-            _grid_width   = 1.2      if _T.is_dark() else 1.4
+            # Grille style BS : presque noire en dark, gris moyen en clair
+            _grid_color = "#1a1c1e" if _T.is_dark() else "#8a8e92"
+            _grid_width  = 1.0      if _T.is_dark() else 1.2
             self._plotter.add_mesh(
-                grid,
-                color=_grid_color,
-                opacity=_grid_opacity,
+                grid, color=_grid_color, opacity=1.0,
                 line_width=_grid_width,
-                name="build_plate_grid",
-                pickable=False,
+                name=f"build_plate_grid{suffix}", pickable=False,
             )
         except Exception:
             pass
+
+    def _add_build_plate(self, mesh=None) -> None:
+        """Ajoute un plateau dont la taille s'adapte à la pièce chargée."""
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+        try:
+            if mesh is not None:
+                # Empreinte XY uniquement — ne pas utiliser Z (hauteur)
+                ext = mesh.bounding_box.extents
+                footprint = float(max(ext[0], ext[1]))
+                # Marge adaptative : généreuse pour les petites pièces, serrée pour les grandes
+                margin = max(footprint * 0.3, 60.0)
+                plate_size = max(footprint + margin, 30.0)
+            else:
+                plate_size = self._PLATE_SIZE
+            self._current_plate_size = plate_size
+            self._draw_single_plate(0.0, 0.0, plate_size)
+        except Exception:
+            pass
+
+    def _add_multipart_plates(self, final_meshes: list, orig_positions: list,
+                               plate_count: int) -> None:
+        """Dessine un plateau distinct par groupe de pièces.
+
+        Utilise une grille spatiale sur les positions ORIGINALES (avant centrage)
+        pour reproduire fidèlement l'assignation de plateaux de Bambu Studio.
+        orig_positions : liste de [x, y] dans l'espace global 3MF (transforms XY).
+        """
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+        try:
+            import numpy as _np
+            import math as _math
+
+            pos_arr = _np.array(orig_positions, dtype=np.float64)
+
+            # Trouver la taille de grille qui donne exactement plate_count groupes
+            labels = None
+            for grid_size in (256, 300, 350, 400, 500, 600, 800):
+                tile_map: dict[tuple, list] = {}
+                for i, (x, y) in enumerate(orig_positions):
+                    key = (_math.floor(x / grid_size), _math.floor(y / grid_size))
+                    tile_map.setdefault(key, []).append(i)
+                n_tiles = len(tile_map)
+                if n_tiles == plate_count:
+                    # Convertir en labels
+                    lbl = [0] * len(orig_positions)
+                    for pid, idxs in enumerate(tile_map.values()):
+                        for i in idxs:
+                            lbl[i] = pid
+                    labels = lbl
+                    logger.debug(f"Grille {grid_size}mm → {n_tiles} tuiles ✓")
+                    break
+
+            if labels is None:
+                # Fallback K-means si aucune grille ne donne le bon nombre
+                from scipy.cluster.vq import kmeans2 as _km2
+                k = min(plate_count, len(orig_positions))
+                _, km_labels = _km2(pos_arr[:, :2].astype(np.float64), k,
+                                    minit="points", seed=42)
+                labels = [int(l) for l in km_labels]
+                logger.warning(f"Grille spatiale échouée → K-means k={k}")
+
+            PAD = 20.0
+            unique_plates = sorted(set(labels))
+            for pid in unique_plates:
+                idxs = [i for i, l in enumerate(labels) if l == pid]
+                if not idxs:
+                    continue
+                cluster_pts = _np.vstack([final_meshes[i].vertices for i in idxs])
+                xmin, ymin = cluster_pts[:, 0].min(), cluster_pts[:, 1].min()
+                xmax, ymax = cluster_pts[:, 0].max(), cluster_pts[:, 1].max()
+                cx = (xmin + xmax) / 2
+                cy = (ymin + ymax) / 2
+                pw = max((xmax - xmin) + PAD * 2, 30.0)
+                ph = max((ymax - ymin) + PAD * 2, 30.0)
+                self._draw_single_plate(cx, cy, max(pw, ph),
+                                        suffix=f"_{pid}",
+                                        plate_w=pw, plate_h=ph)
+
+        except Exception as _e:
+            logger.warning(f"Multi-plate draw failed: {_e}")
+            try:
+                import numpy as _np
+                cluster_pts = _np.vstack([m.vertices for m in final_meshes])
+                xmin, xmax = cluster_pts[:, 0].min(), cluster_pts[:, 0].max()
+                ymin, ymax = cluster_pts[:, 1].min(), cluster_pts[:, 1].max()
+                size = max(xmax - xmin, ymax - ymin) * 1.3
+                self._draw_single_plate((xmin+xmax)/2, (ymin+ymax)/2, size)
+            except Exception:
+                self._draw_single_plate(0.0, 0.0, self._PLATE_SIZE)
 
     def _cancel_mesh_prep(self) -> None:
         """Annule la Phase 2 en cours en incrémentant le compteur de génération."""
         self._load_gen = getattr(self, '_load_gen', 0) + 1
 
-    # Couleurs de prévisualisation par slot AMS (neutres, distinctes)
+    # Couleurs filament AMS — saturées pour montrer le PBR (reflets nets sur surface brillante)
     _SLOT_COLORS = {
-        1: "#DCDCD4", 2: "#7EC4E8", 3: "#E89C6C", 4: "#7CD4A0",
-        5: "#C07CE0", 6: "#E0E07C", 7: "#E07C7C", 8: "#7CE0E0",
+        1: "#F0EBE0",  # blanc ivoire PLA
+        2: "#2E86C1",  # bleu vif
+        3: "#E67E22",  # orange chaud
+        4: "#27AE60",  # vert foncé
+        5: "#8E44AD",  # violet
+        6: "#F1C40F",  # jaune
+        7: "#E74C3C",  # rouge
+        8: "#1ABC9C",  # turquoise
     }
+
+    def _compute_arrange(self, transformed_meshes: list) -> tuple:
+        """Shelf-packing pour séparer les pièces superposées à l'origine.
+
+        Returns (do_arrange: bool, offsets: list[(dx, dy)]).
+        Si les pièces sont déjà positionnées (spread suffisant), renvoie False.
+        """
+        MARGIN = 15.0
+        n = len(transformed_meshes)
+        if n <= 1:
+            return False, [(0.0, 0.0)]
+
+        centroids_xy = []
+        sizes_xy = []
+        for m in transformed_meshes:
+            b = m.bounds
+            cx = (float(b[0][0]) + float(b[1][0])) / 2
+            cy = (float(b[0][1]) + float(b[1][1])) / 2
+            w = max(float(b[1][0]) - float(b[0][0]), 5.0)
+            h = max(float(b[1][1]) - float(b[0][1]), 5.0)
+            centroids_xy.append((cx, cy))
+            sizes_xy.append((w, h))
+
+        max_extent = max(max(s) for s in sizes_xy)
+        cx_mean = sum(c[0] for c in centroids_xy) / n
+        cy_mean = sum(c[1] for c in centroids_xy) / n
+        spread = max(abs(c[0] - cx_mean) + abs(c[1] - cy_mean) for c in centroids_xy)
+
+        # Bien positionné sur 1 plateau (spread < 200mm) → garder les positions.
+        # Multi-plateau (spread > 200mm) → arranger pour affichage compact.
+        if spread > max_extent * 0.15 and spread < 200.0:
+            return False, [(0.0, 0.0)] * n  # déjà positionné
+
+        # Shelf-packing : trier par hauteur décroissante
+        order = sorted(range(n), key=lambda i: sizes_xy[i][1], reverse=True)
+        avg_w = sum(s[0] for s in sizes_xy) / n
+        max_row_w = max(math.sqrt(n) * avg_w * 1.2, max(s[0] for s in sizes_xy))
+
+        shelves: list[tuple[list, float]] = []
+        current_shelf: list[tuple[int, float, float, float]] = []
+        current_x = 0.0
+        current_h = 0.0
+
+        for idx in order:
+            w, h = sizes_xy[idx]
+            if current_shelf and current_x + w > max_row_w + MARGIN:
+                shelves.append((current_shelf, current_h))
+                current_shelf = []
+                current_x = 0.0
+                current_h = 0.0
+            current_shelf.append((idx, current_x, w, h))
+            current_x += w + MARGIN
+            current_h = max(current_h, h)
+        if current_shelf:
+            shelves.append((current_shelf, current_h))
+
+        total_h = sum(s[1] for s in shelves) + MARGIN * max(len(shelves) - 1, 0)
+        placed: dict[int, tuple[float, float]] = {}
+        cur_y = -total_h / 2
+
+        for shelf_items, shelf_h in shelves:
+            shelf_w = sum(item[2] for item in shelf_items) + MARGIN * max(len(shelf_items) - 1, 0)
+            cur_x = -shelf_w / 2
+            for idx, _, w, h in shelf_items:
+                orig_cx, orig_cy = centroids_xy[idx]
+                target_x = cur_x + w / 2
+                target_y = cur_y + shelf_h / 2
+                placed[idx] = (target_x - orig_cx, target_y - orig_cy)
+                cur_x += w + MARGIN
+            cur_y += shelf_h + MARGIN
+
+        offsets = [placed.get(i, (0.0, 0.0)) for i in range(n)]
+        logger.info(f"Auto-arrange : {n} pièces sur {len(shelves)} rangée(s)")
+        return True, offsets
 
     def _load_multipart_mesh(self, threemf_data) -> None:
         """Affiche un 3MF multi-objets — chaque objet = acteur séparé coloré par slot."""
-        from core.geometry.threemf_data import ThreeMFData
+        import trimesh as _trimesh
 
-        combined = threemf_data.combined_mesh
-        self._mesh = combined
+        self._mesh = threemf_data.combined_mesh
         self._pv_mesh_cache = None
         self._face_colors = None
         self._view_mode = "normal"
         self._plotter.clear()
         self._setup_lights()
-        self._add_build_plate(combined)
 
-        _bb = combined.bounding_box.extents
-        self._rotation_pivot = np.array([0.0, 0.0, float(_bb[2]) * 0.5])
+        # Afficher TOUS les objets de tous les plateaux.
+        # L'auto-arrange gère la disposition compacte si les positions Bambu sont dispersées.
+        _display_objects = threemf_data.objects
+        _plate_indices = {getattr(o, "plate_index", 0) for o in _display_objects}
+        _has_multiplate = len(_plate_indices) > 1
 
-        # Calcul de l'offset global : centrer XY, poser à Z=0
-        # combined.bounds = [[xmin,ymin,zmin], [xmax,ymax,zmax]]
-        b = combined.bounds
-        ox = -(float(b[0][0]) + float(b[1][0])) / 2
-        oy = -(float(b[0][1]) + float(b[1][1])) / 2
-        oz = -float(b[0][2])
+        # LOG DIAGNOSTIC — montre EXACTEMENT ce qui est rendu
+        logger.info(f"[VIEWER RENDER] {len(_display_objects)} objets:")
+        for _do in _display_objects:
+            logger.info(f"  → {_do.object_id} | name={_do.name} | faces={len(_do.mesh.faces)} | extents={_do.mesh.bounding_box.extents.round(1)} | plate={_do.plate_index}")
 
-        _total_faces = sum(len(o.mesh.faces) for o in threemf_data.objects)
-        _smooth = _total_faces < 150_000
+        raw_meshes = []
+        for obj in _display_objects:
+            raw_meshes.append(obj.mesh)
 
-        for obj in threemf_data.objects:
-            try:
+        face_counts = [len(m.faces) for m in raw_meshes]
+        if len(face_counts) > 1:
+            min_fc = min(face_counts)
+            clean_idx = face_counts.index(min_fc)
+            clean_mesh = raw_meshes[clean_idx]
+            # Remplacer les meshes avec trop de faces par le mesh propre
+            corrected = []
+            for i, (obj, fc) in enumerate(zip(_display_objects, face_counts)):
+                deviation = abs(fc - min_fc) / max(min_fc, 1)
+                if deviation > 0 and deviation < 0.05:
+                    # Même modèle mais modifié par boolean → utiliser la version propre
+                    m = clean_mesh.copy()
+                else:
+                    m = obj.mesh.copy()
+                if not np.allclose(obj.transform, np.eye(4)):
+                    m.apply_transform(obj.transform)
+                corrected.append(m)
+            transformed = corrected
+        else:
+            transformed = []
+            for obj in _display_objects:
                 m = obj.mesh.copy()
                 if not np.allclose(obj.transform, np.eye(4)):
                     m.apply_transform(obj.transform)
-                m.apply_translation([ox, oy, oz])
-                pv_obj = self._trimesh_to_pyvista(m)
+                transformed.append(m)
+
+        # 2) Auto-arrange si les pièces se superposent ET fichier mono-slot.
+        # Pour les fichiers multicolores (slot_count > 1 = régions intentionnellement superposées),
+        # NE PAS auto-arranger — SAUF si les positions Bambu absolues rendent le combined mesh
+        # énorme (> 380mm en XY = multi-plateau ou positions absolues hors plateau normal).
+        try:
+            _cb = threemf_data.combined_mesh.bounding_box.extents
+            _footprint_xy = float(max(_cb[0], _cb[1]))
+        except Exception:
+            _footprint_xy = 0.0
+
+        # Seuil 200mm : en dessous = assemblage mono-plateau, pas d'arrange forcé.
+        # Au-dessus = multi-plateau ou positions absolues Bambu → forcer compactage.
+        _positions_huge = _footprint_xy > 200.0
+
+        if threemf_data.slot_count > 1 and not _positions_huge:
+            do_arrange = False
+            arrange_offsets = [(0.0, 0.0)] * len(transformed)
+        else:
+            do_arrange, arrange_offsets = self._compute_arrange(transformed)
+
+        # 3) Construire les meshes finaux (avec arrange + poser sur plateau)
+        final_meshes = []
+        for m, (dx, dy) in zip(transformed, arrange_offsets):
+            mc = m.copy()
+            if do_arrange:
+                # Arrange XY + poser chaque pièce indépendamment sur le plateau (Z_min→0)
+                mc.apply_translation([dx, dy, -float(m.bounds[0][2])])
+            else:
+                # Assemblé multi-couleur : centrage XY global + Z_min individuel → plateau.
+                # Utiliser bounds individuels pour Z (pas global) évite le flottement
+                # quand les matrices Bambu placent les pièces à des hauteurs différentes.
+                b = threemf_data.combined_mesh.bounds
+                mc.apply_translation([
+                    -(float(b[0][0]) + float(b[1][0])) / 2,
+                    -(float(b[0][1]) + float(b[1][1])) / 2,
+                    -float(m.bounds[0][2]),   # Z individuel — chaque pièce part du plateau
+                ])
+            final_meshes.append(mc)
+
+        # 4) Centrer l'ensemble sur XY
+        ref = _trimesh.util.concatenate(final_meshes) if final_meshes else self._mesh
+        rb = ref.bounds
+        gx = -(float(rb[0][0]) + float(rb[1][0])) / 2
+        gy = -(float(rb[0][1]) + float(rb[1][1])) / 2
+
+        # CRITIQUE : mettre à jour self._mesh avec le mesh arrangé/normalisé.
+        # Sans ça, quand colorize_overhangs appelle _add_build_plate(self._mesh),
+        # il utilise le combined_mesh original (ex: 2371mm) → plateau gigantesque
+        # → les objets correctement arrangés apparaissent minuscules au centre.
+        if gx != 0.0 or gy != 0.0:
+            _ref_centered = ref.copy()
+            _ref_centered.apply_translation([gx, gy, 0.0])
+            self._mesh = _ref_centered
+        else:
+            self._mesh = ref
+
+        # Stocker les centres viewer-space de chaque objet (après centrage global).
+        # Utilisé par les barres de fragilité pour se positionner exactement au-dessus
+        # de chaque groupe, sans dépendre d'un calcul de face-offsets fragile.
+        self._object_viewer_bounds: list[dict] = []
+        for _mf in final_meshes:
+            _b = _mf.bounds
+            self._object_viewer_bounds.append({
+                "xmin": float(_b[0][0]) + gx,
+                "xmax": float(_b[1][0]) + gx,
+                "ymin": float(_b[0][1]) + gy,
+                "ymax": float(_b[1][1]) + gy,
+                "cz":   float(_b[1][2]),
+            })
+
+        self._add_build_plate(self._mesh)
+
+        _bb = ref.bounding_box.extents
+        self._rotation_pivot = np.array([0.0, 0.0, float(_bb[2]) * 0.5])
+
+        rq = self._render_quality()
+        _total_faces = sum(len(m.faces) for m in final_meshes)
+        _use_pbr = _total_faces < 600_000  # PBR sur main thread — skip si trop lourd
+
+        for m_final, obj in zip(final_meshes, _display_objects):
+            try:
+                mc = m_final.copy()
+                mc.apply_translation([gx, gy, 0.0])
+                pv_obj = self._trimesh_to_pyvista(mc)
                 color = self._SLOT_COLORS.get(obj.extruder, "#AABBCC")
-                actor_name = f"obj_{obj.object_id}"
-                self._plotter.add_mesh(
-                    pv_obj, color=color, show_edges=False,
-                    smooth_shading=_smooth,
-                    pbr=False, ambient=0.15, diffuse=0.85,
-                    name=actor_name,
-                )
+
+                if _use_pbr:
+                    # Normales PBR : feature_angle 25° → arêtes vives nettes,
+                    # surfaces courbes lisses. split_vertices = hard-edge shading.
+                    try:
+                        pv_obj = pv_obj.compute_normals(
+                            cell_normals=False,
+                            point_normals=True,
+                            feature_angle=rq["feature_angle"],
+                            split_vertices=True,
+                            flip_normals=False,
+                            consistent_normals=True,
+                            progress_bar=False,
+                        )
+                    except Exception:
+                        pass
+                    self._plotter.add_mesh(
+                        pv_obj, color=color, show_edges=False,
+                        smooth_shading=True,
+                        pbr=True,
+                        metallic=rq["metallic"],
+                        roughness=rq["roughness"],
+                        specular=rq["specular"],
+                        ambient=rq["ambient"],
+                        diffuse=rq["diffuse"],
+                        name=f"obj_{obj.object_id}",
+                    )
+                else:
+                    self._plotter.add_mesh(
+                        pv_obj, color=color, show_edges=False,
+                        smooth_shading=True,
+                        pbr=False, ambient=0.12, diffuse=0.88,
+                        name=f"obj_{obj.object_id}",
+                    )
             except Exception as _e:
                 logger.warning(f"Objet {obj.name} non affiché : {_e}")
 
-        # Caméra basée sur le mesh combiné
+        # 5) Caméra sur le bounding box global arrangé
         try:
             _elev = math.radians(25)
             _far  = 1e6
@@ -740,14 +1038,12 @@ class Viewer3D(QWidget):
                                               math.sin(_elev) * _far)
             self._plotter.camera.focal_point = (0.0, 0.0, 0.0)
             self._plotter.camera.up = (0.0, 0.0, 1.0)
-            _pad = float(combined.bounding_box.extents.max()) * 0.5
-            # Bounds approximatifs du mesh centré
-            _hw = float(combined.bounding_box.extents[0]) / 2 + _pad
-            _hd = float(combined.bounding_box.extents[1]) / 2 + _pad
-            _ht = float(combined.bounding_box.extents[2]) + _pad
-            _pv_b = [-_hw, _hw, -_hd, _hd, -_pad * 0.2, _ht]
+            _pad = float(_bb.max()) * 0.5
+            _hw = float(_bb[0]) / 2 + _pad
+            _hd = float(_bb[1]) / 2 + _pad
+            _ht = float(_bb[2]) + _pad
             try:
-                self._plotter.reset_camera(bounds=_pv_b)
+                self._plotter.reset_camera(bounds=[-_hw, _hw, -_hd, _hd, -_pad * 0.2, _ht])
             except TypeError:
                 self._plotter.reset_camera()
             self._plotter.renderer.ResetCameraClippingRange()
@@ -756,7 +1052,154 @@ class Viewer3D(QWidget):
             self._plotter.reset_camera()
 
         self._plotter.render()
-        logger.info(f"3MF multipart affiché : {threemf_data.object_count} objets · {threemf_data.slot_count} slot(s)")
+        logger.info(f"3MF multipart affiché : {threemf_data.object_count} objets · {threemf_data.slot_count} slot(s) · {threemf_data.plate_count} plateau(x)")
+
+    # ── Barres de fragilité flottantes ────────────────────────────────────────
+
+    def show_fragility_bars(self, bars: list[dict]) -> None:
+        """Barres de fragilité flottantes style jeu vidéo — toujours face caméra.
+
+        Utilise des vtkFollower (sprite billboard) pour que les barres s'orientent
+        automatiquement vers la caméra quelle que soit la rotation de la scène.
+
+        bars : liste de dicts {cx, cy, cz, score, label}
+        """
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+
+        self.hide_fragility_bars()
+
+        try:
+            from vtk import vtkFollower, vtkPolyDataMapper
+        except ImportError:
+            logger.warning("vtkFollower non disponible — barres fragilité ignorées")
+            return
+
+        BAR_W  = 40.0   # largeur totale (mm)
+        BAR_H  = 5.5    # hauteur (mm)
+        LIFT   = 20.0   # hauteur au-dessus de la pièce (mm)
+
+        camera = self._plotter.renderer.GetActiveCamera()
+        self._fragility_followers: list = []
+
+        def _hex_to_rgb(h: str) -> tuple[float, float, float]:
+            h = h.lstrip("#")
+            return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+
+        def _add_follower(plane_pv, pos, color_hex: str, z_offset: float = 0.0,
+                          opacity: float = 1.0):
+            mapper = vtkPolyDataMapper()
+            mapper.SetInputData(plane_pv)
+            actor = vtkFollower()
+            actor.SetMapper(mapper)
+            actor.GetProperty().SetColor(*_hex_to_rgb(color_hex))
+            actor.GetProperty().SetOpacity(opacity)
+            actor.GetProperty().LightingOff()
+            actor.SetPosition(pos[0], pos[1], pos[2] + z_offset)
+            actor.SetCamera(camera)
+            self._plotter.renderer.AddActor(actor)
+            self._fragility_followers.append(actor)
+
+        for i, b in enumerate(bars):
+            cx   = float(b["cx"])
+            cy   = float(b["cy"])
+            top_z = float(b["cz"]) + LIFT
+            score = max(0.0, min(1.0, float(b.get("score", 0.0))))
+            label = b.get("label", f"Lot {i+1}")
+
+            fill_color = "#2ECC71" if score < 0.30 else "#F39C12" if score < 0.60 else "#E74C3C"
+
+            try:
+                # ── Fond gris foncé (plein) ──
+                bg = pv.Plane(
+                    center=(0.0, 0.0, 0.0),
+                    direction=(0.0, 0.0, 1.0),
+                    i_size=BAR_W, j_size=BAR_H,
+                    i_resolution=1, j_resolution=1,
+                )
+                # ── Barre combinée : fond + fill en un seul follower ──────────
+                # Un seul acteur = pas de parallaxe/décalage lors des rotations.
+                # On crée un mesh combiné avec couleurs par cellule.
+                fill_w = max(BAR_W * score, 0.5)
+                try:
+                    from vtk import vtkFollower, vtkPolyDataMapper, vtkAppendPolyData
+                    # Fond noir complet
+                    bg_pts = np.array([
+                        [-BAR_W/2, -BAR_H/2, 0], [ BAR_W/2, -BAR_H/2, 0],
+                        [ BAR_W/2,  BAR_H/2, 0], [-BAR_W/2,  BAR_H/2, 0],
+                    ], dtype=np.float32)
+                    # Fill coloré (depuis bord gauche)
+                    fx = -BAR_W/2 + fill_w
+                    fill_pts = np.array([
+                        [-BAR_W/2, -BAR_H/2-0.2, 0.15], [fx, -BAR_H/2-0.2, 0.15],
+                        [fx,        BAR_H/2+0.2, 0.15], [-BAR_W/2, BAR_H/2+0.2, 0.15],
+                    ], dtype=np.float32)
+
+                    def _make_quad(pts, color_hex):
+                        poly = pv.PolyData()
+                        poly.points = pts
+                        poly.faces = np.array([4, 0, 1, 2, 3])
+                        rgb = np.array([[int(color_hex[j:j+2],16) for j in (1,3,5)]], dtype=np.uint8)
+                        poly.cell_data["RGB"] = rgb
+                        return poly
+
+                    bar_bg   = _make_quad(bg_pts,   "#1E2025")
+                    bar_fill = _make_quad(fill_pts, fill_color)
+                    combined = bar_bg.merge(bar_fill)
+
+                    mapper = vtkPolyDataMapper()
+                    mapper.SetInputData(combined)
+                    mapper.SetScalarModeToUseCellData()
+                    mapper.SelectColorArray("RGB")
+                    mapper.SetColorModeToDirectScalars()
+
+                    actor = vtkFollower()
+                    actor.SetMapper(mapper)
+                    actor.GetProperty().SetOpacity(0.93)
+                    actor.GetProperty().LightingOff()   # barres toujours à couleur constante
+                    actor.SetPosition(cx, cy, top_z)
+                    actor.SetCamera(camera)
+                    self._plotter.renderer.AddActor(actor)
+                    self._fragility_followers.append(actor)
+                except Exception as _eb:
+                    # Fallback si vtkAppendPolyData indispo
+                    _add_follower(bg, (cx, cy, top_z), "#1E2025", opacity=0.92)
+
+                # ── Texte centré au-dessus de la barre ──
+                pct_text = f"{score * 100:.0f}%"
+                label_text = f"{label}  {pct_text}"
+                self._plotter.add_point_labels(
+                    np.array([[cx, cy, top_z + BAR_H / 2 + 4.5]]),
+                    [label_text],
+                    font_size=13, text_color="white", bold=True,
+                    show_points=False, always_visible=True,
+                    shape=None, name=f"frag_label_{i}",
+                    justification_horizontal="center",
+                )
+            except Exception as _e:
+                logger.warning(f"Barre fragilité groupe {i} : {_e}")
+
+        self._plotter.render()
+
+    def hide_fragility_bars(self) -> None:
+        """Supprime toutes les barres de fragilité (followers + labels)."""
+        if self._plotter is None:
+            return
+        # Supprimer les vtkFollower actors
+        for actor in getattr(self, "_fragility_followers", []):
+            try:
+                self._plotter.renderer.RemoveActor(actor)
+            except Exception:
+                pass
+        self._fragility_followers = []
+        # Supprimer les labels
+        for name in list(self._plotter.actors.keys()):
+            if name.startswith("frag_label_"):
+                try:
+                    self._plotter.remove_actor(name, render=False)
+                except Exception:
+                    pass
+        self._plotter.render()
 
     def load_mesh(self, mesh) -> None:
         """Affiche un trimesh.Trimesh ou ThreeMFData."""
@@ -799,7 +1242,7 @@ class Viewer3D(QWidget):
         raw_pv = self._place_on_plate(self._trimesh_to_pyvista(mesh))
         try:
             self._plotter.add_mesh(
-                raw_pv, color="#e8e4de", show_edges=False,
+                raw_pv, color="#f2ede8", show_edges=False,
                 smooth_shading=_phase1_smooth, name="main_mesh",
             )
         except Exception as _e:
@@ -863,7 +1306,7 @@ class Viewer3D(QWidget):
         try:
             self._plotter.add_mesh(
                 pv_mesh,
-                color="#e8e4de",
+                color="#f2ede8",
                 show_edges=False,
                 smooth_shading=True,
                 pbr=True,
@@ -889,35 +1332,51 @@ class Viewer3D(QWidget):
         self._plotter.clear()
         self._setup_lights()
         self._add_build_plate(mesh)
-        # NE PAS appeler _smooth_normals : split_vertices=True change le n_points
-        # et casserait la correspondance face→vertex de nos scalaires.
-        # Pas de problème visuel : ambient=1.0 / diffuse=0.0, les normales n'ont aucun effet.
+        # NB : compute_normals avec split_vertices=False pour garder n_points
+        # identique au array v_sev. smooth_shading=True gère le lissage visuel.
         pv_mesh = self._place_on_plate(self._trimesh_to_pyvista(mesh))
 
-        # Sévérité par face [0, 1] — canal R = sévérité encodée, G=128 = face sûre
-        face_sev = face_colors[:, 0].astype(np.float32) / 255.0
+        # ── Vertex scalars avec pondération par fraction surplomb ────────────────
+        # Principe anti-spike : un vertex frontière (partagé entre face surplomb et
+        # grande face safe) reçoit une valeur proportionnelle à la FRACTION d'aire
+        # de ses faces surplombs. Ex: 1 petite face surplomb + 5 grandes faces safe
+        # → fraction ≈ 0.05 → valeur ≈ 0.05 × sévérité → gradient invisible.
 
-        # Face → vertex : chaque vertex = moyenne des faces adjacentes.
-        # np.bincount est O(F), bien plus rapide que np.add.at sur gros meshes.
-        n_v = len(mesh.vertices)
-        f = mesh.faces                          # (F, 3)
-        flat = f.ravel()                        # (F*3,)
-        rep  = np.repeat(face_sev, 3)           # sévérité répétée 3× par face
-        v_sev = np.bincount(flat, weights=rep,  minlength=n_v)
-        v_cnt = np.bincount(flat,               minlength=n_v)
-        v_sev /= np.maximum(v_cnt, 1)
+        face_sev_raw = face_colors[:, 0].astype(np.float64) / 255.0
+        ovh_mask_f   = (face_colors[:, 1] == 0).astype(np.float64)  # 1=surplomb, 0=safe
 
-        # Passe de diffusion légère — adoucit les contours sans diluer les zones sévères.
-        # Le max() préserve la valeur haute si un voisin est moins sévère.
+        n_v   = len(mesh.vertices)
+        f     = mesh.faces
+        flat  = f.ravel()
         v0, v1, v2 = f[:, 0], f[:, 1], f[:, 2]
+        face_areas = mesh.area_faces.astype(np.float64)
+
+        # Aire surplomb et aire totale par vertex
+        ovh_area  = np.bincount(flat, weights=np.repeat(face_areas * ovh_mask_f, 3), minlength=n_v)
+        tot_area  = np.bincount(flat, weights=np.repeat(face_areas,              3), minlength=n_v)
+        ovh_frac  = (ovh_area / np.maximum(tot_area, 1e-10)).astype(np.float32)
+
+        # Sévérité area-weighted depuis les faces surplombs uniquement
+        wsum = np.bincount(flat, weights=np.repeat(face_sev_raw * ovh_mask_f * face_areas, 3), minlength=n_v)
+        v_sev = np.where(ovh_area > 1e-10, wsum / np.maximum(ovh_area, 1e-10), 0.0).astype(np.float32)
+
+        # Pondérer par fraction → vertices frontière atténués naturellement
+        v_sev *= ovh_frac
+
+        # 1 passe de lissage léger — réduit les artefacts triangulaires sans
+        # propager la couleur vers les surfaces plates adjacentes (ex: intérieur coque)
+        v_sev_orig = v_sev.copy()
+        n_conn = np.maximum(np.bincount(flat, minlength=n_v) * 2, 1).astype(np.float32)
         nbr = (
             np.bincount(v0, weights=v_sev[v1] + v_sev[v2], minlength=n_v)
           + np.bincount(v1, weights=v_sev[v0] + v_sev[v2], minlength=n_v)
           + np.bincount(v2, weights=v_sev[v0] + v_sev[v1], minlength=n_v)
         )
-        v_sev_diffused = v_sev * 0.80 + (nbr / np.maximum(v_cnt * 2, 1)) * 0.20
-        # Conserver le maximum pour ne pas dégrader les pics de sévérité élevée
-        v_sev = np.maximum(v_sev, v_sev_diffused)
+        v_sev_s = v_sev * 0.85 + (nbr / n_conn).astype(np.float32) * 0.15
+        # Préserver les pics (zones sévères ≥ 0.40), lisser les frontières
+        v_sev = np.where(v_sev_orig >= 0.40,
+                         np.maximum(v_sev_s, v_sev_orig * 0.92),
+                         v_sev_s)
 
         pv_mesh.point_data["overhang"] = v_sev.astype(np.float32)
         self._plotter.add_mesh(
@@ -927,8 +1386,10 @@ class Viewer3D(QWidget):
             clim=[0.0, 1.0],
             show_scalar_bar=False,
             smooth_shading=True,
-            ambient=1.0,
-            diffuse=0.0,
+            # ambient élevé = couleurs surplomb dominent, triangles de shading invisibles
+            # (même principe que BS/PrusaSlicer pour leur vue surplombs)
+            ambient=0.88,
+            diffuse=0.12,
             specular=0.0,
             name="main_mesh",
         )
@@ -997,17 +1458,18 @@ class Viewer3D(QWidget):
         mode = PREFS.get("perf_mode", "full")
         _Q = {
             "full": {
-                # PBR ultra qualité — lisse comme du PLA brillant, éclairage cinématique
-                "metallic": 0.08, "roughness": 0.06, "specular": 0.92,
-                "ambient": 0.01,  "diffuse":  0.98,
-                "feature_angle": 8.0,
-                "ssao": dict(radius=1.8, bias=0.003, kernel_size=256, blur=True),
+                "metallic": 0.15, "roughness": 0.04, "specular": 0.99,
+                "ambient": 0.42,  "diffuse":  0.75,
+                # feature_angle élevé → seules les arêtes vraiment vives (>75°) sont dures,
+                # les panneaux lisses et transitions douces restent smooth → pas de triangles
+                "feature_angle": 75.0,
+                "ssao": None,
             },
             "balanced": {
-                "metallic": 0.10, "roughness": 0.28, "specular": 0.35,
-                "ambient": 0.06,  "diffuse":  0.90,
-                "feature_angle": 25.0,
-                "ssao": dict(radius=0.9, bias=0.010, kernel_size=64,  blur=True),
+                "metallic": 0.10, "roughness": 0.22, "specular": 0.55,
+                "ambient": 0.05,  "diffuse":  0.92,
+                "feature_angle": 30.0,
+                "ssao": dict(radius=1.0, bias=0.008, kernel_size=128, blur=True),
             },
             "lite": {
                 "metallic": 0.00, "roughness": 0.55, "specular": 0.00,

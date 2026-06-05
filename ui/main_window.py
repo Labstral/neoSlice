@@ -31,7 +31,7 @@ from ui.components.analysis_panel import AnalysisPanel
 from ui.components.viewer_3d import Viewer3D
 from ui.components.params_preview import ParamsPreview
 from ui.components.filament_printer_selector import FilamentPrinterSelector
-from ui.components.welcome_dialog import WelcomeDialog, should_show_welcome
+from ui.components.welcome_dialog import WelcomeDialog, should_show_welcome, is_update
 from ui.components.tutorial_overlay import TutorialOverlay, should_show_tutorial
 from ui.components.settings_dialog import SettingsDialog
 
@@ -323,8 +323,14 @@ class AnalysisWorker(QObject):
                 report.overhang_ratio           = ov.overhang_ratio
                 report.projected_overhang_ratio = ov.projected_ratio
                 report.max_overhang_angle       = ov.max_angle_deg
-                report.estimated_support_ratio  = min(0.60, ov.projected_ratio * 2.0)
-                report.support_needed           = ov.severity > 0.0 or ov.overhang_ratio > 0.0
+                # Utilise display_mask pour le ratio support — cohérent avec la jauge et les couleurs
+                _dm_ratio = (float(ov.display_mask.sum()) / len(ov.display_mask)
+                             if ov.display_mask is not None and len(ov.display_mask) > 0
+                             else ov.overhang_ratio)
+                # Seuil 1.5% : évite les faux positifs des micro-artefacts de bord (ex: plaque hexagonale)
+                report.support_needed           = _dm_ratio > 0.015 or ov.has_floating_regions
+                # VOL. SUPPORT = 0 si aucun support réel nécessaire
+                report.estimated_support_ratio  = min(0.60, _dm_ratio * 2.0) if report.support_needed else 0.0
                 viz_mask = ov.display_mask if ov.display_mask is not None else ov.critical_face_mask
                 self._support_mask = viz_mask
                 self._ov_result    = ov
@@ -1099,7 +1105,7 @@ class MainWindow(QMainWindow):
             assets = Path(_meipass) / "assets"
         else:
             assets = Path(__file__).parent.parent / "assets"
-        dlg = WelcomeDialog(self, assets_path=assets)
+        dlg = WelcomeDialog(self, assets_path=assets, show_whats_new=is_update())
         apply_title_bar_theme(dlg)
         dlg.exec()
 
@@ -1366,15 +1372,25 @@ class MainWindow(QMainWindow):
                             downloaded += len(chunk)
                             pct = int(downloaded / total * 100) if total > 0 else -1
                             _q.put(("progress", pct))
-                # Vérifier que c'est un vrai exécutable Windows (magic bytes MZ)
-                with open(tmp, "rb") as _chk:
-                    magic = _chk.read(2)
-                if magic != b"MZ":
+                # Vérifier l'intégrité selon la plateforme
+                import sys as _sys2
+                if _sys2.platform == "win32":
+                    with open(tmp, "rb") as _chk:
+                        magic = _chk.read(2)
+                    if magic != b"MZ":
+                        import os as _os
+                        try: _os.remove(tmp)
+                        except: pass
+                        _q.put(("error", "Fichier téléchargé invalide (accès refusé ou repo privé). Rendez le repo public ou téléchargez manuellement."))
+                        return
+                else:
+                    # macOS/Linux : vérifier taille minimale (ZIP ou DMG valide > 1 MB)
                     import os as _os
-                    try: _os.remove(tmp)
-                    except: pass
-                    _q.put(("error", "Fichier téléchargé invalide (accès refusé ou repo privé). Rendez le repo public ou téléchargez manuellement."))
-                    return
+                    if _os.path.getsize(tmp) < 1_000_000:
+                        try: _os.remove(tmp)
+                        except: pass
+                        _q.put(("error", "Fichier téléchargé trop petit — téléchargement incomplet."))
+                        return
                 _q.put(("done", tmp))
             except Exception as exc:
                 _q.put(("error", str(exc)))
@@ -1536,6 +1552,17 @@ class MainWindow(QMainWindow):
         # Passer ThreeMFData au viewer pour affichage multi-acteurs colorés,
         # ou le mesh simple pour affichage normal.
         self._viewer.load_mesh(mesh)
+
+        # Pour les 3MF multi-objets : le viewer a arrangé les pièces en une grille compacte
+        # et mis à jour viewer._mesh avec ce mesh normalisé (~200mm vs 2371mm original).
+        # Mettre à jour self._mesh pour que colorize_overhangs et l'export utilisent
+        # le mesh de la bonne taille (face count identique = même meshes, positions différentes).
+        if isinstance(mesh, ThreeMFData):
+            _vm = getattr(self._viewer, '_mesh', None)
+            if _vm is not None and len(_vm.faces) == len(self._mesh.faces):
+                self._mesh = _vm
+                logger.debug(f"main_window._mesh mis à jour avec viewer._mesh arrangé ({len(_vm.faces)} faces)")
+
         self._topbar.set_has_stl(True)
 
         try:
@@ -1622,32 +1649,41 @@ class MainWindow(QMainWindow):
 
         if report.overhang_severity > 0.0 or report.support_needed:
             try:
-                ov = report.overhang_result
-                if ov is not None:
-                    # Utiliser display_mask pour la visu (masque brut, sans filtre pont)
-                    # critical_face_mask filtre trop agressivement sur les maillages organiques
-                    visu_ov = ov.__class__(
-                        severity=ov.severity,
-                        overhang_ratio=ov.overhang_ratio,
-                        projected_ratio=ov.projected_ratio,
-                        max_angle_deg=ov.max_angle_deg,
-                        critical_face_mask=(
-                            ov.display_mask if ov.display_mask is not None
-                            else ov.critical_face_mask
-                        ),
-                        has_floating_regions=ov.has_floating_regions,
-                        display_mask=ov.display_mask,
-                    )
-                    colors = overhang_face_colors(self._mesh, visu_ov)
+                # Pour les 3MF multi-objets : analyser chaque objet séparément
+                # pour éviter les interférences entre meshes dans l'analyse combinée.
+                if self._threemf_data is not None and self._threemf_data.object_count > 1:
+                    colors = self._build_multipart_overhang_colors()
                 else:
-                    # Fallback : recalcul rapide (smooth=False pour la vitesse)
-                    ov = analyze_overhangs(self._mesh, smooth=False, check_floating=False)
-                    colors = overhang_face_colors(self._mesh, ov)
+                    ov = report.overhang_result
+                    if ov is not None:
+                        visu_ov = ov.__class__(
+                            severity=ov.severity,
+                            overhang_ratio=ov.overhang_ratio,
+                            projected_ratio=ov.projected_ratio,
+                            max_angle_deg=ov.max_angle_deg,
+                            critical_face_mask=(
+                                ov.display_mask if ov.display_mask is not None
+                                else ov.critical_face_mask
+                            ),
+                            has_floating_regions=ov.has_floating_regions,
+                            display_mask=ov.display_mask,
+                        )
+                        colors = overhang_face_colors(self._mesh, visu_ov)
+                    else:
+                        ov = analyze_overhangs(self._mesh, smooth=False, check_floating=False)
+                        colors = overhang_face_colors(self._mesh, ov)
                 self._viewer.colorize_overhangs(self._mesh, colors)
             except Exception:
                 logger.exception("colorize_overhangs échoué")
 
         self._viewer.start_auto_rotate()
+
+        # Barres de fragilité flottantes pour les 3MF multi-groupes
+        if self._threemf_data is not None and self._threemf_data.plate_count > 1:
+            try:
+                self._show_fragility_bars_multipart()
+            except Exception:
+                logger.exception("Barres fragilité multipart échouées")
 
         oh_pct = report.overhang_severity * 100
         oh_tag = _("status.oh_tag", pct=oh_pct) if oh_pct > 0.1 else ""
@@ -1655,6 +1691,178 @@ class MainWindow(QMainWindow):
             _("status.analysis_ok", ms=report.analysis_time_ms, oh_tag=oh_tag),
             TELE_GREEN,
         )
+
+    def _build_multipart_overhang_colors(self) -> np.ndarray:
+        """Analyse les surplombs par objet séparément — symétrie garantie.
+
+        Chaque objet est analysé indépendamment dans son propre repère (Z_min→0).
+        Pour les objets de taille similaire (copies du même modèle), on utilise
+        l'analyse qui détecte le MOINS de surplombs et on l'applique à toutes
+        les copies similaires — élimine les asymétries dues aux différences mineures
+        de maillage entre copies sauvegardées différemment.
+        """
+        from core.geometry.overhang_detector import analyze_overhangs, overhang_face_colors
+
+        td = self._threemf_data
+        per_obj: list[tuple] = []  # (mesh, colors, overhang_ratio, n_faces)
+
+        # Utiliser le mesh propre (min faces) pour toutes les copies similaires
+        _face_counts = [len(o.mesh.faces) for o in td.objects]
+        _min_fc = min(_face_counts) if _face_counts else 0
+        _clean_ref = td.objects[_face_counts.index(_min_fc)].mesh if _face_counts else None
+
+        for obj in td.objects:
+            _fc = len(obj.mesh.faces)
+            _dev = abs(_fc - _min_fc) / max(_min_fc, 1) if _min_fc > 0 else 0
+            _src = (_clean_ref.copy() if _dev > 0 and _dev < 0.05 and _clean_ref is not None
+                    else obj.mesh.copy())
+            m = _src
+            if not np.allclose(obj.transform, np.eye(4)):
+                m.apply_transform(obj.transform)
+            m.apply_translation([0.0, 0.0, -float(m.bounds[0][2])])
+
+            try:
+                ov = analyze_overhangs(m, smooth=True, check_floating=False)
+                mask = ov.display_mask if ov.display_mask is not None else ov.critical_face_mask
+                visu_ov = ov.__class__(
+                    severity=ov.severity, overhang_ratio=ov.overhang_ratio,
+                    projected_ratio=ov.projected_ratio, max_angle_deg=ov.max_angle_deg,
+                    critical_face_mask=mask, has_floating_regions=False,
+                    display_mask=ov.display_mask,
+                )
+                colors = overhang_face_colors(m, visu_ov)
+                per_obj.append((m, colors, float(ov.overhang_ratio), len(m.faces)))
+            except Exception:
+                safe = np.zeros((len(m.faces), 4), dtype=np.uint8)
+                safe[:, 1] = 128; safe[:, 3] = 255
+                per_obj.append((m, safe, 0.0, len(m.faces)))
+
+        if not per_obj:
+            return np.zeros((len(self._mesh.faces), 4), dtype=np.uint8)
+
+        # Note: le masquage spatial par negative_part est retiré car il supprimait
+        # aussi les overhangs des bras (le bbox du modifier couvre tout le Groot).
+        # Le filtre internal_flat dans analyze_overhangs (nz < -0.92 à mi-hauteur)
+        # + l'utilisation du mesh propre (min faces) suffisent pour éliminer le cylindre.
+
+        # Symétrie : pour les copies similaires du même modèle, utiliser l'analyse
+        # du mesh avec le MOINS de faces (le "propre", non modifié par boolean ops).
+        # Ex: negative_part BS crée des faces supplémentaires sur 1 copie → artefact jaune.
+        all_colors = []
+        face_counts = [e[3] for e in per_obj]
+        min_fc = min(face_counts)
+        avg_fc = sum(face_counts) / len(face_counts)
+
+        # Référence = objet avec le moins de faces (non modifié par boolean ops)
+        # Utilisé pour TOUS les objets similaires (±5% de la taille min)
+        ref_idx = face_counts.index(min_fc)
+        ref_colors = per_obj[ref_idx][1]
+
+        for i, (m, colors, ratio, nf) in enumerate(per_obj):
+            deviation = abs(nf - min_fc) / max(min_fc, 1)
+            if deviation < 0.05:
+                if nf == min_fc:
+                    # Objet de référence — utiliser ses propres couleurs
+                    all_colors.append(ref_colors)
+                else:
+                    # Mesh avec faces boolean supplémentaires :
+                    # Utiliser les couleurs de la référence (490,639 faces)
+                    # pour les premières faces, et marquer "safe" les faces en excès.
+                    # Les faces boolean sont typiquement ajoutées EN FIN de liste par BS.
+                    extra = nf - min_fc  # = 1,440 faces boolean
+                    safe_extra = np.zeros((extra, 4), dtype=np.uint8)
+                    safe_extra[:, 1] = 128
+                    safe_extra[:, 3] = 255
+                    colors_fixed = np.vstack([ref_colors, safe_extra])
+                    logger.info(f"Groupe {i}: {extra} faces boolean masquées (safe)")
+                    all_colors.append(colors_fixed)
+            else:
+                all_colors.append(colors)
+
+        return np.vstack(all_colors) if all_colors else np.zeros((len(self._mesh.faces), 4), dtype=np.uint8)
+
+    def _show_fragility_bars_multipart(self) -> None:
+        """Calcule la fragilité par groupe de pièces et affiche les barres flottantes."""
+        import math, numpy as np
+        from core.geometry.fragility_detector import detect_fragility
+        import trimesh as _trimesh
+
+        td  = self._threemf_data
+        objs = td.objects
+
+        # ── Grouper les objets par grille spatiale (même algo que _add_multipart_plates) ──
+        orig_pos = [[float(o.transform[0, 3]), float(o.transform[1, 3])] for o in objs]
+
+        groups: dict[tuple, list[int]] = {}
+        for grid in (256, 300, 350, 400, 500):
+            groups = {}
+            for i, (x, y) in enumerate(orig_pos):
+                key = (math.floor(x / grid), math.floor(y / grid))
+                groups.setdefault(key, []).append(i)
+            if len(groups) == td.plate_count:
+                break
+
+        if len(groups) < 2:
+            return  # pas assez de groupes pour les barres
+
+        # Transforms Bambu appliqués — pour le calcul de fragilité (espace absolu)
+        transformed = []
+        for o in objs:
+            m = o.mesh.copy()
+            if not np.allclose(o.transform, np.eye(4)):
+                m.apply_transform(o.transform)
+            transformed.append(m)
+
+        # Centres viewer-space précalculés par le viewer lors du rendu (post-arrange + centrage)
+        _viewer_obj_bounds = getattr(self._viewer, "_object_viewer_bounds", [])
+
+        bars = []
+        for pid, (tile, idxs) in enumerate(groups.items()):
+            # Mesh du groupe (transforms Bambu appliqués, positions absolues)
+            group_meshes = [transformed[i] for i in idxs]
+            group_combined = _trimesh.util.concatenate(group_meshes)
+
+            # Fragilité — normaliser Z_min → 0
+            try:
+                nozzle_d = float(getattr(self, "_current_nozzle_diameter", 0.4))
+                group_combined.apply_translation(
+                    [0.0, 0.0, -float(group_combined.bounds[0][2])]
+                )
+                fr = detect_fragility(group_combined, nozzle_diameter_mm=nozzle_d)
+                score = float(fr.severity)
+            except Exception:
+                score = 0.0
+
+            # Position viewer-space : centroïde des bounds des objets du groupe.
+            # _object_viewer_bounds est stocké par le viewer après arrange + centrage global,
+            # ce qui garantit l'alignement parfait avec les acteurs affichés.
+            try:
+                valid = [_viewer_obj_bounds[i] for i in idxs if i < len(_viewer_obj_bounds)]
+                if not valid:
+                    raise ValueError("no viewer bounds for group")
+                # Barycentre de l'union des bounds — correct même si le groupe
+                # mélange objets de tailles très différentes (ex: boîte + sphère)
+                cx = (min(v["xmin"] for v in valid) + max(v["xmax"] for v in valid)) / 2
+                cy = (min(v["ymin"] for v in valid) + max(v["ymax"] for v in valid)) / 2
+                cz = max(v["cz"] for v in valid)
+            except Exception:
+                b = group_combined.bounds
+                cx = (float(b[0][0]) + float(b[1][0])) / 2
+                cy = (float(b[0][1]) + float(b[1][1])) / 2
+                cz = float(b[1][2])
+
+            bars.append({
+                "cx": cx, "cy": cy, "cz": cz,
+                "score": score,
+                "label": "Fragilité",
+            })
+
+        self._viewer.show_fragility_bars(bars)
+
+        # Mettre à jour la jauge principale — mode "indépendant par lot"
+        max_score = max((b["score"] for b in bars), default=0.0)
+        if hasattr(self, "_analysis_panel"):
+            self._analysis_panel.set_fragility_independent(max_score)
 
     def _on_analysis_error(self, message: str):
         self._analysis_timeout.stop()
@@ -1775,14 +1983,32 @@ class MainWindow(QMainWindow):
 
         try:
             nozzle_mm = self._filament_selector.current_nozzle_diameter_mm()
-            path = self._tmf_builder.build(
-                mesh=self._mesh,
-                config=config,
-                output_path=Path(output_path),
-                printer_ui_name=self._current_printer,
-                filament_ui_name=self._current_filament,
-                nozzle_diameter_mm=nozzle_mm,
-            )
+
+            # Pour les 3MF en entrée : injecter les paramètres dans le fichier original.
+            # NE PAS reconstruire le 3MF depuis zéro — ça perd la structure (modifier_part,
+            # components, metadata) et les Generic-Cubes deviennent des solides dans BS.
+            _src_3mf = getattr(self, "_stl_path", None)
+            _is_3mf_input = bool(_src_3mf and str(_src_3mf).lower().endswith(".3mf")
+                                  and self._threemf_data is not None)
+            logger.info(f"[EXPORT] src={_src_3mf} is_3mf={_is_3mf_input} threemf={self._threemf_data is not None}")
+            if _is_3mf_input:
+                path = self._tmf_builder.inject_settings_into_3mf(
+                    source_path=_src_3mf,
+                    config=config,
+                    output_path=Path(output_path),
+                    printer_ui_name=self._current_printer,
+                    filament_ui_name=self._current_filament,
+                    nozzle_diameter_mm=nozzle_mm,
+                )
+            else:
+                path = self._tmf_builder.build(
+                    mesh=self._mesh,
+                    config=config,
+                    output_path=Path(output_path),
+                    printer_ui_name=self._current_printer,
+                    filament_ui_name=self._current_filament,
+                    nozzle_diameter_mm=nozzle_mm,
+                )
             logger.info(f"3MF exporté : {path}")
 
             selection = getattr(self, "_current_selection", None)

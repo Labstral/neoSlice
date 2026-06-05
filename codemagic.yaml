@@ -49,6 +49,12 @@ workflows:
           done
           echo "Après thin: $(du -sh $APP)"
 
+      - name: Read version
+        script: |
+          export APP_VERSION=$(python3 -c "from version import __version__; print(__version__)")
+          echo "Version: $APP_VERSION"
+          echo "APP_VERSION=$APP_VERSION" >> $CM_ENV
+
       - name: Create DMG (drag-to-Applications)
         script: |
           echo "=== Contenu dist/ ==="
@@ -60,9 +66,16 @@ workflows:
             -volname "neoSlice" \
             -srcfolder /tmp/dmg_src \
             -ov -format UDZO \
-            dist/neoSlice-macOS.dmg
-          echo "DMG créé: $(du -sh dist/neoSlice-macOS.dmg)"
-          ls -lh dist/*.dmg
+            dist/neoSlice-v${APP_VERSION}-macOS.dmg
+          echo "DMG créé: $(du -sh dist/neoSlice-v${APP_VERSION}-macOS.dmg)"
+
+      - name: Create ZIP (auto-update)
+        script: |
+          cd dist
+          zip -r neoSlice-v${APP_VERSION}-macOS.zip neoSlice.app
+          echo "ZIP créé: $(du -sh neoSlice-v${APP_VERSION}-macOS.zip)"
+          ls -lh *.dmg *.zip
 
     artifacts:
-      - dist/neoSlice-macOS.dmg
+      - dist/neoSlice-v*-macOS.dmg
+      - dist/neoSlice-v*-macOS.zip

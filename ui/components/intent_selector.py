@@ -404,8 +404,12 @@ class _Group(QWidget):
         self.selection_changed.emit()
 
     def select_preset(self, preset_id: str):
-        if preset_id in self._buttons:
-            self._on_choice(preset_id)
+        """Sélectionne un preset programmatiquement — ne toggle pas si déjà sélectionné."""
+        if preset_id not in self._buttons:
+            return
+        if self._selected_id == preset_id:
+            return  # Déjà sélectionné → ne pas toggler
+        self._on_choice(preset_id)
 
     def get_selected_id(self) -> str | None:
         return self._selected_id
@@ -797,6 +801,27 @@ class IntentSelector(QWidget):
         config_overrides = _build_config_overrides(selected_ids)
         config_overrides["nozzle_diameter"] = self._nozzle_diameter
 
+        # Layer height selon le preset qualité sélectionné + diamètre buse.
+        # Priorité absolue sur le profil de base (évite que save_filament écrase fine quality).
+        # first_layer_height reste toujours à 0.20mm (meilleure adhérence 1ère couche).
+        _nozzle = self._nozzle_diameter
+        _closest = min(self._NOZZLE_QUALITY_HEIGHTS, key=lambda n: abs(n - _nozzle))
+        _draft_h, _std_h, _fine_h, _ultra_h = self._NOZZLE_QUALITY_HEIGHTS[_closest]
+        _quality_lh_map = {
+            "quality_draft": _draft_h,
+            "quality_std":   _std_h,
+            "quality_fine":  _fine_h,
+            "quality_ultra": _ultra_h,
+        }
+        for _qid, _lh in _quality_lh_map.items():
+            if _qid in selected_ids:
+                config_overrides["layer_height"] = _lh
+                # first_layer_height >= layer_height (règle BS).
+                # Fine/Ultra Fine: 0.20 > layer_height → 0.20 (meilleure adhérence).
+                # Brouillon: 0.28 > 0.20 → doit être 0.28 sinon BS refuse.
+                config_overrides["first_layer_height"] = round(max(0.20, _lh), 3)
+                break
+
         labels = [lbl for g in self._groups
                   if (lbl := g.get_selected_label()) is not None]
 
@@ -1031,14 +1056,15 @@ class IntentSelector(QWidget):
 
         self._groups[2].select_preset("speed_std")
 
+        # index 4 = ADHÉRENCE (0=qualité, 1=résistance, 2=vitesse, 3=supports, 4=adhérence)
         if large_flat or stability < 0.35:
-            self._groups[3].select_preset("brim_large")
+            self._groups[4].select_preset("brim_large")
         elif brim_mm > 0 or stability < 0.65:
-            self._groups[3].select_preset("brim_std")
+            self._groups[4].select_preset("brim_std")
         else:
-            self._groups[3].select_preset("brim_none")
+            self._groups[4].select_preset("brim_none")
 
-        self._groups[4].select_preset("usage_indoor")
+        self._groups[5].select_preset("usage_indoor")  # index 5 = USAGE
 
         # Support : reset à Auto sans toggle si déjà sélectionné
         if hasattr(self, "_support_group_idx"):
