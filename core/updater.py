@@ -52,8 +52,10 @@ def check_for_update(callback: Callable[[str | None, str, str], None]) -> None:
 
     def _run():
         try:
+            import time as _time
+            _url = f"{UPDATE_CHECK_URL}?t={int(_time.time())}"
             req = urllib.request.Request(
-                UPDATE_CHECK_URL,
+                _url,
                 headers={"User-Agent": f"neoSlice/{CURRENT_VERSION}"},
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
