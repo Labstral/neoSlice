@@ -55,12 +55,15 @@ _WHATS_NEW_FR = [
     ("🆕 Barres de fragilité par lot",
      "Une barre de fragilité flottante s'affiche au-dessus de chaque groupe de pièces, "
      "visible depuis n'importe quel angle de caméra."),
-    ("🔧 Corrections",
+    ("🔧 Corrections v0.1.5",
      "• Imprimante H2C — bon modèle transmis à Bambu Studio\n"
      "• Supports — style par défaut corrigé (les différents types restent disponibles)\n"
      "• Angle de support — seuil minimum corrigé à 30°\n"
      "• Hauteurs de couche — cohérentes avec les préréglages Bambu\n"
      "• Avertissements Bambu Studio — supprimés à l'ouverture du fichier généré"),
+    ("🔧 Correction v0.1.5.1",
+     "• Imprimante par défaut — l'imprimante précédemment validée est maintenant correctement "
+     "restaurée au démarrage (A1, A1 Mini, H2C, etc. n'affichaient plus X1 Carbon dans Bambu Studio)"),
 ]
 
 
