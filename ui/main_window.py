@@ -991,6 +991,13 @@ class MainWindow(QMainWindow):
         _default_printer = PREFS.get("printer_default", "")
         if _default_printer:
             self._filament_selector.set_printer(_default_printer)
+            # set_printer ne lève pas selection_changed → lire la valeur directement
+            _p = self._filament_selector.current_printer()
+            _f = self._filament_selector.current_filament()
+            if _p:
+                self._current_printer = _p
+            if _f:
+                self._current_filament = _f
         self._filament_selector.selection_changed.connect(self._on_filament_printer_changed)
         self._filament_selector.printer_confirmed.connect(self._on_printer_confirmed)
         self._filament_selector.filament_confirmed.connect(self._on_filament_confirmed)
