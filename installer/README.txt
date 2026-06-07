@@ -1,6 +1,6 @@
 ==============================================================================
   neoSlice - AI-Powered 3D Print Optimizer
-  Guide d'installation et de démarrage - v0.1.4 Bêta
+  Guide d'installation et de démarrage - v0.1.5.1 Bêta
 ==============================================================================
   © 2026 Emmanuel Percheron - Tous droits réservés
 
@@ -15,7 +15,7 @@ SOMMAIRE
   5. Premier démarrage
   6. Désinstallation
   7. Questions fréquentes (FAQ)
-  8. Nouveautés v0.1.3
+  8. Nouveautés v0.1.5
   9. Contact et support
 
 
@@ -40,7 +40,7 @@ SOMMAIRE
 2. CONTENU DU PACKAGE
 ------------------------------------------------------------------------------
 
-  neoSlice_Setup_v0.1.4-beta_Windows.exe  ->  Installateur Windows
+  neoSlice_Setup_v0.1.5.1-beta_Windows.exe  ->  Installateur Windows
   README.txt                       ->  Ce guide
   LICENSE.txt                      ->  Accord de licence utilisateur final
 
@@ -58,7 +58,7 @@ SOMMAIRE
 
   ÉTAPE 2 - Lancer l'installateur
   ---------------------------------
-  Double-cliquez sur : neoSlice_Setup_v0.1.4-beta_Windows.exe
+  Double-cliquez sur : neoSlice_Setup_v0.1.5.1-beta_Windows.exe
 
   Si Windows affiche "Windows a protégé votre PC" :
     -> Cliquez sur "Informations complémentaires"
@@ -241,52 +241,34 @@ SOMMAIRE
 
 
 ------------------------------------------------------------------------------
-8. NOUVEAUTÉS v0.1.4
+8. NOUVEAUTÉS v0.1.5
 ------------------------------------------------------------------------------
 
-  ⚙️ SUPPORTS
-  -----------
-  * Nouvelle option "Sans support" : désactive les supports même si la pièce
-    en a besoin (utile pour tester ou imprimer à la main).
-  * Distance Z support proportionnelle à la hauteur de couche (×1.2).
-    Finition et retrait des supports améliorés.
+  📂 IMPORT 3MF BAMBU STUDIO
+  ---------------------------
+  * Import natif des fichiers .3mf depuis Bambu Studio : toutes vos pièces
+    sont affichées, la disposition multi-plateau est respectée et le fichier
+    généré préserve intégralement la structure d'origine.
 
-  🔧 QUALITÉ & VITESSES
-  ---------------------
-  * Profil Fine : remplissage gyroid → classique renforcé pour la résistance.
-  * Vitesses alignées sur les profils officiels Bambu Studio pour tous les
-    niveaux de qualité (Standard, Fine, Ultra, Rapide).
-  * Première couche 0.15→0.20mm sur Fine et Ultra : meilleure accroche plateau.
+  📊 BARRES DE FRAGILITÉ PAR LOT
+  -------------------------------
+  * Une barre de fragilité flottante s'affiche au-dessus de chaque groupe de
+    pièces, visible depuis n'importe quel angle de caméra.
 
   🐛 CORRECTIONS
   ---------------
-  * Profil Standard : remplissage grid (cohérent avec Bambu Studio).
-  * Résistance renforcée : gyroid forcé même à faible densité d'infill.
+  * Imprimante H2C : bon modèle transmis à Bambu Studio.
+  * Style de support par défaut corrigé (les différents types restent dispo).
+  * Angle de support minimum corrigé à 30°.
+  * Hauteurs de couche cohérentes avec les préréglages Bambu.
+  * Avertissements Bambu Studio supprimés à l'ouverture du fichier généré.
+  * Détection des surplombs améliorée (filets de vis, petits détails).
 
-------------------------------------------------------------------------------
-9. NOUVEAUTÉS v0.1.3
-------------------------------------------------------------------------------
-
-  🖨️ NOUVELLES IMPRIMANTES
-  -------------------------
-  * Bambu Lab A2L : grand format 330x320x325mm, 19 couleurs, bed slinger.
-    Avertissement automatique si Bambu Studio < 2.7.1.
-
-  ⚙️ CONTRÔLE DES SUPPORTS
-  -------------------------
-  * Nouvelle section "SUPPORTS" dans l'Instruction Mission.
-  * 3 modes disponibles :
-    - Auto      : le moteur décide selon la géométrie de la pièce
-    - Classique : supports colonnes standards
-    - Arborescent : supports organiques, moins de marques sur la pièce
-  * Mode Auto automatiquement réactivé à chaque nouveau fichier STL.
-  * Le résumé des paramètres indique maintenant le mode choisi.
-
-  🐛 CORRECTIONS
-  ---------------
-  * Hauteur de couche incorrecte avec le preset "Fine" (0.12mm → 0.2mm).
-  * Export .3MF : imprimante A2L correctement reconnue par Bambu Studio.
-  * Diamètre de buse non pris en compte en temps réel lors du changement.
+  🔧 CORRECTION v0.1.5.1
+  -----------------------
+  * Imprimante par défaut : l'imprimante précédemment validée (A1, A1 Mini,
+    H2C, etc.) est de nouveau correctement restaurée au démarrage et
+    transmise à Bambu Studio.
 
 
 ------------------------------------------------------------------------------

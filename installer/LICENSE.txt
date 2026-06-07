@@ -1,6 +1,6 @@
 ACCORD DE LICENCE UTILISATEUR FINAL — neoSlice
 ===============================================
-Version 0.1.2 — Version Bêta
+Version Bêta
 Copyright (c) 2026 Emmanuel Percheron. Tous droits réservés.
 
 VEUILLEZ LIRE ATTENTIVEMENT CET ACCORD AVANT D'INSTALLER OU D'UTILISER
