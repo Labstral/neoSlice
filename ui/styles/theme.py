@@ -77,7 +77,7 @@ _LIGHT: dict = {
     "VIEWER_BG_TOP": "#c8d0d8",
 
     "GRID_R": 0, "GRID_G": 0, "GRID_B": 0, "GRID_A": 12,
-    "SCAN_R": 45, "SCAN_G": 138, "SCAN_B": 78, "SCAN_A": 12,
+    "SCAN_R": 45, "SCAN_G": 138, "SCAN_B": 78, "SCAN_A": 55,
 
     "EXPORT_FG": "#ffffff",
 }

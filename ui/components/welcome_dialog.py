@@ -317,7 +317,7 @@ class WelcomeDialog(QDialog):
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {pal['ACCENT']};
-                color: #020408;
+                color: {pal['EXPORT_FG']};
                 border: none;
                 border-radius: 4px;
                 padding: 0 22px;

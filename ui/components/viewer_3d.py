@@ -295,6 +295,14 @@ class Viewer3D(QWidget):
                 self._plotter.camera_position = _saved_cam
             except Exception:
                 pass
+        # Recréer les barres de fragilité — colorize_overhangs (mode analyse) a fait
+        # plotter.clear() qui efface les vtkFollower. Sans ça, les barres
+        # disparaissent au changement de thème.
+        if getattr(self, "_fragility_bars_data", None):
+            try:
+                self.show_fragility_bars(self._fragility_bars_data)
+            except Exception:
+                pass
         # Render final — toujours exécuté
         try:
             self._plotter.render()
@@ -1067,7 +1075,12 @@ class Viewer3D(QWidget):
         if not HAS_PYVISTA or self._plotter is None:
             return
 
-        self.hide_fragility_bars()
+        # Sauvegarder les données pour pouvoir recréer les barres après un
+        # changement de thème (refresh_theme → colorize_overhangs → plotter.clear()
+        # efface les vtkFollower, sinon les barres disparaissent au switch de thème).
+        self._fragility_bars_data = list(bars)
+
+        self.hide_fragility_bars(clear_data=False)
 
         try:
             from vtk import vtkFollower, vtkPolyDataMapper
@@ -1181,8 +1194,15 @@ class Viewer3D(QWidget):
 
         self._plotter.render()
 
-    def hide_fragility_bars(self) -> None:
-        """Supprime toutes les barres de fragilité (followers + labels)."""
+    def hide_fragility_bars(self, clear_data: bool = True) -> None:
+        """Supprime toutes les barres de fragilité (followers + labels).
+
+        clear_data=False : appelé en interne par show_fragility_bars (ne pas
+        oublier les données nécessaires à la recréation au switch de thème).
+        clear_data=True : masquage réel (nouvelle pièce) → on oublie les barres.
+        """
+        if clear_data:
+            self._fragility_bars_data = None
         if self._plotter is None:
             return
         # Supprimer les vtkFollower actors
@@ -1205,6 +1225,11 @@ class Viewer3D(QWidget):
         """Affiche un trimesh.Trimesh ou ThreeMFData."""
         if not HAS_PYVISTA or self._plotter is None:
             return
+
+        # Nouvelle pièce → oublier les barres de fragilité de la pièce précédente
+        # (sinon elles réapparaîtraient au switch de thème). Si la nouvelle pièce
+        # est un 3MF multi-plateau, main_window rappellera show_fragility_bars.
+        self._fragility_bars_data = None
 
         # Route vers le renderer multi-acteurs pour les 3MF multicolores
         try:

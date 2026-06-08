@@ -1125,7 +1125,8 @@ class MainWindow(QMainWindow):
             self._left_scroll.setStyleSheet(f"""
                 QScrollArea {{ background: {pal['BG_PANEL']}; border: none; border-right: 1px solid {pal['INACTIVE']}; }}
                 QScrollBar:vertical {{ background: {pal['BG_PANEL']}; width: 6px; border: none; }}
-                QScrollBar::handle:vertical {{ background: {pal['TEXT_LABEL']}; border-radius: 3px; min-height: 20px; }}
+                QScrollBar::handle:vertical {{ background: {pal['TEXT_SECONDARY']}; border-radius: 3px; min-height: 24px; }}
+                QScrollBar::handle:vertical:hover {{ background: {pal['ACCENT']}; }}
                 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; background: transparent; }}
                 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
             """)
@@ -1135,8 +1136,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_right_scroll'):
             self._right_scroll.setStyleSheet(f"""
                 QScrollArea {{ background: {pal['BG_PANEL']}; border: none; border-left: 1px solid {pal['INACTIVE']}; }}
-                QScrollBar:vertical {{ background: {pal['BG_PANEL']}; width: 4px; border: none; }}
-                QScrollBar::handle:vertical {{ background: {pal['TEXT_LABEL']}; border-radius: 2px; min-height: 20px; }}
+                QScrollBar:vertical {{ background: {pal['BG_PANEL']}; width: 6px; border: none; }}
+                QScrollBar::handle:vertical {{ background: {pal['TEXT_SECONDARY']}; border-radius: 3px; min-height: 24px; }}
+                QScrollBar::handle:vertical:hover {{ background: {pal['ACCENT']}; }}
                 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; background: transparent; }}
                 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
             """)
