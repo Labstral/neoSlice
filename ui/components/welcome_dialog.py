@@ -49,21 +49,24 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("⚠️ Correction importante v0.1.5.2",
+     "• Taille des pièces — certaines pièces (entre 5 et 50 mm) étaient agrandies "
+     "10× par erreur au chargement. La taille réelle du fichier est désormais "
+     "toujours respectée.\n"
+     "• Mises à jour plus fiables — le téléchargement est vérifié avant installation "
+     "(fini l'erreur « application 16 bits »)."),
     ("🆕 Import de fichiers 3MF Bambu Studio",
      "Chargez directement vos fichiers .3mf depuis Bambu Studio — neoSlice affiche toutes vos pièces, "
      "respecte la disposition multi-plateau et génère un fichier optimisé qui préserve la structure d'origine."),
     ("🆕 Barres de fragilité par lot",
      "Une barre de fragilité flottante s'affiche au-dessus de chaque groupe de pièces, "
      "visible depuis n'importe quel angle de caméra."),
-    ("🔧 Corrections v0.1.5",
+    ("🔧 Autres corrections",
      "• Imprimante H2C — bon modèle transmis à Bambu Studio\n"
-     "• Supports — style par défaut corrigé (les différents types restent disponibles)\n"
-     "• Angle de support — seuil minimum corrigé à 30°\n"
-     "• Hauteurs de couche — cohérentes avec les préréglages Bambu\n"
-     "• Avertissements Bambu Studio — supprimés à l'ouverture du fichier généré"),
-    ("🔧 Correction v0.1.5.1",
-     "• Imprimante par défaut — l'imprimante précédemment validée est maintenant correctement "
-     "restaurée au démarrage (A1, A1 Mini, H2C, etc. n'affichaient plus X1 Carbon dans Bambu Studio)"),
+     "• Imprimante par défaut correctement restaurée au démarrage (A1, A1 Mini, H2C…)\n"
+     "• Angle de support minimum corrigé à 30°\n"
+     "• Hauteurs de couche cohérentes avec les préréglages Bambu\n"
+     "• Avertissements Bambu Studio supprimés à l'ouverture du fichier généré"),
 ]
 
 
