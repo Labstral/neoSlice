@@ -570,35 +570,36 @@ def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
             logger.warning(f"Décimation échouée ({_se}) — mesh utilisé tel quel ({_orig_count:,} faces)")
 
     # ── Détection et correction des unités ──────────────────────────────────
-    # STL n'encode pas les unités. Si les coordonnées semblent être en mètres
-    # (max extent < 1.0) mais auraient du sens en mm (×1000 → 1–500 mm),
-    # on corrige automatiquement. Ce n'est pas un redimensionnement géométrique
-    # mais une correction d'unité (cas typique : export Fusion 360 en mètres).
+    # STL n'encode pas les unités, mais la VASTE majorité des STL sont déjà en mm.
+    # RÈGLE : on ne convertit QUE si la taille est implausible en mm (trop petite
+    # pour être une vraie pièce → probablement exportée en mètres/cm/pouces).
+    # Une pièce déjà dans une plage normale (≥ 1 mm) n'est JAMAIS touchée.
+    #
+    # ⚠️ NE PAS revenir à l'ancienne logique qui testait les conversions sans
+    # vérifier d'abord la taille actuelle : elle gonflait ×10 une pièce de 40 mm
+    # parfaitement valide (40 × 10 = 400, qui tombait dans la plage cible).
     _max_extent = float(mesh.bounding_box.extents.max())
-    # Détection multi-unités : essaie dans l'ordre les conversions les plus probables.
-    # Une pièce d'impression 3D normale fait entre 5mm et 500mm.
-    _PRINT_MIN, _PRINT_MAX = 5.0, 500.0
-    _unit_candidates = [
-        (1000.0, "mètres"),      # < 1.0 → mètres (Fusion 360, FreeCAD)
-        (100.0,  "décimètres"),  # 1–10 → dm (certains exports CAO)
-        (10.0,   "centimètres"), # 10–50 → cm
-        (25.4,   "pouces"),      # 0.2–20 → inches (logiciels US)
-    ]
-    _converted = False
-    for _factor, _unit in _unit_candidates:
-        _scaled = _max_extent * _factor
-        if _PRINT_MIN <= _scaled <= _PRINT_MAX:
-            mesh.apply_scale(_factor)
-            logger.warning(
-                f"STL en {_unit} détecté (max extent = {_max_extent:.4f}) — "
-                f"converti en mm (×{_factor} → {_scaled:.1f} mm)."
-            )
-            _converted = True
-            break
-    if not _converted and _max_extent > 500.0:
+    _PLAUSIBLE_MIN, _PLAUSIBLE_MAX = 1.0, 600.0
+    if _max_extent < _PLAUSIBLE_MIN:
+        # Taille absurde en mm → tenter une conversion d'unité (mètres en priorité).
+        for _factor, _unit in [
+            (1000.0, "mètres"),      # 0.04 → 40 mm (Fusion 360, FreeCAD)
+            (100.0,  "décimètres"),
+            (25.4,   "pouces"),
+            (10.0,   "centimètres"),
+        ]:
+            _scaled = _max_extent * _factor
+            if _PLAUSIBLE_MIN <= _scaled <= _PLAUSIBLE_MAX:
+                mesh.apply_scale(_factor)
+                logger.warning(
+                    f"STL en {_unit} détecté (max extent = {_max_extent:.4f}) — "
+                    f"converti en mm (×{_factor} → {_scaled:.1f} mm)."
+                )
+                break
+    elif _max_extent > _PLAUSIBLE_MAX:
         logger.warning(
             f"Pièce très grande détectée (max extent = {_max_extent:.1f} mm). "
-            f"Le STL est peut-être exporté dans une unité non-mm."
+            f"Vérifiez l'unité d'export du STL."
         )
 
     # Normalisation : poser sur Z=0, centrer sur XY
