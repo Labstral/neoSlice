@@ -1359,12 +1359,14 @@ class MainWindow(QMainWindow):
         _poll_timer = QTimer(dlg)
 
         def _download():
+            import os as _os
             try:
                 req = _urlreq.Request(
                     download_url,
                     headers={"User-Agent": f"neoSlice/{new_version}"}
                 )
-                with _urlreq.urlopen(req, timeout=60) as resp:
+                # timeout 120s par opération socket — marge pour connexions lentes
+                with _urlreq.urlopen(req, timeout=120) as resp:
                     total = int(resp.headers.get("Content-Length", 0))
                     import sys as _sys
                     _upd_suffix = ".exe" if _sys.platform == "win32" else ".zip" if _sys.platform == "darwin" else ""
@@ -1379,28 +1381,41 @@ class MainWindow(QMainWindow):
                             downloaded += len(chunk)
                             pct = int(downloaded / total * 100) if total > 0 else -1
                             _q.put(("progress", pct))
-                # Vérifier l'intégrité selon la plateforme
+
+                # ── Vérification CRITIQUE : téléchargement complet ? ──────────
+                # Empêche de lancer un installateur tronqué (cause de l'erreur
+                # "Application 16 bits non prise en charge" sur fichier incomplet).
+                if total > 0 and downloaded != total:
+                    try: _os.remove(tmp)
+                    except Exception: pass
+                    _mo_got, _mo_tot = downloaded // 1048576, total // 1048576
+                    _q.put(("error",
+                        f"Téléchargement incomplet ({_mo_got} Mo sur {_mo_tot} Mo). "
+                        "Votre connexion a été interrompue — cliquez sur Réessayer."))
+                    return
+
+                # Sécurité supplémentaire : en-tête plateforme
                 import sys as _sys2
                 if _sys2.platform == "win32":
                     with open(tmp, "rb") as _chk:
                         magic = _chk.read(2)
                     if magic != b"MZ":
-                        import os as _os
                         try: _os.remove(tmp)
-                        except: pass
-                        _q.put(("error", "Fichier téléchargé invalide (accès refusé ou repo privé). Rendez le repo public ou téléchargez manuellement."))
+                        except Exception: pass
+                        _q.put(("error", "Fichier téléchargé invalide. Téléchargez manuellement depuis neoslice-ai.com."))
                         return
                 else:
-                    # macOS/Linux : vérifier taille minimale (ZIP ou DMG valide > 1 MB)
-                    import os as _os
                     if _os.path.getsize(tmp) < 1_000_000:
                         try: _os.remove(tmp)
-                        except: pass
-                        _q.put(("error", "Fichier téléchargé trop petit — téléchargement incomplet."))
+                        except Exception: pass
+                        _q.put(("error", "Fichier téléchargé trop petit — téléchargement incomplet. Réessayez."))
                         return
                 _q.put(("done", tmp))
             except Exception as exc:
-                _q.put(("error", str(exc)))
+                # Connexion coupée en cours de route → message clair (pas de stacktrace)
+                _q.put(("error",
+                    "Le téléchargement a échoué (connexion interrompue). "
+                    "Vérifiez votre connexion et cliquez sur Réessayer."))
 
         def _on_poll():
             try:
@@ -1444,11 +1459,16 @@ class MainWindow(QMainWindow):
                     _poll_timer.stop()
                     progress_bar.setRange(0, 100)
                     progress_bar.setValue(0)
-                    status_lbl.setText(_("update.failed"))
+                    progress_bar.hide()
+                    # Afficher le message clair retourné par _download (pas un générique)
+                    status_lbl.setWordWrap(True)
+                    status_lbl.setText(str(val) if val else _("update.failed"))
                     status_lbl.setStyleSheet(f"color: {pal['ERROR_RED']};")
                     install_btn.setText(_("update.btn_retry"))
                     install_btn.setEnabled(True)
                     install_btn.show()
+                    later_btn.setEnabled(True)
+                    dlg.adjustSize()
             except _queue.Empty:
                 pass
 

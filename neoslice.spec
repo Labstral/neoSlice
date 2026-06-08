@@ -6,10 +6,87 @@ import subprocess as _sp
 # ── Pré-build : fermer neoSlice.exe s'il tourne (sinon Windows bloque l'écrasement)
 _sp.run(["taskkill", "/F", "/IM", "neoSlice.exe"], capture_output=True)
 
-pyside6_datas,   pyside6_bins,   pyside6_hidden   = collect_all('PySide6')
-pyvista_datas,   pyvista_bins,   pyvista_hidden    = collect_all('pyvista')
+# ─────────────────────────────────────────────────────────────────
+#  Filtres d'exclusion — réduction de la taille de l'installateur.
+#  Mêmes filtres que neoslice_mac.spec (validés en production sur macOS) :
+#  l'app tourne déjà sans ces modules sur Mac, le code Python étant
+#  identique, ils sont donc inutiles sur Windows aussi.
+# ─────────────────────────────────────────────────────────────────
+
+# Modules PySide6/Qt non utilisés par neoSlice
+_PYSIDE6_UNUSED = {
+    'Qt3D', 'QtCharts', 'QtDataVisualization', 'QtMultimedia',
+    'QtQml', 'QtQuick', 'QtWebEngine', 'QtWebChannel', 'QtWebSockets',
+    'QtBluetooth', 'QtLocation', 'QtPositioning', 'QtSensors',
+    'QtSerialPort', 'QtSpatialAudio', 'QtTextToSpeech', 'QtVirtualKeyboard',
+    'QtPdf', 'QtRemoteObjects', 'QtStateMachine', 'QtTest', 'QtSql',
+    'QtUiTools', 'QtDesigner', 'QtHelp', 'QtNetwork', 'QtConcurrent',
+    'QtNfc', 'QtSCXML', 'QtLottie', 'QtQuickTimeline', 'QtShaderTools',
+    'PySide6_Addons',
+}
+
+# Modules VTK non utilisés (rendus alternatifs, I/O spécialisés, tests)
+_VTK_UNUSED = {
+    'vtkRenderingOpenVR', 'vtkRenderingAnari', 'vtkRenderingWebGPU',
+    'vtkRenderingFreeTypeFontConfig', 'vtkRenderingLOD',
+    'vtkIOMovie', 'vtkIOOggTheora', 'vtkIOFFMPEG',
+    'vtkIOXdmf2', 'vtkIOXdmf3', 'vtkIONetCDF', 'vtkIOEnSight',
+    'vtkIOAMR', 'vtkIOFLUENT', 'vtkIOVeraOut', 'vtkIOTecplotTable',
+    'vtkIOSegY', 'vtkIOParallelXML', 'vtkIOParallelLSDyna',
+    'vtkDICOM', 'vtkTestingCore', 'vtkTestingRendering',
+    'vtkWebCore', 'vtkWebGLExporter',
+    'vtkDomainsChemistry', 'vtkDomainsChemistryOpenGL2',
+    'vtkGeovisCore', 'vtkGeovisGDAL',
+    'vtkViewsContext2D', 'vtkViewsInfovis',
+    'vtkRenderingImage', 'vtkRenderingParallel',
+    'vtkRenderingSceneGraph', 'vtkRenderingVolumeOpenGL2',
+    'vtkFiltersAMR', 'vtkFiltersFlowPaths', 'vtkFiltersParallelImaging',
+    'vtkFiltersParallelStatistics', 'vtkFiltersTemporal',
+    'vtkFiltersTopology', 'vtkFiltersParallel',
+    'vtkInfovisLayout', 'vtkInfovisCore',
+    'vtkChartsCore',
+}
+
+def _keep_pyside6(path: str) -> bool:
+    p = str(path).replace('\\', '/')
+    if any(mod in p for mod in _PYSIDE6_UNUSED):
+        return False
+    # Supprimer toutes les traductions Qt sauf fr/en
+    if '/translations/' in p and p.endswith('.qm'):
+        name = Path(p).stem
+        if not any(name.endswith(lang) for lang in ('_fr', '_en', '_en_US', '_fr_FR')):
+            return False
+    return True
+
+def _keep_vtk(path: str) -> bool:
+    p = str(path).replace('\\', '/')
+    return not any(mod in p for mod in _VTK_UNUSED)
+
+def _keep_pyvista(path: str) -> bool:
+    p = str(path).replace('\\', '/')
+    for skip in ('/examples/', '/datasets/', '/tests/', '/testing/',
+                 '/data/models/', '/_dataset_cache/'):
+        if skip in p:
+            return False
+    return True
+
+_p6_d, _p6_b, _p6_h = collect_all('PySide6')
+pyside6_datas  = [x for x in _p6_d if _keep_pyside6(x[0])]
+pyside6_bins   = [x for x in _p6_b if _keep_pyside6(x[0])]
+pyside6_hidden = [x for x in _p6_h if _keep_pyside6(x)]
+
+_pv_d, _pv_b, _pv_h = collect_all('pyvista')
+pyvista_datas  = [x for x in _pv_d if _keep_pyvista(x[0])]
+pyvista_bins   = [x for x in _pv_b if _keep_pyvista(x[0])]
+pyvista_hidden = _pv_h
+
 pyvistaqt_datas, pyvistaqt_bins, pyvistaqt_hidden  = collect_all('pyvistaqt')
-vtkmod_datas,    vtkmod_bins,    vtkmod_hidden     = collect_all('vtkmodules')
+
+_vtk_d, _vtk_b, _vtk_h = collect_all('vtkmodules')
+vtkmod_datas  = [x for x in _vtk_d if _keep_vtk(x[0])]
+vtkmod_bins   = [x for x in _vtk_b if _keep_vtk(x[0])]
+vtkmod_hidden = [x for x in _vtk_h if _keep_vtk(x)]
+
 mpl_datas,       mpl_bins,       mpl_hidden        = collect_all('matplotlib')
 shapely_datas,   shapely_bins,   shapely_hidden    = collect_all('shapely')
 
