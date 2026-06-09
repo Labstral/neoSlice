@@ -1302,9 +1302,16 @@ class MainWindow(QMainWindow):
             self._diag_dialog.corrections_ready.connect(self._apply_defect_corrections)
 
         dlg = self._diag_dialog
+        # Largeur réelle (le dialog réutilisé peut avoir une width() périmée)
+        dlg.adjustSize()
+        w = dlg.sizeHint().width() or 460
         btn = self._topbar._diag_btn
         btn_br = btn.mapToGlobal(QPoint(btn.width(), btn.height()))
-        dlg.move(max(0, btn_br.x() - dlg.width()), btn_br.y() + 4)
+        # Aligne le bord droit du dialog sous le bouton, puis borne à la fenêtre
+        x = btn_br.x() - w
+        win = self.frameGeometry()
+        x = max(win.left() + 8, min(x, win.right() - w - 8))
+        dlg.move(x, btn_br.y() + 4)
         dlg.exec()
 
     def _apply_defect_corrections(self, result):
