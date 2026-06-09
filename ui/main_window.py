@@ -478,18 +478,14 @@ class _TopBar(QWidget):
         self._diag_btn.setToolTip("Analyser une photo d'impression pour détecter les défauts")
         self._diag_btn.setStyleSheet(f"""
             QPushButton {{
-                background: transparent;
-                color: {INACTIVE};
-                border: 1px solid {INACTIVE};
+                background: {ACCENT};
+                color: #ffffff;
+                border: none;
                 border-radius: 3px;
                 padding: 0 10px;
                 letter-spacing: 1px;
             }}
-            QPushButton:hover {{
-                background: rgba(0,184,112,0.10);
-                color: {TELE_GREEN};
-                border-color: {TELE_GREEN};
-            }}
+            QPushButton:hover {{ background: {ACCENT_BRIGHT}; }}
         """)
         self._diag_btn.clicked.connect(self.diag_clicked)
         layout.addWidget(self._diag_btn)
@@ -623,18 +619,14 @@ class _TopBar(QWidget):
             )
         self._diag_btn.setStyleSheet(f"""
             QPushButton {{
-                background: transparent;
-                color: {pal['INACTIVE']};
-                border: 1px solid {pal['INACTIVE']};
+                background: {pal['ACCENT']};
+                color: #ffffff;
+                border: none;
                 border-radius: 3px;
                 padding: 0 10px;
                 letter-spacing: 1px;
             }}
-            QPushButton:hover {{
-                background: rgba(0,184,112,0.10);
-                color: {pal['TELE_GREEN']};
-                border-color: {pal['TELE_GREEN']};
-            }}
+            QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
         """)
         self._new_btn.setStyleSheet(f"""
             QPushButton {{
