@@ -328,21 +328,24 @@ class SettingsDialog(QDialog):
         lay.addWidget(self._lbl_diag)
         lay.addSpacing(10)
 
-        # Statut + bouton unique
-        diag_row = QHBoxLayout()
-        diag_row.setContentsMargins(0, 0, 0, 0)
+        # Statut (pleine largeur)
         self._diag_status_lbl = QLabel()
         self._diag_status_lbl.setFont(QFont(FONT_MAIN, 8))
+        lay.addWidget(self._diag_status_lbl)
+        lay.addSpacing(6)
+
+        # Bouton sur sa propre ligne, aligné à droite
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
         self._revoke_btn = QPushButton()
         self._revoke_btn.setFont(QFont(FONT_MAIN, 8))
         self._revoke_btn.setFixedHeight(24)
         self._revoke_btn.setCursor(Qt.PointingHandCursor)
         self._revoke_btn.clicked.connect(self._revoke_diagnostic_consent)
         self._refresh_diag_status()
-        diag_row.addWidget(self._diag_status_lbl)
-        diag_row.addStretch()
-        diag_row.addWidget(self._revoke_btn)
-        lay.addLayout(diag_row)
+        btn_row.addStretch()
+        btn_row.addWidget(self._revoke_btn)
+        lay.addLayout(btn_row)
         lay.addSpacing(4)
 
     def _refresh_diag_status(self):
