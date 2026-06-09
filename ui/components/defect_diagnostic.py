@@ -581,18 +581,18 @@ class DefectDiagnosticDialog(QDialog):
         feedback_row = QHBoxLayout()
         feedback_row.setSpacing(6)
         feedback_lbl = QLabel("Ce résultat est-il correct ?")
-        feedback_lbl.setFont(QFont(FONT_MAIN, 7))
+        feedback_lbl.setFont(QFont(FONT_MAIN, 9))
         self._feedback_lbl = feedback_lbl
 
         self._confirm_btn = QPushButton("Oui")
-        self._confirm_btn.setFixedHeight(22)
-        self._confirm_btn.setFont(QFont(FONT_MAIN, 7))
+        self._confirm_btn.setFixedHeight(28)
+        self._confirm_btn.setFont(QFont(FONT_MAIN, 9))
         self._confirm_btn.setCursor(Qt.PointingHandCursor)
         self._confirm_btn.clicked.connect(self._confirm_prediction)
 
         self._correct_btn = QPushButton("Non, corriger")
-        self._correct_btn.setFixedHeight(22)
-        self._correct_btn.setFont(QFont(FONT_MAIN, 7))
+        self._correct_btn.setFixedHeight(28)
+        self._correct_btn.setFont(QFont(FONT_MAIN, 9))
         self._correct_btn.setCursor(Qt.PointingHandCursor)
         self._correct_btn.clicked.connect(self._show_correction_picker)
 
