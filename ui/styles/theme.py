@@ -45,8 +45,8 @@ _DARK: dict = {
     "GRID_R": 30, "GRID_G": 144, "GRID_B": 255, "GRID_A": 8,
     "SCAN_R": 30, "SCAN_G": 144, "SCAN_B": 255, "SCAN_A": 25,
 
-    # Export button
-    "EXPORT_FG": "#020408",
+    # Export button — texte blanc sur boutons colorés (cohérent avec boutons Valider)
+    "EXPORT_FG": "#ffffff",
 }
 
 _LIGHT: dict = {

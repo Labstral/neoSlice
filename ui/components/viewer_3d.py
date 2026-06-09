@@ -194,7 +194,9 @@ class Viewer3D(QWidget):
             QCheckBox {{
                 color: {col}; background: {bg};
                 spacing: 5px; padding: 2px 6px; border-radius: 3px;
+                outline: none;
             }}
+            QCheckBox:focus {{ outline: none; }}
             QCheckBox:hover {{ color: {hov}; }}
             QCheckBox::indicator {{
                 width: 11px; height: 11px;
@@ -220,7 +222,9 @@ class Viewer3D(QWidget):
             QCheckBox {{
                 color: {col}; background: {bg};
                 spacing: 5px; padding: 2px 6px; border-radius: 3px;
+                outline: none;
             }}
+            QCheckBox:focus {{ outline: none; }}
             QCheckBox:hover {{ color: {hov}; }}
             QCheckBox::indicator {{
                 width: 11px; height: 11px;
