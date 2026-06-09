@@ -387,11 +387,17 @@ def export_onnx(model) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     model.eval().cpu()
     fp32 = OUT_DIR / "model_fp32.onnx"
-    torch.onnx.export(
-        model, torch.randn(1, 3, INPUT_SIZE, INPUT_SIZE), str(fp32),
+    dummy = torch.randn(1, 3, INPUT_SIZE, INPUT_SIZE)
+    kw = dict(
         input_names=["image"], output_names=["logits", "embedding"],
         dynamic_axes={"image": {0: "batch"}}, opset_version=17, do_constant_folding=True,
     )
+    # Force l'exportateur TorchScript (legacy) qui ne dépend pas de onnxscript ;
+    # fallback si la version de torch n'a pas le paramètre dynamo.
+    try:
+        torch.onnx.export(model, dummy, str(fp32), dynamo=False, **kw)
+    except TypeError:
+        torch.onnx.export(model, dummy, str(fp32), **kw)
     out = OUT_DIR / "defect_detector.onnx"
     quantize_dynamic(str(fp32), str(out), weight_type=QuantType.QInt8)
     fp32.unlink(missing_ok=True)
