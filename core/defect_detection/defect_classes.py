@@ -172,9 +172,10 @@ REMEDIATION_RULES: dict[DefectClass, dict[str, Any]] = {
     DefectClass.SPAGHETTI: {
         "_stop_print": True,
         "_hint": (
-            "Pour éviter ce problème à l'avenir : nettoyez le plateau à l'alcool isopropylique, "
-            "ajoutez un brim généreux (10 mm minimum), vérifiez la calibration de la première couche "
-            "et réduisez la vitesse de la première couche."
+            "Pour éviter ce problème à l'avenir : nettoyez le plateau à l'eau chaude "
+            "et au liquide vaisselle (le plus efficace pour dégraisser), ou à défaut à "
+            "l'alcool isopropylique ; ajoutez un brim généreux (10 mm minimum), vérifiez "
+            "la calibration de la première couche et réduisez sa vitesse."
         ),
     },
 
