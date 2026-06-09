@@ -22,14 +22,11 @@ Confidentialité :
 from __future__ import annotations
 
 import io
-import json
 import os
-import secrets
 import threading
-import zipfile
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from loguru import logger
@@ -54,7 +51,6 @@ SUPABASE_URL    = (os.environ.get("NEOSLICE_SUPABASE_URL") or _DEFAULT_SUPABASE_
 SUPABASE_KEY    = os.environ.get("NEOSLICE_SUPABASE_KEY") or _DEFAULT_SUPABASE_KEY
 SUPABASE_BUCKET = os.environ.get("NEOSLICE_SUPABASE_BUCKET", "defect-contributions")
 
-_BATCH_SIZE   = 50     # max photos par ZIP
 _MAX_IMG_SIZE = 512    # côté max des images downscalées (px)
 _JPEG_QUALITY = 85
 
@@ -138,51 +134,25 @@ class ContributionPipeline:
         if not samples:
             return 0
 
-        batches = [samples[i:i + _BATCH_SIZE] for i in range(0, len(samples), _BATCH_SIZE)]
         total_sent = 0
-        for batch in batches:
-            payload = self._build_payload(batch)
-            if payload is None:
+        for s in samples:
+            img_path = Path(s["image_path"])
+            if not img_path.exists():
+                self._dataset.mark_contributed([s["image_hash"]])  # fichier disparu → ne plus réessayer
                 continue
-            self._upload(payload)
-            self._dataset.mark_contributed([s["image_hash"] for s in batch])
-            total_sent += len(batch)
-            logger.info(f"Contribution : {len(batch)} photo(s) envoyée(s) vers Supabase.")
+            jpeg = self._downscale(img_path)
+            if jpeg is None:
+                continue
+            # Nommage par hash de contenu → deux photos identiques = même objet
+            # (upsert) → une seule conservée côté serveur (déduplication).
+            obj_path = f"images/{s['true_class']}/{s['image_hash']}.jpg"
+            self._upload(obj_path, jpeg)
+            self._dataset.mark_contributed([s["image_hash"]])
+            total_sent += 1
+
+        if total_sent:
+            logger.info(f"Contribution : {total_sent} photo(s) envoyée(s) vers Supabase.")
         return total_sent
-
-    # ── Construction du ZIP ─────────────────────────────────────────────────
-
-    def _build_payload(self, samples: list[dict]) -> bytes | None:
-        """ZIP des images downscalées + manifest JSON des labels."""
-        buf = io.BytesIO()
-        manifest = []
-
-        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for s in samples:
-                img_path = Path(s["image_path"])
-                if not img_path.exists():
-                    continue
-                jpeg_bytes = self._downscale(img_path)
-                if jpeg_bytes is None:
-                    continue
-                arcname = f"images/{s['true_class']}/{s['image_hash']}.jpg"
-                zf.writestr(arcname, jpeg_bytes)
-                manifest.append({
-                    "hash":  s["image_hash"],
-                    "file":  arcname,
-                    "label": s["true_class"],
-                })
-            if not manifest:
-                return None
-            zf.writestr("manifest.json", json.dumps({
-                "version":   "1",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "app":       self._neoslice_version(),
-                "count":     len(manifest),
-                "samples":   manifest,
-            }, indent=2))
-
-        return buf.getvalue()
 
     @staticmethod
     def _downscale(path: Path) -> bytes | None:
@@ -203,27 +173,36 @@ class ContributionPipeline:
 
     # ── Upload Supabase Storage ─────────────────────────────────────────────
 
-    def _upload(self, payload: bytes) -> None:
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-        obj_path = f"batches/{ts}_{secrets.token_hex(8)}.zip"
+    def _upload(self, obj_path: str, data: bytes) -> None:
         url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{obj_path}"
-
         req = Request(
             url,
-            data=payload,
+            data=data,
             headers={
                 "apikey":        SUPABASE_KEY,
                 "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type":  "application/zip",
-                "x-upsert":      "false",
+                "Content-Type":  "image/jpeg",
+                "x-upsert":      "false",  # insertion seule (policy RLS)
                 "User-Agent":    f"neoSlice-contribution/{self._neoslice_version()}",
             },
             method="POST",
         )
-        with urlopen(req, timeout=120) as resp:
-            status = resp.getcode()
-            if status not in (200, 201):
-                raise RuntimeError(f"Supabase a répondu {status}")
+        try:
+            with urlopen(req, timeout=60) as resp:
+                if resp.getcode() not in (200, 201):
+                    raise RuntimeError(f"Supabase a répondu {resp.getcode()}")
+        except HTTPError as exc:
+            body = ""
+            try:
+                body = exc.read().decode()
+            except Exception:
+                pass
+            # Photo déjà présente (même hash de contenu) → déduplication serveur :
+            # on considère l'envoi comme réussi, la photo est bien sur le pool.
+            if "Duplicate" in body or '"409"' in body:
+                logger.debug(f"Photo déjà sur le serveur (dédupliquée) : {obj_path}")
+                return
+            raise RuntimeError(f"Supabase HTTP {exc.code} : {body[:120]}") from exc
 
     @staticmethod
     def _neoslice_version() -> str:
