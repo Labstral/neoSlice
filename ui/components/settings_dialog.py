@@ -318,6 +318,54 @@ class SettingsDialog(QDialog):
         lay.addLayout(update_row)
         lay.addSpacing(8)
 
+        # ── Section DIAGNOSTIC IA ─────────────────────────────────────────────
+        lay.addSpacing(10)
+        self._sep_diag = self._make_sep()
+        lay.addWidget(self._sep_diag)
+        lay.addSpacing(14)
+
+        self._lbl_diag = self._make_section_label("DIAGNOSTIC PHOTO IA")
+        lay.addWidget(self._lbl_diag)
+        lay.addSpacing(10)
+
+        self._consent_lbl, self._consent_cb = self._make_checkbox_row(
+            "Partager mes photos confirmées pour améliorer le modèle (anonyme)",
+            bool(PREFS.get("defect_contribute", False)),
+        )
+        self._consent_cb.toggled.connect(
+            lambda v: PREFS.set("defect_contribute", v)
+        )
+        consent_row = QHBoxLayout()
+        consent_row.setContentsMargins(0, 0, 0, 0)
+        consent_row.addWidget(self._consent_lbl)
+        consent_row.addStretch()
+        consent_row.addWidget(self._consent_cb)
+        lay.addLayout(consent_row)
+        lay.addSpacing(6)
+
+        revoke_lbl = QLabel("Révoquer le consentement au diagnostic :")
+        revoke_lbl.setFont(QFont(FONT_MAIN, 8))
+        self._revoke_lbl = revoke_lbl
+        self._revoke_btn = QPushButton("Désactiver le diagnostic")
+        self._revoke_btn.setFont(QFont(FONT_MAIN, 8))
+        self._revoke_btn.setFixedHeight(24)
+        self._revoke_btn.setCursor(Qt.PointingHandCursor)
+        self._revoke_btn.clicked.connect(self._revoke_diagnostic_consent)
+        revoke_row = QHBoxLayout()
+        revoke_row.setContentsMargins(0, 0, 0, 0)
+        revoke_row.addWidget(revoke_lbl)
+        revoke_row.addStretch()
+        revoke_row.addWidget(self._revoke_btn)
+        lay.addLayout(revoke_row)
+        lay.addSpacing(4)
+
+    def _revoke_diagnostic_consent(self):
+        PREFS.set("defect_consent", False)
+        PREFS.set("defect_contribute", False)
+        self._consent_cb.setChecked(False)
+        self._revoke_btn.setText("Consentement révoqué")
+        self._revoke_btn.setEnabled(False)
+
     # ── Helpers UI ────────────────────────────────────────────────────────────
 
     def _make_sep(self) -> QFrame:
@@ -538,8 +586,22 @@ class SettingsDialog(QDialog):
             sep.setStyleSheet(sep_style)
 
         section_style = f"color: {pal['TEXT_LABEL']}; background: transparent; letter-spacing: 1px;"
-        for lbl in (self._lbl_apparence, self._lbl_print, self._lbl_export, self._lbl_perf, self._lbl_updates):
+        for lbl in (self._lbl_apparence, self._lbl_print, self._lbl_export,
+                    self._lbl_perf, self._lbl_updates, self._lbl_diag):
             lbl.setStyleSheet(section_style)
+
+        # Section diagnostic
+        self._consent_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+        self._revoke_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        self._revoke_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {pal['TEXT_SECONDARY']};
+                border: 1px solid {pal['INACTIVE']}; border-radius: 3px;
+                padding: 2px 10px;
+            }}
+            QPushButton:hover {{ border-color: {pal['ERROR_RED']}; color: {pal['ERROR_RED']}; }}
+            QPushButton:disabled {{ color: {pal['TEXT_LABEL']}; border-color: {pal['INACTIVE']}; }}
+        """)
 
         self._update_check_btn.setStyleSheet(f"""
             QPushButton {{

@@ -415,6 +415,7 @@ class _TopBar(QWidget):
     tutorial_clicked  = Signal()
     new_piece_clicked = Signal()
     settings_clicked  = Signal()
+    diag_clicked      = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -469,6 +470,29 @@ class _TopBar(QWidget):
         layout.addWidget(self._sub)
 
         layout.addStretch()
+
+        self._diag_btn = QPushButton("DIAGNOSTIC PHOTO")
+        self._diag_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
+        self._diag_btn.setFixedHeight(26)
+        self._diag_btn.setCursor(Qt.PointingHandCursor)
+        self._diag_btn.setToolTip("Analyser une photo d'impression pour détecter les défauts")
+        self._diag_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {INACTIVE};
+                border: 1px solid {INACTIVE};
+                border-radius: 3px;
+                padding: 0 10px;
+                letter-spacing: 1px;
+            }}
+            QPushButton:hover {{
+                background: rgba(0,184,112,0.10);
+                color: {TELE_GREEN};
+                border-color: {TELE_GREEN};
+            }}
+        """)
+        self._diag_btn.clicked.connect(self.diag_clicked)
+        layout.addWidget(self._diag_btn)
 
         self._new_btn = QPushButton(_("app.btn_new_piece"))
         self._new_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
@@ -597,6 +621,21 @@ class _TopBar(QWidget):
                 f"color: {pal['ACCENT_BRIGHT']}; background: {pal['BG_SURFACE']}; "
                 f"border: 1px solid {pal['ACCENT']}; border-radius: 2px; padding: 1px 5px;"
             )
+        self._diag_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {pal['INACTIVE']};
+                border: 1px solid {pal['INACTIVE']};
+                border-radius: 3px;
+                padding: 0 10px;
+                letter-spacing: 1px;
+            }}
+            QPushButton:hover {{
+                background: rgba(0,184,112,0.10);
+                color: {pal['TELE_GREEN']};
+                border-color: {pal['TELE_GREEN']};
+            }}
+        """)
         self._new_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
@@ -932,6 +971,7 @@ class MainWindow(QMainWindow):
         self._topbar.tutorial_clicked.connect(self._show_tutorial)
         self._topbar.settings_clicked.connect(self._open_settings)
         self._topbar.new_piece_clicked.connect(self._on_new_piece)
+        self._topbar.diag_clicked.connect(self._open_diagnostic)
         root.addWidget(self._topbar)
 
         # ── Workspace 3 colonnes ──
@@ -1188,6 +1228,44 @@ class MainWindow(QMainWindow):
         new_printer = _PREFS.get("printer_default", "")
         if new_printer and hasattr(self, '_filament_selector'):
             self._filament_selector.set_printer(new_printer)
+
+    def _open_diagnostic(self):
+        from ui.components.defect_diagnostic import (
+            DefectDiagnosticDialog, DiagnosticConsentDialog,
+        )
+        from PySide6.QtCore import QPoint
+        from core.prefs import PREFS as _PREFS
+
+        # Consentement requis — demander si jamais donné
+        if not _PREFS.get("defect_consent", False):
+            consent = DiagnosticConsentDialog(self)
+            apply_title_bar_theme(consent)
+            btn = self._topbar._diag_btn
+            btn_br = btn.mapToGlobal(QPoint(btn.width() // 2, btn.height()))
+            consent.move(max(0, btn_br.x() - consent.width() // 2), btn_br.y() + 4)
+            if consent.exec() != DiagnosticConsentDialog.Accepted:
+                return   # refusé → on ne continue pas
+
+        dlg = DefectDiagnosticDialog(self)
+        apply_title_bar_theme(dlg)
+        dlg.corrections_ready.connect(self._apply_defect_corrections)
+        btn = self._topbar._diag_btn
+        btn_br = btn.mapToGlobal(QPoint(btn.width(), btn.height()))
+        dlg.move(max(0, btn_br.x() - dlg.width()), btn_br.y() + 4)
+        dlg.exec()
+
+    def _apply_defect_corrections(self, result):
+        """Applique les corrections du diagnostic au PrintConfig courant."""
+        if not hasattr(self, "_current_config") or self._current_config is None:
+            return
+        from core.defect_detection.detector import DefectDetector
+        det = DefectDetector()
+        det.apply_remediation(self._current_config, result)
+        # Rafraîchir l'aperçu des paramètres si disponible
+        if hasattr(self, "_params_preview") and self._analysis is not None:
+            self._params_preview.update_from_config(
+                self._current_config, self._analysis
+            )
 
     def _on_settings_update_request(self, version: str, url: str, notes: str):
         self._pending_update = (version, url, notes)
