@@ -152,6 +152,32 @@ def download_contributions(secrets: dict, dest: Path) -> int:
 # 2. Fusion dataset de base + contributions
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _resolve_base() -> Path:
+    """Trouve le dataset de base, qu'il soit en dossiers train/val OU en zips
+    (Kaggle ne décompresse pas toujours les uploads --dir-mode zip au montage)."""
+    import zipfile
+    # 1. dossiers train/ déjà présents ?
+    if (BASE_DATASET / "train").exists():
+        return BASE_DATASET
+    # 2. zips à extraire ?
+    target = WORK / "base"
+    zips = list(BASE_DATASET.glob("*.zip"))
+    if zips:
+        for z in zips:
+            try:
+                with zipfile.ZipFile(z) as zf:
+                    zf.extractall(target)
+            except Exception as exc:
+                print(f"  extraction {z.name}: {exc}")
+        if (target / "train").exists():
+            return target
+    # 3. chercher un dossier train/ en profondeur (au cas où c'est imbriqué)
+    for p in BASE_DATASET.rglob("train"):
+        if p.is_dir() and any((p / c).exists() for c in CLASS_NAMES):
+            return p.parent
+    return BASE_DATASET
+
+
 def build_dataset(contrib: Path) -> None:
     import shutil, random
     rng = random.Random(42)
@@ -159,16 +185,23 @@ def build_dataset(contrib: Path) -> None:
         for cls in CLASS_NAMES:
             (DATA_DIR / split / cls).mkdir(parents=True, exist_ok=True)
     # Base
-    if BASE_DATASET.exists():
+    base = _resolve_base()
+    print(f"  dataset de base : {base}")
+    n_base = 0
+    if base.exists():
         for split in ("train", "val"):
             for cls in CLASS_NAMES:
-                src = BASE_DATASET / split / cls
+                src = base / split / cls
                 if src.exists():
                     for p in src.glob("*"):
+                        if p.stat().st_size < 1024:
+                            continue  # ignore les fichiers corrompus/vides
                         dst = DATA_DIR / split / cls / p.name
                         if not dst.exists():
-                            try: shutil.copy2(p, dst)
+                            try:
+                                shutil.copy2(p, dst); n_base += 1
                             except Exception: pass
+    print(f"  images de base copiées : {n_base}")
     # Contributions → 85% train / 15% val
     for cls in CLASS_NAMES:
         src = contrib / cls
@@ -227,7 +260,8 @@ def transforms(train: bool):
 def loaders():
     import numpy as np, torch
     from torch.utils.data import Dataset, DataLoader
-    from PIL import Image
+    from PIL import Image, ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True   # tolère les JPEG légèrement tronqués
 
     class DS(Dataset):
         def __init__(self, root, train):
@@ -236,12 +270,17 @@ def loaders():
                 d = root / c
                 if d.exists():
                     for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
-                        self.s += [(p, i) for p in d.glob(ext)]
+                        for p in d.glob(ext):
+                            if p.stat().st_size >= 1024:   # ignore fichiers corrompus/vides
+                                self.s.append((p, i))
         def __len__(self): return len(self.s)
         def __getitem__(self, i):
             p, y = self.s[i]
-            a = self.t(image=np.array(Image.open(p).convert("RGB")))
-            return a["image"], y
+            try:
+                img = np.array(Image.open(p).convert("RGB"))
+            except Exception:
+                img = np.zeros((INPUT_SIZE, INPUT_SIZE, 3), dtype=np.uint8)
+            return self.t(image=img)["image"], y
 
     tr = DS(DATA_DIR / "train", True)
     va = DS(DATA_DIR / "val", False)
