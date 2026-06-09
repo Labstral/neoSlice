@@ -693,6 +693,26 @@ class DefectDiagnosticDialog(QDialog):
         self._card.layout().activate()
         self.adjustSize()
 
+    def _clear_corrections(self):
+        """Supprime toutes les lignes de correction. Chaque ligne est un
+        sous-layout (QHBoxLayout) contenant des QLabel : il faut supprimer
+        récursivement les widgets, sinon ils persistent et se superposent."""
+        while self._corrections_lay.count():
+            item = self._corrections_lay.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+                continue
+            sub = item.layout()
+            if sub is not None:
+                while sub.count():
+                    sitem = sub.takeAt(0)
+                    if sitem.widget() is not None:
+                        sitem.widget().deleteLater()
+                sub.deleteLater()
+        self._corr_dots = []
+        self._corr_lbls = []
+
     def _recolor_corrections(self):
         """Recolore les lignes de correction selon le thème courant
         (elles sont créées dynamiquement → à rafraîchir au switch de thème)."""
@@ -772,11 +792,8 @@ class DefectDiagnosticDialog(QDialog):
         self._badge_conf.setText(f"{result.confidence:.0%}")
         self._desc_lbl.setText(DEFECT_DESCRIPTIONS_FR.get(result.defect, ""))
 
-        # Vider les corrections
-        while self._corrections_lay.count():
-            item = self._corrections_lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        # Vider les corrections (lignes = sous-layouts → suppression récursive)
+        self._clear_corrections()
         # Références pour re-coloration au changement de thème
         self._corr_dots = []
         self._corr_lbls = []
@@ -851,10 +868,7 @@ class DefectDiagnosticDialog(QDialog):
         self._badge_conf.setText("")
         self._desc_lbl.setText(msg)
         self._desc_lbl.setStyleSheet(f"color: {pal['ERROR_RED']}; background: transparent;")
-        while self._corrections_lay.count():
-            item = self._corrections_lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        self._clear_corrections()
         self._apply_btn.setEnabled(False)
         self._hint_lbl.hide()
         self._corrections_box.hide()        # erreur → pas de corrections
