@@ -461,6 +461,8 @@ class DefectDiagnosticDialog(QDialog):
         self._drag_pos = None
 
     # ── Construction UI ───────────────────────────────────────────────────────
+    # Structure identique à SettingsDialog : tout en enfants directs de la card,
+    # pas de QWidget containers intermédiaires (cause du fond gris Windows).
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -477,17 +479,13 @@ class DefectDiagnosticDialog(QDialog):
         # ── Titre ─────────────────────────────────────────────────────────────
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 12)
-
         self._title_lbl = QLabel("DIAGNOSTIC PHOTO")
         self._title_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
-        self._title_lbl.setAutoFillBackground(False)
-
         self._close_btn = QPushButton("X")
         self._close_btn.setFixedSize(22, 22)
         self._close_btn.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._close_btn.setCursor(Qt.PointingHandCursor)
         self._close_btn.clicked.connect(self.close)
-
         title_row.addWidget(self._title_lbl)
         title_row.addStretch()
         title_row.addWidget(self._close_btn)
@@ -517,23 +515,19 @@ class DefectDiagnosticDialog(QDialog):
         self._progress = QProgressBar()
         self._progress.setFixedHeight(3)
         self._progress.setTextVisible(False)
-        self._progress.setRange(0, 0)   # indeterminate
+        self._progress.setRange(0, 0)
         self._progress.hide()
         lay.addWidget(self._progress)
 
-        # ── Zone résultats (cachée par défaut) ────────────────────────────────
-        self._result_widget = QWidget()
-        self._result_widget.setAutoFillBackground(False)
-        self._result_widget.setStyleSheet("background: transparent;")
-        result_lay = QVBoxLayout(self._result_widget)
-        result_lay.setContentsMargins(0, 14, 0, 0)
-        result_lay.setSpacing(10)
+        # ── Résultats — enfants directs de lay, masqués par défaut ───────────
+        # (pas de QWidget conteneur intermédiaire = pas de fond gris Windows)
+        lay.addSpacing(6)
 
-        # Séparateur
-        result_lay.addWidget(_make_sep())
-        result_lay.addSpacing(4)
+        self._sep_result = _make_sep()
+        lay.addWidget(self._sep_result)
+        lay.addSpacing(10)
 
-        # Bandeau défaut
+        # Badge défaut (dot + nom + confiance)
         badge_row = QHBoxLayout()
         badge_row.setSpacing(10)
         self._badge_dot = QLabel("●")
@@ -546,33 +540,39 @@ class DefectDiagnosticDialog(QDialog):
         badge_row.addWidget(self._badge_name)
         badge_row.addStretch()
         badge_row.addWidget(self._badge_conf)
-        result_lay.addLayout(badge_row)
+        lay.addLayout(badge_row)
+        lay.addSpacing(6)
 
         # Description
         self._desc_lbl = QLabel()
         self._desc_lbl.setFont(QFont(FONT_MAIN, 8))
         self._desc_lbl.setWordWrap(True)
-        self._desc_lbl.setAutoFillBackground(False)
-        result_lay.addWidget(self._desc_lbl)
+        lay.addWidget(self._desc_lbl)
+        lay.addSpacing(8)
 
-        # Corrections
-        self._corrections_widget = QWidget()
-        self._corrections_widget.setAutoFillBackground(False)
-        self._corrections_widget.setStyleSheet("background: transparent;")
-        self._corrections_lay = QVBoxLayout(self._corrections_widget)
-        self._corrections_lay.setContentsMargins(0, 6, 0, 0)
+        # Header corrections
+        self._corrections_header = QLabel("Corrections recommandées :")
+        self._corrections_header.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
+        lay.addWidget(self._corrections_header)
+        lay.addSpacing(4)
+
+        # Lignes de corrections (ajoutées/supprimées dynamiquement)
+        self._corrections_lay = QVBoxLayout()
+        self._corrections_lay.setContentsMargins(0, 0, 0, 0)
         self._corrections_lay.setSpacing(3)
-        result_lay.addWidget(self._corrections_widget)
+        lay.addLayout(self._corrections_lay)
+        lay.addSpacing(6)
 
         # Conseil (hint)
         self._hint_lbl = QLabel()
         self._hint_lbl.setFont(QFont(FONT_MAIN, 9))
         self._hint_lbl.setWordWrap(True)
-        self._hint_lbl.hide()
-        result_lay.addWidget(self._hint_lbl)
+        lay.addWidget(self._hint_lbl)
+        lay.addSpacing(10)
 
-        result_lay.addWidget(_make_sep())
-        result_lay.addSpacing(4)
+        self._sep_result2 = _make_sep()
+        lay.addWidget(self._sep_result2)
+        lay.addSpacing(8)
 
         # Bouton appliquer
         self._apply_btn = QPushButton("APPLIQUER LES CORRECTIONS")
@@ -581,66 +581,77 @@ class DefectDiagnosticDialog(QDialog):
         self._apply_btn.setCursor(Qt.PointingHandCursor)
         self._apply_btn.setEnabled(False)
         self._apply_btn.clicked.connect(self._apply_corrections)
-        result_lay.addWidget(self._apply_btn)
+        lay.addWidget(self._apply_btn)
+        lay.addSpacing(8)
 
-        # Feedback confirmation
+        # Feedback
         feedback_row = QHBoxLayout()
         feedback_row.setSpacing(6)
-        feedback_lbl = QLabel("Ce résultat est-il correct ?")
-        feedback_lbl.setFont(QFont(FONT_MAIN, 9))
-        self._feedback_lbl = feedback_lbl
-
+        self._feedback_lbl = QLabel("Ce résultat est-il correct ?")
+        self._feedback_lbl.setFont(QFont(FONT_MAIN, 9))
         self._confirm_btn = QPushButton("Oui")
         self._confirm_btn.setFixedHeight(28)
         self._confirm_btn.setFont(QFont(FONT_MAIN, 9))
         self._confirm_btn.setCursor(Qt.PointingHandCursor)
         self._confirm_btn.clicked.connect(self._confirm_prediction)
-
         self._correct_btn = QPushButton("Non, corriger")
         self._correct_btn.setFixedHeight(28)
         self._correct_btn.setFont(QFont(FONT_MAIN, 9))
         self._correct_btn.setCursor(Qt.PointingHandCursor)
         self._correct_btn.clicked.connect(self._show_correction_picker)
-
-        feedback_row.addWidget(feedback_lbl)
+        feedback_row.addWidget(self._feedback_lbl)
         feedback_row.addStretch()
         feedback_row.addWidget(self._confirm_btn)
         feedback_row.addWidget(self._correct_btn)
-        result_lay.addLayout(feedback_row)
+        lay.addLayout(feedback_row)
+        lay.addSpacing(4)
 
-        # Picker correction (caché par défaut)
-        self._correction_picker = QWidget()
-        self._correction_picker.setAutoFillBackground(False)
-        self._correction_picker.setStyleSheet("background: transparent;")
-        picker_row = QHBoxLayout(self._correction_picker)
-        picker_row.setContentsMargins(0, 0, 0, 0)
+        # Picker correction
+        picker_row = QHBoxLayout()
         picker_row.setSpacing(6)
+        self._picker_lbl = QLabel("Défaut réel :")
+        self._picker_lbl.setFont(QFont(FONT_MAIN, 8))
         self._correction_combo = QComboBox()
-        self._correction_combo.setFont(QFont(FONT_MAIN, 7))
+        self._correction_combo.setFont(QFont(FONT_MAIN, 8))
         from core.defect_detection.defect_classes import DEFECT_LABELS_FR, DefectClass
         for cls in DefectClass:
             self._correction_combo.addItem(DEFECT_LABELS_FR[cls], cls.value)
         self._correction_ok_btn = QPushButton("Valider")
-        self._correction_ok_btn.setFixedHeight(22)
-        self._correction_ok_btn.setFont(QFont(FONT_MAIN, 7))
+        self._correction_ok_btn.setFixedHeight(24)
+        self._correction_ok_btn.setFont(QFont(FONT_MAIN, 8))
         self._correction_ok_btn.setCursor(Qt.PointingHandCursor)
         self._correction_ok_btn.clicked.connect(self._save_correction)
-        _picker_lbl = QLabel("Défaut réel :")
-        _picker_lbl.setAutoFillBackground(False)
-        picker_row.addWidget(_picker_lbl)
+        picker_row.addWidget(self._picker_lbl)
         picker_row.addWidget(self._correction_combo, 1)
         picker_row.addWidget(self._correction_ok_btn)
-        self._correction_picker.hide()
-        result_lay.addWidget(self._correction_picker)
+        lay.addLayout(picker_row)
 
-        self._result_widget.hide()
-        lay.addWidget(self._result_widget)
+        # Liste des widgets à cacher/montrer avec les résultats
+        self._result_widgets = [
+            self._sep_result, self._badge_dot, self._badge_name, self._badge_conf,
+            self._desc_lbl, self._corrections_header, self._hint_lbl,
+            self._sep_result2, self._apply_btn, self._feedback_lbl,
+            self._confirm_btn, self._correct_btn,
+        ]
+        self._picker_widgets = [self._picker_lbl, self._correction_combo, self._correction_ok_btn]
+        self._set_result_visible(False)
+        self._set_picker_visible(False)
+
+    def _set_result_visible(self, visible: bool):
+        for w in self._result_widgets:
+            w.setVisible(visible)
+        if not visible:
+            self._set_picker_visible(False)
+
+    def _set_picker_visible(self, visible: bool):
+        for w in self._picker_widgets:
+            w.setVisible(visible)
 
     # ── Logique ───────────────────────────────────────────────────────────────
 
     def _on_photo_selected(self, path: Path):
         self._image_path = path
-        self._result_widget.hide()
+        self._set_result_visible(False)
         self._result = None
         self._analyze_btn.setEnabled(True)
         self.adjustSize()
@@ -651,7 +662,7 @@ class DefectDiagnosticDialog(QDialog):
         self._analyze_btn.setEnabled(False)
         self._analyze_btn.setText("Analyse en cours...")
         self._progress.show()
-        self._result_widget.hide()
+        self._set_result_visible(False)
 
         self._worker = _AnalysisWorker(self._image_path, self)
         self._worker.result_ready.connect(self._on_result)
@@ -690,13 +701,8 @@ class DefectDiagnosticDialog(QDialog):
 
         self._badge_dot.setStyleSheet(f"color: {dot_color}; background: transparent;")
         self._badge_name.setText(DEFECT_LABELS_FR.get(result.defect, result.defect.value))
-        self._badge_name.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
         self._badge_conf.setText(f"{result.confidence:.0%}")
-        self._badge_conf.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
-
-        desc = DEFECT_DESCRIPTIONS_FR.get(result.defect, "")
-        self._desc_lbl.setText(desc)
-        self._desc_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+        self._desc_lbl.setText(DEFECT_DESCRIPTIONS_FR.get(result.defect, ""))
 
         # Vider les corrections
         while self._corrections_lay.count():
@@ -710,11 +716,6 @@ class DefectDiagnosticDialog(QDialog):
         has_corrections = bool(remediation) and result.defect.value != "good"
 
         if has_corrections:
-            header = QLabel("Corrections recommandées :")
-            header.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
-            header.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
-            self._corrections_lay.addWidget(header)
-
             for key, value in remediation.items():
                 row = QHBoxLayout()
                 row.setSpacing(6)
@@ -736,10 +737,7 @@ class DefectDiagnosticDialog(QDialog):
                 row.addWidget(dot)
                 row.addWidget(lbl)
                 row.addStretch()
-                wrapper = QWidget()
-                wrapper.setStyleSheet(f"background: {pal['BG_PANEL']};")
-                wrapper.setLayout(row)
-                self._corrections_lay.addWidget(wrapper)
+                self._corrections_lay.addLayout(row)
 
         # Conseil
         if hint:
@@ -757,8 +755,8 @@ class DefectDiagnosticDialog(QDialog):
         self._apply_btn.setEnabled(has_corrections)
 
         # Feedback
-        self._correction_picker.hide()
-        self._result_widget.show()
+        self._set_picker_visible(False)
+        self._set_result_visible(True)
         self._apply_theme()
         self.adjustSize()
 
@@ -776,7 +774,7 @@ class DefectDiagnosticDialog(QDialog):
                 item.widget().deleteLater()
         self._apply_btn.setEnabled(False)
         self._hint_lbl.hide()
-        self._result_widget.show()
+        self._set_result_visible(True)
         self.adjustSize()
 
     def _apply_corrections(self):
@@ -799,7 +797,8 @@ class DefectDiagnosticDialog(QDialog):
         QTimer.singleShot(600, self._maybe_retrain)
 
     def _show_correction_picker(self):
-        self._correction_picker.setVisible(not self._correction_picker.isVisible())
+        visible = not self._picker_lbl.isVisible()
+        self._set_picker_visible(visible)
         self.adjustSize()
 
     def _save_correction(self):
@@ -810,7 +809,7 @@ class DefectDiagnosticDialog(QDialog):
                 DatasetManager().correct_prediction(self._image_hash, correct_class)
             except Exception:
                 pass
-        self._correction_picker.hide()
+        self._set_picker_visible(False)
         self._correct_btn.setEnabled(False)
         self._correct_btn.setText("Corrigé")
         self._confirm_btn.setEnabled(False)
@@ -840,134 +839,105 @@ class DefectDiagnosticDialog(QDialog):
     def _apply_theme(self):
         pal = _T.palette()
 
-        bg = pal['BG_PANEL']
-
+        # Card — même pattern que SettingsDialog
         self._card.setStyleSheet(f"""
             QWidget#diag_card {{
-                background: {bg};
+                background: {pal['BG_PANEL']};
                 border: 1px solid {pal['ACCENT']};
                 border-radius: 6px;
             }}
         """)
 
-        # Tous les containers QWidget reçoivent le même fond que la card
-        # (CSS transparent ne fonctionne pas sur Windows avec des layouts imbriqués)
-        for w in (self._result_widget, self._corrections_widget, self._correction_picker):
-            w.setStyleSheet(f"background: {bg};")
-
+        # Titre et fermeture — style direct, comme SettingsDialog
         self._title_lbl.setStyleSheet(
-            f"color: {pal['TEXT_PRIMARY']}; background: {bg}; letter-spacing: 2px;"
+            f"color: {pal['TEXT_PRIMARY']}; background: transparent; letter-spacing: 2px;"
         )
-
         self._close_btn.setStyleSheet(f"""
             QPushButton {{
-                background: transparent;
-                color: {pal['TEXT_SECONDARY']};
-                border: none;
-                border-radius: 3px;
-                font-weight: bold;
+                background: transparent; color: {pal['TEXT_SECONDARY']};
+                border: none; border-radius: 3px; font-weight: bold;
             }}
-            QPushButton:hover {{
-                background: {pal['ERROR_RED']};
-                color: white;
-            }}
+            QPushButton:hover {{ background: {pal['ERROR_RED']}; color: white; }}
         """)
 
-        for sep in self.findChildren(QFrame):
+        # Séparateurs
+        for sep in (self._sep_top, self._sep_result, self._sep_result2):
             sep.setStyleSheet(f"background: {pal['INACTIVE']}; border: none;")
 
         self._drop.update()
 
-        # Bouton analyser
+        # Analyser
         self._analyze_btn.setStyleSheet(f"""
             QPushButton {{
-                background: {pal['ACCENT']};
-                color: {pal['EXPORT_FG']};
-                border: none;
-                border-radius: 3px;
-                letter-spacing: 1px;
+                background: {pal['ACCENT']}; color: {pal['EXPORT_FG']};
+                border: none; border-radius: 3px; letter-spacing: 1px;
             }}
-            QPushButton:hover {{
-                background: {pal['ACCENT_BRIGHT']};
-            }}
-            QPushButton:disabled {{
-                background: {pal['INACTIVE']};
-                color: {pal['TEXT_LABEL']};
-            }}
+            QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
+            QPushButton:disabled {{ background: {pal['INACTIVE']}; color: {pal['TEXT_LABEL']}; }}
         """)
 
         self._progress.setStyleSheet(f"""
-            QProgressBar {{
-                background: {pal['BG_SURFACE']};
-                border: none;
-                border-radius: 1px;
-            }}
-            QProgressBar::chunk {{
-                background: {pal['ACCENT']};
-                border-radius: 1px;
-            }}
+            QProgressBar {{ background: {pal['BG_SURFACE']}; border: none; border-radius: 1px; }}
+            QProgressBar::chunk {{ background: {pal['ACCENT']}; border-radius: 1px; }}
         """)
 
-        # Bouton appliquer
-        self._apply_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {pal['TELE_GREEN']};
-                color: {pal['EXPORT_FG']};
-                border: none;
-                border-radius: 3px;
-                letter-spacing: 1px;
-                padding: 0 12px;
-            }}
-            QPushButton:hover {{
-                background: #00D080;
-            }}
-            QPushButton:disabled {{
-                background: {pal['INACTIVE']};
-                color: {pal['TEXT_LABEL']};
-            }}
-        """)
-
-        small_btn_style = f"""
-            QPushButton {{
-                background: {pal['BG_ELEVATED']};
-                color: {pal['TEXT_SECONDARY']};
-                border: 1px solid {pal['INACTIVE']};
-                border-radius: 3px;
-                padding: 0 8px;
-            }}
-            QPushButton:hover {{
-                border-color: {pal['ACCENT']};
-                color: {pal['ACCENT']};
-            }}
-            QPushButton:disabled {{
-                color: {pal['TEXT_LABEL']};
-                border-color: {pal['INACTIVE']};
-            }}
-        """
-        for btn in (self._confirm_btn, self._correct_btn,
-                    self._correction_ok_btn):
-            btn.setStyleSheet(small_btn_style)
-
+        # Labels résultats — tous explicitement stylés (pas de cascade)
+        self._badge_dot.setStyleSheet(
+            f"color: {pal['AMBER']}; background: transparent;"
+        )
+        self._badge_name.setStyleSheet(
+            f"color: {pal['TEXT_PRIMARY']}; background: transparent;"
+        )
+        self._badge_conf.setStyleSheet(
+            f"color: {pal['TEXT_SECONDARY']}; background: transparent;"
+        )
+        self._desc_lbl.setStyleSheet(
+            f"color: {pal['TEXT_PRIMARY']}; background: transparent;"
+        )
+        self._corrections_header.setStyleSheet(
+            f"color: {pal['TEXT_PRIMARY']}; background: transparent;"
+        )
+        self._hint_lbl.setStyleSheet(
+            f"color: {pal['TEXT_PRIMARY']}; background: {pal['BG_ELEVATED']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 6px 10px;"
+        )
         self._feedback_lbl.setStyleSheet(
             f"color: {pal['TEXT_LABEL']}; background: transparent;"
         )
+        self._picker_lbl.setStyleSheet(
+            f"color: {pal['TEXT_SECONDARY']}; background: transparent;"
+        )
+
+        # Appliquer
+        self._apply_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {pal['TELE_GREEN']}; color: {pal['EXPORT_FG']};
+                border: none; border-radius: 3px; letter-spacing: 1px; padding: 0 12px;
+            }}
+            QPushButton:hover {{ background: #00D080; }}
+            QPushButton:disabled {{ background: {pal['INACTIVE']}; color: {pal['TEXT_LABEL']}; }}
+        """)
+
+        small = f"""
+            QPushButton {{
+                background: {pal['BG_ELEVATED']}; color: {pal['TEXT_SECONDARY']};
+                border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 0 8px;
+            }}
+            QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}
+            QPushButton:disabled {{ color: {pal['TEXT_LABEL']}; border-color: {pal['INACTIVE']}; }}
+        """
+        for btn in (self._confirm_btn, self._correct_btn, self._correction_ok_btn):
+            btn.setStyleSheet(small)
 
         self._correction_combo.setStyleSheet(f"""
             QComboBox {{
-                background: {pal['BG_INPUT']};
-                color: {pal['TEXT_PRIMARY']};
-                border: 1px solid {pal['INACTIVE']};
-                border-radius: 3px;
-                padding: 2px 6px;
+                background: {pal['BG_INPUT']}; color: {pal['TEXT_PRIMARY']};
+                border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 2px 6px;
             }}
             QComboBox QAbstractItemView {{
-                background: {pal['BG_ELEVATED']};
-                color: {pal['TEXT_PRIMARY']};
+                background: {pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']};
                 border: 1px solid {pal['INACTIVE']};
                 selection-background-color: {pal['ACCENT']};
             }}
         """)
-
-        for lbl in self._correction_picker.findChildren(QLabel):
-            lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
 
