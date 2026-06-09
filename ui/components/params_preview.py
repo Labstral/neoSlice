@@ -159,8 +159,7 @@ class _EmptyState(QWidget):
 class ParamsPreview(QWidget):
     """Panneau droit — paramètres générés avec sections collapsibles."""
 
-    export_requested              = Signal()
-    diagnostic_apply_requested    = Signal(object)   # DiagnosticResult
+    export_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -168,7 +167,6 @@ class ParamsPreview(QWidget):
         self._sections: dict[str, CollapsibleSection] = {}
         self._last_config   = None
         self._last_analysis = None
-        self._diag_result   = None   # DiagnosticResult en attente
         self._setup_ui()
 
     def refresh_theme(self):
@@ -176,8 +174,6 @@ class ParamsPreview(QWidget):
         self.setStyleSheet(f"background: {pal['BG_PANEL']}")
         if hasattr(self, "_sections_widget"):
             self._sections_widget.setStyleSheet(f"background: {pal['BG_PANEL']}")
-        if hasattr(self, "_diag_btn"):
-            self._refresh_diag_btn_style()
         if self._last_config is not None:
             self._render_sections(self._last_config, self._last_analysis)
         self.update()
@@ -200,73 +196,13 @@ class ParamsPreview(QWidget):
 
         self._root.addStretch()
 
-        # ── Bouton corrections diagnostic ─────────────────────────────────────
-        # Apparaît en bas du panneau quand un résultat diagnostic est disponible
-        self._diag_btn = QPushButton()
-        self._diag_btn.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
-        self._diag_btn.setFixedHeight(32)
-        self._diag_btn.setCursor(Qt.PointingHandCursor)
-        self._diag_btn.clicked.connect(self._on_diag_apply)
-        self._diag_btn.hide()
-        self._root.addWidget(self._diag_btn)
-        self._refresh_diag_btn_style()
-
     # ── API publique ───────────────────────────────────────────────────────
-
-    def set_diagnostic_result(self, result) -> None:
-        """Stocke un DiagnosticResult et affiche le bouton d'application."""
-        from core.defect_detection.defect_classes import DefectClass
-        self._diag_result = result
-        has_corrections = (
-            result is not None
-            and result.defect != DefectClass.GOOD
-            and any(not k.startswith("_") for k in result.remediation)
-        )
-        if has_corrections:
-            from core.defect_detection.defect_classes import DEFECT_LABELS_FR
-            label = DEFECT_LABELS_FR.get(result.defect, result.defect.value)
-            self._diag_btn.setText(f"APPLIQUER CORRECTIONS — {label.upper()}")
-            self._diag_btn.show()
-        else:
-            self._diag_btn.hide()
-
-    def clear_diagnostic_result(self) -> None:
-        self._diag_result = None
-        self._diag_btn.hide()
-
-    def _on_diag_apply(self):
-        if self._diag_result:
-            self.diagnostic_apply_requested.emit(self._diag_result)
-            self._diag_btn.setText("CORRECTIONS APPLIQUÉES")
-            self._diag_btn.setEnabled(False)
-
-    def _refresh_diag_btn_style(self):
-        pal = _T.palette()
-        self._diag_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {pal['AMBER']};
-                color: #000000;
-                border: none;
-                border-radius: 0px;
-                letter-spacing: 1px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background: #FFC933;
-            }}
-            QPushButton:disabled {{
-                background: {pal['TELE_GREEN']};
-                color: #000000;
-            }}
-        """)
 
     def update_from_config(self, config: PrintConfig, analysis: AnalysisReport | None = None):
         self._last_config = config
         self._last_analysis = analysis
         self._empty.hide()
         self._sections_widget.show()
-        # Nouvelle génération → les corrections diagnostic précédentes ne sont plus valides
-        self.clear_diagnostic_result()
         self._render_sections(config, analysis)
 
     def set_loading(self, loading: bool):
@@ -282,7 +218,6 @@ class ParamsPreview(QWidget):
         self._sections.clear()
         self._sections_widget.hide()
         self._empty.show()
-        self.clear_diagnostic_result()
 
     # ── Rendu des sections ─────────────────────────────────────────────────
 

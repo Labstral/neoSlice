@@ -679,7 +679,8 @@ class _TopBar(QWidget):
 class _StatusBar(QWidget):
     """Barre basse 40px — statut + bouton export."""
 
-    export_clicked = Signal()
+    export_clicked    = Signal()
+    diag_apply_clicked = Signal(object)   # DiagnosticResult
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -688,6 +689,7 @@ class _StatusBar(QWidget):
         self._pulse_timer = QTimer(self)
         self._pulse_timer.timeout.connect(self._pulse_tick)
         self.destroyed.connect(self._pulse_timer.stop)
+        self._diag_result = None
         self._setup_ui()
 
     def _setup_ui(self):
@@ -705,6 +707,16 @@ class _StatusBar(QWidget):
         self._msg.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
         self._msg.setWordWrap(False)
         layout.addWidget(self._msg, 1)
+
+        # Bouton corrections diagnostic — à gauche de l'export, masqué par défaut
+        self._diag_btn = QPushButton()
+        self._diag_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        self._diag_btn.setFixedHeight(30)
+        self._diag_btn.setCursor(Qt.PointingHandCursor)
+        self._diag_btn.clicked.connect(self._on_diag_apply)
+        self._diag_btn.hide()
+        self._apply_diag_btn_style()
+        layout.addWidget(self._diag_btn)
 
         self._export_btn = QPushButton(_("export.btn"))
         self._export_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
@@ -731,11 +743,52 @@ class _StatusBar(QWidget):
         self._export_btn.clicked.connect(self.export_clicked)
         layout.addWidget(self._export_btn)
 
+    # ── Bouton corrections diagnostic ──────────────────────────────────────
+    def _apply_diag_btn_style(self):
+        pal = _THEME.palette()
+        self._diag_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {pal['AMBER']}; color: #000000;
+                border: none; border-radius: 3px; padding: 0 16px; letter-spacing: 1px;
+            }}
+            QPushButton:hover {{ background: #FFC933; }}
+            QPushButton:disabled {{ background: {pal['TELE_GREEN']}; color: #000000; }}
+        """)
+
+    def set_diagnostic_result(self, result):
+        from core.defect_detection.defect_classes import DefectClass, DEFECT_LABELS_FR
+        self._diag_result = result
+        has_corr = (
+            result is not None
+            and result.defect != DefectClass.GOOD
+            and any(not k.startswith("_") for k in result.remediation)
+        )
+        if has_corr:
+            label = DEFECT_LABELS_FR.get(result.defect, result.defect.value)
+            self._diag_btn.setText(f"⚙  APPLIQUER CORRECTIONS — {label.upper()}")
+            self._diag_btn.setEnabled(True)
+            self._apply_diag_btn_style()
+            self._diag_btn.show()
+        else:
+            self._diag_btn.hide()
+
+    def clear_diagnostic_result(self):
+        self._diag_result = None
+        self._diag_btn.hide()
+
+    def _on_diag_apply(self):
+        if self._diag_result is not None:
+            self.diag_apply_clicked.emit(self._diag_result)
+            self._diag_btn.setText("✓  CORRECTIONS APPLIQUÉES")
+            self._diag_btn.setEnabled(False)
+
     def refresh_theme(self):
         pal = _THEME.palette()
         self.setStyleSheet(f"background: {pal['BG_PANEL']};")
         self._dot.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
         self._msg.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        if self._diag_btn.isEnabled():
+            self._apply_diag_btn_style()
         if not self._export_btn.isEnabled():
             self._export_btn.setStyleSheet(f"""
                 QPushButton {{
@@ -986,6 +1039,7 @@ class MainWindow(QMainWindow):
         # ── StatusBar ──
         self._statusbar = _StatusBar()
         self._statusbar.export_clicked.connect(self._on_export_requested)
+        self._statusbar.diag_apply_clicked.connect(self._do_apply_diagnostic)
         root.addWidget(self._statusbar)
 
     # ── Panneau gauche ─────────────────────────────────────────────────────
@@ -1132,7 +1186,6 @@ class MainWindow(QMainWindow):
         scroll.viewport().setStyleSheet(f"background: {BG_PANEL}; border: none;")
 
         self._params_preview = ParamsPreview()
-        self._params_preview.diagnostic_apply_requested.connect(self._do_apply_diagnostic)
         scroll.setWidget(self._params_preview)
         return scroll
 
@@ -1248,11 +1301,10 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _apply_defect_corrections(self, result):
-        """Le diagnostic a produit des corrections — on les enregistre sur le
-        panneau de droite. Le bouton 'Appliquer corrections' y apparaît ; c'est
-        son clic qui applique réellement les corrections au PrintConfig."""
-        if hasattr(self, "_params_preview"):
-            self._params_preview.set_diagnostic_result(result)
+        """Le diagnostic a produit des corrections — on les enregistre sur la
+        barre de statut. Le bouton 'Appliquer corrections' apparaît à gauche de
+        l'export ; son clic applique réellement les corrections au PrintConfig."""
+        self._statusbar.set_diagnostic_result(result)
 
     def _do_apply_diagnostic(self, result):
         """Applique réellement les corrections du diagnostic au PrintConfig
@@ -1590,6 +1642,7 @@ class MainWindow(QMainWindow):
         self._step_intent.set_pending()
         self._topbar.set_has_stl(False)
         self._statusbar.set_export_enabled(False)
+        self._statusbar.clear_diagnostic_result()
         self._statusbar.set_message(_("status.ready"), TELE_GREEN)
 
     def _on_stl_dropped(self, path: Path):
@@ -2011,6 +2064,8 @@ class MainWindow(QMainWindow):
             self._current_selection = result
 
             self._params_preview.update_from_config(config, analysis)
+            # Nouvelle config → corrections diagnostic précédentes obsolètes
+            self._statusbar.clear_diagnostic_result()
             self._analysis_panel.set_generation_active()
             self._analysis_panel.show_material_warnings(
                 _compute_material_warnings(filament, printer, analysis)
