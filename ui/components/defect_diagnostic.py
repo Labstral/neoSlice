@@ -383,11 +383,6 @@ class _PhotoDrop(QWidget):
             x = (self.width()  - self._pixmap.width())  // 2
             y = (self.height() - self._pixmap.height()) // 2
             p.drawPixmap(x, y, self._pixmap)
-            # Nom du fichier en bas
-            p.setPen(QColor(pal["TEXT_SECONDARY"]))
-            p.setFont(QFont(FONT_MONO, 7))
-            p.drawText(self.rect().adjusted(8, 0, -8, -4),
-                       Qt.AlignBottom | Qt.AlignHCenter, self._filename)
         else:
             icon_color = QColor(pal["ACCENT"] if self._hovered else pal["TEXT_LABEL"])
             p.setPen(icon_color)
@@ -748,10 +743,8 @@ class DefectDiagnosticDialog(QDialog):
             self._hint_lbl.hide()
 
         # Bouton appliquer
-        self._apply_btn.setEnabled(has_corrections and not result.stop_print)
-        if result.stop_print:
-            self._apply_btn.setText("ARRETER L'IMPRESSION")
-            self._apply_btn.setEnabled(True)
+        self._apply_btn.setText("APPLIQUER LES CORRECTIONS")
+        self._apply_btn.setEnabled(has_corrections)
 
         # Feedback
         self._correction_picker.hide()
@@ -778,10 +771,6 @@ class DefectDiagnosticDialog(QDialog):
 
     def _apply_corrections(self):
         if self._result:
-            if self._result.stop_print:
-                # Spaghetti — juste fermer, pas de corrections à appliquer
-                self.close()
-                return
             self.corrections_ready.emit(self._result)
             self._apply_btn.setEnabled(False)
             self._apply_btn.setText("Corrections appliquées")
@@ -846,6 +835,12 @@ class DefectDiagnosticDialog(QDialog):
                 background: {pal['BG_PANEL']};
                 border: 1px solid {pal['ACCENT']};
                 border-radius: 6px;
+            }}
+            QWidget#diag_card QWidget {{
+                background: transparent;
+            }}
+            QWidget#diag_card QLabel {{
+                background: transparent;
             }}
         """)
 
