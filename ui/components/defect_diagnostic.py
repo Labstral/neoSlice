@@ -693,6 +693,15 @@ class DefectDiagnosticDialog(QDialog):
         self._card.layout().activate()
         self.adjustSize()
 
+    def _recolor_corrections(self):
+        """Recolore les lignes de correction selon le thème courant
+        (elles sont créées dynamiquement → à rafraîchir au switch de thème)."""
+        pal = _T.palette()
+        for dot in getattr(self, "_corr_dots", []):
+            dot.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
+        for lbl in getattr(self, "_corr_lbls", []):
+            lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+
     # ── Logique ───────────────────────────────────────────────────────────────
 
     def _on_photo_selected(self, path: Path):
@@ -768,6 +777,9 @@ class DefectDiagnosticDialog(QDialog):
             item = self._corrections_lay.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        # Références pour re-coloration au changement de thème
+        self._corr_dots = []
+        self._corr_lbls = []
 
         remediation = {k: v for k, v in result.remediation.items() if not k.startswith("_")}
         hint        = result.remediation.get("_hint", "")
@@ -781,7 +793,6 @@ class DefectDiagnosticDialog(QDialog):
                 dot = QLabel("•")
                 dot.setFont(QFont(FONT_MAIN, 10))
                 dot.setFixedWidth(10)
-                dot.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
 
                 field = key.replace("delta_", "").replace("_", " ")
                 if key.startswith("delta_"):
@@ -792,11 +803,13 @@ class DefectDiagnosticDialog(QDialog):
 
                 lbl = QLabel(f"{field}  →  {val_str}")
                 lbl.setFont(QFont(FONT_MONO, 8))
-                lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
                 row.addWidget(dot)
                 row.addWidget(lbl)
                 row.addStretch()
                 self._corrections_lay.addLayout(row)
+                self._corr_dots.append(dot)
+                self._corr_lbls.append(lbl)
+        self._recolor_corrections()
 
         # Conseil
         if hint:
@@ -867,10 +880,12 @@ class DefectDiagnosticDialog(QDialog):
             except Exception:
                 pass
         self._confirm_btn.setEnabled(False)
-        self._correct_btn.setEnabled(False)
         self._confirm_btn.setText("Enregistré")
+        self._correct_btn.hide()          # résultat validé → plus besoin de corriger
+        self._set_picker_visible(False)
         QTimer.singleShot(300, self._maybe_contribute)
         QTimer.singleShot(600, self._maybe_retrain)
+        QTimer.singleShot(0, self._refit)
 
     def _show_correction_picker(self):
         visible = not self._picker_lbl.isVisible()
@@ -1002,6 +1017,7 @@ class DefectDiagnosticDialog(QDialog):
         self._corrections_header.setStyleSheet(
             f"color: {pal['TEXT_PRIMARY']}; background: transparent;"
         )
+        self._recolor_corrections()
         self._hint_lbl.setStyleSheet(
             f"color: {pal['TEXT_PRIMARY']}; background: {pal['BG_ELEVATED']}; "
             f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 6px 10px;"

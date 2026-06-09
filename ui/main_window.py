@@ -748,11 +748,11 @@ class _StatusBar(QWidget):
         pal = _THEME.palette()
         self._diag_btn.setStyleSheet(f"""
             QPushButton {{
-                background: {pal['AMBER']}; color: #000000;
+                background: {pal['AMBER']}; color: #ffffff;
                 border: none; border-radius: 3px; padding: 0 16px; letter-spacing: 1px;
             }}
             QPushButton:hover {{ background: #FFC933; }}
-            QPushButton:disabled {{ background: {pal['TELE_GREEN']}; color: #000000; }}
+            QPushButton:disabled {{ background: {pal['TELE_GREEN']}; color: #ffffff; }}
         """)
 
     def set_diagnostic_result(self, result):
@@ -765,7 +765,10 @@ class _StatusBar(QWidget):
         )
         if has_corr:
             label = DEFECT_LABELS_FR.get(result.defect, result.defect.value)
-            self._diag_btn.setText(f"⚙  APPLIQUER CORRECTIONS — {label.upper()}")
+            # Clé à molette en présentation texte (U+FE0E) → monochrome, suit
+            # la couleur du texte (blanc), compatible Windows/macOS.
+            wrench = "\U0001F527︎"
+            self._diag_btn.setText(f"{wrench}  APPLIQUER CORRECTIONS — {label.upper()}")
             self._diag_btn.setEnabled(True)
             self._apply_diag_btn_style()
             self._diag_btn.show()
