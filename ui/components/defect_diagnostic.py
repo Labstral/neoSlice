@@ -903,9 +903,10 @@ class DefectDiagnosticDialog(QDialog):
         self._set_picker_visible(False)
         self._correct_btn.setEnabled(False)
         self._correct_btn.setText("Corrigé")
-        self._confirm_btn.setEnabled(False)
+        self._confirm_btn.hide()          # résultat corrigé → "Oui" inutile
         QTimer.singleShot(300, self._maybe_contribute)
         QTimer.singleShot(600, self._maybe_retrain)
+        QTimer.singleShot(0, self._refit)
 
     def _maybe_contribute(self):
         """Contribue automatiquement si l'utilisateur a donné son accord."""
