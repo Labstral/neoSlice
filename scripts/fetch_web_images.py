@@ -16,12 +16,14 @@ from pathlib import Path
 
 QUERIES = {
     "elephants_foot": [
-        "3d print elephant foot defect",
-        "elephant's foot 3d printing first layer",
-        "3d print elephant foot bottom bulge",
-        "pied d'elephant impression 3d defaut",
-        "fdm print elephant foot base flare",
-        "elephant foot 3d print problem photo",
+        "elephant foot 3d print calibration cube",
+        "3d print elephant foot bottom layer photo",
+        "elephant foot fdm print before after",
+        "3d print first layer squished elephant foot",
+        "elephant foot 3d benchy bottom",
+        "3d printed cube elephant foot bulge base",
+        "elephant foot 3d print reddit",
+        "how to fix elephant foot 3d print example photo",
     ],
     "pillowing": [
         "3d print pillowing top surface",
@@ -91,10 +93,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="c:/train_data/web_review")
     ap.add_argument("--max", type=int, default=_MAX_PER_CLASS)
+    ap.add_argument("--only", default="", help="ne traiter qu'une classe")
     args = ap.parse_args()
     out = Path(args.out)
 
-    for cls, queries in QUERIES.items():
+    items = {args.only: QUERIES[args.only]}.items() if args.only else QUERIES.items()
+    for cls, queries in items:
         print(f"\n=== {cls} ===")
         urls = fetch_urls(queries, args.max)
         print(f"  {len(urls)} URLs candidates")
