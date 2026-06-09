@@ -157,37 +157,44 @@ def download_contributions(secrets: dict, dest: Path) -> int:
 # 2. Fusion dataset de base + contributions
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _resolve_base() -> Path:
-    """Trouve le dataset de base où qu'il soit monté sous /kaggle/input
-    (le chemin exact varie ; gère dossiers train/val OU zips à extraire)."""
+def _resolve_bases() -> list[Path]:
+    """Trouve TOUTES les sources d'entraînement montées sous /kaggle/input
+    (dataset de base + crops Roboflow + autres). Gère dossiers train/ OU zips."""
     import zipfile
     inp = Path("/kaggle/input")
     if not inp.exists():
         print("  [!] /kaggle/input n'existe pas")
-        return BASE_DATASET
+        return []
 
-    # 1. cherche un dossier train/ contenant nos classes, n'importe où
+    roots: list[Path] = []
+    seen: set[str] = set()
+
+    # 1. tous les dossiers train/ contenant nos classes
     for train_dir in inp.rglob("train"):
         if train_dir.is_dir() and any((train_dir / c).is_dir() for c in CLASS_NAMES):
-            print(f"  base trouvée (dossiers) : {train_dir.parent}")
-            return train_dir.parent
+            root = train_dir.parent
+            if str(root) not in seen:
+                seen.add(str(root)); roots.append(root)
 
-    # 2. sinon cherche train.zip à extraire, n'importe où
+    # 2. zips train.zip à extraire (un par dataset)
     for z in inp.rglob("train.zip"):
-        target = WORK / "base"
+        target = WORK / ("base_" + z.parent.name)
         for zz in z.parent.glob("*.zip"):
             try:
                 with zipfile.ZipFile(zz) as zf:
                     zf.extractall(target)
             except Exception as exc:
                 print(f"  extraction {zz.name}: {exc}")
-        if (target / "train").exists():
-            print(f"  base trouvée (zips extraits) : {target}")
-            return target
+        if (target / "train").exists() and str(target) not in seen:
+            seen.add(str(target)); roots.append(target)
 
-    print("  [!] dataset de base introuvable sous /kaggle/input")
-    print("      contenu :", [str(p.relative_to(inp)) for p in inp.rglob('*') if p.is_dir()][:20])
-    return BASE_DATASET
+    if roots:
+        for r in roots:
+            print(f"  source trouvée : {r}")
+    else:
+        print("  [!] aucune source d'entraînement sous /kaggle/input")
+        print("      contenu :", [str(p.relative_to(inp)) for p in inp.rglob('*') if p.is_dir()][:20])
+    return roots
 
 
 def dedup_dataset() -> None:
@@ -229,11 +236,10 @@ def build_dataset(contrib: Path) -> None:
     for split in ("train", "val"):
         for cls in CLASS_NAMES:
             (DATA_DIR / split / cls).mkdir(parents=True, exist_ok=True)
-    # Base
-    base = _resolve_base()
-    print(f"  dataset de base : {base}")
+    # Toutes les sources (base + crops Roboflow + …)
+    bases = _resolve_bases()
     n_base = 0
-    if base.exists():
+    for bi, base in enumerate(bases):
         for split in ("train", "val"):
             for cls in CLASS_NAMES:
                 src = base / split / cls
@@ -241,12 +247,13 @@ def build_dataset(contrib: Path) -> None:
                     for p in src.glob("*"):
                         if p.stat().st_size < 1024:
                             continue  # ignore les fichiers corrompus/vides
-                        dst = DATA_DIR / split / cls / p.name
+                        # préfixe par source pour éviter les collisions de noms
+                        dst = DATA_DIR / split / cls / f"s{bi}_{p.name}"
                         if not dst.exists():
                             try:
                                 shutil.copy2(p, dst); n_base += 1
                             except Exception: pass
-    print(f"  images de base copiées : {n_base}")
+    print(f"  images sources copiées : {n_base}")
     # Contributions → 85% train / 15% val
     for cls in CLASS_NAMES:
         src = contrib / cls
