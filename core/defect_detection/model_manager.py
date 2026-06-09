@@ -26,6 +26,7 @@ _MODEL_DOWNLOAD_BASE = os.environ.get(
     "NEOSLICE_MODEL_URL",
     "https://github.com/Labstral/neoSlice/releases/download/models"
 )
+# URL directe v1 : https://github.com/Labstral/neoSlice/releases/download/models/defect_detector_v1.onnx
 
 # SHA256 des modèles connus — mis à jour à chaque nouveau modèle entraîné.
 # Format : { "filename": "sha256hex" }
