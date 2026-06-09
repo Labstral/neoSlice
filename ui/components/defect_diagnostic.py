@@ -566,9 +566,8 @@ class DefectDiagnosticDialog(QDialog):
 
         # Conseil (hint)
         self._hint_lbl = QLabel()
-        self._hint_lbl.setFont(QFont(FONT_MAIN, 7))
+        self._hint_lbl.setFont(QFont(FONT_MAIN, 9))
         self._hint_lbl.setWordWrap(True)
-        self._hint_lbl.setAutoFillBackground(False)
         self._hint_lbl.hide()
         result_lay.addWidget(self._hint_lbl)
 
@@ -738,8 +737,7 @@ class DefectDiagnosticDialog(QDialog):
                 row.addWidget(lbl)
                 row.addStretch()
                 wrapper = QWidget()
-                wrapper.setAutoFillBackground(False)
-                wrapper.setStyleSheet("background: transparent;")
+                wrapper.setStyleSheet(f"background: {pal['BG_PANEL']};")
                 wrapper.setLayout(row)
                 self._corrections_lay.addWidget(wrapper)
 
@@ -747,8 +745,8 @@ class DefectDiagnosticDialog(QDialog):
         if hint:
             self._hint_lbl.setText(hint)
             self._hint_lbl.setStyleSheet(
-                f"color: {pal['TEXT_LABEL']}; background: {pal['BG_SURFACE']}; "
-                f"border-radius: 3px; padding: 5px 8px;"
+                f"color: {pal['TEXT_PRIMARY']}; background: {pal['BG_ELEVATED']}; "
+                f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 6px 10px;"
             )
             self._hint_lbl.show()
         else:
@@ -842,16 +840,23 @@ class DefectDiagnosticDialog(QDialog):
     def _apply_theme(self):
         pal = _T.palette()
 
+        bg = pal['BG_PANEL']
+
         self._card.setStyleSheet(f"""
             QWidget#diag_card {{
-                background: {pal['BG_PANEL']};
+                background: {bg};
                 border: 1px solid {pal['ACCENT']};
                 border-radius: 6px;
             }}
         """)
 
+        # Tous les containers QWidget reçoivent le même fond que la card
+        # (CSS transparent ne fonctionne pas sur Windows avec des layouts imbriqués)
+        for w in (self._result_widget, self._corrections_widget, self._correction_picker):
+            w.setStyleSheet(f"background: {bg};")
+
         self._title_lbl.setStyleSheet(
-            f"color: {pal['TEXT_PRIMARY']}; background: transparent; letter-spacing: 2px;"
+            f"color: {pal['TEXT_PRIMARY']}; background: {bg}; letter-spacing: 2px;"
         )
 
         self._close_btn.setStyleSheet(f"""
