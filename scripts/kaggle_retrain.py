@@ -145,7 +145,9 @@ def download_contributions(secrets: dict, dest: Path) -> int:
                 pass
         if objs:
             print(f"  {cls}: {len(list(cls_dir.glob('*.jpg')))} photos contribuées")
-    return total
+    # Total = toutes les contributions présentes (pas seulement les nouveaux
+    # téléchargements) → robuste si on relance dans la même session Kaggle.
+    return sum(len(list((dest / c).glob("*.jpg"))) for c in CLASS_NAMES)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
