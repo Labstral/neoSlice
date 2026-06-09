@@ -480,6 +480,7 @@ class DefectDiagnosticDialog(QDialog):
 
         self._title_lbl = QLabel("DIAGNOSTIC PHOTO")
         self._title_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        self._title_lbl.setAutoFillBackground(False)
 
         self._close_btn = QPushButton("X")
         self._close_btn.setFixedSize(22, 22)
@@ -522,6 +523,8 @@ class DefectDiagnosticDialog(QDialog):
 
         # ── Zone résultats (cachée par défaut) ────────────────────────────────
         self._result_widget = QWidget()
+        self._result_widget.setAutoFillBackground(False)
+        self._result_widget.setStyleSheet("background: transparent;")
         result_lay = QVBoxLayout(self._result_widget)
         result_lay.setContentsMargins(0, 14, 0, 0)
         result_lay.setSpacing(10)
@@ -549,10 +552,13 @@ class DefectDiagnosticDialog(QDialog):
         self._desc_lbl = QLabel()
         self._desc_lbl.setFont(QFont(FONT_MAIN, 8))
         self._desc_lbl.setWordWrap(True)
+        self._desc_lbl.setAutoFillBackground(False)
         result_lay.addWidget(self._desc_lbl)
 
         # Corrections
         self._corrections_widget = QWidget()
+        self._corrections_widget.setAutoFillBackground(False)
+        self._corrections_widget.setStyleSheet("background: transparent;")
         self._corrections_lay = QVBoxLayout(self._corrections_widget)
         self._corrections_lay.setContentsMargins(0, 6, 0, 0)
         self._corrections_lay.setSpacing(3)
@@ -562,6 +568,7 @@ class DefectDiagnosticDialog(QDialog):
         self._hint_lbl = QLabel()
         self._hint_lbl.setFont(QFont(FONT_MAIN, 7))
         self._hint_lbl.setWordWrap(True)
+        self._hint_lbl.setAutoFillBackground(False)
         self._hint_lbl.hide()
         result_lay.addWidget(self._hint_lbl)
 
@@ -604,6 +611,8 @@ class DefectDiagnosticDialog(QDialog):
 
         # Picker correction (caché par défaut)
         self._correction_picker = QWidget()
+        self._correction_picker.setAutoFillBackground(False)
+        self._correction_picker.setStyleSheet("background: transparent;")
         picker_row = QHBoxLayout(self._correction_picker)
         picker_row.setContentsMargins(0, 0, 0, 0)
         picker_row.setSpacing(6)
@@ -617,7 +626,9 @@ class DefectDiagnosticDialog(QDialog):
         self._correction_ok_btn.setFont(QFont(FONT_MAIN, 7))
         self._correction_ok_btn.setCursor(Qt.PointingHandCursor)
         self._correction_ok_btn.clicked.connect(self._save_correction)
-        picker_row.addWidget(QLabel("Défaut réel :"))
+        _picker_lbl = QLabel("Défaut réel :")
+        _picker_lbl.setAutoFillBackground(False)
+        picker_row.addWidget(_picker_lbl)
         picker_row.addWidget(self._correction_combo, 1)
         picker_row.addWidget(self._correction_ok_btn)
         self._correction_picker.hide()
@@ -686,7 +697,7 @@ class DefectDiagnosticDialog(QDialog):
 
         desc = DEFECT_DESCRIPTIONS_FR.get(result.defect, "")
         self._desc_lbl.setText(desc)
-        self._desc_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        self._desc_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
 
         # Vider les corrections
         while self._corrections_lay.count():
@@ -721,12 +732,13 @@ class DefectDiagnosticDialog(QDialog):
                     val_str = str(value)
 
                 lbl = QLabel(f"{field}  →  {val_str}")
-                lbl.setFont(QFont(FONT_MONO, 7))
-                lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+                lbl.setFont(QFont(FONT_MONO, 8))
+                lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
                 row.addWidget(dot)
                 row.addWidget(lbl)
                 row.addStretch()
                 wrapper = QWidget()
+                wrapper.setAutoFillBackground(False)
                 wrapper.setStyleSheet("background: transparent;")
                 wrapper.setLayout(row)
                 self._corrections_lay.addWidget(wrapper)
@@ -835,12 +847,6 @@ class DefectDiagnosticDialog(QDialog):
                 background: {pal['BG_PANEL']};
                 border: 1px solid {pal['ACCENT']};
                 border-radius: 6px;
-            }}
-            QWidget#diag_card QWidget {{
-                background: transparent;
-            }}
-            QWidget#diag_card QLabel {{
-                background: transparent;
             }}
         """)
 
