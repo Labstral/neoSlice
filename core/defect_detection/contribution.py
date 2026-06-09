@@ -85,9 +85,15 @@ class ContributionPipeline:
             logger.debug("Contribution désactivée — rien à envoyer.")
             return None
         if not self.endpoint_url:
-            logger.warning("Aucun endpoint de contribution configuré.")
+            # Pas encore de serveur de contribution déployé : les photos confirmées
+            # restent en file d'attente locale et seront envoyées dès qu'un endpoint
+            # sera configuré (NEOSLICE_CONTRIBUTE_URL ou prefs). Rien à signaler.
+            logger.debug(
+                f"Endpoint de contribution non configuré — "
+                f"{self.pending_count()} photo(s) en attente locale."
+            )
             if on_done:
-                on_done(0, "Endpoint non configuré")
+                on_done(0, None)
             return None
 
         t = threading.Thread(
