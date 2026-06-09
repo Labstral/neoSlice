@@ -272,10 +272,16 @@ class _AnalysisWorker(QThread):
         try:
             from core.defect_detection.detector import DefectDetector
             from core.defect_detection.dataset_manager import DatasetManager
+            from core.defect_detection.model_manager import ModelManager
 
-            det = DefectDetector()
+            # Télécharge / met à jour le modèle si nécessaire (1er lancement ou
+            # nouvelle version publiée). Bloquant ici — on est déjà dans un thread.
+            mgr = ModelManager()
+            mgr.ensure_latest_sync()
+
+            det = DefectDetector(mgr)
             if not det.load():
-                self.error.emit("Modèle non disponible — téléchargement requis.")
+                self.error.emit("Modèle non disponible — vérifiez votre connexion internet.")
                 return
 
             result = det.analyze(self._path)

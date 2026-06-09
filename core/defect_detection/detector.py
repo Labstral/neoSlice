@@ -84,7 +84,7 @@ class DefectDetector:
 
         path = self._mgr.get_model_path()
         if path is None:
-            logger.warning("Modèle ONNX absent — lancez ModelManager.ensure_model_async()")
+            logger.warning("Modèle ONNX absent — lancez ModelManager.ensure_latest_async()")
             return False
 
         try:
