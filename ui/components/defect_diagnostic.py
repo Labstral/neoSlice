@@ -631,22 +631,6 @@ class DefectDiagnosticDialog(QDialog):
         self._result_widget.hide()
         lay.addWidget(self._result_widget)
 
-        # ── Consentement contribution (toujours visible) ──────────────────────
-        lay.addSpacing(10)
-        from PySide6.QtWidgets import QCheckBox
-        self._consent_check = QCheckBox(
-            "Envoyer mes photos confirmées pour améliorer le modèle IA (anonyme)"
-        )
-        self._consent_check.setFont(QFont(FONT_MAIN, 7))
-        from core.prefs import PREFS
-        self._consent_check.setChecked(bool(PREFS.get("defect_contribute", False)))
-        self._consent_check.toggled.connect(self._on_consent_toggled)
-        lay.addWidget(self._consent_check)
-
-    def _on_consent_toggled(self, checked: bool):
-        from core.prefs import PREFS
-        PREFS.set("defect_contribute", checked)
-
     # ── Logique ───────────────────────────────────────────────────────────────
 
     def _on_photo_selected(self, path: Path):
@@ -981,21 +965,3 @@ class DefectDiagnosticDialog(QDialog):
         for lbl in self._correction_picker.findChildren(QLabel):
             lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
 
-        self._consent_check.setStyleSheet(f"""
-            QCheckBox {{
-                color: {pal['TEXT_LABEL']};
-                background: transparent;
-                spacing: 6px;
-            }}
-            QCheckBox::indicator {{
-                width: 12px; height: 12px;
-                border: 1px solid {pal['INACTIVE']};
-                border-radius: 2px;
-                background: {pal['BG_INPUT']};
-            }}
-            QCheckBox::indicator:checked {{
-                background: {pal['ACCENT']};
-                border-color: {pal['ACCENT']};
-            }}
-            QCheckBox:hover {{ color: {pal['TEXT_SECONDARY']}; }}
-        """)
