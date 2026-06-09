@@ -43,8 +43,15 @@ from .dataset_manager import DatasetManager
 # policy "insertion seule" sur le bucket, elle ne permet que l'upload.
 # Remplies une fois le projet Supabase créé ; surchargables par variables d'env.
 
-SUPABASE_URL    = os.environ.get("NEOSLICE_SUPABASE_URL", "").rstrip("/")
-SUPABASE_KEY    = os.environ.get("NEOSLICE_SUPABASE_KEY", "")
+_DEFAULT_SUPABASE_URL = "https://obmypmocuwnhuxbsaxhx.supabase.co"
+_DEFAULT_SUPABASE_KEY = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ibXlwbW9jdXduaHV4YnNheGh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMTY0OTUsImV4cCI6MjA5NjU5MjQ5NX0."
+    "H6ddwRw-O8MNO-dGAsxJHAY-dfXB0ewepswYvdDdOnA"
+)
+
+SUPABASE_URL    = (os.environ.get("NEOSLICE_SUPABASE_URL") or _DEFAULT_SUPABASE_URL).rstrip("/")
+SUPABASE_KEY    = os.environ.get("NEOSLICE_SUPABASE_KEY") or _DEFAULT_SUPABASE_KEY
 SUPABASE_BUCKET = os.environ.get("NEOSLICE_SUPABASE_BUCKET", "defect-contributions")
 
 _BATCH_SIZE   = 50     # max photos par ZIP
