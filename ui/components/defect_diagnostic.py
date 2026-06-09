@@ -263,6 +263,8 @@ class DiagnosticConsentDialog(QDialog):
 class _AnalysisWorker(QThread):
     result_ready = Signal(object, str)   # DiagnosticResult, image_hash
     error        = Signal(str)
+    dl_progress  = Signal(int)           # % de téléchargement du modèle
+    dl_started   = Signal()              # un téléchargement de modèle commence
 
     def __init__(self, image_path: Path, parent=None):
         super().__init__(parent)
@@ -277,7 +279,16 @@ class _AnalysisWorker(QThread):
             # Télécharge / met à jour le modèle si nécessaire (1er lancement ou
             # nouvelle version publiée). Bloquant ici — on est déjà dans un thread.
             mgr = ModelManager()
-            mgr.ensure_latest_sync()
+            self._dl_announced = False
+
+            def _on_dl(done: int, total: int):
+                if not self._dl_announced:
+                    self._dl_announced = True
+                    self.dl_started.emit()
+                if total > 0:
+                    self.dl_progress.emit(int(done * 100 / total))
+
+            mgr.ensure_latest_sync(on_progress=_on_dl)
 
             det = DefectDetector(mgr)
             if not det.load():
@@ -771,7 +782,22 @@ class DefectDiagnosticDialog(QDialog):
         self._worker = _AnalysisWorker(self._image_path, self)
         self._worker.result_ready.connect(self._on_result)
         self._worker.error.connect(self._on_error)
+        self._worker.dl_started.connect(self._on_dl_started)
+        self._worker.dl_progress.connect(self._on_dl_progress)
         self._worker.start()
+
+    def _on_dl_started(self):
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
+        self._analyze_btn.setText("Téléchargement du modèle amélioré… 0%")
+
+    def _on_dl_progress(self, pct: int):
+        self._progress.setValue(pct)
+        self._analyze_btn.setText(f"Téléchargement du modèle amélioré… {pct}%")
+        if pct >= 100:
+            # Téléchargement fini → on repasse en mode analyse
+            self._progress.setRange(0, 0)
+            self._analyze_btn.setText("Analyse en cours…")
 
     def _on_result(self, result: Any, image_hash: str):
         self._progress.hide()
