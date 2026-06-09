@@ -337,8 +337,10 @@ def loaders():
     tr = DS(DATA_DIR / "train", True)
     va = DS(DATA_DIR / "val", False)
     print(f"Train {len(tr)} | Val {len(va)}")
-    return (DataLoader(tr, BATCH_SIZE, shuffle=True, num_workers=2, pin_memory=True),
-            DataLoader(va, BATCH_SIZE, shuffle=False, num_workers=2, pin_memory=True))
+    # num_workers=0 : robuste sur Kaggle (évite l'erreur QueueFeederThread /
+    # "Bad file descriptor" / semaphore des DataLoader multiprocess).
+    return (DataLoader(tr, BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True),
+            DataLoader(va, BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True))
 
 
 def train_and_eval() -> tuple[object, float]:
