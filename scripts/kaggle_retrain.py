@@ -158,6 +158,14 @@ def _resolve_base() -> Path:
     """Trouve le dataset de base, qu'il soit en dossiers train/val OU en zips
     (Kaggle ne décompresse pas toujours les uploads --dir-mode zip au montage)."""
     import zipfile
+    # Diagnostic : montre ce qui est réellement monté
+    inp = Path("/kaggle/input")
+    if inp.exists():
+        print("  /kaggle/input :", [p.name for p in inp.iterdir()])
+    if BASE_DATASET.exists():
+        print(f"  {BASE_DATASET.name} contient :", [p.name for p in BASE_DATASET.iterdir()][:15])
+    else:
+        print(f"  [!] {BASE_DATASET} N'EXISTE PAS (dataset non monté ?)")
     # 1. dossiers train/ déjà présents ?
     if (BASE_DATASET / "train").exists():
         return BASE_DATASET
