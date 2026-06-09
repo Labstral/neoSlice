@@ -946,6 +946,7 @@ class MainWindow(QMainWindow):
         self._analysis_worker: AnalysisWorker | None = None
         self._current_config = None
         self._current_selection = None
+        self._pending_diag_result = None   # DiagnosticResult accepté, en attente d'application
         self._parameter_engine = ParameterEngine()
         self._tmf_builder = ThreeMFBuilder()
         self._profile_installer = BambuProfileInstaller()
@@ -1301,20 +1302,33 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _apply_defect_corrections(self, result):
-        """Le diagnostic a produit des corrections — on les enregistre sur la
-        barre de statut. Le bouton 'Appliquer corrections' apparaît à gauche de
-        l'export ; son clic applique réellement les corrections au PrintConfig."""
-        self._statusbar.set_diagnostic_result(result)
+        """L'utilisateur a cliqué « Utiliser ces corrections » dans le dialog.
+        On mémorise le résultat ; le bouton n'apparaît dans la barre de statut
+        que si une config a déjà été générée (les deux conditions doivent être
+        réunies). Sinon il apparaîtra dès la génération de la config."""
+        self._pending_diag_result = result
+        self._refresh_diag_button()
+
+    def _refresh_diag_button(self):
+        """Affiche le bouton corrections seulement si :
+          1. une config a été générée (_current_config non nul), ET
+          2. un diagnostic avec corrections a été accepté dans le dialog."""
+        result = self._pending_diag_result
+        has_config = getattr(self, "_current_config", None) is not None
+        if has_config and result is not None:
+            self._statusbar.set_diagnostic_result(result)
+        else:
+            self._statusbar.clear_diagnostic_result()
 
     def _do_apply_diagnostic(self, result):
         """Applique réellement les corrections du diagnostic au PrintConfig
-        courant (déclenché par le bouton du panneau de droite)."""
-        if not hasattr(self, "_current_config") or self._current_config is None:
+        courant (déclenché par le bouton de la barre de statut)."""
+        if getattr(self, "_current_config", None) is None:
             return
         from core.defect_detection.detector import DefectDetector
         DefectDetector().apply_remediation(self._current_config, result)
         if hasattr(self, "_params_preview") and self._analysis is not None:
-            # Re-render des sections sans effacer le résultat diagnostic en cours
+            # Re-render des sections sans réinitialiser l'état du bouton diagnostic
             self._params_preview._render_sections(self._current_config, self._analysis)
 
     def _on_settings_update_request(self, version: str, url: str, notes: str):
@@ -1629,6 +1643,7 @@ class MainWindow(QMainWindow):
         self._analysis = None
         self._current_config = None
         self._current_selection = None
+        self._pending_diag_result = None   # nouvelle pièce → diagnostic obsolète
 
         self._viewer.stop_auto_rotate()
         self._viewer.reset()
@@ -2064,8 +2079,11 @@ class MainWindow(QMainWindow):
             self._current_selection = result
 
             self._params_preview.update_from_config(config, analysis)
-            # Nouvelle config → corrections diagnostic précédentes obsolètes
-            self._statusbar.clear_diagnostic_result()
+            # Config (re)générée → réévalue l'affichage du bouton corrections.
+            # Si un diagnostic est en attente, le bouton apparaît maintenant ;
+            # la nouvelle config ne contient pas encore les corrections → bouton
+            # actionnable à nouveau.
+            self._refresh_diag_button()
             self._analysis_panel.set_generation_active()
             self._analysis_panel.show_material_warnings(
                 _compute_material_warnings(filament, printer, analysis)

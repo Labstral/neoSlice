@@ -593,7 +593,11 @@ class DefectDiagnosticDialog(QDialog):
         self._apply_btn.clicked.connect(self._apply_corrections)
         lay.addWidget(self._apply_btn)
 
-        self._apply_hint = QLabel("Le bouton « Appliquer corrections » apparaîtra dans le panneau de droite.")
+        self._apply_hint = QLabel(
+            "Facultatif : si vous avez généré une configuration, le bouton "
+            "« Appliquer corrections » apparaîtra en bas, à gauche de l'export. "
+            "Sinon, vous pouvez simplement fermer cette fenêtre."
+        )
         self._apply_hint.setFont(QFont(FONT_MAIN, 7))
         self._apply_hint.setWordWrap(True)
         lay.addWidget(self._apply_hint)
@@ -804,8 +808,8 @@ class DefectDiagnosticDialog(QDialog):
         if self._result:
             self.corrections_ready.emit(self._result)
             self._apply_btn.setEnabled(False)
-            self._apply_btn.setText("Corrections envoyées au panneau")
-            QTimer.singleShot(700, self.close)
+            self._apply_btn.setText("Corrections prêtes — voir bas de l'écran")
+            QTimer.singleShot(900, self.close)
 
     def _confirm_prediction(self):
         if self._image_hash:
