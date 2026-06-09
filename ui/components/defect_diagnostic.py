@@ -398,10 +398,10 @@ class _PhotoDrop(QWidget):
             p.setPen(QColor(pal["TEXT_SECONDARY"]))
             p.drawText(self.rect().adjusted(0, 30, 0, 0),
                        Qt.AlignCenter, "Glissez une photo ici  ou  cliquez pour parcourir")
-            p.setFont(QFont(FONT_MONO, 7))
+            p.setFont(QFont(FONT_MONO, 8))
             p.setPen(QColor(pal["TEXT_LABEL"]))
-            p.drawText(self.rect().adjusted(0, 52, 0, 0),
-                       Qt.AlignCenter, "JPG · PNG · WEBP · BMP")
+            p.drawText(self.rect().adjusted(0, 64, 0, 0),
+                       Qt.AlignCenter, "JPG  ·  PNG  ·  WEBP  ·  BMP")
 
     def reset(self):
         self._pixmap = None
