@@ -1132,6 +1132,7 @@ class MainWindow(QMainWindow):
         scroll.viewport().setStyleSheet(f"background: {BG_PANEL}; border: none;")
 
         self._params_preview = ParamsPreview()
+        self._params_preview.diagnostic_apply_requested.connect(self._do_apply_diagnostic)
         scroll.setWidget(self._params_preview)
         return scroll
 
@@ -1247,17 +1248,22 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _apply_defect_corrections(self, result):
-        """Applique les corrections du diagnostic au PrintConfig courant."""
+        """Le diagnostic a produit des corrections — on les enregistre sur le
+        panneau de droite. Le bouton 'Appliquer corrections' y apparaît ; c'est
+        son clic qui applique réellement les corrections au PrintConfig."""
+        if hasattr(self, "_params_preview"):
+            self._params_preview.set_diagnostic_result(result)
+
+    def _do_apply_diagnostic(self, result):
+        """Applique réellement les corrections du diagnostic au PrintConfig
+        courant (déclenché par le bouton du panneau de droite)."""
         if not hasattr(self, "_current_config") or self._current_config is None:
             return
         from core.defect_detection.detector import DefectDetector
-        det = DefectDetector()
-        det.apply_remediation(self._current_config, result)
-        # Rafraîchir l'aperçu des paramètres si disponible
+        DefectDetector().apply_remediation(self._current_config, result)
         if hasattr(self, "_params_preview") and self._analysis is not None:
-            self._params_preview.update_from_config(
-                self._current_config, self._analysis
-            )
+            # Re-render des sections sans effacer le résultat diagnostic en cours
+            self._params_preview._render_sections(self._current_config, self._analysis)
 
     def _on_settings_update_request(self, version: str, url: str, notes: str):
         self._pending_update = (version, url, notes)

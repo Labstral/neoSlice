@@ -170,11 +170,11 @@ REMEDIATION_RULES: dict[DefectClass, dict[str, Any]] = {
     },
 
     DefectClass.SPAGHETTI: {
-        # Arrêt recommandé — pas de correctif paramètre utile
         "_stop_print": True,
         "_hint": (
-            "ARRÊT RECOMMANDÉ. La pièce s'est décollée ou a bougé. "
-            "Vérifiez l'adhérence plateau, ajoutez un brim, nettoyez la surface."
+            "Pour éviter ce problème à l'avenir : nettoyez le plateau à l'alcool isopropylique, "
+            "ajoutez un brim généreux (10 mm minimum), vérifiez la calibration de la première couche "
+            "et réduisez la vitesse de la première couche."
         ),
     },
 
