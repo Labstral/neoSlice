@@ -441,7 +441,8 @@ class DefectDiagnosticDialog(QDialog):
         _T.register(self._apply_theme)
 
     def closeEvent(self, event):
-        _T.unregister(self._apply_theme)
+        # Dialog réutilisé (singleton) : on NE désenregistre PAS le thème pour
+        # qu'il continue de se mettre à jour, et on conserve l'image + le résultat.
         if self._worker and self._worker.isRunning():
             self._worker.quit()
             self._worker.wait(1000)
@@ -501,14 +502,26 @@ class DefectDiagnosticDialog(QDialog):
         lay.addWidget(self._drop)
         lay.addSpacing(12)
 
-        # ── Bouton analyser ───────────────────────────────────────────────────
+        # ── Boutons analyser + nouvelle photo ─────────────────────────────────
+        action_row = QHBoxLayout()
+        action_row.setSpacing(6)
         self._analyze_btn = QPushButton("ANALYSER LA PHOTO")
         self._analyze_btn.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._analyze_btn.setFixedHeight(32)
         self._analyze_btn.setCursor(Qt.PointingHandCursor)
         self._analyze_btn.setEnabled(False)
         self._analyze_btn.clicked.connect(self._start_analysis)
-        lay.addWidget(self._analyze_btn)
+        action_row.addWidget(self._analyze_btn, 1)
+
+        self._reset_btn = QPushButton("Nouvelle photo")
+        self._reset_btn.setFont(QFont(FONT_MAIN, 8))
+        self._reset_btn.setFixedHeight(32)
+        self._reset_btn.setCursor(Qt.PointingHandCursor)
+        self._reset_btn.clicked.connect(self._reset_photo)
+        self._reset_btn.hide()   # visible seulement quand une photo est chargée
+        action_row.addWidget(self._reset_btn)
+
+        lay.addLayout(action_row)
         lay.addSpacing(4)
 
         # ── Barre de progression ──────────────────────────────────────────────
@@ -675,6 +688,19 @@ class DefectDiagnosticDialog(QDialog):
         self._set_result_visible(False)
         self._result = None
         self._analyze_btn.setEnabled(True)
+        self._reset_btn.show()
+        self.adjustSize()
+
+    def _reset_photo(self):
+        """Efface la photo et le résultat pour en analyser une nouvelle."""
+        self._image_path = None
+        self._result = None
+        self._image_hash = ""
+        self._drop.reset()
+        self._set_result_visible(False)
+        self._analyze_btn.setEnabled(False)
+        self._analyze_btn.setText("ANALYSER LA PHOTO")
+        self._reset_btn.hide()
         self.adjustSize()
 
     def _start_analysis(self):
@@ -910,6 +936,15 @@ class DefectDiagnosticDialog(QDialog):
             }}
             QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
             QPushButton:disabled {{ background: {pal['INACTIVE']}; color: {pal['TEXT_LABEL']}; }}
+        """)
+
+        # Nouvelle photo (réinitialiser)
+        self._reset_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {pal['TEXT_SECONDARY']};
+                border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 0 12px;
+            }}
+            QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}
         """)
 
         self._progress.setStyleSheet(f"""

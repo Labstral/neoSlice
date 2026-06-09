@@ -947,6 +947,7 @@ class MainWindow(QMainWindow):
         self._current_config = None
         self._current_selection = None
         self._pending_diag_result = None   # DiagnosticResult accepté, en attente d'application
+        self._diag_dialog = None           # dialog diagnostic persistant (singleton)
         self._parameter_engine = ParameterEngine()
         self._tmf_builder = ThreeMFBuilder()
         self._profile_installer = BambuProfileInstaller()
@@ -1293,9 +1294,14 @@ class MainWindow(QMainWindow):
             if consent.exec() != DiagnosticConsentDialog.Accepted:
                 return   # refusé → on ne continue pas
 
-        dlg = DefectDiagnosticDialog(self)
-        apply_title_bar_theme(dlg)
-        dlg.corrections_ready.connect(self._apply_defect_corrections)
+        # Dialog persistant : créé une seule fois, réutilisé → l'image et le
+        # résultat d'analyse survivent à la fermeture/réouverture.
+        if getattr(self, "_diag_dialog", None) is None:
+            self._diag_dialog = DefectDiagnosticDialog(self)
+            apply_title_bar_theme(self._diag_dialog)
+            self._diag_dialog.corrections_ready.connect(self._apply_defect_corrections)
+
+        dlg = self._diag_dialog
         btn = self._topbar._diag_btn
         btn_br = btn.mapToGlobal(QPoint(btn.width(), btn.height()))
         dlg.move(max(0, btn_br.x() - dlg.width()), btn_br.y() + 4)
