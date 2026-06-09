@@ -155,36 +155,35 @@ def download_contributions(secrets: dict, dest: Path) -> int:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _resolve_base() -> Path:
-    """Trouve le dataset de base, qu'il soit en dossiers train/val OU en zips
-    (Kaggle ne décompresse pas toujours les uploads --dir-mode zip au montage)."""
+    """Trouve le dataset de base où qu'il soit monté sous /kaggle/input
+    (le chemin exact varie ; gère dossiers train/val OU zips à extraire)."""
     import zipfile
-    # Diagnostic : montre ce qui est réellement monté
     inp = Path("/kaggle/input")
-    if inp.exists():
-        print("  /kaggle/input :", [p.name for p in inp.iterdir()])
-    if BASE_DATASET.exists():
-        print(f"  {BASE_DATASET.name} contient :", [p.name for p in BASE_DATASET.iterdir()][:15])
-    else:
-        print(f"  [!] {BASE_DATASET} N'EXISTE PAS (dataset non monté ?)")
-    # 1. dossiers train/ déjà présents ?
-    if (BASE_DATASET / "train").exists():
+    if not inp.exists():
+        print("  [!] /kaggle/input n'existe pas")
         return BASE_DATASET
-    # 2. zips à extraire ?
-    target = WORK / "base"
-    zips = list(BASE_DATASET.glob("*.zip"))
-    if zips:
-        for z in zips:
+
+    # 1. cherche un dossier train/ contenant nos classes, n'importe où
+    for train_dir in inp.rglob("train"):
+        if train_dir.is_dir() and any((train_dir / c).is_dir() for c in CLASS_NAMES):
+            print(f"  base trouvée (dossiers) : {train_dir.parent}")
+            return train_dir.parent
+
+    # 2. sinon cherche train.zip à extraire, n'importe où
+    for z in inp.rglob("train.zip"):
+        target = WORK / "base"
+        for zz in z.parent.glob("*.zip"):
             try:
-                with zipfile.ZipFile(z) as zf:
+                with zipfile.ZipFile(zz) as zf:
                     zf.extractall(target)
             except Exception as exc:
-                print(f"  extraction {z.name}: {exc}")
+                print(f"  extraction {zz.name}: {exc}")
         if (target / "train").exists():
+            print(f"  base trouvée (zips extraits) : {target}")
             return target
-    # 3. chercher un dossier train/ en profondeur (au cas où c'est imbriqué)
-    for p in BASE_DATASET.rglob("train"):
-        if p.is_dir() and any((p / c).exists() for c in CLASS_NAMES):
-            return p.parent
+
+    print("  [!] dataset de base introuvable sous /kaggle/input")
+    print("      contenu :", [str(p.relative_to(inp)) for p in inp.rglob('*') if p.is_dir()][:20])
     return BASE_DATASET
 
 
