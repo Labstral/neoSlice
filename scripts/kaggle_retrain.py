@@ -56,13 +56,16 @@ WORK         = Path("/kaggle/working")
 DATA_DIR     = WORK / "dataset"
 OUT_DIR      = WORK / "out"
 
-MODEL_NAME   = "tf_efficientnetv2_s.in21k_ft_in1k"
-INPUT_SIZE   = 224
-BATCH_SIZE   = 32
+# Modèle plus puissant + résolution plus fine (les défauts sont des détails).
+# V2-M @ 384px > V2-S @ 224px. Plus lourd/lent mais meilleure précision réelle.
+MODEL_NAME   = os.environ.get("NEOSLICE_BACKBONE", "tf_efficientnetv2_m.in21k_ft_in1k")
+INPUT_SIZE   = int(os.environ.get("NEOSLICE_SIZE", "384"))
+BATCH_SIZE   = int(os.environ.get("NEOSLICE_BATCH", "16"))   # 384px = plus de VRAM
 EPOCHS       = int(os.environ.get("NEOSLICE_EPOCHS", "15"))
 LR           = 3e-4
 MIN_NEW_PHOTOS = int(os.environ.get("NEOSLICE_MIN_NEW", "1"))  # seuil de déclenchement
-VAL_MARGIN   = 0.0   # nouveau modèle accepté si val_acc >= ancien - VAL_MARGIN
+VAL_MARGIN   = float(os.environ.get("NEOSLICE_VAL_MARGIN", "0.03"))  # tolérance vs ancien
+MIN_PUBLISH_ACC = float(os.environ.get("NEOSLICE_MIN_ACC", "0.80"))  # plancher absolu
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -185,6 +188,39 @@ def _resolve_base() -> Path:
     print("  [!] dataset de base introuvable sous /kaggle/input")
     print("      contenu :", [str(p.relative_to(inp)) for p in inp.rglob('*') if p.is_dir()][:20])
     return BASE_DATASET
+
+
+def dedup_dataset() -> None:
+    """Déduplication exacte (par hash de contenu) : supprime les doublons et
+    surtout les images de val présentes aussi dans train (fuite → métrique
+    gonflée). Donne un val_acc honnête."""
+    def file_hash(p: Path) -> str:
+        return hashlib.sha256(p.read_bytes()).hexdigest()
+
+    train_hashes: set[str] = set()
+    removed = 0
+    for cls in CLASS_NAMES:
+        for p in (DATA_DIR / "train" / cls).glob("*"):
+            try:
+                h = file_hash(p)
+            except Exception:
+                continue
+            if h in train_hashes:
+                p.unlink(missing_ok=True); removed += 1   # doublon dans train
+            else:
+                train_hashes.add(h)
+    seen_val: set[str] = set()
+    for cls in CLASS_NAMES:
+        for p in (DATA_DIR / "val" / cls).glob("*"):
+            try:
+                h = file_hash(p)
+            except Exception:
+                continue
+            if h in train_hashes or h in seen_val:
+                p.unlink(missing_ok=True); removed += 1   # fuite ou doublon val
+            else:
+                seen_val.add(h)
+    print(f"  déduplication : {removed} image(s) en double/fuite supprimée(s)")
 
 
 def build_dataset(contrib: Path) -> None:
@@ -433,6 +469,7 @@ def main():
 
     print("=== Construction dataset ===")
     build_dataset(contrib)
+    dedup_dataset()
 
     print("=== Entraînement ===")
     model, val_acc = train_and_eval()
@@ -442,8 +479,14 @@ def main():
     cur = get_current_manifest(secrets["GITHUB_TOKEN"])
     cur_acc = float(cur.get("val_acc", 0.0))
     print(f"val_acc actuel publié : {cur_acc:.4f}")
+    # Plancher absolu : ne jamais publier un modèle clairement mauvais.
+    if val_acc < MIN_PUBLISH_ACC:
+        print(f"[REJET] val_acc {val_acc:.4f} < plancher {MIN_PUBLISH_ACC} — pas de publication.")
+        return
+    # Comparaison au modèle actuel, avec tolérance (le val_acc est devenu honnête
+    # depuis la déduplication, donc on tolère un léger écart vs l'ancien gonflé).
     if val_acc + 1e-9 < cur_acc - VAL_MARGIN:
-        print(f"[REJET] Nouveau modèle ({val_acc:.4f}) < actuel ({cur_acc:.4f}) — pas de publication.")
+        print(f"[REJET] Nouveau modèle ({val_acc:.4f}) < actuel ({cur_acc:.4f}) - {VAL_MARGIN} — pas de publication.")
         return
 
     print("=== Export ONNX + publication ===")

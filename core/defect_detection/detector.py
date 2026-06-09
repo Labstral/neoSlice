@@ -42,11 +42,15 @@ CLASS_ORDER: list[str] = [
 _IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 _IMAGENET_STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-# Taille d'entrée — doit correspondre à INPUT_SIZE du training (224)
-_INPUT_SIZE = 224
+# Taille d'entrée par défaut (lue dynamiquement depuis l'ONNX au chargement)
+_INPUT_SIZE_DEFAULT = 224
 
 # Seuil de confiance minimum — en dessous, on retourne GOOD avec avertissement
 _MIN_CONFIDENCE = 0.35
+
+# Abstention : si le modèle hésite, on préfère dire "incertain" que deviner faux
+_ABSTAIN_CONF   = 0.55   # confiance top-1 minimale pour une réponse ferme
+_ABSTAIN_MARGIN = 0.15   # écart minimal entre top-1 et top-2
 
 
 class DefectDetector:
@@ -66,6 +70,7 @@ class DefectDetector:
         self._session = None          # onnxruntime.InferenceSession
         self._input_name: str = ""
         self._output_names: list[str] = []
+        self._input_size = _INPUT_SIZE_DEFAULT   # lue depuis l'ONNX au chargement
         self._adaptation = None       # lazy import pour éviter sklearn au démarrage
 
     @property
@@ -96,9 +101,20 @@ class DefectDetector:
                 sess_options=opts,
                 providers=["CPUExecutionProvider"],
             )
-            self._input_name = self._session.get_inputs()[0].name
+            inp = self._session.get_inputs()[0]
+            self._input_name = inp.name
             self._output_names = [o.name for o in self._session.get_outputs()]
-            logger.info(f"Modèle chargé : {path.name} — sorties : {self._output_names}")
+            # Taille d'entrée lue depuis l'ONNX (s'adapte à 224, 384, etc.)
+            try:
+                h = inp.shape[2]
+                if isinstance(h, int) and h > 0:
+                    self._input_size = h
+            except Exception:
+                pass
+            logger.info(
+                f"Modèle chargé : {path.name} — entrée {self._input_size}px "
+                f"— sorties : {self._output_names}"
+            )
             return True
         except Exception as exc:
             logger.error(f"Impossible de charger le modèle ONNX : {exc}")
@@ -115,8 +131,17 @@ class DefectDetector:
             if not self.load():
                 return self._unavailable_result()
 
-        tensor, pil_img = self._preprocess(image_source)
+        # TTA : on analyse l'image + son miroir horizontal et on moyenne les
+        # probabilités → prédiction plus stable (+1 à 3% gratuit).
+        tensor, _ = self._preprocess(image_source, flip=False)
         probs, embedding = self._run_inference(tensor)
+        try:
+            tensor_f, _ = self._preprocess(image_source, flip=True)
+            probs_f, _ = self._run_inference(tensor_f)
+            probs = (probs + probs_f) / 2.0
+        except Exception:
+            pass   # si le flip échoue, on garde la prédiction simple
+
         result = self._build_result(probs, embedding)
 
         # Couche d'adaptation locale (corrections utilisateur)
@@ -151,8 +176,9 @@ class DefectDetector:
     # Preprocessing
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _preprocess(self, source: Any) -> tuple[np.ndarray, Any]:
-        """Convertit n'importe quelle source en tensor [1,3,H,W] float32 normalisé."""
+    def _preprocess(self, source: Any, flip: bool = False) -> tuple[np.ndarray, Any]:
+        """Convertit n'importe quelle source en tensor [1,3,H,W] float32 normalisé.
+        Si flip=True, applique un miroir horizontal (pour la TTA)."""
         try:
             from PIL import Image
         except ImportError:
@@ -167,7 +193,11 @@ class DefectDetector:
         else:
             raise TypeError(f"Type d'image non supporté : {type(source)}")
 
-        img = img.resize((_INPUT_SIZE, _INPUT_SIZE), Image.LANCZOS)
+        if flip:
+            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+
+        size = self._input_size
+        img = img.resize((size, size), Image.LANCZOS)
         arr = np.array(img, dtype=np.float32) / 255.0          # [H,W,3]
         arr = (arr - _IMAGENET_MEAN) / _IMAGENET_STD           # normalize
         arr = arr.transpose(2, 0, 1)                            # [3,H,W]
@@ -206,15 +236,29 @@ class DefectDetector:
 
     def _build_result(self, probs: np.ndarray, embedding: list[float]) -> DiagnosticResult:
         all_probs = {cls: float(probs[i]) for i, cls in enumerate(CLASS_ORDER)}
-        best_idx = int(np.argmax(probs))
-        best_class_str = CLASS_ORDER[best_idx]
+        order = np.argsort(probs)[::-1]
+        best_idx = int(order[0])
         confidence = float(probs[best_idx])
+        second = float(probs[int(order[1])]) if len(order) > 1 else 0.0
+        margin = confidence - second
 
-        # Seuil de confiance minimum
-        if confidence < _MIN_CONFIDENCE:
-            best_class_str = DefectClass.GOOD.value
-            confidence = float(probs[CLASS_ORDER.index(DefectClass.GOOD.value)])
+        # ── Abstention : le modèle hésite → on ne devine pas ────────────────
+        # (confiance trop faible OU top-1 et top-2 trop proches)
+        uncertain = confidence < _ABSTAIN_CONF or margin < _ABSTAIN_MARGIN
+        if uncertain:
+            return DiagnosticResult(
+                defect=DefectClass.GOOD,
+                confidence=confidence,
+                severity=Severity.NONE,
+                all_probs=all_probs,
+                remediation={},
+                message_fr="🤔 Analyse incertaine — reprenez une photo plus nette",
+                stop_print=False,
+                uncertain=True,
+                embedding=embedding,
+            )
 
+        best_class_str = CLASS_ORDER[best_idx]
         defect = DefectClass(best_class_str)
         severity = DEFECT_DEFAULT_SEVERITY[defect]
         remediation = dict(REMEDIATION_RULES.get(defect, {}))

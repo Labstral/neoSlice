@@ -506,7 +506,17 @@ class DefectDiagnosticDialog(QDialog):
         self._drop = _PhotoDrop()
         self._drop.photo_selected.connect(self._on_photo_selected)
         lay.addWidget(self._drop)
-        lay.addSpacing(12)
+        lay.addSpacing(6)
+
+        # Conseils de prise de vue (meilleure précision)
+        self._tips_lbl = QLabel(
+            "💡 Pour une analyse fiable : cadrez la zone du défaut, bonne lumière, "
+            "fond neutre, photo nette."
+        )
+        self._tips_lbl.setFont(QFont(FONT_MAIN, 7))
+        self._tips_lbl.setWordWrap(True)
+        lay.addWidget(self._tips_lbl)
+        lay.addSpacing(10)
 
         # ── Boutons analyser + nouvelle photo ─────────────────────────────────
         action_row = QHBoxLayout()
@@ -783,6 +793,27 @@ class DefectDiagnosticDialog(QDialog):
             Severity, DEFECT_LABELS_FR, DEFECT_DESCRIPTIONS_FR,
         )
 
+        # ── Cas incertain : on n'affiche pas de diagnostic, on demande mieux ──
+        if getattr(result, "uncertain", False):
+            self._clear_corrections()
+            self._badge_dot.setStyleSheet(f"color: {pal['AMBER']}; background: transparent;")
+            self._badge_name.setText("Analyse incertaine")
+            self._badge_conf.setText("")
+            self._desc_lbl.setText(
+                "Le modèle n'est pas assez sûr pour se prononcer. "
+                "Reprenez une photo plus nette : cadrez bien la zone du défaut, "
+                "bonne lumière, fond neutre, pas de flou."
+            )
+            self._corrections_box.hide()
+            for w in (self._sep_feedback, self._feedback_lbl,
+                      self._confirm_btn, self._correct_btn):
+                w.hide()
+            self._set_picker_visible(False)
+            self._set_result_visible(True)
+            self._apply_theme()
+            QTimer.singleShot(0, self._refit)
+            return
+
         # Couleur selon sévérité
         severity_colors = {
             Severity.NONE:     pal["TELE_GREEN"],
@@ -997,6 +1028,7 @@ class DefectDiagnosticDialog(QDialog):
         )
 
         self._drop.update()
+        self._tips_lbl.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
 
         # Analyser
         self._analyze_btn.setStyleSheet(f"""

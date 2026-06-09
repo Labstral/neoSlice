@@ -40,6 +40,7 @@ class DiagnosticResult:
     remediation: dict[str, Any]         # champs PrintConfig à patcher
     message_fr: str                     # message UI
     stop_print: bool = False            # spaghetti / layer_shift critique
+    uncertain: bool = False             # confiance trop faible → abstention
     embedding: list[float] = field(default_factory=list, repr=False)
 
 
