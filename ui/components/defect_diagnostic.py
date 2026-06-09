@@ -429,7 +429,6 @@ class DefectDiagnosticDialog(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setFixedWidth(460)
         self._drag_pos: QPoint | None = None
         self._worker: _AnalysisWorker | None = None
         self._result = None          # DiagnosticResult courant
@@ -472,6 +471,7 @@ class DefectDiagnosticDialog(QDialog):
 
         self._card = QWidget()
         self._card.setObjectName("diag_card")
+        self._card.setFixedWidth(460)   # ancre la largeur (SetFixedSize gère la hauteur)
         lay = QVBoxLayout(self._card)
         lay.setContentsMargins(20, 14, 20, 20)
         lay.setSpacing(0)
@@ -532,19 +532,25 @@ class DefectDiagnosticDialog(QDialog):
         self._progress.hide()
         lay.addWidget(self._progress)
 
-        # ── Résultats — enfants directs de lay, masqués par défaut ───────────
-        # (pas de QWidget conteneur intermédiaire = pas de fond gris Windows)
-        lay.addSpacing(6)
+        # ── Résultats — TOUT dans un conteneur unique masquable d'un bloc ────
+        # Quand aucune analyse n'a tourné, le conteneur est masqué et la fenêtre
+        # retrouve sa taille d'origine (pas d'espace vide résiduel).
+        self._result_box = QWidget()
+        self._result_box.setObjectName("diag_result_box")
+        rlay = QVBoxLayout(self._result_box)
+        rlay.setContentsMargins(0, 6, 0, 0)
+        rlay.setSpacing(0)
+        lay.addWidget(self._result_box)
 
         self._sep_result = _make_sep()
-        lay.addWidget(self._sep_result)
-        lay.addSpacing(10)
+        rlay.addWidget(self._sep_result)
+        rlay.addSpacing(10)
 
         # ── Section RÉSULTAT D'ANALYSE ────────────────────────────────────────
         self._section_result_lbl = QLabel("RÉSULTAT D'ANALYSE")
         self._section_result_lbl.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
-        lay.addWidget(self._section_result_lbl)
-        lay.addSpacing(8)
+        rlay.addWidget(self._section_result_lbl)
+        rlay.addSpacing(8)
 
         # Badge défaut (dot + nom + confiance)
         badge_row = QHBoxLayout()
@@ -559,52 +565,51 @@ class DefectDiagnosticDialog(QDialog):
         badge_row.addWidget(self._badge_name)
         badge_row.addStretch()
         badge_row.addWidget(self._badge_conf)
-        lay.addLayout(badge_row)
-        lay.addSpacing(6)
+        rlay.addLayout(badge_row)
+        rlay.addSpacing(6)
 
         # Description
         self._desc_lbl = QLabel()
         self._desc_lbl.setFont(QFont(FONT_MAIN, 8))
         self._desc_lbl.setWordWrap(True)
-        lay.addWidget(self._desc_lbl)
-        lay.addSpacing(12)
+        rlay.addWidget(self._desc_lbl)
+        rlay.addSpacing(12)
 
-        # ── Section CORRECTIONS RECOMMANDÉES ─────────────────────────────────
+        # ── Section CORRECTIONS RECOMMANDÉES (sous-conteneur) ────────────────
+        self._corrections_box = QWidget()
+        self._corrections_box.setObjectName("diag_corrections_box")
+        clay = QVBoxLayout(self._corrections_box)
+        clay.setContentsMargins(0, 0, 0, 0)
+        clay.setSpacing(0)
+        rlay.addWidget(self._corrections_box)
+
         self._sep_corrections = _make_sep()
-        lay.addWidget(self._sep_corrections)
-        lay.addSpacing(10)
+        clay.addWidget(self._sep_corrections)
+        clay.addSpacing(10)
 
         self._corrections_header = QLabel("CORRECTIONS RECOMMANDÉES")
         self._corrections_header.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
-        lay.addWidget(self._corrections_header)
-        lay.addSpacing(8)
+        clay.addWidget(self._corrections_header)
+        clay.addSpacing(8)
 
-        # Lignes de corrections (ajoutées/supprimées dynamiquement)
         self._corrections_lay = QVBoxLayout()
         self._corrections_lay.setContentsMargins(0, 0, 0, 0)
         self._corrections_lay.setSpacing(3)
-        lay.addLayout(self._corrections_lay)
-        lay.addSpacing(6)
-
-        # Conseil (hint)
-        self._hint_lbl = QLabel()
-        self._hint_lbl.setFont(QFont(FONT_MAIN, 9))
-        self._hint_lbl.setWordWrap(True)
-        lay.addWidget(self._hint_lbl)
-        lay.addSpacing(10)
+        clay.addLayout(self._corrections_lay)
+        clay.addSpacing(10)
 
         self._sep_result2 = _make_sep()
-        lay.addWidget(self._sep_result2)
-        lay.addSpacing(8)
+        clay.addWidget(self._sep_result2)
+        clay.addSpacing(8)
 
-        # Bouton appliquer
+        # Bouton appliquer (= confirmer les réglages pour la barre du bas)
         self._apply_btn = QPushButton("UTILISER CES CORRECTIONS")
         self._apply_btn.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._apply_btn.setFixedHeight(30)
         self._apply_btn.setCursor(Qt.PointingHandCursor)
         self._apply_btn.setEnabled(False)
         self._apply_btn.clicked.connect(self._apply_corrections)
-        lay.addWidget(self._apply_btn)
+        clay.addWidget(self._apply_btn)
 
         self._apply_hint = QLabel(
             "Facultatif : si vous avez généré une configuration, le bouton "
@@ -613,10 +618,20 @@ class DefectDiagnosticDialog(QDialog):
         )
         self._apply_hint.setFont(QFont(FONT_MAIN, 7))
         self._apply_hint.setWordWrap(True)
-        lay.addWidget(self._apply_hint)
-        lay.addSpacing(8)
+        clay.addWidget(self._apply_hint)
 
-        # Feedback
+        # Conseil (hint général) — sous le badge, hors corrections
+        self._hint_lbl = QLabel()
+        self._hint_lbl.setFont(QFont(FONT_MAIN, 9))
+        self._hint_lbl.setWordWrap(True)
+        rlay.addWidget(self._hint_lbl)
+        rlay.addSpacing(10)
+
+        # ── Feedback (toujours dans le conteneur résultat) ───────────────────
+        self._sep_feedback = _make_sep()
+        rlay.addWidget(self._sep_feedback)
+        rlay.addSpacing(8)
+
         feedback_row = QHBoxLayout()
         feedback_row.setSpacing(6)
         self._feedback_lbl = QLabel("Ce résultat est-il correct ?")
@@ -635,11 +650,13 @@ class DefectDiagnosticDialog(QDialog):
         feedback_row.addStretch()
         feedback_row.addWidget(self._confirm_btn)
         feedback_row.addWidget(self._correct_btn)
-        lay.addLayout(feedback_row)
-        lay.addSpacing(4)
+        rlay.addLayout(feedback_row)
 
-        # Picker correction
-        picker_row = QHBoxLayout()
+        # Picker correction (sous-conteneur masquable)
+        self._picker_box = QWidget()
+        self._picker_box.setObjectName("diag_picker_box")
+        picker_row = QHBoxLayout(self._picker_box)
+        picker_row.setContentsMargins(0, 6, 0, 0)
         picker_row.setSpacing(6)
         self._picker_lbl = QLabel("Défaut réel :")
         self._picker_lbl.setFont(QFont(FONT_MAIN, 8))
@@ -656,30 +673,25 @@ class DefectDiagnosticDialog(QDialog):
         picker_row.addWidget(self._picker_lbl)
         picker_row.addWidget(self._correction_combo, 1)
         picker_row.addWidget(self._correction_ok_btn)
-        lay.addLayout(picker_row)
+        rlay.addWidget(self._picker_box)
 
-        # Liste des widgets à cacher/montrer avec les résultats
-        self._result_widgets = [
-            self._sep_result, self._section_result_lbl,
-            self._badge_dot, self._badge_name, self._badge_conf,
-            self._desc_lbl,
-            self._sep_corrections, self._corrections_header, self._hint_lbl,
-            self._sep_result2, self._apply_btn, self._apply_hint, self._feedback_lbl,
-            self._confirm_btn, self._correct_btn,
-        ]
-        self._picker_widgets = [self._picker_lbl, self._correction_combo, self._correction_ok_btn]
-        self._set_result_visible(False)
-        self._set_picker_visible(False)
+        self._result_box.hide()
+        self._picker_box.hide()
 
     def _set_result_visible(self, visible: bool):
-        for w in self._result_widgets:
-            w.setVisible(visible)
+        self._result_box.setVisible(visible)
         if not visible:
-            self._set_picker_visible(False)
+            self._picker_box.hide()
 
     def _set_picker_visible(self, visible: bool):
-        for w in self._picker_widgets:
-            w.setVisible(visible)
+        self._picker_box.setVisible(visible)
+
+    def _refit(self):
+        """Recalcule la taille pour coller au contenu (après show/hide).
+        Différé via QTimer pour que les changements de visibilité soient
+        propagés avant le calcul de taille."""
+        self._card.layout().activate()
+        self.adjustSize()
 
     # ── Logique ───────────────────────────────────────────────────────────────
 
@@ -689,7 +701,7 @@ class DefectDiagnosticDialog(QDialog):
         self._result = None
         self._analyze_btn.setEnabled(True)
         self._reset_btn.show()
-        self.adjustSize()
+        QTimer.singleShot(0, self._refit)
 
     def _reset_photo(self):
         """Efface la photo et le résultat pour en analyser une nouvelle."""
@@ -701,7 +713,7 @@ class DefectDiagnosticDialog(QDialog):
         self._analyze_btn.setEnabled(False)
         self._analyze_btn.setText("ANALYSER LA PHOTO")
         self._reset_btn.hide()
-        self.adjustSize()
+        QTimer.singleShot(0, self._refit)
 
     def _start_analysis(self):
         if not self._image_path:
@@ -801,17 +813,22 @@ class DefectDiagnosticDialog(QDialog):
         self._apply_btn.setText("UTILISER CES CORRECTIONS")
         self._apply_btn.setEnabled(has_corrections)
 
-        # Affiche tout, puis masque la section corrections si rien à corriger
+        # Section feedback toujours visible pour un résultat normal
+        for w in (self._sep_feedback, self._feedback_lbl,
+                  self._confirm_btn, self._correct_btn):
+            w.show()
+        self._confirm_btn.setEnabled(True)
+        self._correct_btn.setEnabled(True)
+        self._confirm_btn.setText("Oui")
+        self._correct_btn.setText("Non, corriger")
+
+        # Affiche le conteneur résultat ; la section corrections n'apparaît
+        # que s'il y a vraiment des corrections (sinon masquée en bloc).
         self._set_picker_visible(False)
+        self._corrections_box.setVisible(has_corrections)
         self._set_result_visible(True)
-        for w in (self._sep_corrections, self._corrections_header,
-                  self._apply_btn, self._apply_hint):
-            w.setVisible(has_corrections)
-        if not has_corrections:
-            # Pas de corrections → message rassurant pour "good"
-            self._corrections_header.setVisible(False)
         self._apply_theme()
-        self.adjustSize()
+        QTimer.singleShot(0, self._refit)
 
     def _show_error(self, msg: str):
         pal = _T.palette()
@@ -827,8 +844,13 @@ class DefectDiagnosticDialog(QDialog):
                 item.widget().deleteLater()
         self._apply_btn.setEnabled(False)
         self._hint_lbl.hide()
+        self._corrections_box.hide()        # erreur → pas de corrections
+        self._feedback_lbl.hide()
+        self._confirm_btn.hide()
+        self._correct_btn.hide()
+        self._sep_feedback.hide()
         self._set_result_visible(True)
-        self.adjustSize()
+        QTimer.singleShot(0, self._refit)
 
     def _apply_corrections(self):
         if self._result:
@@ -853,7 +875,7 @@ class DefectDiagnosticDialog(QDialog):
     def _show_correction_picker(self):
         visible = not self._picker_lbl.isVisible()
         self._set_picker_visible(visible)
-        self.adjustSize()
+        QTimer.singleShot(0, self._refit)
 
     def _save_correction(self):
         correct_class = self._correction_combo.currentData()
@@ -914,8 +936,20 @@ class DefectDiagnosticDialog(QDialog):
             QPushButton:hover {{ background: {pal['ERROR_RED']}; color: white; }}
         """)
 
+        # Conteneurs résultat — fond panneau (pas de gris système Windows)
+        self._result_box.setStyleSheet(
+            f"QWidget#diag_result_box {{ background: {pal['BG_PANEL']}; }}"
+        )
+        self._corrections_box.setStyleSheet(
+            f"QWidget#diag_corrections_box {{ background: {pal['BG_PANEL']}; }}"
+        )
+        self._picker_box.setStyleSheet(
+            f"QWidget#diag_picker_box {{ background: {pal['BG_PANEL']}; }}"
+        )
+
         # Séparateurs
-        for sep in (self._sep_top, self._sep_result, self._sep_result2, self._sep_corrections):
+        for sep in (self._sep_top, self._sep_result, self._sep_result2,
+                    self._sep_corrections, self._sep_feedback):
             sep.setStyleSheet(f"background: {pal['INACTIVE']}; border: none;")
 
         # En-têtes de section
