@@ -488,7 +488,6 @@ class _TopBar(QWidget):
             QPushButton:hover {{ background: {ACCENT_BRIGHT}; }}
         """)
         self._diag_btn.clicked.connect(self.diag_clicked)
-        layout.addWidget(self._diag_btn)
 
         self._new_btn = QPushButton(_("app.btn_new_piece"))
         self._new_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
@@ -516,6 +515,7 @@ class _TopBar(QWidget):
         """)
         self._new_btn.clicked.connect(self.new_piece_clicked)
         layout.addWidget(self._new_btn)
+        layout.addWidget(self._diag_btn)
 
         help_btn = QPushButton("?")
         help_btn.setFont(QFont(FONT_MAIN, 11, QFont.Bold))
