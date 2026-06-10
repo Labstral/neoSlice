@@ -60,3 +60,19 @@ Pour toute modification non triviale :
 ## Dépendances externes
 - Bambu Studio installé → profils dans `%APPDATA%/BambuStudio/system/BBL/`
 - Context7 MCP configuré → utiliser automatiquement pour toute lib tierce
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+### Auto-update sémantique (docs/images) — IMPORTANT, à faire sans qu'on te le demande
+
+- **Au début de chaque session ET avant de répondre à une question sur le projet** : vérifier si `graphify-out/.needs_semantic_update` existe. S'il existe, lancer une extraction sémantique complète des fichiers qui y sont listés (réutiliser le pipeline `/graphify` Partie B : sous-agents `general-purpose` → merge chunks → merge AST+sémantique → rebuild graph/report), puis **supprimer** `graphify-out/.needs_semantic_update`. Ce marqueur est déposé par le hook git post-commit quand des docs/images changent (l'AST seul ne les couvre pas).
+- **Après avoir moi-même modifié/créé un doc, une image, un .md, un .yaml ou les notes d'idées** dans une session : lancer directement l'extraction sémantique de ces fichiers (je suis le LLM, pas besoin de clé API) et reconstruire le graphe — ne pas attendre le prochain commit.
+- Conséquence : l'utilisateur ne tape JAMAIS `/graphify --update` à la main. Le code passe par le hook git (AST instantané) ; les docs/images passent par le marqueur que je traite automatiquement.
