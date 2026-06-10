@@ -1407,6 +1407,15 @@ class MainWindow(QMainWindow):
             return
         new_version, download_url, notes = info
 
+        # Évite d'empiler plusieurs popups (ex: revérification depuis Paramètres)
+        old = getattr(self, "_update_dlg", None)
+        if old is not None:
+            try:
+                old.close()
+            except Exception:
+                pass
+            self._update_dlg = None
+
         import queue as _queue
         import threading as _threading
         import tempfile
@@ -1620,14 +1629,19 @@ class MainWindow(QMainWindow):
                     progress_bar.setRange(0, 100)
                     progress_bar.setValue(0)
                     progress_bar.hide()
-                    # Afficher le message clair retourné par _download (pas un générique)
+                    # Message clair + rappel qu'on peut continuer sans mettre à jour
                     status_lbl.setWordWrap(True)
-                    status_lbl.setText(str(val) if val else _("update.failed"))
+                    base_msg = str(val) if val else _("update.failed")
+                    status_lbl.setText(
+                        base_msg + "\n\nVous pouvez continuer à utiliser le logiciel : "
+                        "cliquez sur « Plus tard »."
+                    )
                     status_lbl.setStyleSheet(f"color: {pal['ERROR_RED']};")
                     install_btn.setText(_("update.btn_retry"))
                     install_btn.setEnabled(True)
                     install_btn.show()
                     later_btn.setEnabled(True)
+                    later_btn.setText("Plus tard")
                     dlg.adjustSize()
             except _queue.Empty:
                 pass
@@ -1635,7 +1649,10 @@ class MainWindow(QMainWindow):
         def _start_download():
             install_btn.setEnabled(False)
             install_btn.hide()
-            later_btn.setEnabled(False)
+            # "Plus tard" reste cliquable : l'utilisateur n'est jamais piégé,
+            # même pendant un téléchargement qui traîne ou échoue.
+            later_btn.setEnabled(True)
+            later_btn.setText(_("update.btn_later"))
             progress_bar.show()
             status_lbl.setText(_("update.downloading", pct=0))
             status_lbl.show()
@@ -1646,8 +1663,21 @@ class MainWindow(QMainWindow):
 
         install_btn.clicked.connect(_start_download)
 
+        # Non-modal : la fenêtre principale reste TOUJOURS utilisable, même si
+        # la mise à jour échoue/bloque → l'utilisateur n'est jamais coincé au
+        # lancement. À la fermeture, on coupe le timer (évite d'accéder à des
+        # widgets détruits si un téléchargement tourne encore en fond).
+        def _on_dlg_finished(*_):
+            try:
+                _poll_timer.stop()
+            except Exception:
+                pass
+        dlg.finished.connect(_on_dlg_finished)
+
         apply_title_bar_theme(dlg)
-        dlg.exec()
+        self._update_dlg = dlg          # garde une référence (sinon GC en non-modal)
+        dlg.setModal(False)
+        dlg.show()
 
     def _on_new_piece(self):
         self._analysis_timeout.stop()
