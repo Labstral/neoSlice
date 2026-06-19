@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QCheckBox, QFrame, QWidget,
+    QPushButton, QCheckBox, QFrame, QWidget, QScrollArea, QApplication,
 )
 from PySide6.QtCore import Qt, QUrl, QPoint
 from PySide6.QtGui import QFont, QPixmap, QDesktopServices, QMouseEvent
@@ -105,6 +105,26 @@ class WelcomeDialog(QDialog):
         """)
         self._setup_ui()
 
+    # ── Adaptation à l'écran ─────────────────────────────────────────────────
+
+    def showEvent(self, event):
+        """Borne la hauteur à la zone utile (hors barre des tâches/dock) et
+        recentre. Le contenu défile si besoin → le pied de page reste visible."""
+        super().showEvent(event)
+        scr = self.screen() or QApplication.primaryScreen()
+        if scr is None:
+            return
+        avail = scr.availableGeometry()          # exclut barre des tâches / dock
+        max_h = int(avail.height() * 0.92)
+        if self.height() > max_h:
+            self.resize(self.width(), max_h)
+        g = self.frameGeometry()
+        g.moveCenter(avail.center())
+        # Garde la fenêtre entièrement dans la zone utile
+        g.moveTop(max(avail.top() + 8, min(g.top(), avail.bottom() - self.height() - 8)))
+        g.moveLeft(max(avail.left() + 8, min(g.left(), avail.right() - self.width() - 8)))
+        self.move(g.topLeft())
+
     # ── Drag-to-move ───────────────────────────────────────────────────────
 
     def mousePressEvent(self, event: QMouseEvent):
@@ -122,8 +142,31 @@ class WelcomeDialog(QDialog):
 
     def _setup_ui(self):
         pal = self._pal
-        root = QVBoxLayout(self)
-        root.setContentsMargins(36, 30, 36, 26)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # Contenu DÉFILANT : la fenêtre ne doit jamais dépasser l'écran, sinon le
+        # bouton « Commencer » passe sous la barre des tâches/dock → infermable.
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setStyleSheet(
+            "QScrollArea{background:transparent;border:none;}"
+            f"QScrollBar:vertical{{background:{pal['BG_ELEVATED']};width:10px;margin:2px;border-radius:5px;}}"
+            f"QScrollBar::handle:vertical{{background:{pal['TEXT_SECONDARY']};border-radius:5px;min-height:30px;}}"
+            f"QScrollBar::handle:vertical:hover{{background:{pal['ACCENT']};}}"
+            "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}"
+            "QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical{background:transparent;}"
+        )
+        _content = QWidget()
+        _content.setStyleSheet("background: transparent;")
+        self._scroll.setWidget(_content)
+        outer.addWidget(self._scroll, 1)
+
+        root = QVBoxLayout(_content)
+        root.setContentsMargins(36, 30, 36, 14)
         root.setSpacing(0)
 
         # ── Logo + Titre ──────────────────────────────────────────────────
@@ -287,12 +330,16 @@ class WelcomeDialog(QDialog):
         beta_lay.addWidget(beta_lbl)
         root.addWidget(beta_box)
 
-        root.addSpacing(18)
-        root.addWidget(self._sep())
-        root.addSpacing(14)
+        root.addSpacing(4)
 
-        # ── Footer ────────────────────────────────────────────────────────
-        footer = QHBoxLayout()
+        # ── Pied de page FIXE (hors zone défilante → toujours accessible) ──
+        footer_box = QWidget()
+        footer_box.setStyleSheet(
+            f"QWidget{{background:{pal['BG_PANEL']};border-top:1px solid {pal['INACTIVE']};"
+            "border-bottom-left-radius:6px;border-bottom-right-radius:6px;}"
+        )
+        footer = QHBoxLayout(footer_box)
+        footer.setContentsMargins(36, 12, 36, 16)
         footer.setSpacing(10)
 
         self._skip_check = QCheckBox("Ne plus afficher ce message")
@@ -338,7 +385,7 @@ class WelcomeDialog(QDialog):
         close_btn.clicked.connect(self._on_close)
         footer.addWidget(close_btn)
 
-        root.addLayout(footer)
+        outer.addWidget(footer_box)
 
     def _sep(self) -> QFrame:
         f = QFrame()
