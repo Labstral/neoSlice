@@ -3,11 +3,11 @@
 ; Pour compiler : ISCC.exe neoSlice_setup.iss
 
 #define AppName      "neoSlice"
-#define AppVersion   "0.1.5.2"
+#define AppVersion   "0.1.5.4"
 #define AppPublisher "Emmanuel Percheron"
 #define AppURL       "https://github.com/neoslice"
 #define AppExeName   "neoSlice.exe"
-#define SourceExe    "C:\neoSlice\dist\neoSlice.exe"
+#define SourceDir    "C:\neoSlice\dist\neoSlice"
 #define OutputDir    "C:\neoSlice\dist\installer"
 
 [Setup]
@@ -69,8 +69,8 @@ Name: "desktopicon"; Description: "Créer un raccourci sur le &Bureau"; GroupDes
 
 
 [Files]
-; L'EXE principal (one-file PyInstaller)
-Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "{#AppExeName}"; Flags: ignoreversion
+; Dossier onedir complet (EXE + DLL + données PyInstaller)
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Documentation
 Source: "README.txt";  DestDir: "{app}"; Flags: ignoreversion isreadme
 Source: "LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion

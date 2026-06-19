@@ -73,6 +73,7 @@ class _BenchmarkWorker(QThread):
 class SettingsDialog(QDialog):
     update_request = Signal(str, str, str)   # version, download_url, notes
     _update_result = Signal(str, str, str)   # résultat du thread → main thread
+    pro_activated = Signal()                 # émis quand neoSlice Pro vient d'être activé ici
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -324,13 +325,14 @@ class SettingsDialog(QDialog):
         lay.addWidget(self._sep_diag)
         lay.addSpacing(14)
 
-        self._lbl_diag = self._make_section_label("DIAGNOSTIC PHOTO IA")
+        self._lbl_diag = self._make_section_label("DIAGNOSTIC IA")
         lay.addWidget(self._lbl_diag)
         lay.addSpacing(10)
 
         # Statut (pleine largeur)
         self._diag_status_lbl = QLabel()
-        self._diag_status_lbl.setFont(QFont(FONT_MAIN, 8))
+        self._diag_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
+        self._diag_status_lbl.setWordWrap(True)
         lay.addWidget(self._diag_status_lbl)
         lay.addSpacing(6)
 
@@ -348,10 +350,118 @@ class SettingsDialog(QDialog):
         lay.addLayout(btn_row)
         lay.addSpacing(4)
 
+        # ── Section NEOSLICE PRO ──────────────────────────────────────────────
+        lay.addSpacing(10)
+        self._sep_pro = self._make_sep()
+        lay.addWidget(self._sep_pro)
+        lay.addSpacing(14)
+
+        from ui.components.pro_badge import ProBadge
+        pro_title_row = QHBoxLayout()
+        pro_title_row.setContentsMargins(0, 0, 0, 0)
+        pro_title_row.setSpacing(5)
+        self._lbl_pro = self._make_section_label("NEOSLICE")
+        pro_title_row.addWidget(self._lbl_pro)
+        self._pro_title_badge = ProBadge("PRO", point_size=8, letter_spacing=1.0)
+        pro_title_row.addWidget(self._pro_title_badge)
+        pro_title_row.addStretch()
+        lay.addLayout(pro_title_row)
+        lay.addSpacing(10)
+
+        self._pro_status_lbl = QLabel()
+        self._pro_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
+        self._pro_status_lbl.setWordWrap(True)
+        lay.addWidget(self._pro_status_lbl)
+        lay.addSpacing(6)
+
+        pro_btn_row = QHBoxLayout()
+        pro_btn_row.setContentsMargins(0, 0, 0, 0)
+        self._pro_btn = QPushButton(_("pro.settings_btn_upgrade"))
+        self._pro_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        self._pro_btn.setFixedHeight(28)
+        self._pro_btn.setCursor(Qt.PointingHandCursor)
+        self._pro_btn.clicked.connect(self._on_pro_btn)
+        pro_btn_row.addStretch()
+        pro_btn_row.addWidget(self._pro_btn)
+        lay.addLayout(pro_btn_row)
+        self._refresh_pro_status()
+        lay.addSpacing(4)
+
+    def _refresh_pro_status(self):
+        from core import licensing
+        pal = _T.palette()
+        # Pré-lancement : pas d'activation possible, juste « bientôt disponible ».
+        if not licensing.est_pro() and getattr(licensing, "PRO_COMING_SOON", False):
+            self._pro_status_lbl.setText(_("pro.coming_soon_short"))
+            self._pro_status_lbl.setStyleSheet(f"color: {pal['ACCENT']}; background: transparent;")
+            self._pro_btn.hide()
+            return
+        if licensing.est_pro():
+            self._pro_status_lbl.setText(_("pro.settings_status_pro"))
+            self._pro_status_lbl.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
+            self._pro_btn.setText(_("pro.settings_btn_deactivate"))
+            self._pro_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent; color: {pal['TEXT_SECONDARY']};
+                    border: 1px solid {pal['INACTIVE']}; border-radius: 4px; padding: 4px 12px;
+                }}
+                QPushButton:hover {{ border-color: {pal['ERROR_RED']}; color: {pal['ERROR_RED']}; }}
+            """)
+        else:
+            restants = licensing.essais_restants()
+            self._pro_status_lbl.setText(
+                _("pro.settings_status_free", restants=restants, total=licensing.ESSAIS_GRATUITS)
+            )
+            self._pro_status_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+            self._pro_btn.setText(_("pro.settings_btn_upgrade"))
+            self._pro_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: {pal['ACCENT']}; color: {pal['EXPORT_FG']};
+                    border: none; border-radius: 4px; padding: 4px 14px;
+                    font-weight: bold; letter-spacing: 0.5px;
+                }}
+                QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
+            """)
+        self._pro_btn.show()
+
+    def _on_pro_btn(self):
+        from core import licensing
+        if licensing.est_pro():
+            self._deactivate_device()
+        else:
+            self._open_paywall()
+
+    def _open_paywall(self):
+        from ui.components.paywall_dialog import PaywallDialog
+        from core import licensing
+        wall = PaywallDialog(self)
+        wall.exec()
+        if licensing.est_pro():
+            self.pro_activated.emit()
+        self._refresh_pro_status()
+
+    def _deactivate_device(self):
+        from core import licensing
+        ok, message = licensing.desactiver_appareil()
+        self._pro_status_lbl.setText(message)
+        pal = _T.palette()
+        self._pro_status_lbl.setStyleSheet(
+            f"color: {pal['TELE_GREEN'] if ok else pal['ERROR_RED']}; background: transparent;"
+        )
+        if ok:
+            self.pro_activated.emit()   # le badge de la barre se met à jour (disparaît)
+            self._refresh_pro_status()
+
     def _refresh_diag_status(self):
+        from core import licensing
+        # Pré-lancement : on masque toute la section diagnostic (rien d'accessible).
+        if getattr(licensing, "PRO_COMING_SOON", False):
+            for w in (self._sep_diag, self._lbl_diag, self._diag_status_lbl, self._revoke_btn):
+                w.hide()
+            return
         consented = bool(PREFS.get("defect_consent", False))
         if consented:
-            self._diag_status_lbl.setText("Actif — photos confirmées partagées automatiquement")
+            self._diag_status_lbl.setText("Actif ✓ — photos confirmées partagées automatiquement")
             self._revoke_btn.setText("Désactiver")
             self._revoke_btn.setEnabled(True)
         else:
@@ -580,13 +690,17 @@ class SettingsDialog(QDialog):
         """)
 
         sep_style = f"background: {pal['INACTIVE']}; border: none;"
-        for sep in (self._sep_top, self._sep_print, self._sep_export, self._sep_perf, self._sep_updates):
+        for sep in (self._sep_top, self._sep_print, self._sep_export, self._sep_perf,
+                    self._sep_updates, self._sep_pro):
             sep.setStyleSheet(sep_style)
 
         section_style = f"color: {pal['TEXT_LABEL']}; background: transparent; letter-spacing: 1px;"
         for lbl in (self._lbl_apparence, self._lbl_print, self._lbl_export,
-                    self._lbl_perf, self._lbl_updates, self._lbl_diag):
+                    self._lbl_perf, self._lbl_updates, self._lbl_diag, self._lbl_pro):
             lbl.setStyleSheet(section_style)
+
+        # Section neoSlice Pro (le bouton est stylé selon l'état dans _refresh_pro_status)
+        self._refresh_pro_status()
 
         # Section diagnostic
         consented = bool(PREFS.get("defect_consent", False))

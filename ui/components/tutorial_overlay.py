@@ -53,7 +53,7 @@ class _Step:
     pad: int = 16
 
 
-_STEPS: list[_Step] = [
+_STEPS_FR: list[_Step] = [
     _Step(
         None,
         "Bienvenue dans neoSlice",
@@ -109,9 +109,17 @@ _STEPS: list[_Step] = [
     _Step(
         "topbar",
         "⑤ Barre de titre",
-        "Trois raccourcis sont disponibles à tout moment :"
+        "Quatre raccourcis sont disponibles à tout moment :"
         "<br><br>"
         "<table cellspacing='0' cellpadding='0' width='100%'>"
+        "<tr>"
+        "<td width='28' valign='top' style='padding-top:1px;'>"
+        "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE713;</span>"
+        "</td>"
+        "<td valign='top'>Ouvrir les réglages : thème, langue, dossier "
+        "d'export et statut neoSlice Pro.</td>"
+        "</tr>"
+        "<tr><td colspan='2' height='10'></td></tr>"
         "<tr>"
         "<td width='28' valign='top' style='padding-top:1px;'>"
         "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE8BD;</span>"
@@ -135,6 +143,104 @@ _STEPS: list[_Step] = [
         pad=12,
     ),
 ]
+
+_STEPS_EN: list[_Step] = [
+    _Step(
+        None,
+        "Welcome to neoSlice",
+        "neoSlice analyzes your STL, OBJ or 3MF file and automatically generates "
+        "the optimal print settings for your Bambu Lab printers.\n\n"
+        "This guide walks you through the 4 steps of the workflow.\n"
+        "Click <b>Next</b> to begin.",
+    ),
+    _Step(
+        "config",
+        "① Setup — Printer, Filament & Plate",
+        "Select your <b>target printer</b> and <b>nozzle diameter</b>, "
+        "then click <b>CONFIRM</b>.\n"
+        "Do the same for your <b>filament</b>.\n\n"
+        "Then choose your <b>plate type</b> — neoSlice automatically adapts "
+        "temperatures and adhesion.",
+        pad=12,
+    ),
+    _Step(
+        "drop",
+        "② Import STL / OBJ / 3MF",
+        "Drag your <b>STL, OBJ or 3MF file</b> into this area, "
+        "or click to open the file browser.\n\n"
+        "neoSlice automatically analyzes the geometry:\n"
+        "<b>overhangs · stability · fragile zones</b>\n"
+        "<b>volume & dimensions · optimal orientation</b>",
+        pad=12,
+    ),
+    _Step(
+        "intent",
+        "③ Mission Brief",
+        "Open each accordion to choose your criteria:\n"
+        "<b>Quality · Strength · Speed · Supports · Adhesion · Use · Mode</b>\n\n"
+        "The <b>Mode</b> group lets you enable:\n"
+        "— <b>Silent</b>: speeds –40% for less noise\n"
+        "— <b>Multicolor AMS</b>: enables the <b>prime tower</b> (purge tower "
+        "that stabilizes color changes) and <b>flush</b> "
+        "(automatic nozzle purge between filaments)\n\n"
+        "Save your favorite combinations as presets, "
+        "then click <b>GENERATE CONFIGURATION →</b>.",
+        pad=12,
+    ),
+    _Step(
+        "statusbar",
+        "④ Export to Bambu Studio",
+        "Once the configuration is generated, the <b>export button</b> activates.\n\n"
+        "neoSlice generates a <b>.3MF</b> file with all settings "
+        "optimized for your material and the part's geometry.\n\n"
+        "<b>Material alerts</b> may appear in the analysis panel: "
+        "warping risk, drying recommended, AMS incompatibility…",
+        pad=6,
+    ),
+    _Step(
+        "topbar",
+        "⑤ Title bar",
+        "Four shortcuts are available at any time:"
+        "<br><br>"
+        "<table cellspacing='0' cellpadding='0' width='100%'>"
+        "<tr>"
+        "<td width='28' valign='top' style='padding-top:1px;'>"
+        "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE713;</span>"
+        "</td>"
+        "<td valign='top'>Open settings: theme, language, export folder "
+        "and neoSlice Pro status.</td>"
+        "</tr>"
+        "<tr><td colspan='2' height='10'></td></tr>"
+        "<tr>"
+        "<td width='28' valign='top' style='padding-top:1px;'>"
+        "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE8BD;</span>"
+        "</td>"
+        "<td valign='top'>Report a bug or share your experience."
+        " Opens an online form&nbsp;; your feedback is read personally.</td>"
+        "</tr>"
+        "<tr><td colspan='2' height='10'></td></tr>"
+        "<tr>"
+        "<td width='28' valign='top' style='padding-top:1px;'>"
+        "<b style='color:#E8F4FF;font-size:11pt;'>?</b>"
+        "</td>"
+        "<td valign='top'>Replay this tutorial.</td>"
+        "</tr>"
+        "<tr><td colspan='2' height='10'></td></tr>"
+        "<tr>"
+        "<td width='28' valign='top' style='padding-top:2px;'>&#x2615;</td>"
+        "<td valign='top'>Support the software's development with a voluntary donation.</td>"
+        "</tr>"
+        "</table>",
+        pad=12,
+    ),
+]
+
+
+def _get_steps() -> list[_Step]:
+    """Liste des étapes dans la langue active (FR par défaut)."""
+    from core.i18n import lang
+    return _STEPS_EN if lang() == "en" else _STEPS_FR
+
 
 # ── Layout constants ─────────────────────────────────────────────────────────
 _CARD_W    = 380
@@ -219,7 +325,7 @@ class TutorialOverlay(QDialog):
             self._go_to(self._idx - 1)
 
     def _next(self):
-        if self._idx < len(_STEPS) - 1:
+        if self._idx < len(_get_steps()) - 1:
             self._go_to(self._idx + 1)
         else:
             self._finish()
@@ -232,22 +338,33 @@ class TutorialOverlay(QDialog):
     # ── Spotlight ────────────────────────────────────────────────────────────
 
     def _spotlight(self) -> QRect | None:
-        step = _STEPS[self._idx]
+        step = _get_steps()[self._idx]
         if step.target is None:
             return None
         w = self._targets.get(step.target)
-        if w is None or not w.isVisible():
+        if w is None:
             return None
-        # mapTo(parentWidget()) donne la position dans la fenêtre principale,
-        # qui coïncide avec la position dans ce dialog (même origine).
-        tl = w.mapTo(self.parent(), QPoint(0, 0))
-        return QRect(tl, w.size()).adjusted(-step.pad, -step.pad, step.pad, step.pad)
+        # Une cible peut être un widget unique OU une liste (ex. titre de section
+        # + contenu) → on prend l'UNION des rectangles pour englober le titre.
+        widgets = w if isinstance(w, (list, tuple)) else [w]
+        rect: QRect | None = None
+        for widget in widgets:
+            if widget is None or not widget.isVisible():
+                continue
+            # mapTo(parentWidget()) → position dans la fenêtre principale,
+            # qui coïncide avec ce dialog (même origine).
+            tl = widget.mapTo(self.parent(), QPoint(0, 0))
+            r = QRect(tl, widget.size())
+            rect = r if rect is None else rect.united(r)
+        if rect is None:
+            return None
+        return rect.adjusted(-step.pad, -step.pad, step.pad, step.pad)
 
     # ── Layout ───────────────────────────────────────────────────────────────
 
     def _body_html(self) -> str:
         icon_color = _T.palette()["TEXT_SECONDARY"]
-        return (_STEPS[self._idx].body
+        return (_get_steps()[self._idx].body
                 .replace("\n", "<br>")
                 .replace("#E8F4FF", icon_color))
 
@@ -257,7 +374,7 @@ class TutorialOverlay(QDialog):
 
         td = QTextDocument()
         td.setDefaultFont(QFont(FONT_MAIN, 13, QFont.Bold))
-        td.setPlainText(_STEPS[self._idx].title)
+        td.setPlainText(_get_steps()[self._idx].title)
         td.setTextWidth(text_w)
         h += int(td.size().height()) + 12 + 1 + 12  # title + sep
 
@@ -346,8 +463,8 @@ class TutorialOverlay(QDialog):
 
     def _paint_card(self, painter: QPainter):
         idx   = self._idx
-        step  = _STEPS[idx]
-        total = len(_STEPS)
+        step  = _get_steps()[idx]
+        total = len(_get_steps())
         cr    = QRectF(self._card_rect)
         cx    = float(self._card_rect.x())
         cy    = float(self._card_rect.y())
@@ -429,13 +546,20 @@ class TutorialOverlay(QDialog):
         bd.drawContents(painter)
         painter.restore()
 
-        # ── Boutons ──
-        self._paint_btn(painter, self._btn_skip, "Passer le guide",
+        # ── Boutons (libellés selon la langue) ──
+        from core.i18n import lang as _lang
+        _en = _lang() == "en"
+        _skip = "Skip guide" if _en else "Passer le guide"
+        _prev = "← Previous" if _en else "← Précédent"
+        if idx == total - 1:
+            _next = "Finish  ✓" if _en else "Terminer  ✓"
+        else:
+            _next = "Next →" if _en else "Suivant →"
+        self._paint_btn(painter, self._btn_skip, _skip,
                         "secondary", self._hovered == _HOVER_SKIP, idx < total - 1)
-        self._paint_btn(painter, self._btn_prev, "← Précédent",
+        self._paint_btn(painter, self._btn_prev, _prev,
                         "outline", self._hovered == _HOVER_PREV, idx > 0)
-        self._paint_btn(painter, self._btn_next,
-                        "Terminer  ✓" if idx == total - 1 else "Suivant →",
+        self._paint_btn(painter, self._btn_next, _next,
                         "primary", self._hovered == _HOVER_NEXT, True)
 
     def _paint_btn(self, p: QPainter, rect: QRect, text: str,
@@ -477,7 +601,7 @@ class TutorialOverlay(QDialog):
 
     def mouseMoveEvent(self, event):
         pos   = event.pos()
-        total = len(_STEPS)
+        total = len(_get_steps())
         old   = self._hovered
 
         if self._btn_next.contains(pos):
@@ -503,7 +627,7 @@ class TutorialOverlay(QDialog):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             pos   = event.pos()
-            total = len(_STEPS)
+            total = len(_get_steps())
             if self._btn_next.contains(pos):
                 self._next()
             elif self._idx > 0 and self._btn_prev.contains(pos):

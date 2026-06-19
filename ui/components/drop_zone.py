@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFileDialog, QPushButton
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
-    QPainter, QPen, QColor, QFont,
+    QPainter, QPen, QColor, QFont, QPixmap,
     QDragEnterEvent, QDropEvent, QMouseEvent,
 )
 
@@ -38,6 +38,13 @@ class DropZone(QWidget):
         layout.setAlignment(Qt.AlignCenter)
         layout.setSpacing(6)
         layout.setContentsMargins(16, 16, 16, 16)
+
+        # Miniature d'aperçu du modèle chargé (masquée tant qu'aucun fichier)
+        self._thumb = QLabel()
+        self._thumb.setAlignment(Qt.AlignCenter)
+        self._thumb.setStyleSheet("background: transparent;")
+        self._thumb.hide()
+        layout.addWidget(self._thumb)
 
         self._icon = QLabel("⊘")
         self._icon.setAlignment(Qt.AlignCenter)
@@ -145,9 +152,23 @@ class DropZone(QWidget):
 
     # ── État chargé ────────────────────────────────────────────────────────
 
+    def set_thumbnail(self, png_bytes: "bytes | None"):
+        """Affiche une miniature d'aperçu (octets PNG) à la place de l'icône ✓."""
+        if not png_bytes:
+            return
+        pix = QPixmap()
+        if pix.loadFromData(png_bytes):
+            self._thumb.setPixmap(pix.scaledToHeight(96, Qt.SmoothTransformation))
+            self._thumb.show()
+            self._icon.hide()
+
     def _set_file(self, path: Path):
         self._current_file = path
         self._loaded = True
+        # Nouvelle pièce → on repart de l'icône ✓ ; la miniature arrive ensuite.
+        self._thumb.hide()
+        self._thumb.clear()
+        self._icon.show()
         self._icon.setText("✓")
         self._icon.setStyleSheet(
             f"font-size: 22px; color: {_T.palette()['TELE_GREEN']}; background: transparent;"
@@ -166,6 +187,9 @@ class DropZone(QWidget):
         self._hovered = False
         self._loaded = False
         self._current_file = None
+        self._thumb.hide()
+        self._thumb.clear()
+        self._icon.show()
         self._refresh_labels()
         if hasattr(self, "_recent_path") and self._recent_path and not self._locked:
             self._recent_btn.setText(_("drop.reopen", name=self._recent_path.name))

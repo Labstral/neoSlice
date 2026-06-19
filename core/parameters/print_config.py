@@ -66,6 +66,8 @@ class PrintConfig(BaseModel):
     bed_temperature: int = 65
 
     # --- Métadonnées neoSlice ---
+    filament_density_g_cm3: float = 1.24   # densité matériau (estimation du poids)
+    neoslice_printer: str = ""             # imprimante cible (limites appliquées)
     neoslice_intent_text: str = ""
     neoslice_profile_name: str = ""
     neoslice_confidence: float = 1.0
@@ -78,7 +80,7 @@ class PrintConfig(BaseModel):
         wall_factor   = 0.25 + self.wall_loops * 0.10
         # Plafonné à 0.98 × densité solide (le FDM ne peut pas dépasser le plein)
         total_factor = min(infill_factor + wall_factor, 0.98)
-        return volume_cm3 * 1.24 * total_factor
+        return volume_cm3 * max(0.1, self.filament_density_g_cm3) * total_factor
 
     def estimated_time_minutes(self, volume_cm3: float, height_mm: float, support_ratio: float = 0.0) -> int:
         """Estimation du temps total en minutes (impression + chauffe + calibration Bambu)."""

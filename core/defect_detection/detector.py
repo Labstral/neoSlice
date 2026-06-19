@@ -263,9 +263,12 @@ class DefectDetector:
         severity = DEFECT_DEFAULT_SEVERITY[defect]
         remediation = dict(REMEDIATION_RULES.get(defect, {}))
         stop = remediation.pop("_stop_print", False)
-        hint = remediation.pop("_hint", None)
+        from core.i18n import lang as _lang
+        _hint_fr = remediation.pop("_hint", None)
+        _hint_en = remediation.pop("_hint_en", None)
+        hint = _hint_en if (_lang() == "en" and _hint_en) else _hint_fr
         if hint:
-            remediation["_hint"] = hint  # re-ajoute hint pour l'UI
+            remediation["_hint"] = hint  # re-ajoute hint (langue active) pour l'UI
 
         message = build_diagnostic_message(defect, confidence, severity)
 

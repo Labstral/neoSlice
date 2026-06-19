@@ -325,6 +325,8 @@ class ParamsPreview(QWidget):
         self._render_summary(c, a)
 
         s = self._add_section(_("preview.sec_mission"))
+        if c.neoslice_printer:
+            s.add_row(_("preview.lbl_printer"), c.neoslice_printer)
         name = c.neoslice_profile_name.replace("_", " ").upper()
         s.add_row(_("preview.lbl_profile"),    name)
         s.add_row(_("preview.lbl_intent"),     c.neoslice_intent_text[:28] + "…" if len(c.neoslice_intent_text) > 28 else c.neoslice_intent_text)

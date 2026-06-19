@@ -69,7 +69,9 @@ DEFECT_DESCRIPTIONS_FR: dict[DefectClass, str] = {
         "trop élevée ou une rétractation insuffisante.",
     DefectClass.WARPING:
         "La pièce se décolle du plateau en refroidissant. Plus fréquent avec ABS/ASA "
-        "ou les grandes surfaces. Un brim et une température plateau plus haute aident.",
+        "ou les grandes surfaces. Pensez à bien nettoyer votre plateau (eau chaude + "
+        "liquide vaisselle, sans gras ni traces de doigts) : une mauvaise adhérence en "
+        "est souvent la cause. Un brim et une température plateau plus haute aident également.",
     DefectClass.UNDER_EXTRUSION:
         "Pas assez de matière extrudée : couches faibles, trous, lignes manquantes. "
         "Causé par une température trop basse, une vitesse trop élevée ou un engrenage usé.",
@@ -92,6 +94,90 @@ DEFECT_DESCRIPTIONS_FR: dict[DefectClass, str] = {
         "Stries horizontales ondulées sur les parois. Souvent un problème mécanique "
         "(vis Z, courroie) mais peut être amélioré en réduisant les vitesses.",
 }
+
+DEFECT_LABELS_EN: dict[DefectClass, str] = {
+    DefectClass.GOOD:            "Good print",
+    DefectClass.STRINGING:       "Stringing",
+    DefectClass.WARPING:         "Warping (bed detachment)",
+    DefectClass.UNDER_EXTRUSION: "Under-extrusion",
+    DefectClass.OVER_EXTRUSION:  "Over-extrusion",
+    DefectClass.LAYER_SHIFT:     "Layer shift",
+    DefectClass.SPAGHETTI:       "Spaghetti (complete failure)",
+    DefectClass.PILLOWING:       "Top-layer pillowing",
+    DefectClass.ELEPHANTS_FOOT:  "Elephant's foot (flared first layer)",
+    DefectClass.Z_WOBBLE:        "Wavy surface (Z-wobble)",
+}
+
+DEFECT_DESCRIPTIONS_EN: dict[DefectClass, str] = {
+    DefectClass.GOOD:
+        "The print looks fine. No correction needed.",
+    DefectClass.STRINGING:
+        "Thin plastic threads form between parts. Caused by a temperature that is too "
+        "high or insufficient retraction.",
+    DefectClass.WARPING:
+        "The part lifts off the bed as it cools. More common with ABS/ASA or large "
+        "surfaces. Be sure to clean your build plate (warm water + dish soap, free of "
+        "grease and fingerprints): poor adhesion is often the cause. A brim and a higher "
+        "bed temperature also help.",
+    DefectClass.UNDER_EXTRUSION:
+        "Not enough material extruded: weak layers, gaps, missing lines. Caused by a "
+        "temperature too low, a speed too high, or a worn extruder gear.",
+    DefectClass.OVER_EXTRUSION:
+        "Too much material extruded: blobs, uneven surface, incorrect dimensions. "
+        "Adjust the flow or slightly lower the temperature.",
+    DefectClass.LAYER_SHIFT:
+        "Layers are shifted horizontally. Caused by overstressed mechanics or a print "
+        "speed that is too high.",
+    DefectClass.SPAGHETTI:
+        "CRITICAL FAILURE — filament is printing into the air. The part detached or "
+        "moved. Immediate stop recommended to protect the printer.",
+    DefectClass.PILLOWING:
+        "The top layer shows bumps or waves. Not enough top layers, insufficient "
+        "cooling, or a speed too high.",
+    DefectClass.ELEPHANTS_FOOT:
+        "The first layer flares outward. Bed too close to the nozzle or first-layer "
+        "temperature too high.",
+    DefectClass.Z_WOBBLE:
+        "Wavy horizontal lines on the walls. Often a mechanical issue (Z screw, belt) "
+        "but can be improved by reducing speeds.",
+}
+
+
+def defect_label(defect: DefectClass) -> str:
+    """Libellé du défaut dans la langue active."""
+    from core.i18n import lang
+    table = DEFECT_LABELS_EN if lang() == "en" else DEFECT_LABELS_FR
+    return table.get(defect, DEFECT_LABELS_FR.get(defect, defect.value))
+
+
+def defect_description(defect: DefectClass) -> str:
+    """Description du défaut dans la langue active."""
+    from core.i18n import lang
+    table = DEFECT_DESCRIPTIONS_EN if lang() == "en" else DEFECT_DESCRIPTIONS_FR
+    return table.get(defect, DEFECT_DESCRIPTIONS_FR.get(defect, ""))
+
+
+# Traduction française des noms de champs de correction (termes Bambu Studio en
+# anglais → français lisible). Affichée entre parenthèses en mode FR uniquement.
+# Clé = nom du champ nettoyé (sans préfixe "delta_", underscores → espaces).
+FIELD_LABELS_FR: dict[str, str] = {
+    "nozzle temperature":         "température buse",
+    "bed temperature":            "température plateau",
+    "outer wall speed":           "vitesse paroi externe",
+    "inner wall speed":           "vitesse paroi interne",
+    "infill speed":               "vitesse remplissage",
+    "first layer speed":          "vitesse 1re couche",
+    "top surface speed":          "vitesse surface du dessus",
+    "top shell layers":           "couches du dessus",
+    "brim type":                  "type de bordure",
+    "brim width":                 "largeur bordure",
+    "elefant foot compensation":  "compensation pied d'éléphant",
+}
+
+
+def field_translation_fr(field: str) -> str | None:
+    """Traduction française d'un nom de champ de correction (None si inconnu)."""
+    return FIELD_LABELS_FR.get(field)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -132,6 +218,10 @@ REMEDIATION_RULES: dict[DefectClass, dict[str, Any]] = {
             "Vérifiez aussi : Rétractation +0.5 mm, Vitesse rétractation +10 mm/s "
             "dans le profil filament Bambu Studio."
         ),
+        "_hint_en": (
+            "Also check: Retraction +0.5 mm, Retraction speed +10 mm/s "
+            "in the Bambu Studio filament profile."
+        ),
     },
 
     DefectClass.WARPING: {
@@ -150,12 +240,19 @@ REMEDIATION_RULES: dict[DefectClass, dict[str, Any]] = {
             "Vérifiez aussi : Flux (flow ratio) +3 à 5% dans le profil filament. "
             "Nettoyez la buse si le problème persiste."
         ),
+        "_hint_en": (
+            "Also check: Flow ratio +3 to 5% in the filament profile. "
+            "Clean the nozzle if the problem persists."
+        ),
     },
 
     DefectClass.OVER_EXTRUSION: {
         "delta_nozzle_temperature":  -5,      # °C
         "_hint": (
             "Vérifiez aussi : Flux (flow ratio) -3 à 5% dans le profil filament."
+        ),
+        "_hint_en": (
+            "Also check: Flow ratio -3 to 5% in the filament profile."
         ),
     },
 
@@ -168,6 +265,10 @@ REMEDIATION_RULES: dict[DefectClass, dict[str, Any]] = {
             "Vérifiez les courroies et l'état mécanique de l'imprimante. "
             "Un décalage mécanique ne peut pas être résolu uniquement par les paramètres."
         ),
+        "_hint_en": (
+            "Check the belts and the printer's mechanical condition. "
+            "A mechanical shift cannot be fixed by settings alone."
+        ),
     },
 
     DefectClass.SPAGHETTI: {
@@ -178,6 +279,12 @@ REMEDIATION_RULES: dict[DefectClass, dict[str, Any]] = {
             "l'alcool isopropylique ; ajoutez un brim généreux (10 mm minimum), vérifiez "
             "la calibration de la première couche et réduisez sa vitesse."
         ),
+        "_hint_en": (
+            "To avoid this in the future: clean the bed with warm water and dish soap "
+            "(most effective for degreasing), or failing that with isopropyl alcohol; "
+            "add a generous brim (10 mm minimum), check the first-layer calibration and "
+            "reduce its speed."
+        ),
     },
 
     DefectClass.PILLOWING: {
@@ -185,6 +292,9 @@ REMEDIATION_RULES: dict[DefectClass, dict[str, Any]] = {
         "delta_top_surface_speed":   -15,     # mm/s
         "_hint": (
             "Augmentez la ventilation (refroidissement) si votre imprimante le permet."
+        ),
+        "_hint_en": (
+            "Increase cooling (fan) if your printer allows it."
         ),
     },
 
@@ -201,21 +311,28 @@ REMEDIATION_RULES: dict[DefectClass, dict[str, Any]] = {
             "Z-wobble est souvent mécanique (vis Z mal lubrifiée, jeu). "
             "Inspectez et lubrifiez la vis Z."
         ),
+        "_hint_en": (
+            "Z-wobble is often mechanical (poorly lubricated Z screw, play). "
+            "Inspect and lubricate the Z screw."
+        ),
     },
 }
 
 
 def build_diagnostic_message(defect: DefectClass, confidence: float, severity: Severity) -> str:
-    """Message UI court pour l'affichage dans neoSlice."""
-    label = DEFECT_LABELS_FR[defect]
+    """Message UI court pour l'affichage dans neoSlice (langue active)."""
+    from core.i18n import lang
+    en = lang() == "en"
+    label = defect_label(defect)
     pct = int(confidence * 100)
     if severity == Severity.NONE:
-        return f"✅ {label} ({pct}% de confiance)"
+        suffix = "confidence" if en else "de confiance"
+        return f"✅ {label} ({pct}% {suffix})"
     elif severity == Severity.CRITICAL:
-        return f"🚨 {label} ({pct}%) — Arrêt recommandé !"
+        return f"🚨 {label} ({pct}%) — " + ("Stop recommended!" if en else "Arrêt recommandé !")
     elif severity == Severity.HIGH:
-        return f"⚠️ {label} ({pct}%) — Pièce potentiellement inutilisable"
+        return f"⚠️ {label} ({pct}%) — " + ("Part may be unusable" if en else "Pièce potentiellement inutilisable")
     elif severity == Severity.MEDIUM:
-        return f"⚠️ {label} ({pct}%) — Correction recommandée"
+        return f"⚠️ {label} ({pct}%) — " + ("Correction recommended" if en else "Correction recommandée")
     else:
-        return f"ℹ️ {label} ({pct}%) — Défaut cosmétique"
+        return f"ℹ️ {label} ({pct}%) — " + ("Cosmetic defect" if en else "Défaut cosmétique")

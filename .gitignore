@@ -1,11 +1,25 @@
-# Environnement virtuel
+# Environnement virtuel (tous les venv, ex: .venv, .venv312…)
 .venv/
+.venv*/
 venv/
 
 # Build PyInstaller
 build/
 dist/
 *.spec.bak
+
+# Caches / artefacts générés
+.token-savior-cache.json
+graphify-out/
+models/
+recovered/
+
+# Fichiers sensibles (NE JAMAIS committer)
+Backup codes Lemon Squeezy.txt
+*secret*
+*token*
+**/.kaggle/
+*USERPROFILE/
 
 # Cache Python
 __pycache__/

@@ -86,7 +86,7 @@ class SplashScreen(QWidget):
             QProgressBar::chunk {
                 background: qlineargradient(
                     x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #4A9EFF, stop:1 #FFFFFF
+                    stop:0 #22D3EE, stop:0.5 #6594F3, stop:1 #A855F7
                 );
             }
         """)
@@ -128,6 +128,14 @@ def main():
     os.environ.setdefault("VTK_SILENCE_GET_VOID_POINTER_WARNINGS", "1")
     os.environ.setdefault("VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN", "0")
 
+    # Mise à l'échelle fractionnaire (125 %/150 %) : sans politique d'arrondi, Qt
+    # accumule des erreurs entre la zone cliquable et le rendu sur les fenêtres
+    # hautes → boutons décalés. PassThrough = échelle exacte, zéro arrondi.
+    from PySide6.QtGui import QGuiApplication
+    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
+
     app = QApplication(sys.argv)
     app.setApplicationName("neoSlice")
     app.setApplicationDisplayName("neoSlice")
@@ -152,7 +160,18 @@ def main():
     _qp.setColor(QPalette.ColorRole.Text,          _QC(_tp["TEXT_PRIMARY"]))
     _qp.setColor(QPalette.ColorRole.Button,        _QC(_tp["BG_PANEL"]))
     _qp.setColor(QPalette.ColorRole.ButtonText,    _QC(_tp["TEXT_PRIMARY"]))
+    # Infobulles : le style natif Windows respecte ces rôles de palette (le
+    # stylesheet app QToolTip est parfois ignoré → tooltip noir système).
+    _qp.setColor(QPalette.ColorRole.ToolTipBase,   _QC(_tp["BG_ELEVATED"]))
+    _qp.setColor(QPalette.ColorRole.ToolTipText,   _QC(_tp["TEXT_PRIMARY"]))
     app.setPalette(_qp)
+
+    # Style global des infobulles (lisible en thème clair ET sombre) + maj au switch
+    from ui.styles.theme import apply_tooltip_style as _tt_style, install_themed_tooltips
+    _tt_style()
+    _THEME_MGR.register(_tt_style)
+    # Infobulles maison garanties (le tooltip natif reste sombre sous Windows)
+    install_themed_tooltips(app)
 
     # Icône sur QApplication avant tout affichage — garantit la barre des tâches
     _icon_path = _assets_dir() / "neoSlice.ico"
@@ -176,6 +195,10 @@ def main():
             window.showMaximized()
             from ui.styles.theme import apply_title_bar_theme
             apply_title_bar_theme(window)
+            # Niveau 2 anti-fraude : re-valide le Pro en ligne en arrière-plan
+            # (révoque un Pro sans clé valide ; ne punit pas l'utilisateur hors-ligne).
+            from core import licensing
+            licensing.revalidate_pro_async()
             logger.info("Interface prête")
         except Exception as e:
             logger.exception(f"Erreur critique au démarrage : {e}")

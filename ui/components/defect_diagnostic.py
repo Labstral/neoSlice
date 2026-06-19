@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.styles.theme import MANAGER as _T, FONT_MAIN, FONT_MONO
+from core.i18n import _
 
 
 # ── Dialog de consentement ─────────────────────────────────────────────────────
@@ -78,7 +79,7 @@ class DiagnosticConsentDialog(QDialog):
         lay.addWidget(icon_lbl)
         lay.addSpacing(10)
 
-        title = QLabel("DIAGNOSTIC PHOTO IA")
+        title = QLabel("DIAGNOSTIC IA")
         title.setFont(QFont(FONT_MAIN, 12, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         title.setWordWrap(True)
@@ -187,7 +188,7 @@ class DiagnosticConsentDialog(QDialog):
         lay.addLayout(btn_row)
         lay.addSpacing(6)
 
-        note = QLabel("Vous pouvez révoquer votre accord à tout moment dans les paramètres.")
+        note = QLabel(_("diag.consent_revoke_note"))
         note.setFont(QFont(FONT_MAIN, 7))
         note.setAlignment(Qt.AlignCenter)
         note.setWordWrap(True)
@@ -292,7 +293,7 @@ class _AnalysisWorker(QThread):
 
             det = DefectDetector(mgr)
             if not det.load():
-                self.error.emit("Modèle non disponible — vérifiez votre connexion internet.")
+                self.error.emit(_("diag.model_unavailable"))
                 return
 
             result = det.analyze(self._path)
@@ -441,16 +442,24 @@ class DefectDiagnosticDialog(QDialog):
     """
 
     corrections_ready = Signal(object)   # DiagnosticResult
+    pro_state_changed = Signal()         # émis quand neoSlice Pro vient d'être activé
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("diag_dialog")
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        # PAS de WA_TranslucentBackground ici : ce dialog se REDIMENSIONNE après
+        # affichage (résultats variables). Une fenêtre translucide ("layered
+        # window" Windows) redimensionnée garde son ancien rendu à l'écran →
+        # les boutons visibles ne correspondent plus à leur vraie position
+        # (zone cliquable décalée vers le haut). Fenêtre opaque = rendu toujours
+        # synchronisé avec la géométrie réelle.
         self._drag_pos: QPoint | None = None
         self._worker: _AnalysisWorker | None = None
         self._result = None          # DiagnosticResult courant
         self._image_path: Path | None = None
         self._image_hash = ""
+        self._manual_mode = False    # True quand le défaut est choisi à la main
 
         self._setup_ui()
         self._apply_theme()
@@ -497,7 +506,7 @@ class DefectDiagnosticDialog(QDialog):
         # ── Titre ─────────────────────────────────────────────────────────────
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 12)
-        self._title_lbl = QLabel("DIAGNOSTIC PHOTO")
+        self._title_lbl = QLabel("DIAGNOSTIC IA")
         self._title_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._close_btn = QPushButton("X")
         self._close_btn.setFixedSize(22, 22)
@@ -513,23 +522,50 @@ class DefectDiagnosticDialog(QDialog):
         lay.addWidget(self._sep_top)
         lay.addSpacing(14)
 
-        # ── Drop zone ─────────────────────────────────────────────────────────
+        # ── Sélecteur de mode : photo  /  je connais le problème ──────────────
+        from core.i18n import _ as _t
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(0)
+        self._mode_photo_btn  = QPushButton(_t("diag.mode_photo"))
+        self._mode_manual_btn = QPushButton(_t("diag.mode_manual"))
+        for b in (self._mode_photo_btn, self._mode_manual_btn):
+            b.setCheckable(True)
+            b.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+            b.setFixedHeight(30)
+            b.setCursor(Qt.PointingHandCursor)
+        self._mode_photo_btn.setChecked(True)
+        self._mode_photo_btn.clicked.connect(lambda: self._set_mode(False))
+        self._mode_manual_btn.clicked.connect(lambda: self._set_mode(True))
+        mode_row.addWidget(self._mode_photo_btn, 1)
+        mode_row.addWidget(self._mode_manual_btn, 1)
+        lay.addLayout(mode_row)
+        lay.addSpacing(12)
+
+        # ── Panneau MODE PHOTO ────────────────────────────────────────────────
+        self._photo_panel = QWidget()
+        self._photo_panel.setObjectName("diag_photo_panel")
+        play = QVBoxLayout(self._photo_panel)
+        play.setContentsMargins(0, 0, 0, 0)
+        play.setSpacing(0)
+        lay.addWidget(self._photo_panel)
+
+        # Drop zone
         self._drop = _PhotoDrop()
         self._drop.photo_selected.connect(self._on_photo_selected)
-        lay.addWidget(self._drop)
-        lay.addSpacing(6)
+        play.addWidget(self._drop)
+        play.addSpacing(6)
 
         # Conseils de prise de vue (meilleure précision)
         self._tips_lbl = QLabel(
             "💡 Pour une analyse fiable : cadrez la zone du défaut, bonne lumière, "
             "fond neutre, photo nette."
         )
-        self._tips_lbl.setFont(QFont(FONT_MAIN, 7))
+        self._tips_lbl.setFont(QFont(FONT_MAIN, 9))
         self._tips_lbl.setWordWrap(True)
-        lay.addWidget(self._tips_lbl)
-        lay.addSpacing(10)
+        play.addWidget(self._tips_lbl)
+        play.addSpacing(10)
 
-        # ── Boutons analyser + nouvelle photo ─────────────────────────────────
+        # Boutons analyser + nouvelle photo
         action_row = QHBoxLayout()
         action_row.setSpacing(6)
         self._analyze_btn = QPushButton("ANALYSER LA PHOTO")
@@ -548,16 +584,69 @@ class DefectDiagnosticDialog(QDialog):
         self._reset_btn.hide()   # visible seulement quand une photo est chargée
         action_row.addWidget(self._reset_btn)
 
-        lay.addLayout(action_row)
-        lay.addSpacing(4)
+        play.addLayout(action_row)
+        play.addSpacing(4)
 
-        # ── Barre de progression ──────────────────────────────────────────────
+        # Barre de progression
         self._progress = QProgressBar()
         self._progress.setFixedHeight(3)
         self._progress.setTextVisible(False)
         self._progress.setRange(0, 0)
         self._progress.hide()
-        lay.addWidget(self._progress)
+        play.addWidget(self._progress)
+
+        # ── Panneau MODE MANUEL ───────────────────────────────────────────────
+        # Choix direct du défaut → mêmes corrections, sans photo ni analyse IA.
+        self._manual_panel = QWidget()
+        self._manual_panel.setObjectName("diag_manual_panel")
+        mlay = QVBoxLayout(self._manual_panel)
+        mlay.setContentsMargins(0, 0, 0, 0)
+        mlay.setSpacing(0)
+        lay.addWidget(self._manual_panel)
+
+        self._manual_pick_lbl = QLabel(_t("diag.manual_pick"))
+        self._manual_pick_lbl.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
+        mlay.addWidget(self._manual_pick_lbl)
+        mlay.addSpacing(8)
+
+        from core.defect_detection.defect_classes import (
+            defect_label as _dl, DefectClass as _DC,
+        )
+        self._manual_combo = QComboBox()
+        self._manual_combo.setFont(QFont(FONT_MAIN, 9))
+        for cls in _DC:
+            if cls == _DC.GOOD:
+                continue   # « Bonne impression » n'a aucune correction à proposer
+            self._manual_combo.addItem(_dl(cls), cls.value)
+        self._manual_combo.currentIndexChanged.connect(self._on_manual_pick)
+        mlay.addWidget(self._manual_combo)
+        mlay.addSpacing(8)
+
+        self._manual_desc_lbl = QLabel()
+        self._manual_desc_lbl.setFont(QFont(FONT_MAIN, 8))
+        self._manual_desc_lbl.setWordWrap(True)
+        mlay.addWidget(self._manual_desc_lbl)
+        mlay.addSpacing(10)
+
+        self._manual_btn = QPushButton(_t("diag.manual_show"))
+        self._manual_btn.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
+        self._manual_btn.setFixedHeight(32)
+        self._manual_btn.setCursor(Qt.PointingHandCursor)
+        self._manual_btn.clicked.connect(self._show_manual)
+        mlay.addWidget(self._manual_btn)
+
+        self._manual_panel.hide()   # mode photo par défaut
+        # NB : la description du mode manuel est remplie au 1er passage en mode
+        # manuel (_set_mode) — _fix_wrap_heights a besoin que toute l'UI existe.
+
+        # ── Compteur d'essais gratuits — PARTAGÉ photo + manuel (masqué si Pro) ──
+        # Hors des panneaux pour rester visible quel que soit le mode actif.
+        self._trial_lbl = QLabel("")
+        self._trial_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        self._trial_lbl.setAlignment(Qt.AlignCenter)
+        lay.addSpacing(8)
+        lay.addWidget(self._trial_lbl)
+        self.refresh_trial_label()
 
         # ── Résultats — TOUT dans un conteneur unique masquable d'un bloc ────
         # Quand aucune analyse n'a tourné, le conteneur est masqué et la fenêtre
@@ -643,7 +732,7 @@ class DefectDiagnosticDialog(QDialog):
             "« Appliquer corrections » apparaîtra en bas, à gauche de l'export. "
             "Sinon, vous pouvez simplement fermer cette fenêtre."
         )
-        self._apply_hint.setFont(QFont(FONT_MAIN, 7))
+        self._apply_hint.setFont(QFont(FONT_MAIN, 9))
         self._apply_hint.setWordWrap(True)
         clay.addWidget(self._apply_hint)
 
@@ -689,9 +778,9 @@ class DefectDiagnosticDialog(QDialog):
         self._picker_lbl.setFont(QFont(FONT_MAIN, 8))
         self._correction_combo = QComboBox()
         self._correction_combo.setFont(QFont(FONT_MAIN, 8))
-        from core.defect_detection.defect_classes import DEFECT_LABELS_FR, DefectClass
+        from core.defect_detection.defect_classes import defect_label, DefectClass
         for cls in DefectClass:
-            self._correction_combo.addItem(DEFECT_LABELS_FR[cls], cls.value)
+            self._correction_combo.addItem(defect_label(cls), cls.value)
         self._correction_ok_btn = QPushButton("Valider")
         self._correction_ok_btn.setFixedHeight(24)
         self._correction_ok_btn.setFont(QFont(FONT_MAIN, 8))
@@ -714,11 +803,23 @@ class DefectDiagnosticDialog(QDialog):
         self._picker_box.setVisible(visible)
 
     def _refit(self):
-        """Recalcule la taille pour coller au contenu (après show/hide).
-        Différé via QTimer pour que les changements de visibilité soient
-        propagés avant le calcul de taille."""
-        self._card.layout().activate()
+        """Recalcule la taille pour coller au contenu.
+
+        DOUBLE PASSE volontaire : les QLabel word-wrap (description) ne calculent
+        leur vraie hauteur qu'une fois leur largeur connue. Sans 2e passe, Qt
+        sous-estime la hauteur → le texte déborde sur les boutons et leur zone
+        cliquable se retrouve décalée vers le haut. Ensuite on garde la fenêtre
+        entièrement visible à l'écran (boutons du bas atteignables)."""
+        self._fix_wrap_heights()   # hauteurs word-wrap correctes AVANT de mesurer
+        lay = self._card.layout()
+        lay.activate()
         self.adjustSize()
+        lay.activate()          # 2e passe : hauteurs word-wrap correctes
+        self.adjustSize()
+        # NB : on ne déplace PLUS la fenêtre ici. Déplacer une fenêtre translucide
+        # déjà affichée laisse Windows désynchronisé (géométrie ≠ rendu) → la zone
+        # cliquable des boutons se décalait. Le placement à l'écran est géré une
+        # seule fois à l'ouverture (main_window._open_diagnostic).
 
     def _clear_corrections(self):
         """Supprime toutes les lignes de correction. Chaque ligne est un
@@ -728,14 +829,17 @@ class DefectDiagnosticDialog(QDialog):
             item = self._corrections_lay.takeAt(0)
             w = item.widget()
             if w is not None:
+                w.hide()               # retire de l'affichage immédiatement
                 w.deleteLater()
                 continue
             sub = item.layout()
             if sub is not None:
                 while sub.count():
                     sitem = sub.takeAt(0)
-                    if sitem.widget() is not None:
-                        sitem.widget().deleteLater()
+                    sw = sitem.widget()
+                    if sw is not None:
+                        sw.hide()      # idem : pas de superposition en attendant la suppression
+                        sw.deleteLater()
                 sub.deleteLater()
         self._corr_dots = []
         self._corr_lbls = []
@@ -771,13 +875,139 @@ class DefectDiagnosticDialog(QDialog):
         self._reset_btn.hide()
         QTimer.singleShot(0, self._refit)
 
+    def _set_mode(self, manual: bool):
+        """Bascule entre mode photo et mode manuel (choix direct du défaut)."""
+        self._manual_mode = manual
+        self._mode_photo_btn.setChecked(not manual)
+        self._mode_manual_btn.setChecked(manual)
+        self._photo_panel.setVisible(not manual)
+        self._manual_panel.setVisible(manual)
+        # Changer de mode efface le résultat affiché (on repart propre)
+        self._set_result_visible(False)
+        self._result = None
+        if manual:
+            self._on_manual_pick()
+        self._apply_theme()                 # boutons toggle recolorés selon l'état
+        QTimer.singleShot(0, self._refit)
+
+    def _on_manual_pick(self):
+        """Met à jour la description sous la liste déroulante du mode manuel."""
+        from core.defect_detection.defect_classes import DefectClass, defect_description
+        val = self._manual_combo.currentData()
+        if val is None:
+            return
+        try:
+            cls = DefectClass(val)
+        except ValueError:
+            return
+        self._manual_desc_lbl.setText(defect_description(cls))
+        self._fix_wrap_heights()
+
+    def _show_manual(self):
+        """Affiche les corrections du défaut choisi à la main (mode manuel).
+
+        Même barrière que l'analyse photo : 3 essais gratuits puis paywall, et un
+        essai consommé à chaque consultation. On construit un DiagnosticResult
+        synthétique depuis les mêmes règles de remédiation, puis _show_result."""
+        from core import licensing
+        if not licensing.peut_analyser():
+            from ui.components.paywall_dialog import PaywallDialog
+            wall = PaywallDialog(self)
+            wall.exec()
+            if not licensing.peut_analyser():
+                self.refresh_trial_label()
+                return   # toujours pas débloqué → on n'affiche rien
+            self.pro_state_changed.emit()
+            self.refresh_trial_label()
+
+        from core.defect_detection.defect_classes import (
+            DefectClass, DiagnosticResult, REMEDIATION_RULES,
+            DEFECT_DEFAULT_SEVERITY, Severity,
+        )
+        from core.i18n import lang
+        val = self._manual_combo.currentData()
+        cls = DefectClass(val)
+
+        rem = dict(REMEDIATION_RULES.get(cls, {}))
+        # Résolution du hint selon la langue (même logique que le detector)
+        hint_en = rem.pop("_hint_en", None)
+        if lang() == "en" and hint_en:
+            rem["_hint"] = hint_en
+        rem.pop("_stop_print", None)   # aucune impression en cours en mode manuel
+
+        result = DiagnosticResult(
+            defect=cls,
+            confidence=1.0,
+            severity=DEFECT_DEFAULT_SEVERITY.get(cls, Severity.MEDIUM),
+            all_probs={},
+            remediation=rem,
+            message_fr="",
+            uncertain=False,
+        )
+        self._manual_mode = True
+        self._result = result
+        self._image_hash = ""          # pas de photo → rien à confirmer/envoyer
+        # Consomme un essai gratuit (équivalent d'un diagnostic abouti)
+        if not licensing.est_pro():
+            licensing.consommer_essai()
+        self.refresh_trial_label()
+        self._show_result(result)
+
+    def refresh_trial_label(self):
+        """Met à jour le compteur « Essais gratuits : X/3 » (masqué si Pro)."""
+        from core import licensing
+        from core.i18n import _
+        if licensing.est_pro():
+            self._trial_lbl.hide()
+            return
+        total = licensing.ESSAIS_GRATUITS
+        restants = licensing.essais_restants()
+        self._trial_lbl.setText(_("pro.trial_counter", restants=restants, total=total))
+        pal = _T.palette()
+        color = pal["AMBER"] if restants <= 0 else pal["TEXT_LABEL"]
+        self._trial_lbl.setStyleSheet(f"color: {color}; background: transparent;")
+        self._trial_lbl.show()
+
     def _start_analysis(self):
         if not self._image_path:
             return
+        self._manual_mode = False   # analyse photo réelle → pas le mode manuel
+
+        # ── Consentement au partage de photos — demandé à la 1re analyse réelle ──
+        # (déplacé ici : il ne concerne QUE l'envoi de photos, donc inutile en
+        # mode manuel ou tant qu'on n'a pas lancé d'analyse).
+        from core.prefs import PREFS
+        if not PREFS.get("defect_consent", False):
+            from ui.styles.theme import apply_title_bar_theme
+            consent = DiagnosticConsentDialog(self)
+            apply_title_bar_theme(consent)
+            consent.move(
+                self.x() + (self.width() - consent.width()) // 2,
+                self.y() + 40,
+            )
+            if consent.exec() != QDialog.Accepted:
+                return   # refusé → pas d'analyse
+
+        # ── Barrière neoSlice Pro : 3 diagnostics gratuits, puis déblocage ──
+        from core import licensing
+        if not licensing.peut_analyser():
+            from ui.components.paywall_dialog import PaywallDialog
+            wall = PaywallDialog(self)
+            wall.exec()
+            if not licensing.peut_analyser():
+                self.refresh_trial_label()
+                return   # toujours pas débloqué → on annule l'analyse
+            # Activation réussie pendant le paywall → MAJ badge Pro + compteur
+            self.pro_state_changed.emit()
+            self.refresh_trial_label()
+
         self._analyze_btn.setEnabled(False)
-        self._analyze_btn.setText("Analyse en cours...")
+        self._analyze_btn.setText(_("diag.analyzing"))
         self._progress.show()
         self._set_result_visible(False)
+        # Ré-analyse d'une photo déjà analysée : le résultat masqué laissait un
+        # grand vide → on recalcule la taille de la fenêtre.
+        QTimer.singleShot(0, self._refit)
 
         self._worker = _AnalysisWorker(self._image_path, self)
         self._worker.result_ready.connect(self._on_result)
@@ -789,47 +1019,79 @@ class DefectDiagnosticDialog(QDialog):
     def _on_dl_started(self):
         self._progress.setRange(0, 100)
         self._progress.setValue(0)
-        self._analyze_btn.setText("Téléchargement du modèle amélioré… 0%")
+        self._analyze_btn.setText(_("diag.downloading_model", pct=0))
 
     def _on_dl_progress(self, pct: int):
         self._progress.setValue(pct)
-        self._analyze_btn.setText(f"Téléchargement du modèle amélioré… {pct}%")
+        self._analyze_btn.setText(_("diag.downloading_model", pct=pct))
         if pct >= 100:
             # Téléchargement fini → on repasse en mode analyse
             self._progress.setRange(0, 0)
-            self._analyze_btn.setText("Analyse en cours…")
+            self._analyze_btn.setText(_("diag.analyzing"))
 
     def _on_result(self, result: Any, image_hash: str):
+        # Ignore un résultat tardif : analyse annulée (Nouvelle photo / fermeture)
+        # ou worker périmé remplacé par une nouvelle analyse.
+        if self._image_path is None or self.sender() is not self._worker:
+            return
         self._progress.hide()
         self._analyze_btn.setText("ANALYSER LA PHOTO")
         self._analyze_btn.setEnabled(True)
         self._result    = result
         self._image_hash = image_hash
+        # Un vrai diagnostic abouti consomme un essai gratuit (pas le cas incertain)
+        if not getattr(result, "uncertain", False):
+            from core import licensing
+            if not licensing.est_pro():
+                licensing.consommer_essai()
+        self.refresh_trial_label()
         self._show_result(result)
 
     def _on_error(self, msg: str):
+        if self._image_path is None or self.sender() is not self._worker:
+            return
         self._progress.hide()
         self._analyze_btn.setText("ANALYSER LA PHOTO")
         self._analyze_btn.setEnabled(bool(self._image_path))
         self._show_error(msg)
 
+    def _fix_wrap_heights(self):
+        """Fige la hauteur réelle de TOUS les QLabel word-wrap avant adjustSize.
+
+        Tant que la largeur d'un label multi-lignes n'est pas connue, Qt
+        sous-estime sa hauteur → les widgets suivants se chevauchent (le texte
+        « Facultatif… » passait par-dessus le bouton vert et l'encadré du
+        dessous). On force hauteur mini = heightForWidth(largeur utile).
+        Surestimer légèrement est sans danger (petit espace) ; sous-estimer crée
+        le chevauchement — donc on retranche le padding CSS pour les labels qui
+        en ont, afin de toujours majorer la hauteur."""
+        w = max(self._card.width() - 40, 200)   # largeur utile = 460 - marges (20+20)
+        # (label, padding horizontal CSS total) : _hint_lbl a padding 10 px × 2
+        for lbl, pad in (
+            (self._tips_lbl, 0),
+            (self._manual_desc_lbl, 0),
+            (self._desc_lbl, 0),
+            (self._apply_hint, 0),
+            (self._hint_lbl, 22),
+        ):
+            if not lbl.isHidden():
+                lbl.setMinimumHeight(lbl.heightForWidth(max(w - pad, 120)))
+
     def _show_result(self, result: Any):
         pal = _T.palette()
         from core.defect_detection.defect_classes import (
-            Severity, DEFECT_LABELS_FR, DEFECT_DESCRIPTIONS_FR,
+            Severity, defect_label, defect_description,
         )
+        from core.i18n import _
 
         # ── Cas incertain : on n'affiche pas de diagnostic, on demande mieux ──
         if getattr(result, "uncertain", False):
             self._clear_corrections()
             self._badge_dot.setStyleSheet(f"color: {pal['AMBER']}; background: transparent;")
-            self._badge_name.setText("Analyse incertaine")
+            self._badge_name.setText(_("diag.uncertain_title"))
             self._badge_conf.setText("")
-            self._desc_lbl.setText(
-                "Le modèle n'est pas assez sûr pour se prononcer. "
-                "Reprenez une photo plus nette : cadrez bien la zone du défaut, "
-                "bonne lumière, fond neutre, pas de flou."
-            )
+            self._desc_lbl.setText(_("diag.uncertain_desc"))
+            self._fix_wrap_heights()
             self._corrections_box.hide()
             for w in (self._sep_feedback, self._feedback_lbl,
                       self._confirm_btn, self._correct_btn):
@@ -850,10 +1112,13 @@ class DefectDiagnosticDialog(QDialog):
         }
         dot_color = severity_colors.get(result.severity, pal["ACCENT"])
 
+        manual = getattr(self, "_manual_mode", False)
         self._badge_dot.setStyleSheet(f"color: {dot_color}; background: transparent;")
-        self._badge_name.setText(DEFECT_LABELS_FR.get(result.defect, result.defect.value))
-        self._badge_conf.setText(f"{result.confidence:.0%}")
-        self._desc_lbl.setText(DEFECT_DESCRIPTIONS_FR.get(result.defect, ""))
+        self._badge_name.setText(defect_label(result.defect))
+        # En mode manuel il n'y a pas de % de confiance → on l'indique
+        self._badge_conf.setText(_("diag.manual_badge") if manual else f"{result.confidence:.0%}")
+        self._desc_lbl.setText(defect_description(result.defect))
+        self._fix_wrap_heights()
 
         # Vider les corrections (lignes = sous-layouts → suppression récursive)
         self._clear_corrections()
@@ -866,6 +1131,13 @@ class DefectDiagnosticDialog(QDialog):
 
         has_corrections = bool(remediation) and result.defect.value != "good"
 
+        # En français on ajoute la traduction du terme entre parenthèses (les
+        # noms de champs sont des termes Bambu Studio en anglais). En anglais on
+        # laisse tel quel.
+        from core.i18n import lang
+        from core.defect_detection.defect_classes import field_translation_fr
+        is_fr = lang() == "fr"
+
         if has_corrections:
             for key, value in remediation.items():
                 row = QHBoxLayout()
@@ -875,6 +1147,10 @@ class DefectDiagnosticDialog(QDialog):
                 dot.setFixedWidth(10)
 
                 field = key.replace("delta_", "").replace("_", " ")
+                if is_fr:
+                    tr = field_translation_fr(field)
+                    if tr:
+                        field = f"{field} ({tr})"
                 if key.startswith("delta_"):
                     sign = "+" if isinstance(value, (int, float)) and value > 0 else ""
                     val_str = f"{sign}{value}"
@@ -906,14 +1182,21 @@ class DefectDiagnosticDialog(QDialog):
         self._apply_btn.setText("UTILISER CES CORRECTIONS")
         self._apply_btn.setEnabled(has_corrections)
 
-        # Section feedback toujours visible pour un résultat normal
-        for w in (self._sep_feedback, self._feedback_lbl,
-                  self._confirm_btn, self._correct_btn):
-            w.show()
-        self._confirm_btn.setEnabled(True)
-        self._correct_btn.setEnabled(True)
-        self._confirm_btn.setText("Oui")
-        self._correct_btn.setText("Non, corriger")
+        # Feedback « Ce résultat est-il correct ? » : seulement en mode photo.
+        # En mode manuel l'utilisateur a choisi lui-même → rien à confirmer/envoyer.
+        if manual:
+            for w in (self._sep_feedback, self._feedback_lbl,
+                      self._confirm_btn, self._correct_btn):
+                w.hide()
+            self._set_picker_visible(False)
+        else:
+            for w in (self._sep_feedback, self._feedback_lbl,
+                      self._confirm_btn, self._correct_btn):
+                w.show()
+            self._confirm_btn.setEnabled(True)
+            self._correct_btn.setEnabled(True)
+            self._confirm_btn.setText("Oui")
+            self._correct_btn.setText("Non, corriger")
 
         # Affiche le conteneur résultat ; la section corrections n'apparaît
         # que s'il y a vraiment des corrections (sinon masquée en bloc).
@@ -1008,6 +1291,10 @@ class DefectDiagnosticDialog(QDialog):
     def _apply_theme(self):
         pal = _T.palette()
 
+        # Fenêtre opaque (voir __init__) : on peint le fond de la fenêtre de la
+        # même couleur que la card pour que les coins arrondis restent discrets.
+        self.setStyleSheet(f"QDialog#diag_dialog {{ background: {pal['BG_PANEL']}; }}")
+
         # Card — même pattern que SettingsDialog
         self._card.setStyleSheet(f"""
             QWidget#diag_card {{
@@ -1028,6 +1315,39 @@ class DefectDiagnosticDialog(QDialog):
             }}
             QPushButton:hover {{ background: {pal['ERROR_RED']}; color: white; }}
         """)
+
+        # Sélecteur de mode (segmented) — actif = accent, inactif = neutre
+        seg = f"""
+            QPushButton {{
+                background: {pal['BG_ELEVATED']}; color: {pal['TEXT_SECONDARY']};
+                border: 1px solid {pal['INACTIVE']};
+            }}
+            QPushButton:checked {{
+                background: {pal['ACCENT']}; color: {pal['EXPORT_FG']};
+                border: 1px solid {pal['ACCENT']};
+            }}
+            QPushButton:hover:!checked {{ color: {pal['ACCENT']}; border-color: {pal['ACCENT']}; }}
+        """
+        self._mode_photo_btn.setStyleSheet(
+            seg + "QPushButton { border-top-left-radius:4px; border-bottom-left-radius:4px; }"
+        )
+        self._mode_manual_btn.setStyleSheet(
+            seg + "QPushButton { border-top-right-radius:4px; border-bottom-right-radius:4px; }"
+        )
+
+        # Panneaux photo / manuel — fond panneau (pas de gris système Windows)
+        self._photo_panel.setStyleSheet(
+            f"QWidget#diag_photo_panel {{ background: {pal['BG_PANEL']}; }}"
+        )
+        self._manual_panel.setStyleSheet(
+            f"QWidget#diag_manual_panel {{ background: {pal['BG_PANEL']}; }}"
+        )
+        self._manual_pick_lbl.setStyleSheet(
+            f"color: {pal['TEXT_PRIMARY']}; background: transparent;"
+        )
+        self._manual_desc_lbl.setStyleSheet(
+            f"color: {pal['TEXT_SECONDARY']}; background: transparent;"
+        )
 
         # Conteneurs résultat — fond panneau (pas de gris système Windows)
         self._result_box.setStyleSheet(
@@ -1056,14 +1376,29 @@ class DefectDiagnosticDialog(QDialog):
         self._drop.update()
         self._tips_lbl.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
 
-        # Analyser
-        self._analyze_btn.setStyleSheet(f"""
+        # Analyser + Voir les corrections (mode manuel) — même style accent
+        accent_btn = f"""
             QPushButton {{
                 background: {pal['ACCENT']}; color: {pal['EXPORT_FG']};
                 border: none; border-radius: 3px; letter-spacing: 1px;
             }}
             QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
             QPushButton:disabled {{ background: {pal['INACTIVE']}; color: {pal['TEXT_LABEL']}; }}
+        """
+        self._analyze_btn.setStyleSheet(accent_btn)
+        self._manual_btn.setStyleSheet(accent_btn)
+
+        # Liste déroulante des défauts (mode manuel) — même style que le picker
+        self._manual_combo.setStyleSheet(f"""
+            QComboBox {{
+                background: {pal['BG_INPUT']}; color: {pal['TEXT_PRIMARY']};
+                border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 4px 8px;
+            }}
+            QComboBox QAbstractItemView {{
+                background: {pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']};
+                border: 1px solid {pal['INACTIVE']};
+                selection-background-color: {pal['ACCENT']};
+            }}
         """)
 
         # Nouvelle photo (réinitialiser)

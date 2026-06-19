@@ -182,10 +182,8 @@ pyz = PYZ(a.pure, a.zipped_data)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,   # onedir : binaires/datas vont dans COLLECT, pas dans l'EXE
     name='neoSlice',
     debug=False,
     bootloader_ignore_signals=False,
@@ -198,22 +196,35 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='assets/neoSlice.ico',
-    onefile=True,
+)
+
+# ── onedir : regroupe l'EXE + tous les binaires/données dans dist/neoSlice/ ──
+# Évite le dossier temporaire _MEIxxxx (plus de popup "Failed to remove temporary
+# directory", démarrage plus rapide). L'installateur Inno Setup empaquette ce dossier.
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='neoSlice',
 )
 
 # ── Post-build : déploiement automatique de l'EXE ───────────────────────────
 import shutil, subprocess
 
-_DIST_EXE = Path(r"C:\neoSlice\dist\neoSlice.exe")
+_DIST_EXE = Path(r"C:\neoSlice\dist\neoSlice\neoSlice.exe")
 
-# Mettre à jour le raccourci .lnk sur le bureau
+# Mettre à jour le raccourci .lnk sur le bureau (onedir : exe dans dist\neoSlice\)
 _LNK = Path(r"C:\Users\manup\OneDrive\Bureau\neoSlice.lnk")
 _PS = f"""
 $ws = New-Object -ComObject WScript.Shell
 $s  = $ws.CreateShortcut('{_LNK}')
-$s.TargetPath       = 'C:\\neoSlice\\dist\\neoSlice.exe'
-$s.WorkingDirectory = 'C:\\neoSlice\\dist'
-$s.IconLocation     = 'C:\\neoSlice\\dist\\neoSlice.exe,0'
+$s.TargetPath       = 'C:\\neoSlice\\dist\\neoSlice\\neoSlice.exe'
+$s.WorkingDirectory = 'C:\\neoSlice\\dist\\neoSlice'
+$s.IconLocation     = 'C:\\neoSlice\\dist\\neoSlice\\neoSlice.exe,0'
 $s.Save()
 Write-Host '[post-build] Raccourci mis à jour : {_LNK}'
 """

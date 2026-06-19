@@ -157,3 +157,58 @@ PRINTERS: dict[str, dict] = {
         "filaments_incompatibles": ["ABS", "ASA", "PC", "Nylon", "PA-CF", "PETG-CF"],
     },
 }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Specs de MOUVEMENT (specs officielles Bambu Lab 2024-2025).
+# Sources : pages tech-specs Bambu Lab, comparatifs, forum.
+# Sert à générer des paramètres cohérents avec les limites réelles de la machine.
+#
+# Réalité importante : la plupart des Bambu partagent 500 mm/s max. Les vrais
+# différenciateurs sont l'ACCÉLÉRATION (bed slinger série A = 10 000 vs CoreXY
+# 20 000) et le DÉBIT VOLUMÉTRIQUE max du hotend (le vrai facteur limitant).
+# Valeurs par série, avec surcharges par modèle connu.
+# ──────────────────────────────────────────────────────────────────────────────
+
+_SPECS_PAR_SERIE: dict[str, dict] = {
+    # max_speed_mms : vitesse linéaire max | max_accel_mms2 : accélération max
+    # max_flow_mm3s : débit volumétrique max du hotend standard (0.4 mm)
+    "Série A":  {"max_speed_mms": 500,  "max_accel_mms2": 10000, "max_flow_mm3s": 28, "bed_slinger": True},
+    "Série P":  {"max_speed_mms": 500,  "max_accel_mms2": 20000, "max_flow_mm3s": 32, "bed_slinger": False},
+    "Série X":  {"max_speed_mms": 500,  "max_accel_mms2": 20000, "max_flow_mm3s": 32, "bed_slinger": False},
+    "Série H2": {"max_speed_mms": 600,  "max_accel_mms2": 20000, "max_flow_mm3s": 40, "bed_slinger": False},
+}
+
+# Surcharges par modèle (specs spécifiques connues).
+_SPECS_OVERRIDE: dict[str, dict] = {
+    "A1 Mini":  {"max_flow_mm3s": 24},                       # hotend plus petit
+    "H2D":      {"max_speed_mms": 600, "max_flow_mm3s": 40}, # 1000 mm/s toolhead, ~600 en impression
+    "H2D Pro":  {"max_speed_mms": 600, "max_flow_mm3s": 65}, # hotend haut débit
+    "P1":       {"max_flow_mm3s": 28},                       # hotend standard d'entrée de gamme
+}
+
+_SPECS_DEFAUT = {"max_speed_mms": 500, "max_accel_mms2": 20000, "max_flow_mm3s": 32, "bed_slinger": False}
+
+
+def printer_specs(name: str) -> dict:
+    """Specs de mouvement + limites thermiques d'une imprimante.
+
+    Renvoie : max_speed_mms, max_accel_mms2, max_flow_mm3s, bed_slinger,
+    nozzle_max_temp, bed_max_temp. Tolérant : retombe sur les défauts de série
+    puis sur un défaut CoreXY si le modèle est inconnu."""
+    p = PRINTERS.get(name, {})
+    matched = name
+    if not p and name:
+        # Tolérant : casse / sous-chaîne (ex. "x1 carbon", "X1C" → "X1 Carbon")
+        low = name.lower()
+        for k in PRINTERS:
+            kl = k.lower()
+            if kl == low or kl in low or low in kl:
+                p, matched = PRINTERS[k], k
+                break
+    serie = p.get("serie", "")
+    base = dict(_SPECS_PAR_SERIE.get(serie, _SPECS_DEFAUT))
+    base.update(_SPECS_OVERRIDE.get(matched, {}))
+    base["nozzle_max_temp"] = p.get("buse_max_temp", 300)
+    base["bed_max_temp"] = p.get("plateau_max_temp", 100)
+    return base

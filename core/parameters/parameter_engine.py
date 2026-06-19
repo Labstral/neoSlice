@@ -89,32 +89,79 @@ class ParameterEngine:
 
         # 4. Profil matériau (priorité > géométrie sur les vitesses / temps)
         if filament_name:
-            base = self._apply_material_profile(base, filament_name, analysis)
+            base = self._apply_material_profile(base, filament_name, analysis, nozzle_diameter_mm)
 
         # 5. Validation finale (avec contraintes buse)
         base = self._validate_constraints(base, filament_name, nozzle_diameter_mm)
 
+        # 5b. Limites RÉELLES de la machine (vitesse, débit volumétrique, temp.)
+        if printer_name:
+            base = self._apply_printer_limits(base, printer_name, nozzle_diameter_mm)
+
         # 6. Métadonnées
+        base.neoslice_printer = printer_name
         base.neoslice_intent_text = intent.human_summary()
         base.neoslice_confidence = intent.dominant_score
 
         return base
 
+    def _apply_printer_limits(self, config: PrintConfig, printer_name: str,
+                              nozzle_diameter_mm: float) -> PrintConfig:
+        """Bride la config aux limites physiques réelles de l'imprimante.
+
+        - Températures buse/plateau plafonnées aux maxima machine.
+        - Vitesses linéaires plafonnées à la vitesse max machine.
+        - Vitesses plafonnées pour ne JAMAIS dépasser le débit volumétrique max
+          du hotend (le vrai facteur limitant) : flux = vitesse × hauteur couche
+          × largeur ligne. C'est ce qui rend une A1 (10k accel, 28 mm³/s) ou une
+          H2D (40-65 mm³/s) cohérente, là où les profils agressifs le justifient.
+        """
+        from data.printers import printer_specs
+        sp = printer_specs(printer_name)
+
+        # Températures
+        config.nozzle_temperature = min(config.nozzle_temperature, int(sp["nozzle_max_temp"]))
+        config.bed_temperature = min(config.bed_temperature, int(sp["bed_max_temp"]))
+
+        # Vitesse max linéaire
+        v_max = int(sp["max_speed_mms"])
+
+        # Vitesse max autorisée par le débit volumétrique du hotend
+        line_w = max(0.1, nozzle_diameter_mm * 1.05)        # largeur de ligne ≈ buse
+        layer_h = max(0.05, config.layer_height)
+        flow_speed_cap = sp["max_flow_mm3s"] / (line_w * layer_h)   # mm/s
+        cap = int(min(v_max, flow_speed_cap))
+
+        for attr in ("outer_wall_speed", "inner_wall_speed", "infill_speed",
+                     "top_surface_speed", "bridge_speed", "first_layer_speed"):
+            v = getattr(config, attr, None)
+            if isinstance(v, (int, float)) and v > cap:
+                setattr(config, attr, int(cap))
+
+        return config
+
     # ──────────────────────────────────────────────────────────────────
     # Chargement du profil de base
     # ──────────────────────────────────────────────────────────────────
 
-    def _load_base_profile(self, intent: IntentProfile) -> PrintConfig:
-        if intent.dominant_score < 0.1:
-            config = PrintConfig()
-            config.neoslice_profile_name = "standard"
-            return config
+    def _profile_from_yaml(self, profile_file: str) -> PrintConfig:
+        """Charge un profil YAML et construit un PrintConfig."""
+        path = _PROFILES_DIR / profile_file
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        valid_keys = PrintConfig.model_fields.keys()
+        filtered = {k: v for k, v in data.items() if k in valid_keys}
+        config = PrintConfig(**filtered)
+        config.neoslice_profile_name = data.get("name", profile_file)
+        return config
 
-        # Score trop faible pour déterminer une intention claire → standard
+    def _load_base_profile(self, intent: IntentProfile) -> PrintConfig:
+        # Score trop faible pour une intention claire → profil STANDARD.
+        # IMPORTANT : on charge standard.yaml (vitesses alignées sur les défauts
+        # Bambu Studio : 200/300/350…), et NON un PrintConfig() brut dont les
+        # défauts (60/100/200) étaient ~3× plus lents que BS.
         if intent.dominant_score <= 0.5:
-            config = PrintConfig()
-            config.neoslice_profile_name = "standard"
-            return config
+            return self._profile_from_yaml("standard.yaml")
 
         intent_name = intent.dominant_intent
         score = intent.dominant_score
@@ -128,15 +175,7 @@ class ParameterEngine:
         else:
             profile_file = _INTENT_TO_PROFILE.get(intent_name, "standard.yaml")
 
-        path = _PROFILES_DIR / profile_file
-        with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-
-        valid_keys = PrintConfig.model_fields.keys()
-        filtered = {k: v for k, v in data.items() if k in valid_keys}
-        config = PrintConfig(**filtered)
-        config.neoslice_profile_name = data.get("name", profile_file)
-        return config
+        return self._profile_from_yaml(profile_file)
 
     # ──────────────────────────────────────────────────────────────────
     # Intentions secondaires
@@ -254,16 +293,21 @@ class ParameterEngine:
             config.bottom_shell_layers = max(config.bottom_shell_layers, 5)
             config.first_layer_speed = min(config.first_layer_speed, 30)
 
-        # ── Fragilité → arachne + parois + bridge lent ───────────────
+        # ── Fragilité → renforts structurels + ralentissement DOUX ───
+        # On garde les renforts (parois, arachne, coques) car peu coûteux en
+        # temps, MAIS le ralentissement des parois est adouci et déclenché
+        # seulement pour une fragilité marquée — pour ne pas brider inutilement
+        # une pièce en mode standard.
         if analysis.has_fragile_zones:
             config.wall_loops = max(config.wall_loops, 4)
-            config.outer_wall_speed = min(config.outer_wall_speed, 45)
             config.top_shell_layers = max(config.top_shell_layers, 6)
             config.wall_generator = "arachne"
-            if analysis.fragility_severity > 0.6:
+            if analysis.fragility_severity > 0.75:        # fragilité forte
                 config.wall_loops = max(config.wall_loops, 5)
-                config.outer_wall_speed = min(config.outer_wall_speed, 35)
-                config.bridge_speed = min(config.bridge_speed, 25)
+                config.outer_wall_speed = min(config.outer_wall_speed, 100)
+                config.bridge_speed = min(config.bridge_speed, 35)
+            elif analysis.fragility_severity > 0.45:      # fragilité modérée
+                config.outer_wall_speed = min(config.outer_wall_speed, 140)
 
         # ── Surplombs → bridge speed + support ───────────────────────
         if analysis.overhang_severity > 0.0:
@@ -307,6 +351,7 @@ class ParameterEngine:
         config: PrintConfig,
         filament_name: str,
         analysis: AnalysisReport,
+        nozzle_diameter_mm: float = 0.4,
     ) -> PrintConfig:
         """Applique les contraintes physiques du matériau. Priorité maximale."""
         try:
@@ -322,11 +367,23 @@ class ParameterEngine:
         # Températures depuis la base de données filaments
         config.nozzle_temperature = fil.get("buse_1ere", 220)
         config.bed_temperature = fil.get("plateau", 60)
+        # Densité du matériau → estimation du poids (devis, panneau résumé, PDF)
+        config.filament_density_g_cm3 = fil.get("densite", 1.24)
 
-        # Vitesses maximales absolues du matériau
-        mat_max_outer = fil.get("mur_exterieur", 150)
-        mat_max_infill = fil.get("remplissage", 300)
-        self._cap_speeds(config, mat_max_outer, mat_max_infill)
+        # Plafond de vitesse = DÉBIT VOLUMÉTRIQUE max réel du matériau (comme
+        # Bambu Studio), converti en mm/s : flux = vitesse × largeur × hauteur.
+        # Avant, on plafonnait à des valeurs arbitraires (PLA 120/200) ~3× plus
+        # lentes que BS. La limite physique du PLA (21 mm³/s) autorise ~250 mm/s.
+        vol_max = fil.get("volumetrique_max", 0)
+        if vol_max:
+            line_w = max(0.1, nozzle_diameter_mm * 1.05)
+            layer_h = max(0.05, config.layer_height)
+            flow_cap = max(20, int(vol_max / (line_w * layer_h)))
+            self._cap_speeds(config, flow_cap, flow_cap)
+        else:
+            # Filament sans débit connu → anciennes bornes prudentes
+            self._cap_speeds(config, fil.get("mur_exterieur", 150),
+                             fil.get("remplissage", 300))
 
         # Filaments flexibles — contraintes spécifiques
         if filament_name in _FLEXIBLE_MATERIALS:

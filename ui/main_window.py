@@ -408,6 +408,47 @@ class AnalysisWorker(QObject):
 
 # ── TopBar ─────────────────────────────────────────────────────────────────
 
+from ui.components.pro_badge import PRO_CYAN, PRO_VIOLET
+
+# Couleur intermédiaire (cyan ↔ violet à 50 %) — pour raccorder les deux moitiés.
+PRO_MID = "#6594F3"
+
+# Style du bouton CTA « neoSlice Pro » : dégradé complet cyan→violet.
+# Indépendant du thème : la couleur d'identité Pro est fixe.
+_PRO_GRADIENT_BTN = f"""
+    QPushButton {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 {PRO_CYAN}, stop:1 {PRO_VIOLET});
+        color: #ffffff; border: none; border-radius: 3px;
+        padding: 0 10px; letter-spacing: 1px; font-weight: bold;
+    }}
+    QPushButton:hover {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 #38DDF5, stop:1 #B86CF8);
+    }}
+"""
+
+# DIAGNOSTIC + DEVIS restent DEUX boutons séparés, mais le dégradé cyan→violet
+# se poursuit de l'un à l'autre : le gauche va de cyan au milieu, le droit du
+# milieu au violet. Coins arrondis complets sur chacun (boutons distincts).
+_PRO_BTN_LEFT = f"""
+    QPushButton {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 {PRO_CYAN}, stop:1 {PRO_MID});
+        color: #ffffff; border: none; border-radius: 3px;
+        padding: 0 10px; letter-spacing: 1px; font-weight: bold;
+    }}
+"""
+_PRO_BTN_RIGHT = f"""
+    QPushButton {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 {PRO_MID}, stop:1 {PRO_VIOLET});
+        color: #ffffff; border: none; border-radius: 3px;
+        padding: 0 10px; letter-spacing: 1px; font-weight: bold;
+    }}
+"""
+
+
 class _TopBar(QWidget):
     """Barre haute 48px — logo + scan-line animée + sélecteur de thème."""
 
@@ -416,6 +457,8 @@ class _TopBar(QWidget):
     new_piece_clicked = Signal()
     settings_clicked  = Signal()
     diag_clicked      = Signal()
+    cost_clicked      = Signal()
+    pro_clicked       = Signal()      # bouton « neoSlice Pro » (ouvre le paywall)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -423,43 +466,31 @@ class _TopBar(QWidget):
         self._scanline_y = 0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(80)
+        self._timer.start(16)   # ~60 fps → glissement fluide (était 80 ms / saccadé)
         self.destroyed.connect(self._timer.stop)
         self._setup_ui()
         self.refresh_theme()
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 0, 16, 1)
+        layout.setContentsMargins(12, 0, 16, 1)
         layout.setSpacing(12)
 
-        self._sep = QFrame()
-        self._sep.setFrameShape(QFrame.VLine)
-        self._sep.setFixedHeight(24)
-        layout.addWidget(self._sep)
-
-        self._logo = QLabel()
-        _meipass = getattr(__import__("sys"), "_MEIPASS", None)
-        _logo_path = (Path(_meipass) if _meipass else Path(__file__).parent.parent) / "assets" / "neoSlice.png"
-        if _logo_path.exists():
-            # Hauteur 46px, largeur proportionnelle (logo 3:2 → ~69px)
-            _px_full = QPixmap(str(_logo_path))
-            _logo_h  = 46
-            _logo_w  = int(_logo_h * _px_full.width() / _px_full.height()) if _px_full.height() else _logo_h
-            _px = _px_full.scaled(_logo_w, _logo_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self._logo.setPixmap(_px)
-            self._logo.setFixedSize(_logo_w, _logo_h)
-        else:
-            self._logo.setText("◈")
-            self._logo.setFont(QFont(FONT_MAIN, 22))
-
-        # Logo centré entre le séparateur et le titre — widgets séparés,
-        # le layout spacing=12 donne un espace égal des deux côtés.
-        layout.addWidget(self._logo, 0, Qt.AlignVCenter)
+        # Petite barre grise verticale, alignée (x=12) sur la barre verte des
+        # sections du panneau de gauche en dessous.
+        self._title_bar = QFrame()
+        self._title_bar.setFixedWidth(3)
+        self._title_bar.setFixedHeight(28)
+        layout.addWidget(self._title_bar, 0, Qt.AlignVCenter)
 
         self._title_lbl = QLabel(_("app.title"))
         self._title_lbl.setFont(QFont(FONT_MAIN, 26, QFont.Bold))
         layout.addWidget(self._title_lbl, 0, Qt.AlignVCenter)
+
+        # Badge « Pro » (dégradé cyan→violet) — visible seulement si licence active
+        from ui.components.pro_badge import ProBadge
+        self._pro_badge = ProBadge("Pro", point_size=17, letter_spacing=1.5)
+        layout.addWidget(self._pro_badge, 0, Qt.AlignVCenter)
 
         self._beta = QLabel("BÊTA")
         self._beta.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
@@ -471,11 +502,11 @@ class _TopBar(QWidget):
 
         layout.addStretch()
 
-        self._diag_btn = QPushButton("DIAGNOSTIC PHOTO")
+        self._diag_btn = QPushButton("DIAGNOSTIC IA")
         self._diag_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
         self._diag_btn.setFixedHeight(26)
         self._diag_btn.setCursor(Qt.PointingHandCursor)
-        self._diag_btn.setToolTip("Analyser une photo d'impression pour détecter les défauts")
+        self._diag_btn.setToolTip("Diagnostiquer un défaut d'impression — par photo ou en le choisissant")
         self._diag_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {ACCENT};
@@ -488,6 +519,35 @@ class _TopBar(QWidget):
             QPushButton:hover {{ background: {ACCENT_BRIGHT}; }}
         """)
         self._diag_btn.clicked.connect(self.diag_clicked)
+
+        # Bouton DEVIS (calculateur de coût Pro) — style sobre type "Nouvelle pièce"
+        self._cost_btn = QPushButton(_("cost.btn"))
+        self._cost_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
+        self._cost_btn.setFixedHeight(26)
+        self._cost_btn.setCursor(Qt.PointingHandCursor)
+        self._cost_btn.setToolTip(_("cost.tooltip"))
+        self._cost_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {TEXT_SECONDARY};
+                border: 1px solid {INACTIVE}; border-radius: 3px;
+                padding: 0 10px; letter-spacing: 1px;
+            }}
+            QPushButton:hover {{
+                background: rgba(30,144,255,0.10);
+                color: {ACCENT}; border-color: {ACCENT};
+            }}
+        """)
+        self._cost_btn.clicked.connect(self.cost_clicked)
+
+        # Bouton CTA « neoSlice Pro » (dégradé cyan→violet) — affiché à la place
+        # de DIAGNOSTIC/DEVIS quand la version Pro n'est pas active.
+        self._pro_cta_btn = QPushButton("neoSlice Pro")
+        self._pro_cta_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        self._pro_cta_btn.setFixedHeight(26)
+        self._pro_cta_btn.setCursor(Qt.PointingHandCursor)
+        self._pro_cta_btn.setToolTip("Diagnostic IA — essais gratuits puis neoSlice Pro (diagnostic + devis)")
+        self._pro_cta_btn.setStyleSheet(_PRO_GRADIENT_BTN)
+        self._pro_cta_btn.clicked.connect(self.pro_clicked)
 
         self._new_btn = QPushButton(_("app.btn_new_piece"))
         self._new_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
@@ -515,7 +575,12 @@ class _TopBar(QWidget):
         """)
         self._new_btn.clicked.connect(self.new_piece_clicked)
         layout.addWidget(self._new_btn)
+        # DIAGNOSTIC + DEVIS : deux boutons séparés, mais dégradé continu de l'un
+        # à l'autre (gauche cyan→milieu, droite milieu→violet).
         layout.addWidget(self._diag_btn)
+        layout.addWidget(self._cost_btn)
+        layout.addWidget(self._pro_cta_btn)
+        self.refresh_pro()   # état initial des boutons Pro (après leur création)
 
         help_btn = QPushButton("?")
         help_btn.setFont(QFont(FONT_MAIN, 11, QFont.Bold))
@@ -601,11 +666,37 @@ class _TopBar(QWidget):
     def set_has_stl(self, active: bool):
         self._new_btn.setEnabled(active)
 
+    def refresh_pro(self) -> None:
+        """Bascule l'UI Pro selon l'état de la licence.
+
+        - Pro actif   : badge visible, boutons DIAGNOSTIC IA + DEVIS visibles et
+                        colorés en dégradé cyan→violet, CTA masqué.
+        - Pro inactif : badge + boutons Pro masqués, bouton CTA « neoSlice Pro »
+                        (dégradé) visible à la place."""
+        from core import licensing
+        is_pro = licensing.est_pro()
+        from core import licensing as _lic
+        coming = getattr(_lic, "PRO_COMING_SOON", False)
+        self._pro_badge.setVisible(is_pro)
+        self._diag_btn.setVisible(is_pro)
+        self._cost_btn.setVisible(is_pro)
+        self._pro_cta_btn.setVisible(not is_pro)
+        if is_pro:
+            # Deux boutons distincts ; le dégradé se poursuit de l'un à l'autre
+            self._diag_btn.setStyleSheet(_PRO_BTN_LEFT)
+            self._cost_btn.setStyleSheet(_PRO_BTN_RIGHT)
+        else:
+            self._pro_cta_btn.setText("neoSlice Pro")
+            self._pro_cta_btn.setToolTip(
+                "neoSlice Pro arrive bientôt"
+                if coming else
+                "Diagnostic IA — essais gratuits puis neoSlice Pro (diagnostic + devis)"
+            )
+
     def refresh_theme(self) -> None:
         pal = _THEME.palette()
         self.setStyleSheet(f"background: {pal['BG_PANEL']};")
-        self._sep.setStyleSheet(f"color: {pal['INACTIVE']};")
-        self._logo.setStyleSheet("background: transparent;")
+        self._title_bar.setStyleSheet(f"background: {pal['INACTIVE']}; border-radius: 1px;")
         self._title_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent; font-size: 26px; font-weight: bold; letter-spacing: 3px;")
         self._beta.setStyleSheet(
             f"color: {pal['AMBER']}; border: 1px solid {pal['AMBER']}; "
@@ -658,11 +749,38 @@ class _TopBar(QWidget):
         """
         for btn in (self._settings_btn, self._feedback_btn, self._help_btn, self._coffee_btn):
             btn.setStyleSheet(_icon_style)
+        # Ré-applique l'état Pro APRÈS le style de thème : sinon le style vert
+        # ci-dessus du bouton diagnostic écrase le dégradé cyan→violet du mode Pro.
+        self.refresh_pro()
         self.update()
 
     def _tick(self):
-        self._scanline_y = (self._scanline_y + 3) % max(self.height(), 1)
+        # Déplacement fractionnaire à ~60 fps → mouvement fluide.
+        # 0.55 px/frame ≈ 33 px/s (rythme posé et lent).
+        self._scanline_y = (self._scanline_y + 0.55) % max(self.height(), 1)
+        self._update_radar_glow()
         self.update()
+
+    def _update_radar_glow(self):
+        """Effet radar : le sous-titre s'éclaircit quand la scan-line le traverse,
+        puis se ternit (sans jamais disparaître)."""
+        if not hasattr(self, "_sub"):
+            return
+        pal = _THEME.palette()
+        cy = self._sub.geometry().center().y()
+        reveal = max(0.0, 1.0 - abs(self._scanline_y - cy) / 16.0)  # 0 loin → 1 dessus
+        base = QColor(pal["TEXT_LABEL"])     # état terne (toujours lisible)
+        hi   = QColor(pal["TEXT_PRIMARY"])   # état mis en surbrillance
+        col = QColor(
+            int(base.red()   + (hi.red()   - base.red())   * reveal),
+            int(base.green() + (hi.green() - base.green()) * reveal),
+            int(base.blue()  + (hi.blue()  - base.blue())  * reveal),
+        )
+        key = col.rgb()
+        if key == getattr(self, "_radar_last", None):
+            return   # couleur inchangée → on évite un restyle inutile à 60 fps
+        self._radar_last = key
+        self._sub.setStyleSheet(f"color: {col.name()}; background: transparent;")
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -670,8 +788,68 @@ class _TopBar(QWidget):
         painter = QPainter(self)
         painter.setPen(QPen(QColor(pal["ACCENT"]), 1))
         painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
-        painter.setPen(QPen(QColor(pal["SCAN_R"], pal["SCAN_G"], pal["SCAN_B"], pal["SCAN_A"]), 1))
-        painter.drawLine(0, self._scanline_y, self.width(), self._scanline_y)
+        # Scan-line en dégradé cyan→violet (couleurs « PRO »), avec FONDU vertical :
+        # invisible en haut (apparition), pleine opacité au milieu, se refond en bas.
+        from PySide6.QtGui import QLinearGradient, QBrush
+        _h = max(self.height(), 1)
+        _t = self._scanline_y / _h
+        # Puissance 3 → fondu bien plus marqué aux deux extrémités, pleine
+        # visibilité concentrée au centre.
+        _fade = (4.0 * _t * (1.0 - _t)) ** 3   # 0 aux bords → 1 au centre
+        _a = max(0, min(255, int(255 * _fade)))
+        _c1 = QColor(PRO_CYAN);   _c1.setAlpha(_a)
+        _cm = QColor(PRO_MID);    _cm.setAlpha(_a)
+        _c2 = QColor(PRO_VIOLET); _c2.setAlpha(_a)
+        # Bornes horizontales : la scan-line passe DERRIÈRE le sous-titre
+        # (AI-POWERED) puis traverse l'espace vide jusqu'avant « Nouvelle pièce ».
+        # Le bord gauche démarre au sous-titre (sans le déborder vers le BÊTA).
+        _x1, _x2 = 0, self.width()
+        try:
+            _x1 = self._sub.geometry().left()           # démarre au sous-titre (passe derrière)
+            _x2 = self._new_btn.geometry().left() - 16
+            if _x2 <= _x1:               # garde-fou si le layout n'est pas prêt
+                _x1, _x2 = 0, self.width()
+        except Exception:
+            pass
+
+        # Grille « radar » de fond : à peine visible partout, elle se RÉVÈLE
+        # (contraste) dans une bande autour de la scan-line. Couleur PRO_MID,
+        # alpha plancher très bas, pic au niveau de la ligne.
+        _step = 18
+        _cy = self._scanline_y
+        _band = 20.0
+        _A_MIN, _A_MAX = 9, 64
+        # Lignes horizontales : alpha selon la proximité verticale de la scan-line.
+        _gy = _step
+        while _gy < _h:
+            _p = max(0.0, 1.0 - abs(_gy - _cy) / _band)
+            _gc = QColor(PRO_MID); _gc.setAlpha(int(_A_MIN + (_A_MAX - _A_MIN) * _p))
+            painter.setPen(QPen(_gc, 1))
+            painter.drawLine(_x1, _gy, _x2, _gy)
+            _gy += _step
+        # Lignes verticales : pen à dégradé vertical (pic d'alpha à la scan-line).
+        def _vstop(g, ypx, a):
+            c = QColor(PRO_MID); c.setAlpha(a)
+            g.setColorAt(min(0.9999, max(0.0, ypx / _h)), c)
+        _gx = _x1
+        while _gx <= _x2:
+            _vg = QLinearGradient(0, 0, 0, _h)
+            _vstop(_vg, 0, _A_MIN)
+            _vstop(_vg, _cy - _band, _A_MIN)
+            _vstop(_vg, _cy, _A_MAX)
+            _vstop(_vg, _cy + _band, _A_MIN)
+            _vstop(_vg, _h, _A_MIN)
+            painter.setPen(QPen(QBrush(_vg), 1))
+            painter.drawLine(_gx, 0, _gx, _h)
+            _gx += _step
+
+        _grad = QLinearGradient(_x1, 0, _x2, 0)
+        _grad.setColorAt(0.0, _c1)
+        _grad.setColorAt(0.5, _cm)
+        _grad.setColorAt(1.0, _c2)
+        painter.setPen(QPen(QBrush(_grad), 1))
+        _sy = int(self._scanline_y)
+        painter.drawLine(_x1, _sy, _x2, _sy)
 
 
 # ── StatusBar ──────────────────────────────────────────────────────────────
@@ -756,7 +934,7 @@ class _StatusBar(QWidget):
         """)
 
     def set_diagnostic_result(self, result):
-        from core.defect_detection.defect_classes import DefectClass, DEFECT_LABELS_FR
+        from core.defect_detection.defect_classes import DefectClass, defect_label
         self._diag_result = result
         has_corr = (
             result is not None
@@ -764,7 +942,7 @@ class _StatusBar(QWidget):
             and any(not k.startswith("_") for k in result.remediation)
         )
         if has_corr:
-            label = DEFECT_LABELS_FR.get(result.defect, result.defect.value)
+            label = defect_label(result.defect)
             # Clé à molette en présentation texte (U+FE0E) → monochrome, suit
             # la couleur du texte (blanc), compatible Windows/macOS.
             wrench = "\U0001F527︎"
@@ -992,7 +1170,13 @@ class MainWindow(QMainWindow):
             (screen.width() - 1400) // 2,
             (screen.height() - 860) // 2,
         )
-        self.setStyleSheet(f"QMainWindow {{ background: {_THEME.palette()['BG_VOID']}; }}")
+        _p = _THEME.palette()
+        self.setStyleSheet(
+            f"QMainWindow {{ background: {_p['BG_VOID']}; }}"
+            f"QToolTip {{ background-color: {_p['BG_ELEVATED']}; "
+            f"color: {_p['TEXT_PRIMARY']}; border: 1px solid {_p['ACCENT']}; "
+            f"padding: 4px 8px; border-radius: 3px; }}"
+        )
 
         assets = Path(__file__).parent.parent / "assets"
         if not assets.exists():
@@ -1022,6 +1206,10 @@ class MainWindow(QMainWindow):
         self._topbar.settings_clicked.connect(self._open_settings)
         self._topbar.new_piece_clicked.connect(self._on_new_piece)
         self._topbar.diag_clicked.connect(self._open_diagnostic)
+        self._topbar.cost_clicked.connect(self._open_cost_calculator)
+        # Bouton CTA « neoSlice Pro » : « bientôt disponible » en pré-lancement,
+        # sinon ouvre le diagnostic (essais gratuits → paywall).
+        self._topbar.pro_clicked.connect(self._on_pro_cta)
         root.addWidget(self._topbar)
 
         # ── Workspace 3 colonnes ──
@@ -1209,7 +1397,16 @@ class MainWindow(QMainWindow):
 
     def _apply_theme(self):
         pal = _THEME.palette()
-        self.setStyleSheet(f"QMainWindow {{ background: {pal['BG_VOID']}; }}")
+        # La règle QToolTip est posée ICI (sur le QMainWindow) car elle cascade
+        # sur TOUS les widgets enfants — c'est le seul moyen fiable de forcer une
+        # infobulle claire en thème clair (le stylesheet app global est ignoré
+        # par les widgets qui ont leur propre stylesheet, ex. icônes topbar).
+        self.setStyleSheet(
+            f"QMainWindow {{ background: {pal['BG_VOID']}; }}"
+            f"QToolTip {{ background-color: {pal['BG_ELEVATED']}; "
+            f"color: {pal['TEXT_PRIMARY']}; border: 1px solid {pal['ACCENT']}; "
+            f"padding: 4px 8px; border-radius: 3px; }}"
+        )
         if hasattr(self, '_workspace'):
             self._workspace.setStyleSheet(f"background: {pal['BG_VOID']};")
         if hasattr(self, '_left_scroll'):
@@ -1271,6 +1468,7 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(self)
         apply_title_bar_theme(dlg)
         dlg.update_request.connect(self._on_settings_update_request)
+        dlg.pro_activated.connect(self._topbar.refresh_pro)
         btn = self._topbar._settings_btn
         btn_br = btn.mapToGlobal(QPoint(btn.width(), btn.height()))
         dlg.move(btn_br.x() - 400, btn_br.y() + 4)
@@ -1281,21 +1479,13 @@ class MainWindow(QMainWindow):
             self._filament_selector.set_printer(new_printer)
 
     def _open_diagnostic(self):
-        from ui.components.defect_diagnostic import (
-            DefectDiagnosticDialog, DiagnosticConsentDialog,
-        )
+        from ui.components.defect_diagnostic import DefectDiagnosticDialog
         from PySide6.QtCore import QPoint
-        from core.prefs import PREFS as _PREFS
 
-        # Consentement requis — demander si jamais donné
-        if not _PREFS.get("defect_consent", False):
-            consent = DiagnosticConsentDialog(self)
-            apply_title_bar_theme(consent)
-            btn = self._topbar._diag_btn
-            btn_br = btn.mapToGlobal(QPoint(btn.width() // 2, btn.height()))
-            consent.move(max(0, btn_br.x() - consent.width() // 2), btn_br.y() + 4)
-            if consent.exec() != DiagnosticConsentDialog.Accepted:
-                return   # refusé → on ne continue pas
+        # NB : le consentement au partage de photos n'est PLUS demandé ici. Il
+        # ne concerne que l'envoi d'une vraie photo → il est demandé dans
+        # DefectDiagnosticDialog._start_analysis, au moment d'analyser. Le mode
+        # manuel (choix du défaut) n'envoie rien et n'en a donc pas besoin.
 
         # Dialog persistant : créé une seule fois, réutilisé → l'image et le
         # résultat d'analyse survivent à la fermeture/réouverture.
@@ -1303,18 +1493,128 @@ class MainWindow(QMainWindow):
             self._diag_dialog = DefectDiagnosticDialog(self)
             apply_title_bar_theme(self._diag_dialog)
             self._diag_dialog.corrections_ready.connect(self._apply_defect_corrections)
+            self._diag_dialog.pro_state_changed.connect(self._topbar.refresh_pro)
 
         dlg = self._diag_dialog
+        dlg.refresh_trial_label()   # compteur d'essais à jour à chaque ouverture
         # Largeur réelle (le dialog réutilisé peut avoir une width() périmée)
         dlg.adjustSize()
         w = dlg.sizeHint().width() or 460
+        # S'ancrer sur le bouton réellement VISIBLE : hors Pro, _diag_btn est
+        # masqué (c'est le CTA « neoSlice Pro » qui est affiché). Un widget caché
+        # renvoie une géométrie (0,0) → la fenêtre se collait en haut à gauche.
         btn = self._topbar._diag_btn
+        if not btn.isVisible():
+            btn = self._topbar._pro_cta_btn
         btn_br = btn.mapToGlobal(QPoint(btn.width(), btn.height()))
         # Aligne le bord droit du dialog sous le bouton, puis borne à la fenêtre
         x = btn_br.x() - w
         win = self.frameGeometry()
         x = max(win.left() + 8, min(x, win.right() - w - 8))
-        dlg.move(x, btn_br.y() + 4)
+        # Place le dialog (encore masqué) en laissant assez de hauteur pour qu'il
+        # tienne à l'écran une fois agrandi (le diagnostic peut être haut). On NE
+        # le déplace plus après affichage → pas de décalage de zone cliquable.
+        y = btn_br.y() + 4
+        scr = dlg.screen() or self.screen()
+        if scr is not None:
+            geo = scr.availableGeometry()
+            reserve = int(geo.height() * 0.85)
+            y = max(geo.top() + 8, min(y, geo.bottom() - 8 - reserve))
+        dlg.move(x, y)
+        dlg.exec()
+
+    def _on_pro_cta(self):
+        """Clic sur « neoSlice Pro ». En pré-lancement : message « bientôt ».
+        Sinon : ouvre le diagnostic (essais gratuits puis paywall)."""
+        from core import licensing
+        if getattr(licensing, "PRO_COMING_SOON", False):
+            self._show_coming_soon()
+        else:
+            self._open_diagnostic()
+
+    def _show_coming_soon(self):
+        """Annonce que neoSlice Pro arrive bientôt (aucun accès pour l'instant)."""
+        from PySide6.QtWidgets import QMessageBox
+        pal = _THEME.palette()
+        box = QMessageBox(self)
+        box.setWindowTitle("neoSlice Pro")
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(_("pro.coming_soon_text"))
+        box.setInformativeText(_("pro.coming_soon_info"))
+        # Couleurs adaptées au thème (le bouton OK natif est illisible sinon)
+        box.setStyleSheet(f"""
+            QMessageBox {{ background: {pal['BG_PANEL']}; }}
+            QMessageBox QLabel {{ color: {pal['TEXT_PRIMARY']}; background: transparent; }}
+            QPushButton {{
+                background: {pal['ACCENT']}; color: {pal['EXPORT_FG']};
+                border: none; border-radius: 3px; padding: 5px 22px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
+        """)
+        apply_title_bar_theme(box)
+        box.exec()
+
+    def _open_cost_calculator(self):
+        """Ouvre le calculateur de coût/devis (fonctionnalité Pro pure)."""
+        from core import licensing
+        # Pro pur : pas d'essai gratuit ici → paywall direct si non débloqué.
+        if not licensing.est_pro():
+            from ui.components.paywall_dialog import PaywallDialog
+            wall = PaywallDialog(self)
+            wall.exec()
+            if not licensing.est_pro():
+                return
+            self._topbar.refresh_pro()
+
+        from ui.components.cost_calculator import CostCalculatorDialog
+        from pathlib import Path
+        from PySide6.QtCore import QPoint
+
+        # Poids et durée = EXACTEMENT les estimations du panneau « EN RÉSUMÉ »
+        # (mêmes méthodes du PrintConfig + même analyse) → cohérence garantie.
+        # Uniquement si une configuration a été générée, sinon calculateur à zéro.
+        est_weight_g = None
+        est_time_h = None
+        cfg = getattr(self, "_current_config", None)
+        a = getattr(self, "_analysis", None)
+        if cfg is not None and a is not None and getattr(a, "volume_cm3", 0) > 0:
+            try:
+                est_weight_g = cfg.estimated_filament_g(a.volume_cm3)
+                bb = getattr(a, "bounding_box_mm", None)
+                height_mm = bb[2] if (bb and len(bb) > 2) else 20.0
+                sup_ratio = (getattr(a, "estimated_support_ratio", 0.0)
+                             if getattr(a, "support_needed", False) else 0.0)
+                est_min = cfg.estimated_time_minutes(a.volume_cm3, height_mm,
+                                                     support_ratio=sup_ratio)
+                est_time_h = est_min / 60.0
+            except Exception:
+                est_weight_g = est_time_h = None
+
+        printer = ""
+        try:
+            printer = self._filament_selector.current_printer() or ""
+        except Exception:
+            pass
+
+        part = ""
+        p = getattr(self, "_stl_path", None)
+        if p:
+            try:
+                part = Path(p).stem
+            except Exception:
+                part = ""
+
+        dlg = CostCalculatorDialog(
+            self, est_weight_g=est_weight_g, est_time_h=est_time_h,
+            printer_model=printer, part_name=part,
+        )
+        apply_title_bar_theme(dlg)
+        dlg.adjustSize()
+        w = dlg.sizeHint().width() or 460
+        btn = self._topbar._cost_btn
+        br = btn.mapToGlobal(QPoint(btn.width(), btn.height()))
+        x = max(0, br.x() - w)
+        dlg.move(x, br.y() + 4)
         dlg.exec()
 
     def _apply_defect_corrections(self, result):
@@ -1368,10 +1668,12 @@ class MainWindow(QMainWindow):
                 pass
             self._tutorial = None
 
+        # Cible = [titre de section + contenu] pour que l'encadré du tutoriel
+        # englobe aussi le titre (① Configuration, ② Import STL, ③ Mission…).
         targets = {
-            "config":    self._filament_selector,
-            "drop":      self._drop_zone,
-            "intent":    self._intent_selector,
+            "config":    [self._step_config, self._filament_selector],
+            "drop":      [self._step_stl, self._drop_zone],
+            "intent":    [self._step_intent, self._intent_selector],
             "statusbar": self._statusbar._export_btn,
             "topbar":    self._topbar.icon_group,
         }
@@ -1790,8 +2092,21 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self._drop_zone.set_recent_file(path)
+        # Miniature d'aperçu dans la zone d'import (différée : le rendu hors-écran
+        # ne doit pas bloquer la fin du chargement).
+        QTimer.singleShot(120, lambda p=path: self._update_drop_thumbnail(p))
         self._statusbar.set_message(_("status.loading", name=path.name), AMBER)
         self._start_analysis()
+
+    def _update_drop_thumbnail(self, path):
+        """Génère et affiche la miniature du modèle dans la zone d'import."""
+        try:
+            from core.geometry.thumbnail import make_thumbnail_png
+            png = make_thumbnail_png(path, mesh=self._mesh, dark=_THEME.is_dark())
+            if png:
+                self._drop_zone.set_thumbnail(png)
+        except Exception as e:
+            logger.debug(f"Miniature non générée : {e}")
 
     def _on_stl_load_error(self, msg: str):
         """Appelé si load_stl() lève une exception."""

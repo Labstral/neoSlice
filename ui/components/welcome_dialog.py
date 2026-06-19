@@ -49,6 +49,16 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("✨ Nouveautés v0.1.5.4",
+     "• Aperçu miniature de vos fichiers dès l'import (STL / OBJ / 3MF)\n"
+     "• Rendu 3D mat, plus agréable et lisible\n"
+     "• Génération adaptée aux limites réelles de votre imprimante "
+     "(vitesses, débit, températures)\n"
+     "• Estimation du poids selon le matériau choisi\n"
+     "• Tutoriel bilingue et nombreux fignolages d'interface"),
+    ("⚙️ Correctifs de compatibilité v0.1.5.3",
+     "neoSlice démarre désormais sur davantage de configurations Windows. "
+     "Diverses améliorations de compatibilité et de stabilité ont été apportées."),
     ("⚠️ Correction importante v0.1.5.2",
      "• Taille des pièces — certaines pièces (entre 5 et 50 mm) étaient agrandies "
      "10× par erreur au chargement. La taille réelle du fichier est désormais "
@@ -165,7 +175,7 @@ class WelcomeDialog(QDialog):
         for text, fg, bg, border in [
             (f"v{__version__}",           pal['ACCENT_BRIGHT'], pal['BG_SURFACE'], pal['ACCENT']),
             ("BÊTA",                      pal['AMBER'],         "rgba(255,184,0,0.10)", pal['AMBER']),
-            ("© 2026 Emmanuel Percheron", pal['INACTIVE'],      "transparent",     "transparent"),
+            ("© 2026 Emmanuel Percheron", pal['TEXT_LABEL'],    "transparent",     "transparent"),
         ]:
             lbl = QLabel(text)
             lbl.setFont(QFont(FONT_MONO, 7, QFont.Bold if text == "BÊTA" else QFont.Normal))
@@ -338,8 +348,10 @@ class WelcomeDialog(QDialog):
 
     def _on_close(self):
         prefs = _load_prefs()
-        prefs["last_seen_version"] = __version__  # ne plus réafficher pour cette version
-        if self._skip_check.isChecked():
-            prefs["skip_welcome"] = True
+        prefs["last_seen_version"] = __version__
+        # La case est autoritaire à CHAQUE fermeture : cochée → on masque,
+        # décochée → la fenêtre continue d'apparaître à chaque lancement.
+        # (Avant, on ne remettait jamais False → un True restait coincé à vie.)
+        prefs["skip_welcome"] = self._skip_check.isChecked()
         _save_prefs(prefs)
         self.accept()

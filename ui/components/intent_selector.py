@@ -345,7 +345,7 @@ class _Group(QWidget):
                 text-align: left;
                 padding: 0 10px;
                 font-family: {FONT_MAIN};
-                font-size: 10px;
+                font-size: 12px;
                 font-weight: bold;
                 letter-spacing: 2px;
             }}
@@ -431,7 +431,7 @@ class _Group(QWidget):
                     border-left: 3px solid {color};
                     color: {_mp['ACCENT_BRIGHT']};
                     text-align: left; padding: 0 10px;
-                    font-family: {FONT_MAIN}; font-size: 8px;
+                    font-family: {FONT_MAIN}; font-size: 12px;
                     font-weight: bold; letter-spacing: 2px;
                 }}
                 QPushButton:hover {{
@@ -449,7 +449,7 @@ class _Group(QWidget):
                     text-align: left;
                     padding: 0 10px;
                     font-family: {FONT_MAIN};
-                    font-size: 8px;
+                    font-size: 12px;
                     font-weight: bold;
                     letter-spacing: 2px;
                 }}

@@ -166,6 +166,144 @@ class ThemeManager:
 MANAGER = ThemeManager()
 
 
+def apply_tooltip_style() -> None:
+    """Style global des infobulles (QToolTip), lisible dans les DEUX thèmes.
+
+    Par défaut Qt rend le texte des tooltips quasi invisible en thème clair
+    (texte très pâle sur fond pâle). On force un fond contrasté + texte primaire.
+    À (ré)appeler à chaque changement de thème."""
+    try:
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QPalette, QColor
+        from PySide6.QtCore import Qt
+        app = QApplication.instance()
+        if app is None:
+            return
+        pal = MANAGER.palette()
+        # 0) Schéma de couleurs Qt = thème de l'app. CLÉ sous Windows : sans ça,
+        #    Qt 6 suit le mode sombre de l'OS pour les éléments « système »
+        #    (barre de titre, popups infobulles) même quand l'app est en clair.
+        try:
+            app.styleHints().setColorScheme(
+                Qt.ColorScheme.Dark if MANAGER.is_dark() else Qt.ColorScheme.Light
+            )
+        except Exception:
+            pass
+        # 1) Palette DÉDIÉE aux infobulles via l'API statique QToolTip.setPalette
+        #    — c'est LE moyen direct de fixer leur couleur, indépendamment du
+        #    stylesheet app (souvent ignoré) et du mode sombre de l'OS.
+        from PySide6.QtWidgets import QToolTip
+        bg = QColor(pal["BG_ELEVATED"])
+        fg = QColor(pal["TEXT_PRIMARY"])
+        tip_pal = QToolTip.palette()
+        for role in (QPalette.ColorRole.ToolTipBase, QPalette.ColorRole.Base,
+                     QPalette.ColorRole.Window, QPalette.ColorRole.Button):
+            tip_pal.setColor(role, bg)
+        for role in (QPalette.ColorRole.ToolTipText, QPalette.ColorRole.Text,
+                     QPalette.ColorRole.WindowText, QPalette.ColorRole.ButtonText):
+            tip_pal.setColor(role, fg)
+        QToolTip.setPalette(tip_pal)
+        # Palette app aussi (ceinture + bretelles)
+        qpal = app.palette()
+        qpal.setColor(QPalette.ColorRole.ToolTipBase, bg)
+        qpal.setColor(QPalette.ColorRole.ToolTipText, fg)
+        app.setPalette(qpal)
+        # 2) Stylesheet : utile si le style feuille est actif (bordure accent).
+        app.setStyleSheet(
+            "QToolTip {"
+            f" background-color: {pal['BG_ELEVATED']};"
+            f" color: {pal['TEXT_PRIMARY']};"
+            f" border: 1px solid {pal['ACCENT']};"
+            " padding: 4px 8px; border-radius: 3px; }"
+        )
+    except Exception:
+        pass
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Infobulles thématisées garanties — on remplace le tooltip natif (que Qt/Windows
+# rend en sombre malgré tout) par notre propre étiquette stylée.
+# ──────────────────────────────────────────────────────────────────────────────
+class _ThemedTooltipFilter:
+    """Filtre d'événements applicatif : intercepte les tooltips et affiche une
+    étiquette à nos couleurs (indépendante du mode sombre de l'OS)."""
+
+    def __init__(self):
+        from PySide6.QtCore import QObject, QTimer
+
+        class _Filter(QObject):
+            def __init__(self, outer):
+                super().__init__()
+                self._o = outer
+
+            def eventFilter(self, obj, event):
+                return self._o._on_event(obj, event)
+
+        self._qobj = _Filter(self)
+        self._tip = None
+        self._owner = None
+        self._timer = QTimer()
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._hide)
+
+    def _on_event(self, obj, event):
+        from PySide6.QtCore import QEvent
+        from PySide6.QtWidgets import QWidget
+        t = event.type()
+        if t == QEvent.Type.ToolTip and isinstance(obj, QWidget):
+            text = obj.toolTip()
+            if text:
+                self._owner = obj
+                self._show(event.globalPos(), text)
+                return True   # bloque le tooltip natif sombre
+            self._hide()
+            return False
+        if t in (QEvent.Type.Leave, QEvent.Type.MouseButtonPress,
+                 QEvent.Type.Wheel, QEvent.Type.FocusOut, QEvent.Type.WindowDeactivate):
+            self._hide()
+        return False
+
+    def _show(self, gpos, text):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QLabel
+        pal = MANAGER.palette()
+        if self._tip is None:
+            self._tip = QLabel(None, Qt.ToolTip | Qt.FramelessWindowHint)
+            self._tip.setWindowFlag(Qt.WindowTransparentForInput, True)
+            self._tip.setWordWrap(True)
+            self._tip.setMaximumWidth(360)
+        self._tip.setStyleSheet(
+            f"QLabel {{ background: {pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']}; "
+            f"border: 1px solid {pal['ACCENT']}; border-radius: 3px; "
+            f"padding: 4px 8px; font-size: 12px; }}"
+        )
+        self._tip.setText(text)
+        self._tip.adjustSize()
+        self._tip.move(gpos.x() + 12, gpos.y() + 18)
+        self._tip.show()
+        self._timer.start(6000)
+
+    def _hide(self):
+        self._owner = None
+        if self._tip is not None:
+            self._tip.hide()
+
+
+_tooltip_filter = None
+
+
+def install_themed_tooltips(app) -> None:
+    """Installe le filtre d'infobulles thématisées (une seule fois)."""
+    global _tooltip_filter
+    if _tooltip_filter is not None:
+        return
+    try:
+        _tooltip_filter = _ThemedTooltipFilter()
+        app.installEventFilter(_tooltip_filter._qobj)
+    except Exception:
+        pass
+
+
 def apply_title_bar_theme(widget, is_dark: bool | None = None) -> None:
     """Applique le thème sombre/clair à la barre de titre Windows (DWM API)."""
     if sys.platform != "win32":

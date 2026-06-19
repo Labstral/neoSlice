@@ -1,6 +1,6 @@
 ==============================================================================
   neoSlice - AI-Powered 3D Print Optimizer
-  Guide d'installation et de démarrage - v0.1.5.2 Bêta
+  Guide d'installation et de démarrage - v0.1.5.4 Bêta
 ==============================================================================
   © 2026 Emmanuel Percheron - Tous droits réservés
 
@@ -40,7 +40,7 @@ SOMMAIRE
 2. CONTENU DU PACKAGE
 ------------------------------------------------------------------------------
 
-  neoSlice_Setup_v0.1.5.2-beta_Windows.exe  ->  Installateur Windows
+  neoSlice_Setup_v0.1.5.4-beta_Windows.exe  ->  Installateur Windows
   README.txt                       ->  Ce guide
   LICENSE.txt                      ->  Accord de licence utilisateur final
 
@@ -58,7 +58,7 @@ SOMMAIRE
 
   ÉTAPE 2 - Lancer l'installateur
   ---------------------------------
-  Double-cliquez sur : neoSlice_Setup_v0.1.5.2-beta_Windows.exe
+  Double-cliquez sur : neoSlice_Setup_v0.1.5.4-beta_Windows.exe
 
   Si Windows affiche "Windows a protégé votre PC" :
     -> Cliquez sur "Informations complémentaires"
@@ -243,6 +243,11 @@ SOMMAIRE
 ------------------------------------------------------------------------------
 8. NOUVEAUTÉS v0.1.5
 ------------------------------------------------------------------------------
+
+  ⚙️ CORRECTIFS DE COMPATIBILITÉ v0.1.5.3
+  ----------------------------------------
+  * neoSlice démarre désormais sur davantage de configurations Windows.
+  * Diverses améliorations de compatibilité et de stabilité.
 
   📂 IMPORT 3MF BAMBU STUDIO
   ---------------------------

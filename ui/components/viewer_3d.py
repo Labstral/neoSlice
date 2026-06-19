@@ -96,34 +96,33 @@ class _LoadingOverlay(QWidget):
         R = 40  # rayon spinner
 
         # ── Cercle de fond (rail) ──
-        pen_rail = QPen(QColor(30, 60, 100, 80), 5, Qt.SolidLine, Qt.RoundCap)
+        pen_rail = QPen(QColor(101, 148, 243, 70), 5, Qt.SolidLine, Qt.RoundCap)
         painter.setPen(pen_rail)
         painter.drawEllipse(cx - R, cy - R, R * 2, R * 2)
 
-        # ── Arc spinner (trail dégradé en plusieurs passes) ──
+        # ── Arc spinner : traînée en dégradé PRO (cyan → violet) qui tourne ──
+        _cyan = (34, 211, 238)      # PRO_CYAN (tête)
+        _violet = (168, 85, 247)    # PRO_VIOLET (queue)
         trail_steps = 6
         for i in range(trail_steps):
             alpha = int(255 * (i + 1) / trail_steps)
-            blue = int(200 + 55 * (i / trail_steps))
-            pen_arc = QPen(QColor(0, 170, blue, alpha), 5, Qt.SolidLine, Qt.RoundCap)
+            f = i / (trail_steps - 1)          # 0 (queue=violet) → 1 (tête=cyan)
+            r = int(_violet[0] + (_cyan[0] - _violet[0]) * f)
+            g = int(_violet[1] + (_cyan[1] - _violet[1]) * f)
+            b = int(_violet[2] + (_cyan[2] - _violet[2]) * f)
+            pen_arc = QPen(QColor(r, g, b, alpha), 5, Qt.SolidLine, Qt.RoundCap)
             painter.setPen(pen_arc)
             # Chaque pas couvre 20° de l'arc total de 120°
             start = (90 - self._angle - i * 20) * 16
             span = -20 * 16
             painter.drawArc(cx - R, cy - R, R * 2, R * 2, start, span)
 
-        # ── Tête de l'arc (point lumineux) ──
-        head_alpha = int(180 + 75 * self._pulse)
-        pen_head = QPen(QColor(80, 220, 255, head_alpha), 6, Qt.SolidLine, Qt.RoundCap)
-        painter.setPen(pen_head)
-        head_angle_rad = math.radians(self._angle)
-        hx = cx + R * math.cos(head_angle_rad)
-        hy = cy - R * math.sin(head_angle_rad)
-        painter.drawPoint(int(hx), int(hy))
-
-        # ── Texte principal ──
+        # ── Texte principal (contraste adapté au thème) ──
         text_y = cy + R + 22
-        painter.setPen(QColor(180, 210, 240, 230))
+        if _T.is_dark():
+            painter.setPen(QColor(180, 210, 240, 230))
+        else:
+            painter.setPen(QColor(30, 50, 80, 245))   # bleu nuit lisible sur fond clair
         font = QFont(FONT_MAIN, 9, QFont.Bold)
         font.setLetterSpacing(QFont.AbsoluteSpacing, 2)
         painter.setFont(font)
@@ -131,7 +130,10 @@ class _LoadingOverlay(QWidget):
 
         # ── Sous-titre pulsant ──
         sub_alpha = int(100 + 80 * self._pulse)
-        painter.setPen(QColor(80, 130, 170, sub_alpha))
+        if _T.is_dark():
+            painter.setPen(QColor(80, 130, 170, sub_alpha))
+        else:
+            painter.setPen(QColor(55, 85, 120, min(255, sub_alpha + 70)))
         sub_font = QFont("Courier New", 7)
         sub_font.setLetterSpacing(QFont.AbsoluteSpacing, 1)
         painter.setFont(sub_font)
@@ -284,9 +286,7 @@ class Viewer3D(QWidget):
                         color=_mesh_color,
                         show_edges=False,
                         smooth_shading=True,
-                        pbr=True,
-                        metallic=rq["metallic"],
-                        roughness=rq["roughness"],
+                        pbr=False,   # mat lumineux (cohérent avec _apply_pbr_mesh)
                         ambient=rq["ambient"],
                         diffuse=rq["diffuse"],
                         specular=rq["specular"],
@@ -1024,9 +1024,7 @@ class Viewer3D(QWidget):
                     self._plotter.add_mesh(
                         pv_obj, color=color, show_edges=False,
                         smooth_shading=True,
-                        pbr=True,
-                        metallic=rq["metallic"],
-                        roughness=rq["roughness"],
+                        pbr=False,   # mat lumineux, cohérent partout
                         specular=rq["specular"],
                         ambient=rq["ambient"],
                         diffuse=rq["diffuse"],
@@ -1338,9 +1336,9 @@ class Viewer3D(QWidget):
                 color="#f2ede8",
                 show_edges=False,
                 smooth_shading=True,
-                pbr=True,
-                metallic=rq["metallic"],
-                roughness=rq["roughness"],
+                # Non-PBR : rendu mat lumineux identique au mode surplombs
+                # (ambient élevé), au lieu du PBR vernis/grisé.
+                pbr=False,
                 ambient=rq["ambient"],
                 diffuse=rq["diffuse"],
                 specular=rq["specular"],
@@ -1466,8 +1464,12 @@ class Viewer3D(QWidget):
         mode = PREFS.get("perf_mode", "full")
         _Q = {
             "full": {
-                "metallic": 0.15, "roughness": 0.04, "specular": 0.99,
-                "ambient": 0.42,  "diffuse":  0.75,
+                # Blanc MAT LUMINEUX, identique au mode surplombs (très apprécié) :
+                # ambient élevé (0.80) → blanc franc et non grisé, diffuse faible,
+                # spéculaire nul → aucun reflet vernis. Rendu non-PBR (cf.
+                # _apply_pbr_mesh) pour coller exactement au rendu surplombs.
+                "metallic": 0.0, "roughness": 0.62, "specular": 0.0,
+                "ambient": 0.80,  "diffuse":  0.20,
                 # feature_angle élevé → seules les arêtes vraiment vives (>75°) sont dures,
                 # les panneaux lisses et transitions douces restent smooth → pas de triangles
                 "feature_angle": 75.0,

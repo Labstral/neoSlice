@@ -464,3 +464,38 @@ FILAMENTS: dict[str, dict] = {
 
 # Familles ordonnées pour l'affichage groupé
 FAMILLES_ORDRE = ["Standard", "Technique", "Souple", "Chargé", "Spécial", "Support"]
+
+
+# ── Densité du matériau imprimé (g/cm³) ─────────────────────────────────────────
+# Sert à estimer le POIDS de la pièce (volume × densité × taux de remplissage).
+# Valeurs moyennes constructeur/communauté ; injectées dans chaque entrée FILAMENTS.
+_DENSITES: dict[str, float] = {
+    "PLA":            1.24,
+    "PETG":           1.27,
+    "ABS":            1.04,
+    "ASA":            1.07,
+    "Nylon":          1.14,
+    "PC":             1.20,
+    "TPU":            1.21,
+    "TPE":            1.20,
+    "PLA-CF":         1.24,
+    "PETG-CF":        1.28,
+    "PA-CF":          1.15,
+    "PLA Bois":       1.15,
+    "PLA Métallique": 1.30,
+    "HIPS":           1.04,
+    "PVA":            1.23,
+}
+for _n, _d in _DENSITES.items():
+    if _n in FILAMENTS:
+        FILAMENTS[_n]["densite"] = _d
+
+
+def filament_density(name: str | None) -> float:
+    """Densité (g/cm³) du matériau imprimé. Défaut PLA (1.24) si inconnu."""
+    if not name:
+        return 1.24
+    fil = FILAMENTS.get(name)
+    if fil and "densite" in fil:
+        return float(fil["densite"])
+    return _DENSITES.get(name, 1.24)
