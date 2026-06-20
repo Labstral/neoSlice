@@ -7,6 +7,11 @@ pyvistaqt>=0.11.4
 trimesh>=4.12.0
 numpy>=2.4.0
 scipy>=1.17.0
+networkx>=3.0          # requis par trimesh (composants connexes, split multi-corps)
+lxml>=5.0              # requis par trimesh (chargement XML des fichiers 3MF)
+
+# Diagnostic IA (Pro) — inférence ONNX locale
+onnxruntime>=1.18.0
 
 # Data models
 pydantic>=2.13.0
