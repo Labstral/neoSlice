@@ -191,7 +191,7 @@ class ParameterEngine:
             factor = (intent.speed - 0.5) * 0.8          # 0.0 → 0.4
             config.outer_wall_speed = int(config.outer_wall_speed * (1 + factor * 0.5))
             config.infill_speed = int(config.infill_speed * (1 + factor))
-            config.layer_height = round(min(0.28, config.layer_height + factor * 0.08), 2)
+            config.layer_height = round(min(0.24, config.layer_height + factor * 0.08), 2)
 
         # Qualité surface secondaire
         if intent.surface_finish > 0.5 and dom not in ("quality", "surface_finish"):

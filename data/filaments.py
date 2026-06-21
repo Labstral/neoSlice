@@ -33,7 +33,7 @@ FILAMENTS: dict[str, dict] = {
 
     "PETG": {
         "famille": "Standard",
-        "buse_1ere": 235, "buse_autres": 230,
+        "buse_1ere": 250, "buse_autres": 250,
         "plateau": 70,
         "ventilateur_max": 40, "ventilation_active": False,
         "ventilateur_1ere_couche": 0,

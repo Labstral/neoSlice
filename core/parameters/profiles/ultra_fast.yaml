@@ -2,8 +2,8 @@ name: ultra_fast
 label: "Ultra Rapide"
 description: "Prototype rapide, résistance secondaire"
 
-layer_height: 0.28
-first_layer_height: 0.30
+layer_height: 0.24
+first_layer_height: 0.26
 wall_loops: 2
 wall_generator: "classic"
 wall_sequence: "inner wall/outer wall"
