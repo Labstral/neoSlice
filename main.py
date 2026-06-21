@@ -117,6 +117,20 @@ def main():
     _configure_logging()
     logger.info("Démarrage de neoSlice")
 
+    # Certificats SSL — CRITIQUE pour macOS : une app gelée (PyInstaller) n'a pas
+    # le magasin de certificats système → tout HTTPS (activation Pro, mises à jour,
+    # modèle IA) échouait avec « Pas de connexion Internet ». On pointe le contexte
+    # SSL par défaut vers le bundle certifi embarqué. Inoffensif sur Windows.
+    try:
+        import certifi
+        _ca = certifi.where()
+        os.environ.setdefault("SSL_CERT_FILE", _ca)
+        os.environ.setdefault("SSL_CERT_DIR", os.path.dirname(_ca))
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", _ca)
+        logger.info(f"Certificats SSL : {_ca}")
+    except Exception as _e:
+        logger.warning(f"certifi indisponible : {_e}")
+
     # AppUserModelID — requis pour que Windows affiche la bonne icône dans la barre des tâches
     if sys.platform == "win32":
         try:

@@ -21,6 +21,7 @@ import hmac
 import json
 import os
 import socket
+import ssl
 import sys
 import threading
 import time
@@ -32,6 +33,16 @@ try:
     import winreg   # miroir anti-reset dans le registre Windows (HKCU)
 except ImportError:
     winreg = None   # non-Windows : on se rabat sur prefs.json seul
+
+# Contexte SSL avec le bundle de certificats certifi. CRITIQUE pour macOS : une
+# app Python gelée (PyInstaller) n'a pas accès au magasin de certificats système
+# → tout HTTPS échouait ("Pas de connexion Internet"). certifi fournit les CA.
+# Sur Windows ça marchait déjà via le magasin système ; certifi marche aussi.
+try:
+    import certifi
+    _SSL_CTX: "ssl.SSLContext | None" = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _SSL_CTX = None   # repli : contexte par défaut (Windows OK, Mac via SSL_CERT_FILE)
 
 from core.prefs import PREFS
 from core.i18n import _
@@ -425,7 +436,7 @@ def _gumroad_verify(cle: str, increment: bool) -> tuple[bool, bool, int, str]:
                  "Content-Type": "application/x-www-form-urlencoded"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15, context=_SSL_CTX) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         # Clé invalide → Gumroad renvoie 404 + {success:false, message:...}

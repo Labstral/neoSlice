@@ -49,6 +49,12 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("🔧 Correctif v0.1.5.6",
+     "• macOS : l'activation Pro et les mises à jour échouaient avec « Pas de "
+     "connexion Internet » alors que tout fonctionnait — corrigé (certificats SSL).\n"
+     "• Hauteur de couche « rapide » ramenée à 0.24 mm (buse 0.4) et température "
+     "PETG ajustée à 250°C.\n"
+     "• Import STL/3MF plus fiable sur Mac."),
     ("🔧 Correctif v0.1.5.5",
      "Correction de l'activation de neoSlice Pro : sur certaines connexions "
      "(réseau lent, antivirus/pare-feu), l'activation pouvait rester bloquée. "

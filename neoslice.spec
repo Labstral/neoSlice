@@ -90,6 +90,9 @@ vtkmod_hidden = [x for x in _vtk_h if _keep_vtk(x)]
 mpl_datas,       mpl_bins,       mpl_hidden        = collect_all('matplotlib')
 shapely_datas,   shapely_bins,   shapely_hidden    = collect_all('shapely')
 
+# certifi : embarque cacert.pem (HTTPS fiable en app gelée, surtout macOS)
+certifi_datas = collect_data_files('certifi')
+
 # Dossiers de données du projet
 project_datas = [
     ('ui/styles', 'ui/styles'),
@@ -118,6 +121,7 @@ a = Analysis(
         *vtkmod_datas,
         *mpl_datas,
         *shapely_datas,
+        *certifi_datas,
     ],
     hiddenimports=[
         *pyside6_hidden,
@@ -154,6 +158,7 @@ a = Analysis(
         'shapely.geometry',
         'shapely.ops',
         'shapely.validation',
+        'certifi',
         'version',
     ],
     hookspath=[],

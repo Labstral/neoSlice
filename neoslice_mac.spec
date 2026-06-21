@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_data_files
 import sys as _sys
 _sys.path.insert(0, str(Path('.').resolve()))
 from version import __version__ as _APP_VERSION
@@ -114,6 +114,11 @@ vtkmod_datas   = [x for x in vtkmod_datas_all  if _keep_vtk(str(x[0]))]
 vtkmod_bins    = [x for x in vtkmod_bins_all   if _keep_vtk(str(x[0]))]
 vtkmod_hidden  = [x for x in vtkmod_hidden_all if _keep_vtk(x)]
 
+# certifi : cacert.pem pour HTTPS fiable (activation Pro / updater / modèle) sur macOS gelé
+certifi_datas = collect_data_files('certifi')
+# onnxruntime : binaires natifs du diagnostic IA
+onnx_datas, onnx_bins, onnx_hidden = collect_all('onnxruntime')
+
 project_datas = [
     ('ui/styles', 'ui/styles'),
     ('assets', 'assets'),
@@ -131,6 +136,7 @@ a = Analysis(
         *pyvistaqt_bins,
         *shapely_bins,
         *vtkmod_bins,
+        *onnx_bins,
     ],
     datas=[
         *project_datas,
@@ -139,6 +145,8 @@ a = Analysis(
         *pyvistaqt_datas,
         *shapely_datas,
         *vtkmod_datas,
+        *certifi_datas,
+        *onnx_datas,
     ],
     hiddenimports=[
         *pyside6_hidden,
@@ -146,6 +154,7 @@ a = Analysis(
         *pyvistaqt_hidden,
         *shapely_hidden,
         *vtkmod_hidden,
+        *onnx_hidden,
         'shapely', 'shapely.geometry', 'shapely.ops', 'shapely.validation',
         'reportlab', 'reportlab.pdfgen', 'reportlab.lib', 'reportlab.lib.pagesizes',
         'reportlab.platypus', 'reportlab.lib.styles', 'reportlab.lib.units',
@@ -156,6 +165,7 @@ a = Analysis(
         'scipy', 'scipy.spatial', 'scipy.spatial.qhull',
         'scipy.sparse', 'scipy.sparse.csgraph', 'scipy.ndimage',
         'rtree', 'loguru', 'yaml', 'numpy', 'pydantic',
+        'networkx', 'lxml', 'lxml.etree', 'certifi', 'onnxruntime', 'version',
     ],
     hookspath=[],
     hooksconfig={},

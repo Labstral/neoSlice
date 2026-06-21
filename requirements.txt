@@ -13,6 +13,9 @@ lxml>=5.0              # requis par trimesh (chargement XML des fichiers 3MF)
 # Diagnostic IA (Pro) — inférence ONNX locale
 onnxruntime>=1.18.0
 
+# Certificats SSL (HTTPS fiable en app gelée, surtout macOS)
+certifi>=2024.0.0
+
 # Data models
 pydantic>=2.13.0
 

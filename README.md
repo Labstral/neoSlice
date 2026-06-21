@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing pour les imprimantes **Bambu Lab**. Il analyse vos fichiers 3D et génère automatiquement une configuration d'impression optimisée dans Bambu Studio.
 
-> Version actuelle : **v0.1.5.5** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v0.1.5.6** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -25,7 +25,7 @@
 ## Installation
 
 ### Windows
-1. Téléchargez `neoSlice_Setup_v0.1.5.5-beta_Windows.exe` sur [neoslice-ai.com](https://neoslice-ai.com)
+1. Téléchargez `neoSlice_Setup_v0.1.5.6-beta_Windows.exe` sur [neoslice-ai.com](https://neoslice-ai.com)
 2. Lancez l'installateur — aucun droit administrateur requis
 3. Un raccourci est créé sur le bureau
 
@@ -40,6 +40,11 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v0.1.5.6
+- **macOS** : correction de l'activation Pro et des mises à jour (« Pas de connexion Internet » alors que la connexion fonctionnait) — certificats SSL embarqués
+- Hauteur de couche « rapide » ramenée à 0.24 (buse 0.4) + température PETG à 250°C
+- Fiabilité de l'import STL/3MF sur Mac (networkx/lxml embarqués)
 
 ### v0.1.5.5
 - Correction de l'activation neoSlice Pro : plus de blocage sur connexion lente / antivirus (activation en arrière-plan, sans consommer d'activation en cas d'échec réseau)
