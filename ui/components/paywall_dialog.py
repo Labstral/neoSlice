@@ -8,7 +8,7 @@ Retourne QDialog.Accepted si l'activation a réussi pendant la session.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QPoint, QUrl, QTimer
+from PySide6.QtCore import Qt, QPoint, QUrl, QTimer, QThread, Signal
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
@@ -20,6 +20,23 @@ from ui.components.pro_badge import ProBadge
 from ui.components.confetti import ConfettiOverlay
 from core import licensing
 from core.i18n import _
+
+
+class _ActivateWorker(QThread):
+    """Active la clé hors du thread UI (l'appel réseau Gumroad ne doit JAMAIS
+    figer la fenêtre, même sur connexion lente ou derrière un antivirus)."""
+    done = Signal(bool, str)
+
+    def __init__(self, key: str, parent=None):
+        super().__init__(parent)
+        self._key = key
+
+    def run(self):
+        try:
+            ok, message = licensing.activer_cle(self._key)
+        except Exception as exc:  # garde-fou : jamais de blocage silencieux
+            ok, message = False, str(exc)
+        self.done.emit(ok, message)
 
 
 def _sep() -> QFrame:
@@ -301,15 +318,21 @@ class PaywallDialog(QDialog):
         QDesktopServices.openUrl(QUrl(licensing.LIEN_ACHAT))
 
     def _on_activate(self):
+        key = self._key_edit.text().strip()
+        if not key:
+            self._set_status(_("license.empty_key"), False)
+            return
         self._activate_btn.setEnabled(False)
         pal = _T.palette()
         self._status_lbl.setStyleSheet(f"color: {pal['ACCENT']}; background: transparent;")
         self._status_lbl.setText(_("pro.activating"))
         self._status_lbl.show()
-        # Repaint immédiat pendant l'appel réseau bloquant
-        self._status_lbl.repaint()
+        # Activation dans un thread → l'UI ne se fige jamais (réseau lent/antivirus).
+        self._activate_worker = _ActivateWorker(key, self)
+        self._activate_worker.done.connect(self._on_activate_done)
+        self._activate_worker.start()
 
-        ok, message = licensing.activer_cle(self._key_edit.text())
+    def _on_activate_done(self, ok: bool, message: str):
         self._activate_btn.setEnabled(True)
         self._set_status(message, ok)
         if ok:

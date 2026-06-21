@@ -49,6 +49,11 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("🔧 Correctif v0.1.5.5",
+     "Correction de l'activation de neoSlice Pro : sur certaines connexions "
+     "(réseau lent, antivirus/pare-feu), l'activation pouvait rester bloquée. "
+     "Elle se fait désormais en arrière-plan, sans figer la fenêtre, et ne "
+     "consomme plus d'activation en cas d'échec réseau."),
     ("✨ Nouveautés v0.1.5.4",
      "• Aperçu miniature de vos fichiers dès l'import (STL / OBJ / 3MF)\n"
      "• Rendu 3D mat, plus agréable et lisible\n"

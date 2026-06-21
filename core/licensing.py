@@ -449,50 +449,55 @@ def _gumroad_verify(cle: str, increment: bool) -> tuple[bool, bool, int, str]:
 
 
 def activer_cle(cle: str) -> tuple[bool, str]:
-    """Active une clé de licence Gumroad.
+    """Active une clé de licence Gumroad — robuste aux réseaux lents/protégés.
 
-    Retourne (succès, message). En cas de succès, l'état Pro est mémorisé.
-    Réinstall-safe : si c'est la clé déjà active sur cet appareil, on re-valide
-    SANS reconsommer d'activation. Sinon (nouvel appareil), on incrémente et on
-    refuse au-delà de MAX_APPAREILS.
+    Étapes :
+      1. Validation IDEMPOTENTE (increment=False) → rejouable sans rien consommer.
+      2. Plafond d'appareils basé sur le compteur LU (pas d'incrément aveugle).
+      3. Déblocage LOCAL immédiat : un client qui a payé n'est JAMAIS verrouillé
+         par un aléa réseau (timeout, antivirus…).
+      4. Décompte d'appareil (slot Gumroad) réclamé en best-effort, sans bloquer
+         le succès. Réinstall-safe via le marqueur machine.
     """
     cle = (cle or "").strip()
     if not cle:
         return False, _("license.empty_key")
 
     _st = _read_state()
-
-    # Cette machine a-t-elle DÉJÀ été comptée pour cette clé ?
-    #   - clé encore active localement (cle == état courant), OU
-    #   - marqueur registre présent (survit à la désactivation et à la
-    #     suppression de prefs.json → réinstallation sur le même PC).
-    # Dans ces deux cas : re-validation SANS reconsommer d'usage Gumroad.
+    # Machine déjà comptée pour cette clé ? (clé active localement OU marqueur
+    # présent → survit désactivation/réinstallation). Si oui : aucun slot à reprendre.
     deja_active_ici = (cle == _st["key"])
-    deja_compte_ici = deja_active_ici or (
-        _reg_read_actkey() == _sign_actkey(cle)
-    )
+    deja_compte_ici = deja_active_ici or (_reg_read_actkey() == _sign_actkey(cle))
 
-    if deja_compte_ici:
-        net_ok, success, _uses, _msg = _gumroad_verify(cle, increment=False)
-        if not net_ok:
-            return False, _("license.no_connection")
-        if not success:
-            return False, _("license.invalid_or_max")
-        _write_state(_st["used"], True, cle, validated=time.time())
-        _reg_write_actkey(_sign_actkey(cle))   # (re)pose le marqueur machine
-        return True, _("license.already_active") if deja_active_ici else _("license.activated")
-
-    # Clé jamais comptée sur cette machine → on consomme une activation (appareil).
-    net_ok, success, uses, _msg = _gumroad_verify(cle, increment=True)
+    # 1) Validation idempotente — NE consomme PAS d'usage, rejouable sans risque.
+    net_ok, success, uses, _msg = _gumroad_verify(cle, increment=False)
     if not net_ok:
         return False, _("license.no_connection")
     if not success:
         return False, _("license.invalid_or_max")
-    if uses > MAX_APPAREILS:
+
+    # 2) Plafond appareils sur le compteur LU (une réinstall repasse toujours).
+    if not deja_compte_ici and uses >= MAX_APPAREILS:
         return False, _("license.invalid_or_max")   # trop d'appareils
-    _write_state(_st["used"], True, cle, "", validated=time.time())
-    _reg_write_actkey(_sign_actkey(cle))   # marque CETTE machine comme comptée
-    return True, _("license.activated")
+
+    # 3) Déblocage LOCAL garanti (le client a payé → jamais bloqué par le réseau).
+    _write_state(_st["used"], True, cle, validated=time.time())
+    _reg_write_actkey(_sign_actkey(cle))
+
+    # 4) Réclame le slot côté Gumroad en best-effort (n'affecte pas le succès).
+    if not deja_compte_ici:
+        threading.Thread(target=_claim_device_slot, args=(cle,), daemon=True).start()
+
+    return True, _("license.already_active") if deja_active_ici else _("license.activated")
+
+
+def _claim_device_slot(cle: str) -> None:
+    """Incrémente le compteur d'usages Gumroad (décompte d'appareil), best-effort.
+    Un échec réseau ici n'empêche pas l'activation locale déjà accordée."""
+    try:
+        _gumroad_verify(cle, increment=True)
+    except Exception:
+        pass
 
 
 def desactiver_appareil() -> tuple[bool, str]:
