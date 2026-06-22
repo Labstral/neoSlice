@@ -491,6 +491,34 @@ for _n, _d in _DENSITES.items():
         FILAMENTS[_n]["densite"] = _d
 
 
+# ── Températures & débit OFFICIELS Bambu Studio ─────────────────────────────────
+# Alignés (2026-06-22) sur les profils system/BBL de Bambu Studio (X1C 0.4) :
+# (buse_1ère_couche, buse_autres, plateau, débit_volumétrique_max). Source
+# autoritative — corrige nos valeurs approximatives (surtout PC/PA-CF/PETG-CF/PVA).
+# Nylon et TPE conservent leurs valeurs internes (pas de profil Bambu dédié).
+_BAMBU_OFFICIAL: dict[str, tuple[int, int, int, int]] = {
+    "PLA":            (220, 220,  60, 21),   # plateau 60° (meilleur que le 55 Bambu en pratique)
+    "PETG":           (245, 255,  70, 15),
+    "ABS":            (260, 270,  90, 16),
+    "ASA":            (270, 270, 100, 18),
+    "PC":             (270, 280, 110, 18),
+    "TPU":            (230, 230,  35,  4),
+    "PLA-CF":         (230, 230,  55, 15),
+    "PETG-CF":        (255, 255,  70, 12),
+    "PA-CF":          (290, 290, 100,  8),
+    "PLA Bois":       (220, 220,  55, 18),
+    "PLA Métallique": (220, 220,  55, 21),
+    "HIPS":           (240, 240,  90,  8),
+    "PVA":            (240, 240,  55,  6),
+}
+for _n, (_b1, _bn, _bed, _vol) in _BAMBU_OFFICIAL.items():
+    if _n in FILAMENTS:
+        FILAMENTS[_n]["buse_1ere"] = _b1
+        FILAMENTS[_n]["buse_autres"] = _bn
+        FILAMENTS[_n]["plateau"] = _bed
+        FILAMENTS[_n]["volumetrique_max"] = _vol
+
+
 def filament_density(name: str | None) -> float:
     """Densité (g/cm³) du matériau imprimé. Défaut PLA (1.24) si inconnu."""
     if not name:

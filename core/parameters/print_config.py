@@ -74,13 +74,20 @@ class PrintConfig(BaseModel):
     neoslice_support_mode: str = "auto"   # "auto" | "classic" | "tree"
 
     def estimated_filament_g(self, volume_cm3: float) -> float:
-        """Estimation du filament en grammes, calibrée sur données Bambu Studio réelles."""
-        # Les pièces complexes ont beaucoup de parois → wall_factor dominant vs volume
-        infill_factor = 0.25 + (self.infill_density / 100) * 0.75
-        wall_factor   = 0.25 + self.wall_loops * 0.10
-        # Plafonné à 0.98 × densité solide (le FDM ne peut pas dépasser le plein)
-        total_factor = min(infill_factor + wall_factor, 0.98)
-        return volume_cm3 * max(0.1, self.filament_density_g_cm3) * total_factor
+        """Estimation du poids de filament (g).
+
+        Modèle physique : la coque (parois + couches haut/bas) est quasi pleine,
+        et l'intérieur est rempli au taux de remplissage. Donc :
+            poids ≈ densité × volume × [coque + (1 − coque) × remplissage]
+        où « coque » = part du volume occupée par les parois/couches solides
+        (dépend du nombre de parois et de couches → pièces fines = coque dominante).
+        Ce modèle fait VARIER le poids avec le remplissage (5 % ≪ 80 % ≪ 100 %),
+        contrairement à l'ancienne formule qui saturait à 0.98 dès le remplissage moyen."""
+        infill = max(0.0, min(1.0, self.infill_density / 100.0))
+        shells = self.top_shell_layers + self.bottom_shell_layers
+        shell_share = min(0.60, 0.10 + 0.04 * self.wall_loops + 0.02 * shells)
+        effective = min(1.0, max(0.05, infill + (1.0 - infill) * shell_share))
+        return volume_cm3 * max(0.1, self.filament_density_g_cm3) * effective
 
     def estimated_time_minutes(self, volume_cm3: float, height_mm: float, support_ratio: float = 0.0) -> int:
         """Estimation du temps total en minutes (impression + chauffe + calibration Bambu)."""

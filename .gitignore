@@ -44,3 +44,11 @@ nodex.exe
 test-mcp*.js
 test-mcp*.bat
 context7-mcp.bat
+
+# Config MCP locale (outils dev, non publiée)
+.mcp.json
+
+# Artefacts de calibration / scraping (dev)
+_calib/
+_orca_help.txt
+*.gcode

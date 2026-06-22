@@ -102,6 +102,7 @@ class CostInputs:
     machine_lifespan_h: float = 5000.0
     labor_minutes: float = 0.0
     labor_rate_h: float = 0.0
+    packaging_cost: float = 0.0
     failure_rate_pct: float = 0.0
     margin_pct: float = 0.0
     currency: str = "EUR"
@@ -113,6 +114,7 @@ class CostBreakdown:
     electricity: float = 0.0
     wear: float = 0.0
     labor: float = 0.0
+    packaging: float = 0.0
     subtotal: float = 0.0
     failure_buffer: float = 0.0
     total_cost: float = 0.0
@@ -121,6 +123,20 @@ class CostBreakdown:
     currency: str = "EUR"
     # Détails utiles pour l'affichage
     energy_kwh: float = 0.0
+
+
+# Paliers de prix suggérés (clé i18n → marge bénéficiaire %). Façon « stratégie
+# de prix » : l'utilisateur voit plusieurs prix possibles d'un coup d'œil.
+PRICE_TIERS: tuple[tuple[str, float], ...] = (
+    ("eco", 20.0),
+    ("standard", 40.0),
+    ("premium", 60.0),
+)
+
+
+def sale_price_for(total_cost: float, margin_pct: float) -> float:
+    """Prix de vente = coût de revient + marge bénéficiaire (%)."""
+    return max(0.0, total_cost) * (1.0 + max(0.0, margin_pct) / 100.0)
 
 
 def compute_cost(inp: CostInputs) -> CostBreakdown:
@@ -136,8 +152,9 @@ def compute_cost(inp: CostInputs) -> CostBreakdown:
         wear = 0.0
 
     labor = max(0.0, inp.labor_minutes) / 60.0 * max(0.0, inp.labor_rate_h)
+    packaging = max(0.0, inp.packaging_cost)
 
-    subtotal = material + electricity + wear + labor
+    subtotal = material + electricity + wear + labor + packaging
     failure_buffer = subtotal * max(0.0, inp.failure_rate_pct) / 100.0
     total_cost = subtotal + failure_buffer
     margin_amount = total_cost * max(0.0, inp.margin_pct) / 100.0
@@ -148,6 +165,7 @@ def compute_cost(inp: CostInputs) -> CostBreakdown:
         electricity=electricity,
         wear=wear,
         labor=labor,
+        packaging=packaging,
         subtotal=subtotal,
         failure_buffer=failure_buffer,
         total_cost=total_cost,
