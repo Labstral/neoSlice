@@ -13,11 +13,11 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QPoint
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, QPoint, QUrl, Signal
+from PySide6.QtGui import QFont, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget, QMessageBox,
 )
 
 from core import costing
@@ -49,7 +49,7 @@ _DEFAULTS = {
     "labor":    30.0,
     "packaging": 0.0,
     "failure":  5.0,
-    "margin":   50.0,
+    "margin":   40.0,   # marge bénéfice par défaut
 }
 
 # Couleurs data-viz des postes de coût (fixes, lisibles en thème clair ET sombre)
@@ -129,6 +129,8 @@ class _CostBar(QWidget):
 class CostCalculatorDialog(QDialog):
     """Fenêtre de calcul de coût et de devis."""
 
+    quote_saved = Signal()   # émis quand un devis est enregistré (rafraîchir la liste)
+
     # Paliers de prix suggérés : (id, clé i18n, marge %, couleur trait, fond uni)
     _TIERS = [
         ("eco",      "cost.tier_eco",      20.0, "#00C853", "rgba(0,200,83,0.16)"),
@@ -138,10 +140,13 @@ class CostCalculatorDialog(QDialog):
 
     def __init__(self, parent=None, *, est_weight_g: float | None = None,
                  est_time_h: float | None = None,
-                 printer_model: str | None = None, part_name: str = ""):
+                 printer_model: str | None = None, part_name: str = "",
+                 embedded: bool = False):
         super().__init__(parent)
+        self._embedded = embedded
         self.setObjectName("cost_dialog")
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        if not embedded:
+            self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         # PAS de WA_TranslucentBackground : la fenêtre se redimensionne quand la
         # note « estimé » se masque → une fenêtre translucide redimensionnée garde
         # son ancien rendu (zone cliquable décalée). Fenêtre opaque = rendu OK.
@@ -152,6 +157,24 @@ class CostCalculatorDialog(QDialog):
         self._estimated = False
 
         self._setup_ui()
+
+        if embedded:
+            # Intégré dans l'Espace Pro : pas de croix de fermeture, ni de titre
+            # « CALCULATEUR DE COÛT » + trait (redondant avec l'onglet Devis).
+            self._close_x.hide()
+            self._title_lbl.hide()
+            if self._seps:
+                self._seps[0].hide()
+            # Tout le devis intégré : police agrandie d'un cran (plus lisible).
+            from PySide6.QtWidgets import QWidget as _QW
+            for w in self.findChildren(_QW):
+                # Le combo « Client enregistré » doit rester petit (demande répétée).
+                if w.objectName() == "quoteClientCombo":
+                    continue
+                f = w.font()
+                if f.pointSize() > 0:
+                    f.setPointSize(f.pointSize() + 1)
+                    w.setFont(f)
 
         # Pré-remplissage
         self._load_rates()
@@ -178,6 +201,8 @@ class CostCalculatorDialog(QDialog):
         """Garantit que la fenêtre tient dans l'écran (sinon on réduit la zone
         défilante puis on repositionne) — jamais de fenêtre tronquée hors-écran."""
         super().showEvent(event)
+        if getattr(self, "_embedded", False):
+            return
         scr = self.screen() or QApplication.primaryScreen()
         if scr is None:
             return
@@ -207,6 +232,38 @@ class CostCalculatorDialog(QDialog):
         self._drag_pos = None
 
     # ── Construction UI ──────────────────────────────────────────────────────
+    def _build_spool_combo(self):
+        """Combo des bobines en stock (Pro). None si non-Pro ou aucune bobine."""
+        try:
+            from core import licensing
+            if not licensing.est_pro():
+                return None
+            from core.business import store
+            spools = [s for s in store.list_spools()
+                      if float(s.get("poids_restant_g") or 0) > 0]
+            if not spools:
+                return None
+            combo = QComboBox()
+            combo.addItem("—", None)
+            for s in spools:
+                label = (f"{s.get('materiau','')} · {s.get('marque','')} "
+                         f"{s.get('couleur_nom','')}").strip(" ·")
+                combo.addItem(label, s["id"])
+            combo.currentIndexChanged.connect(self._on_spool_pick)
+            return combo
+        except Exception:
+            return None
+
+    def _on_spool_pick(self):
+        from core.business import store
+        sid = self._spool_combo.currentData()
+        if not sid:
+            return
+        s = store.get_spool(sid)
+        if s:
+            self._rate_edits["filament"].setText(f"{store.cout_par_kg(s):.2f}")
+            self._recompute()
+
     def _row(self, label_key: str, edit: QWidget) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
@@ -243,7 +300,7 @@ class CostCalculatorDialog(QDialog):
 
     def _num_edit(self, key: str | None = None) -> QLineEdit:
         e = QLineEdit()
-        e.setFont(QFont(FONT_MONO, 8))
+        e.setFont(QFont(FONT_MAIN, 8))
         e.setFixedWidth(90)
         e.setAlignment(Qt.AlignRight)
         e.textChanged.connect(self._on_field_changed)
@@ -263,15 +320,19 @@ class CostCalculatorDialog(QDialog):
 
         self._card = QWidget()
         self._card.setObjectName("cost_card")
-        self._card.setFixedWidth(460)
+        if not self._embedded:
+            self._card.setFixedWidth(460)
         card_lay = QVBoxLayout(self._card)
-        card_lay.setContentsMargins(20, 14, 20, 18)
+        # Intégré : marges minimales (la page du Hub fournit déjà la marge extérieure)
+        if self._embedded:
+            card_lay.setContentsMargins(2, 0, 2, 4)
+        else:
+            card_lay.setContentsMargins(20, 14, 20, 18)
         card_lay.setSpacing(0)
         root.addWidget(self._card)
 
-        # Titre
-        title_row = QHBoxLayout()
-        title_row.setContentsMargins(0, 0, 0, 12)
+        # Titre (créé toujours, mais NON ajouté au layout en mode intégré → pas
+        # d'espace résiduel au-dessus de la 1re section, comme dans la facturation).
         self._title_lbl = QLabel(_("cost.title"))
         self._title_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._close_x = QPushButton("X")
@@ -279,14 +340,16 @@ class CostCalculatorDialog(QDialog):
         self._close_x.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._close_x.setCursor(Qt.PointingHandCursor)
         self._close_x.clicked.connect(self.close)
-        title_row.addWidget(self._title_lbl)
-        title_row.addStretch()
-        title_row.addWidget(self._close_x)
-        card_lay.addLayout(title_row)
-
         sep0 = _make_sep(); self._seps.append(sep0)
-        card_lay.addWidget(sep0)
-        card_lay.addSpacing(10)
+        if not self._embedded:
+            title_row = QHBoxLayout()
+            title_row.setContentsMargins(0, 0, 0, 12)
+            title_row.addWidget(self._title_lbl)
+            title_row.addStretch()
+            title_row.addWidget(self._close_x)
+            card_lay.addLayout(title_row)
+            card_lay.addWidget(sep0)
+            card_lay.addSpacing(10)
 
         # ── Zone défilante : formulaire ─────────────────────────────────────
         self._scroll = QScrollArea()
@@ -302,8 +365,13 @@ class CostCalculatorDialog(QDialog):
         flay = QVBoxLayout(form)
         flay.setContentsMargins(0, 0, 8, 0)
         flay.setSpacing(6)
-        self._scroll.setWidget(form)
-        card_lay.addWidget(self._scroll)
+        if self._embedded:
+            # Pas de scroll interne : le formulaire est posé directement, un seul
+            # défilement (celui du Hub) → jamais de double barre de défilement.
+            card_lay.addWidget(form)
+        else:
+            self._scroll.setWidget(form)
+            card_lay.addWidget(self._scroll)
 
         # ── Section IMPRESSION (en PREMIER : saisi à chaque devis) ──────────
         lbl_print = QLabel(_("cost.section_print"))
@@ -317,6 +385,18 @@ class CostCalculatorDialog(QDialog):
         self._partname_edit.setMinimumWidth(190)
         self._partname_edit.setText(self._part_name if self._part_name != "—" else "")
         flay.addLayout(self._row("cost.part_name", self._partname_edit))
+        # Client rattaché (optionnel) — relie le devis au répertoire clients
+        self._quote_client_combo = QComboBox()
+        self._quote_client_combo.setObjectName("quoteClientCombo")
+        self._quote_client_combo.setFont(QFont(FONT_MAIN, 8))
+        self._quote_client_combo.addItem(_("fact.client_none"), "")
+        try:
+            from core.business import store as _st
+            for _c in _st.list_clients():
+                self._quote_client_combo.addItem(_st.client_label(_c), _c["id"])
+        except Exception:
+            pass
+        flay.addLayout(self._row("fact.client_select", self._quote_client_combo))
         # Quantité
         self._qty_edit = self._num_edit()
         self._qty_edit.blockSignals(True); self._qty_edit.setText("1"); self._qty_edit.blockSignals(False)
@@ -362,13 +442,17 @@ class CostCalculatorDialog(QDialog):
         flay.addLayout(self._row("cost.country", self._country_combo))
 
         self._currency_edit = QLineEdit(); self._currency_edit.setFixedWidth(90)
-        self._currency_edit.setFont(QFont(FONT_MONO, 8))
+        self._currency_edit.setFont(QFont(FONT_MAIN, 8))
         self._currency_edit.setAlignment(Qt.AlignRight)
         self._currency_edit.textChanged.connect(self._on_field_changed)
         self._rate_edits["currency"] = self._currency_edit
         flay.addLayout(self._row("cost.currency", self._currency_edit))
 
         flay.addLayout(self._money_row("cost.kwh", self._num_edit("kwh")))
+        # Espace Pro : sélecteur de bobine → coût/kg auto-rempli
+        self._spool_combo = self._build_spool_combo()
+        if self._spool_combo is not None:
+            flay.addLayout(self._row("spool.use_for_quote", self._spool_combo))
         flay.addLayout(self._money_row("cost.filament_price", self._num_edit("filament")))
         flay.addLayout(self._money_row("cost.machine_price", self._num_edit("machine")))
         flay.addLayout(self._row("cost.machine_life", self._num_edit("life")))
@@ -395,7 +479,7 @@ class CostCalculatorDialog(QDialog):
         ):
             r = QHBoxLayout(); r.setContentsMargins(0, 0, 0, 0)
             name = QLabel(_(label_key)); name.setFont(QFont(FONT_MAIN, 8))
-            val = QLabel("—"); val.setFont(QFont(FONT_MONO, 8)); val.setAlignment(Qt.AlignRight)
+            val = QLabel("—"); val.setFont(QFont(FONT_MAIN, 8)); val.setAlignment(Qt.AlignRight)
             r.addWidget(name, 1); r.addWidget(val)
             card_lay.addLayout(r)
             card_lay.addSpacing(2)
@@ -408,7 +492,7 @@ class CostCalculatorDialog(QDialog):
         # Coût de revient
         rc = QHBoxLayout(); rc.setContentsMargins(0, 0, 0, 0)
         self._total_name = QLabel(_("cost.total")); self._total_name.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
-        self._total_val = QLabel("—"); self._total_val.setFont(QFont(FONT_MONO, 9, QFont.Bold)); self._total_val.setAlignment(Qt.AlignRight)
+        self._total_val = QLabel("—"); self._total_val.setFont(QFont(FONT_MAIN, 9, QFont.Bold)); self._total_val.setAlignment(Qt.AlignRight)
         rc.addWidget(self._total_name, 1); rc.addWidget(self._total_val)
         card_lay.addLayout(rc)
         card_lay.addSpacing(8)
@@ -427,7 +511,7 @@ class CostCalculatorDialog(QDialog):
             card.setMinimumHeight(58)
             cl = QVBoxLayout(card); cl.setContentsMargins(11, 9, 11, 11); cl.setSpacing(4)
             nm = QLabel(f"{_(key)} +{margin:.0f}%"); nm.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
-            pv = QLabel("—"); pv.setFont(QFont(FONT_MONO, 12, QFont.Bold))
+            pv = QLabel("—"); pv.setFont(QFont(FONT_MAIN, 12))
             cl.addWidget(nm); cl.addWidget(pv)
             tiers_row.addWidget(card, 1)
             self._tier_cards[tid] = (card, nm, pv, color, margin, fill)
@@ -437,7 +521,7 @@ class CostCalculatorDialog(QDialog):
         # Marge
         rm = QHBoxLayout(); rm.setContentsMargins(0, 0, 0, 0)
         self._margin_name = QLabel(_("cost.margin_row")); self._margin_name.setFont(QFont(FONT_MAIN, 8))
-        self._margin_val = QLabel("—"); self._margin_val.setFont(QFont(FONT_MONO, 8)); self._margin_val.setAlignment(Qt.AlignRight)
+        self._margin_val = QLabel("—"); self._margin_val.setFont(QFont(FONT_MAIN, 8)); self._margin_val.setAlignment(Qt.AlignRight)
         rm.addWidget(self._margin_name, 1); rm.addWidget(self._margin_val)
         card_lay.addLayout(rm)
         card_lay.addSpacing(6)
@@ -446,7 +530,7 @@ class CostCalculatorDialog(QDialog):
         rs = QHBoxLayout(); rs.setContentsMargins(0, 0, 0, 0)
         self._sale_name = QLabel(_("cost.sale_price")); self._sale_name.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._sale_name.setWordWrap(True)
-        self._sale_val = QLabel("—"); self._sale_val.setFont(QFont(FONT_MONO, 12, QFont.Bold)); self._sale_val.setAlignment(Qt.AlignRight)
+        self._sale_val = QLabel("—"); self._sale_val.setFont(QFont(FONT_MAIN, 12, QFont.Bold)); self._sale_val.setAlignment(Qt.AlignRight)
         rs.addWidget(self._sale_name, 1); rs.addWidget(self._sale_val)
         card_lay.addLayout(rs)
         card_lay.addSpacing(4)
@@ -454,7 +538,7 @@ class CostCalculatorDialog(QDialog):
         # Total pour N pièces (affiché seulement si quantité > 1)
         rq = QHBoxLayout(); rq.setContentsMargins(0, 0, 0, 0)
         self._qtytotal_name = QLabel("—"); self._qtytotal_name.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
-        self._qtytotal_val = QLabel("—"); self._qtytotal_val.setFont(QFont(FONT_MONO, 11, QFont.Bold))
+        self._qtytotal_val = QLabel("—"); self._qtytotal_val.setFont(QFont(FONT_MAIN, 11, QFont.Bold))
         self._qtytotal_val.setAlignment(Qt.AlignRight)
         rq.addWidget(self._qtytotal_name, 1); rq.addWidget(self._qtytotal_val)
         card_lay.addLayout(rq)
@@ -472,6 +556,11 @@ class CostCalculatorDialog(QDialog):
 
         # Boutons
         btn_row = QHBoxLayout(); btn_row.setSpacing(8)
+        self._save_quote_btn = QPushButton(_("cost.save_quote"))
+        self._save_quote_btn.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
+        self._save_quote_btn.setFixedHeight(32)
+        self._save_quote_btn.setCursor(Qt.PointingHandCursor)
+        self._save_quote_btn.clicked.connect(self._save_quote)
         self._pdf_btn = QPushButton(_("cost.export_pdf"))
         self._pdf_btn.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._pdf_btn.setFixedHeight(32)
@@ -482,13 +571,17 @@ class CostCalculatorDialog(QDialog):
         self._close_btn.setFixedHeight(32)
         self._close_btn.setCursor(Qt.PointingHandCursor)
         self._close_btn.clicked.connect(self.close)
+        btn_row.addWidget(self._save_quote_btn, 1)
         btn_row.addWidget(self._pdf_btn, 1)
         btn_row.addWidget(self._close_btn)
         card_lay.addLayout(btn_row)
+        # Intégré dans l'Espace Pro : pas de bouton « Fermer »
+        if getattr(self, "_embedded", False):
+            self._close_btn.hide()
 
         # Message de statut (export)
         self._status_lbl = QLabel("")
-        self._status_lbl.setFont(QFont(FONT_MAIN, 7))
+        self._status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._status_lbl.setWordWrap(True)
         card_lay.addWidget(self._status_lbl)
 
@@ -591,6 +684,44 @@ class CostCalculatorDialog(QDialog):
     def _refresh_note(self):
         self._est_note.setVisible(self._estimated)
 
+    # ── Enregistrement du devis ───────────────────────────────────────────────
+    def current_quote(self) -> dict:
+        """Données du devis courant (pour enregistrement / conversion en facture)."""
+        b = getattr(self, "_last", None)
+        qty = max(1, int(getattr(self, "_last_qty", 1) or 1))
+        part = self._partname_edit.text().strip() or "—"
+        cur = self._cur_now()
+        unit_cost = float(getattr(b, "total_cost", 0.0)) if b else 0.0
+        unit_price = float(getattr(b, "sale_price", 0.0)) if b else 0.0
+        return {
+            "part_name": part, "qty": qty, "currency": cur,
+            "unit_cost": round(unit_cost, 2), "unit_price": round(unit_price, 2),
+            "total_price": round(unit_price * qty, 2),
+            # Estimation de poids filament (g) — sert de point de départ pour la
+            # déduction de stock côté commande (mono-couleur, à corriger au besoin).
+            "grams": round(_f(self._weight_edit.text()), 0),
+            "client_id": self._quote_client_combo.currentData() or "",
+        }
+
+    def _save_quote(self):
+        if getattr(self, "_last", None) is None:
+            return
+        from core.business import store
+        q = store.add_quote(self.current_quote())
+        self.quote_saved.emit()
+        m = QMessageBox(self)
+        m.setWindowTitle(_("cost.title"))
+        m.setText(_("cost.quote_saved", number=q["number"]))
+        m.setIcon(QMessageBox.Information)
+        pal = _T.palette()
+        m.setStyleSheet(
+            f"QMessageBox {{ background: {pal['BG_PANEL']}; }}"
+            f"QMessageBox QLabel {{ color: {pal['TEXT_PRIMARY']}; background: transparent; }}"
+            f"QMessageBox QPushButton {{ background: {pal['BG_SURFACE']}; "
+            f"color: {pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
+            f"border-radius: 3px; padding: 4px 16px; }}")
+        m.exec()
+
     # ── Export PDF ──────────────────────────────────────────────────────────
     def _export_pdf(self):
         self._save_rates()
@@ -599,6 +730,9 @@ class CostCalculatorDialog(QDialog):
         self._part_name = self._partname_edit.text().strip() or "—"
         base = self._part_name if self._part_name != "—" else "piece"
         default_name = f"devis_{base}".replace(" ", "_")[:40] + ".pdf"
+        # Dossier Téléchargements par défaut (Windows + macOS), repli sur le home
+        downloads = Path.home() / "Downloads"
+        start_dir = downloads if downloads.is_dir() else Path.home()
 
         # Dialogue NATIF (look du système, ce que l'utilisateur veut). Ancré sur la
         # FENÊTRE PRINCIPALE et non sur la petite fenêtre devis : le natif se centre
@@ -607,7 +741,7 @@ class CostCalculatorDialog(QDialog):
         parent = self.parent() or self
         path, _filter = QFileDialog.getSaveFileName(
             parent, _("cost.export_pdf"),
-            str(Path.home() / default_name), "PDF (*.pdf)",
+            str(start_dir / default_name), "PDF (*.pdf)",
         )
         if not path:
             return
@@ -618,10 +752,31 @@ class CostCalculatorDialog(QDialog):
             self._status_lbl.setText(_("cost.pdf_saved", path=path))
             pal = _T.palette()
             self._status_lbl.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
+            self._reveal_in_folder(path)
         except Exception as exc:
             self._status_lbl.setText(_("cost.pdf_error", error=exc))
             pal = _T.palette()
             self._status_lbl.setStyleSheet(f"color: {pal['ERROR_RED']}; background: transparent;")
+
+    @staticmethod
+    def _reveal_in_folder(path: str):
+        """Ouvre le dossier du PDF (et sélectionne le fichier si possible).
+        Windows : Explorateur avec fichier sélectionné. macOS : Finder (-R).
+        Repli universel : ouvre le dossier via QDesktopServices."""
+        import sys
+        import subprocess
+        p = Path(path)
+        try:
+            if sys.platform.startswith("win"):
+                subprocess.run(["explorer", "/select,", str(p)])
+                return
+            if sys.platform == "darwin":
+                subprocess.run(["open", "-R", str(p)])
+                return
+        except Exception:
+            pass
+        # Repli : ouvrir le dossier parent
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(p.parent)))
 
     def _render_pdf(self, path: str, b: costing.CostBreakdown):
         from PySide6.QtGui import QPdfWriter, QPainter, QPageSize, QColor
@@ -632,7 +787,7 @@ class CostCalculatorDialog(QDialog):
         writer.setResolution(150)
         writer.setPageMargins(QMarginsF(18, 18, 18, 18))
         try:
-            writer.setTitle(f"{_('cost.quote_heading')} — {self._part_name}")
+            writer.setTitle(f"{T('quote')} — {self._part_name}")
         except Exception:
             pass
 
@@ -649,28 +804,53 @@ class CostCalculatorDialog(QDialog):
             big = QFont(FONT_MAIN, 22, QFont.Bold)
             mid = QFont(FONT_MAIN, 11, QFont.Bold)
             normal = QFont(FONT_MAIN, 10)
-            mono = QFont(FONT_MONO, 10)
+            small = QFont(FONT_MAIN, 8)
+            mono = QFont(FONT_MAIN, 10)
 
-            # En-tête
-            p.setFont(big); p.setPen(ink)
-            p.drawText(x0, y, W, 60, Qt.AlignLeft | Qt.AlignVCenter, "neoSlice")
-            p.setFont(QFont(FONT_MAIN, 12)); p.setPen(accent)
-            p.drawText(x0, y, W, 60, Qt.AlignRight | Qt.AlignVCenter, _("cost.quote_heading"))
-            y += 70
-            p.setPen(grey); p.setFont(normal)
-            p.drawText(x0, y, W, 26, Qt.AlignLeft, f"{_('cost.quote_part')} : {self._part_name}")
-            p.drawText(x0, y, W, 26, Qt.AlignRight, f"{_('cost.quote_date')} : {date.today().isoformat()}")
-            y += 40
+            # En-tête : société émettrice (gauche) / DEVIS + date (droite)
+            from core.business import store as _store
+            company = _store.get_company()
+            from core.business.doc_i18n import doc_lang as _dl, t as _dt, country_name as _cn
+            from core.export.pdf_util import fit_font as _fit, elided as _eld
+            _lang = _dl(company.get("pays", ""), company)
+            def T(k):
+                return _dt(k, _lang)
+            p.setFont(mid); p.setPen(ink)
+            p.drawText(x0, y, int(W * 0.6), 34, Qt.AlignLeft | Qt.AlignTop,
+                       _eld(mid, company.get("nom") or T("your_company"), int(W * 0.6) - 8))
+            cy = y + 30
+            p.setFont(small); p.setPen(grey)
+            for ln in (company.get("forme"), company.get("adresse"),
+                       f"{company.get('cp','')} {company.get('ville','')}".strip(),
+                       _cn(company.get("pays", ""), _lang), company.get("email"),
+                       company.get("tel"), company.get("id_fiscal")):
+                if ln and str(ln).strip():
+                    p.drawText(x0, cy, int(W * 0.6), 24, Qt.AlignLeft | Qt.AlignTop, str(ln))
+                    cy += 20
+            # Bloc DEVIS (droite) — titre réduit si traduit long, lignes tronquées
+            _qt = T("quote")
+            p.setFont(_fit(QFont(FONT_MAIN, 16, QFont.Bold), _qt, int(W * 0.5) - 4, 11))
+            p.setPen(accent)
+            p.drawText(int(W * 0.5), y, int(W * 0.5), 50, Qt.AlignRight | Qt.AlignTop, _qt)
+            ry = y + 44
+            p.setFont(normal); p.setPen(grey)
+            p.drawText(int(W * 0.5), ry, int(W * 0.5), 30, Qt.AlignRight | Qt.AlignTop,
+                       _eld(normal, f"{T('date')} : {date.today().isoformat()}", int(W * 0.5) - 4))
+            ry += 26
+            p.drawText(int(W * 0.5), ry, int(W * 0.5), 30, Qt.AlignRight | Qt.AlignTop,
+                       _eld(normal, f"{T('part')} : {self._part_name}", int(W * 0.5) - 4))
+            ry += 26
+            y = max(cy, ry) + 14
             p.setPen(QColor("#C8D2DC"))
             p.drawLine(x0, y, W, y)
-            y += 30
+            y += 26
 
             def line(name, value, bold=False, big_val=False, color=ink):
                 nonlocal y
                 p.setPen(ink if not bold else accent)
                 p.setFont(mid if bold else normal)
                 p.drawText(x0, y, int(W * 0.62), 30, Qt.AlignLeft | Qt.AlignVCenter, name)
-                p.setFont(QFont(FONT_MONO, 13, QFont.Bold) if big_val else mono)
+                p.setFont(QFont(FONT_MAIN, 13, QFont.Bold) if big_val else mono)
                 p.setPen(color)
                 p.drawText(int(W * 0.62), y, int(W * 0.38), 30, Qt.AlignRight | Qt.AlignVCenter,
                            f"{value:.2f} {cur}")
@@ -694,14 +874,19 @@ class CostCalculatorDialog(QDialog):
                 y += 6
                 line(_("cost.total_qty", n=qty), b.sale_price * qty, bold=True, big_val=True, color=accent)
 
-            # Pied de page : mention légale (non contractuel) + signature
+            # Pied de page : mentions légales pays + disclaimer + coordonnées
+            from core.business import invoicing as _inv
+            _legal = _inv.legal_block(company, company.get("pays", ""))
             p.setFont(QFont(FONT_MAIN, 7)); p.setPen(grey)
-            p.drawText(x0, writer.height() - 96, W, 56,
+            if _legal:
+                p.drawText(x0, writer.height() - 128, W, 44,
+                           Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap, _legal)
+            p.drawText(x0, writer.height() - 80, W, 32,
                        Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap,
                        _("cost.quote_disclaimer"))
-            p.setFont(QFont(FONT_MAIN, 8)); p.setPen(grey)
-            p.drawText(x0, writer.height() - 36, W, 26, Qt.AlignCenter,
-                       "neoSlice — neoslice-ai.com")
+            _foot = _inv.company_footer(company, _lang) or (company.get("nom") or "")
+            p.drawText(x0, writer.height() - 40, W, 32,
+                       Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap, _foot)
         finally:
             p.end()
 
@@ -711,14 +896,20 @@ class CostCalculatorDialog(QDialog):
         # Fond du dialog opaque (plus de translucence) → les coins autour de la
         # card arrondie prennent la couleur du panneau au lieu de gris système.
         self.setStyleSheet(f"QDialog#cost_dialog {{ background: {pal['BG_PANEL']}; }}")
-        self._card.setStyleSheet(f"""
-            QWidget#cost_card {{
-                background: {pal['BG_PANEL']};
-                border: 1px solid {pal['ACCENT']};
-                border-radius: 6px;
-            }}
-            QWidget#cost_form {{ background: {pal['BG_PANEL']}; }}
-        """)
+        if self._embedded:
+            # Intégré dans l'Espace Pro : pas de cadre — on se fond dans la page
+            self._card.setStyleSheet(
+                "QWidget#cost_card { background: transparent; border: none; }"
+                "QWidget#cost_form { background: transparent; }")
+        else:
+            self._card.setStyleSheet(f"""
+                QWidget#cost_card {{
+                    background: {pal['BG_PANEL']};
+                    border: 1px solid {pal['ACCENT']};
+                    border-radius: 6px;
+                }}
+                QWidget#cost_form {{ background: {pal['BG_PANEL']}; }}
+            """)
         self._scroll.setStyleSheet(f"""
             QScrollArea {{ background: transparent; border: none; }}
             QScrollBar:vertical {{
@@ -759,12 +950,17 @@ class CostCalculatorDialog(QDialog):
             self._partname_edit, self._qty_edit,
         ]:
             e.setStyleSheet(edit_css)
-        self._country_combo.setStyleSheet(f"""
+        _combo_css = f"""
             QComboBox {{ background: {pal['BG_INPUT']}; color: {pal['TEXT_PRIMARY']};
                          border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 2px 6px; }}
             QComboBox QAbstractItemView {{ background: {pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']};
                          border: 1px solid {pal['INACTIVE']}; selection-background-color: {pal['ACCENT']}; }}
-        """)
+        """
+        self._country_combo.setStyleSheet(_combo_css)
+        if getattr(self, "_spool_combo", None) is not None:
+            self._spool_combo.setStyleSheet(_combo_css)
+        if getattr(self, "_quote_client_combo", None) is not None:
+            self._quote_client_combo.setStyleSheet(_combo_css)
 
         for name, val in self._break_rows.values():
             name.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
@@ -790,9 +986,15 @@ class CostCalculatorDialog(QDialog):
         self._cost_bar.set_text_color(pal['TEXT_SECONDARY'])
 
         self._pdf_btn.setStyleSheet(f"""
-            QPushButton {{ background: {pal['TELE_GREEN']}; color: {pal['EXPORT_FG']};
+            QPushButton {{ background: {pal['ACCENT']}; color: #ffffff;
                            border: none; border-radius: 3px; letter-spacing: 1px; }}
-            QPushButton:hover {{ background: #00D080; }}
+            QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
+        """)
+        self._save_quote_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {pal['TELE_GREEN']};
+                           border: 1px solid {pal['TELE_GREEN']}; border-radius: 3px;
+                           letter-spacing: 1px; }}
+            QPushButton:hover {{ background: {pal['TELE_GREEN']}; color: #ffffff; }}
         """)
         self._close_btn.setStyleSheet(f"""
             QPushButton {{ background: transparent; color: {pal['TEXT_SECONDARY']};

@@ -152,13 +152,40 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("neoSlice")
-    app.setApplicationDisplayName("neoSlice")
+    # Barre de titre native sombre/claire AU PLUS TÔT (avant tout affichage, splash
+    # compris) → pas de flash clair au démarrage. Qt gère ensuite nativement la
+    # couleur de la barre de titre sur toutes les fenêtres, y compris au retour de
+    # réduction d'une fenêtre maximisée. Voir theme.apply_title_bar_theme.
+    try:
+        from ui.styles.theme import apply_title_bar_theme as _tb_early
+        _tb_early(None)
+    except Exception:
+        pass
+    # Pas de setApplicationDisplayName : Qt l'ajoute en suffixe « - neoSlice » à tous
+    # les titres de fenêtres (redondant). Le nom reste via setApplicationName.
     app.setApplicationVersion(__version__)
     app.setOrganizationName("neoSlice")
 
     font = QFont(FONT_MAIN, 10)
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     app.setFont(font)
+
+    # Traduire les dialogues natifs Qt (sélecteur de couleur, OK/Annuler, Oui/Non,
+    # dialogue de fichiers…) dans la langue de l'app.
+    try:
+        from PySide6.QtCore import QTranslator, QLibraryInfo, QLocale
+        from core.prefs import PREFS as _PREFS_LANG
+        _lang = _PREFS_LANG.get("lang", "fr")
+        if _lang and _lang != "en":
+            _qt_tr = QTranslator(app)
+            _tr_path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+            for _mod in ("qtbase", "qt"):
+                if _qt_tr.load(QLocale(_lang), _mod, "_", _tr_path):
+                    app.installTranslator(_qt_tr)
+                    globals()["_QT_TRANSLATOR"] = _qt_tr  # référence anti-GC
+                    break
+    except Exception:
+        pass
 
     # Appliquer la palette Qt dès le départ pour éviter le flash blanc en mode sombre.
     # QPalette fixe la couleur de fond système avant tout rendu — sans ça, Qt peint
@@ -187,6 +214,28 @@ def main():
     # Infobulles maison garanties (le tooltip natif reste sombre sous Windows)
     install_themed_tooltips(app)
 
+    # Barre de titre Windows cohérente avec le thème pour TOUTES les fenêtres
+    # (fenêtre principale, dialogues, avertissements, sélecteurs natifs…).
+    from PySide6.QtCore import QObject, QEvent
+    from PySide6.QtWidgets import QWidget as _QWidget
+    from ui.styles.theme import apply_title_bar_theme as _tb
+
+    class _TitleBarFilter(QObject):
+        def eventFilter(self, obj, event):
+            if event.type() == QEvent.Type.Show and isinstance(obj, _QWidget) and obj.isWindow():
+                _tb(obj)
+            return False
+
+    _tb_filter = _TitleBarFilter()
+    app.installEventFilter(_tb_filter)
+    globals()["_TB_FILTER"] = _tb_filter  # anti-GC
+
+    def _retheme_titlebars():
+        for w in app.topLevelWidgets():
+            if w.isWindow():
+                _tb(w)
+    _THEME_MGR.register(_retheme_titlebars)
+
     # Icône sur QApplication avant tout affichage — garantit la barre des tâches
     _icon_path = _assets_dir() / "neoSlice.ico"
     if not _icon_path.exists():
@@ -206,9 +255,17 @@ def main():
             from ui.main_window import MainWindow
             window = MainWindow()
             _keep_alive.append(window)
-            window.showMaximized()
             from ui.styles.theme import apply_title_bar_theme
+            # AVANT l'affichage → barre de titre dessinée au bon thème dès le départ
             apply_title_bar_theme(window)
+            window.showMaximized()
+            apply_title_bar_theme(window)   # + après (repaint forcé, ceinture-bretelles)
+            # La frame d'une fenêtre MAXIMISÉE n'est totalement réalisée qu'après
+            # quelques tours de boucle → on ré-applique en différé, sinon la barre
+            # de titre peut rester claire au tout premier affichage.
+            from PySide6.QtCore import QTimer as _QT
+            for _ms in (0, 60, 200):
+                _QT.singleShot(_ms, lambda w=window: apply_title_bar_theme(w))
             # Niveau 2 anti-fraude : re-valide le Pro en ligne en arrière-plan
             # (révoque un Pro sans clé valide ; ne punit pas l'utilisateur hors-ligne).
             from core import licensing

@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing pour les imprimantes **Bambu Lab**. Il analyse vos fichiers 3D et génère automatiquement une configuration d'impression optimisée dans Bambu Studio.
 
-> Version actuelle : **v0.1.5.6** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v0.1.6** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -25,12 +25,12 @@
 ## Installation
 
 ### Windows
-1. Téléchargez `neoSlice_Setup_v0.1.5.6-beta_Windows.exe` sur [neoslice-ai.com](https://neoslice-ai.com)
+1. Téléchargez `neoSlice_Setup_v0.1.6_Windows.exe` sur [neoslice-ai.com](https://neoslice-ai.com)
 2. Lancez l'installateur — aucun droit administrateur requis
 3. Un raccourci est créé sur le bureau
 
 ### macOS
-1. Téléchargez `neoSlice-v0.1.5-macOS.dmg`
+1. Téléchargez `neoSlice-v0.1.6-macOS.dmg`
 2. Ouvrez le DMG et glissez `neoSlice.app` dans Applications
 3. Au premier lancement, faites clic droit → Ouvrir (validation Gatekeeper)
 
@@ -40,6 +40,19 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v0.1.6
+- **Espace Pro — gestion d'atelier complète** : bobines (stock multi-couleur, coût/kg, alertes de réappro, liste de courses), devis, factures, clients, commandes (file de production) et catalogue d'articles, tous connectés
+- **Tableau de bord** : CA facturé / encaissé / dû, factures en retard, graphe des 6 derniers mois (noms de mois réels + légende) et export comptable CSV
+- **Facturation internationale** : 13 pays, documents dans la langue du client (FR, EN, DE, NL, IT, ES), mentions légales par pays et frais de recouvrement configurables
+- **Décompte automatique du filament** après chaque impression
+- **Correctifs d'affichage** : barre de titre sombre native fiable (plus de bande noire ni de barre perdue au retour de réduction), listes sans fantômes, menu de statut au clic
+
+### v0.1.5.7
+- **Estimation du poids plus juste** : nouveau modèle physique basé sur la surface réelle de la pièce (coque + remplissage), précis sur petites comme grandes pièces
+- **Supports plus propres** : interface de contact ajustée (style « snug », motif rectiligne, espacement serré) → dessous lisse et retrait plus facile
+- **Surplombs maîtrisés** : détection des parois en surplomb + ralentissement automatique des porte-à-faux raides (moins d'affaissement) et débit de pont calibré
+- **Coutures plus discrètes** en mode précision (gap de couture resserré)
 
 ### v0.1.5.6
 - **macOS** : correction de l'activation Pro et des mises à jour (« Pas de connexion Internet » alors que la connexion fonctionnait) — certificats SSL embarqués

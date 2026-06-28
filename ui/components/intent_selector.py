@@ -581,28 +581,42 @@ class IntentSelector(QWidget):
         self._lock_banner.setStyleSheet(
             f"background: {_lp['BG_SURFACE']}; border-radius: 2px;"
         )
+        from PySide6.QtWidgets import QSizePolicy as _QSP
+        self._lock_banner.setSizePolicy(_QSP.Preferred, _QSP.Expanding)
         banner_layout = QVBoxLayout(self._lock_banner)
         banner_layout.setContentsMargins(10, 10, 10, 10)
         banner_layout.setSpacing(4)
+        banner_layout.addStretch(1)        # centrage vertical du bloc de texte
 
         self._lock_icon_lbl = QLabel("⊘")
-        self._lock_icon_lbl.setFont(QFont(FONT_MAIN, 18))
         self._lock_icon_lbl.setAlignment(Qt.AlignCenter)
-        self._lock_icon_lbl.setStyleSheet(f"color: {_lp['INACTIVE']}; background: transparent;")
+        self._lock_icon_lbl.setStyleSheet(
+            f"font-size: 30px; color: {_lp['TEXT_SECONDARY']}; background: transparent;")
         banner_layout.addWidget(self._lock_icon_lbl)
 
+        # Même structure que le panneau verrouillé du DropZone (haut) : titre gras
+        # FONT_MAIN + sous-titre FONT_MONO 9 + étape FONT_MONO 9 → polices identiques.
         self._lock_msg_lbl = QLabel(_("intent.lock_msg"))
-        self._lock_msg_lbl.setFont(QFont(FONT_MONO, 8))
+        self._lock_msg_lbl.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._lock_msg_lbl.setAlignment(Qt.AlignCenter)
-        self._lock_msg_lbl.setStyleSheet(f"color: {_lp['TEXT_SECONDARY']}; background: transparent;")
+        self._lock_msg_lbl.setStyleSheet(
+            f"color: {_lp['TEXT_SECONDARY']}; background: transparent; letter-spacing: 1px;")
         self._lock_msg_lbl.setWordWrap(True)
         banner_layout.addWidget(self._lock_msg_lbl)
+
+        self._lock_sub_lbl = QLabel(_("intent.lock_sub"))
+        self._lock_sub_lbl.setFont(QFont(FONT_MONO, 9))
+        self._lock_sub_lbl.setAlignment(Qt.AlignCenter)
+        self._lock_sub_lbl.setStyleSheet(f"color: {_lp['TEXT_LABEL']}; background: transparent;")
+        self._lock_sub_lbl.setWordWrap(True)
+        banner_layout.addWidget(self._lock_sub_lbl)
 
         self._lock_step_lbl = QLabel(_("intent.lock_step"))
         self._lock_step_lbl.setFont(QFont(FONT_MONO, 9))
         self._lock_step_lbl.setAlignment(Qt.AlignCenter)
         self._lock_step_lbl.setStyleSheet(f"color: {_lp['TEXT_LABEL']}; background: transparent;")
         banner_layout.addWidget(self._lock_step_lbl)
+        banner_layout.addStretch(1)        # centrage vertical (bas)
 
         root.addWidget(self._lock_banner)
 
@@ -952,11 +966,16 @@ class IntentSelector(QWidget):
             self._lock_banner.setStyleSheet(f"background: {pal['BG_SURFACE']}; border-radius: 2px;")
             self._lock_banner.update()
         if hasattr(self, '_lock_icon_lbl'):
-            self._lock_icon_lbl.setStyleSheet(f"color: {pal['INACTIVE']}; background: transparent;")
+            self._lock_icon_lbl.setStyleSheet(
+                f"font-size: 30px; color: {pal['TEXT_SECONDARY']}; background: transparent;")
             self._lock_icon_lbl.update()
         if hasattr(self, '_lock_msg_lbl'):
-            self._lock_msg_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+            self._lock_msg_lbl.setStyleSheet(
+                f"color: {pal['TEXT_SECONDARY']}; background: transparent; letter-spacing: 1px;")
             self._lock_msg_lbl.update()
+        if hasattr(self, '_lock_sub_lbl'):
+            self._lock_sub_lbl.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
+            self._lock_sub_lbl.update()
         if hasattr(self, '_lock_step_lbl'):
             self._lock_step_lbl.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
             self._lock_step_lbl.update()

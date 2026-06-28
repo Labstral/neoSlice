@@ -112,6 +112,7 @@ class ThemeManager:
         self._name = name
         self._palette = _DARK if name == "dark" else _LIGHT
         self._save(name)
+        _sync_native_color_scheme(name == "dark")   # barre de titre native (Qt)
         for cb in list(self._listeners):
             try:
                 cb()
@@ -304,16 +305,66 @@ def install_themed_tooltips(app) -> None:
         pass
 
 
+def _sync_native_color_scheme(is_dark: bool) -> None:
+    """Règle le color scheme NATIF de l'application (Qt 6.8+).
+
+    Aligne la palette de base de Qt (menus, tooltips, dialogues natifs) sur le
+    thème de l'app. NB : sur Windows, ça ne suffit PAS toujours à colorer la
+    barre de titre native — d'où l'appel DWM explicite ci-dessous."""
+    try:
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtCore import Qt
+        app = QGuiApplication.instance()
+        if app is None:                       # avant la création de QApplication
+            return
+        hints = app.styleHints()
+        scheme = Qt.ColorScheme.Dark if is_dark else Qt.ColorScheme.Light
+        if hints is not None and hints.colorScheme() != scheme:
+            hints.setColorScheme(scheme)
+    except Exception:
+        pass
+
+
 def apply_title_bar_theme(widget, is_dark: bool | None = None) -> None:
-    """Applique le thème sombre/clair à la barre de titre Windows (DWM API)."""
-    if sys.platform != "win32":
+    """Applique le thème clair/sombre à la barre de titre native Windows.
+
+    Deux leviers complémentaires :
+    1. color scheme Qt natif (palette des menus/tooltips/dialogues) ;
+    2. DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE) pour la COULEUR réelle
+       de la barre de titre — fiable sur toutes les builds, indépendamment du
+       thème de l'OS.
+
+    Point CLÉ : on ne fait PLUS de `SetWindowPos(SWP_FRAMECHANGED)`. C'était lui
+    (et lui seul) qui corrompait la frame d'une fenêtre MAXIMISÉE au retour de
+    réduction (barre de titre perdue + bande noire), car il déclenche un
+    WM_NCCALCSIZE (recalcul de géométrie). L'attribut DWM posé sur le HWND
+    persiste à travers minimiser/restaurer/maximiser ; pour rafraîchir un
+    changement de thème en cours d'exécution, un `RedrawWindow(RDW_FRAME)` repeint
+    la barre de titre SANS recalcul de géométrie (donc sans corruption)."""
+    if is_dark is None:
+        is_dark = MANAGER.is_dark()
+    _sync_native_color_scheme(is_dark)
+    if sys.platform != "win32" or widget is None:
         return
     try:
-        if is_dark is None:
-            is_dark = MANAGER.is_dark()
         hwnd = int(widget.winId())
+        if not hwnd:
+            return
         value = ctypes.c_int(1 if is_dark else 0)
-        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(value), ctypes.sizeof(value))
+        dwm = ctypes.windll.dwmapi
+        # 20 = DWMWA_USE_IMMERSIVE_DARK_MODE (Win10 2004+/Win11), 19 = anciennes
+        # builds. Poser les DEUX est inoffensif et couvre toutes les versions.
+        for attr in (20, 19):
+            try:
+                dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(value), ctypes.sizeof(value))
+            except Exception:
+                pass
+        # Repaint de la zone non-cliente UNIQUEMENT (WM_NCPAINT), sans SetWindowPos
+        # ni SWP_FRAMECHANGED → pas de WM_NCCALCSIZE → aucune corruption de frame.
+        user32 = ctypes.windll.user32
+        RDW_INVALIDATE, RDW_FRAME, RDW_UPDATENOW = 0x1, 0x400, 0x100
+        user32.RedrawWindow(hwnd, None, None,
+                            RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW)
     except Exception:
         pass
 

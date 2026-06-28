@@ -48,7 +48,7 @@ class DropZone(QWidget):
 
         self._icon = QLabel("⊘")
         self._icon.setAlignment(Qt.AlignCenter)
-        self._icon.setStyleSheet(f"font-size: 22px; color: {INACTIVE}; background: transparent;")
+        self._icon.setStyleSheet(f"font-size: 30px; color: {TEXT_SECONDARY}; background: transparent;")
         layout.addWidget(self._icon)
 
         self._main_label = QLabel(_("drop.main_locked"))
@@ -63,6 +63,14 @@ class DropZone(QWidget):
         self._sub_label.setFont(QFont(FONT_MONO, 9))
         self._sub_label.setStyleSheet(f"color: {INACTIVE}; background: transparent;")
         layout.addWidget(self._sub_label)
+
+        # « Étape ① » dans son propre label (même structure que l'overlay « Étape ② »
+        # de l'instruction mission) → espacement homogène entre les deux panneaux.
+        self._step_label = QLabel(_("drop.step_locked"))
+        self._step_label.setAlignment(Qt.AlignCenter)
+        self._step_label.setFont(QFont(FONT_MONO, 9))
+        self._step_label.setStyleSheet(f"color: {INACTIVE}; background: transparent;")
+        layout.addWidget(self._step_label)
 
         self._recent_path: "Path | None" = None
         self._recent_btn = QPushButton()
@@ -90,21 +98,26 @@ class DropZone(QWidget):
         inc = _p["INACTIVE"]; ts = _p["TEXT_SECONDARY"]; tl = _p["TEXT_LABEL"]
         if self._locked:
             self._icon.setText("⊘")
-            self._icon.setStyleSheet(f"font-size: 22px; color: {inc}; background: transparent;")
+            self._icon.setStyleSheet(f"font-size: 30px; color: {ts}; background: transparent;")
             self._main_label.setText(_("drop.main_locked"))
             self._main_label.setStyleSheet(f"color: {ts}; background: transparent; letter-spacing: 1px;")
             self._sub_label.setText(_("drop.sub_locked"))
             self._sub_label.setStyleSheet(f"color: {tl}; background: transparent;")
+            self._step_label.setText(_("drop.step_locked"))
+            self._step_label.setStyleSheet(f"color: {tl}; background: transparent;")
+            self._step_label.show()
         elif self._loaded:
             if hasattr(self, "_recent_btn"):
                 self._recent_btn.hide()
+            self._step_label.hide()
         else:
             self._icon.setText("⬆")
-            self._icon.setStyleSheet(f"font-size: 24px; color: {inc}; background: transparent;")
+            self._icon.setStyleSheet(f"font-size: 30px; color: {inc}; background: transparent;")
             self._main_label.setText(_("drop.main"))
             self._main_label.setStyleSheet(f"color: {ts}; background: transparent; letter-spacing: 2px;")
             self._sub_label.setText(_("drop.sub"))
             self._sub_label.setStyleSheet(f"color: {tl}; background: transparent;")
+            self._step_label.hide()
             if hasattr(self, "_recent_btn") and hasattr(self, "_recent_path") and self._recent_path:
                 self._recent_btn.setText(_("drop.reopen", name=self._recent_path.name))
                 self._recent_btn.show()

@@ -292,7 +292,7 @@ class ParamsPreview(QWidget):
             est_min = c.estimated_time_minutes(a.volume_cm3, height_mm, support_ratio=sup_ratio)
             h, m = divmod(int(est_min), 60)
             time_str = f"~{h}h{m:02d}" if h > 0 else f"~{m} min"
-            fil_g = c.estimated_filament_g(a.volume_cm3)
+            fil_g = c.estimated_filament_g(a.volume_cm3, getattr(a, "surface_area_cm2", 0.0))
             summary_rows.insert(0, (_("preview.row_time"),     time_str))
             summary_rows.insert(1, (_("preview.row_filament"), f"~{fil_g:.0f} g"))
 
@@ -394,7 +394,7 @@ class ParamsPreview(QWidget):
 
         if a and a.volume_cm3 > 0:
             s = self._add_section(_("preview.sec_estimates"))
-            filament_g = c.estimated_filament_g(a.volume_cm3)
+            filament_g = c.estimated_filament_g(a.volume_cm3, getattr(a, "surface_area_cm2", 0.0))
             height_mm  = a.bounding_box_mm[2] if len(a.bounding_box_mm) > 2 else 20.0
             sup_ratio  = getattr(a, "estimated_support_ratio", 0.0) if getattr(a, "support_needed", False) else 0.0
             est_min    = c.estimated_time_minutes(a.volume_cm3, height_mm, support_ratio=sup_ratio)

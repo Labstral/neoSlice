@@ -1,5 +1,15 @@
-"""Base de données des imprimantes Bambu Lab supportées, organisée par série."""
+"""Base de données des imprimantes supportées.
+
+- Bambu Lab : catalogue enrichi à la main (PRINTERS), groupé par série.
+- Autres marques (Creality, Prusa, Anycubic, Flashforge, Elegoo, Qidi) : catalogue
+  généré depuis les profils officiels Bambu Studio + OrcaSlicer
+  (data/printers_catalog.json pour l'UI, data/printer_machines.json pour le 3MF).
+  Voir tools/extract_printers.py.
+"""
 from __future__ import annotations
+import functools
+import json
+from pathlib import Path
 
 # Ordre d'affichage des séries dans les sélecteurs
 SERIES_ORDRE = ["Série H2", "Série X", "Série P", "Série A"]
@@ -194,8 +204,9 @@ def printer_specs(name: str) -> dict:
     """Specs de mouvement + limites thermiques d'une imprimante.
 
     Renvoie : max_speed_mms, max_accel_mms2, max_flow_mm3s, bed_slinger,
-    nozzle_max_temp, bed_max_temp. Tolérant : retombe sur les défauts de série
-    puis sur un défaut CoreXY si le modèle est inconnu."""
+    nozzle_max_temp, bed_max_temp. Gère les Bambu Lab (PRINTERS) ET les marques
+    tierces (catalogue). Tolérant : retombe sur les défauts de série puis sur un
+    défaut CoreXY si le modèle est inconnu."""
     p = PRINTERS.get(name, {})
     matched = name
     if not p and name:
@@ -206,9 +217,263 @@ def printer_specs(name: str) -> dict:
             if kl == low or kl in low or low in kl:
                 p, matched = PRINTERS[k], k
                 break
-    serie = p.get("serie", "")
-    base = dict(_SPECS_PAR_SERIE.get(serie, _SPECS_DEFAUT))
-    base.update(_SPECS_OVERRIDE.get(matched, {}))
-    base["nozzle_max_temp"] = p.get("buse_max_temp", 300)
-    base["bed_max_temp"] = p.get("plateau_max_temp", 100)
+    if p:   # Bambu Lab
+        serie = p.get("serie", "")
+        base = dict(_SPECS_PAR_SERIE.get(serie, _SPECS_DEFAUT))
+        base.update(_SPECS_OVERRIDE.get(matched, {}))
+        base["nozzle_max_temp"] = p.get("buse_max_temp", 300)
+        base["bed_max_temp"] = p.get("plateau_max_temp", 100)
+        return base
+
+    # Marque tierce : specs depuis le catalogue (par printer_model)
+    m = _by_model().get(name)
+    if m:
+        gc = (m.get("gcode") or "").lower()
+        klipper = "klipper" in gc
+        marlin2 = "marlin2" in gc
+        # Débit volumétrique absent des profils machine → estimation prudente par
+        # firmware (proxy de génération) : klipper haute vitesse > marlin2 moderne
+        # (Prusa MK4/Core One) > marlin i3 legacy. Volontairement conservateur pour
+        # ne JAMAIS sur-vitesser ; l'utilisateur peut imprimer plus vite à la main.
+        flow = 22 if klipper else (16 if marlin2 else 10)
+        return {
+            "max_speed_mms": int(m.get("max_speed", 500)),
+            "max_accel_mms2": int(m.get("max_accel", 10000)),
+            "max_flow_mm3s": flow,
+            "bed_slinger": not klipper,
+            # Hotends modernes klipper/marlin2 souvent tout-métal (≈300°C) ; marlin
+            # legacy ≈260°C. La couche filament plafonne ensuite selon le matériau.
+            "nozzle_max_temp": 300 if (klipper or marlin2) else 260,
+            "bed_max_temp": 110 if klipper else 100,
+        }
+
+    # Inconnu → défaut CoreXY prudent
+    base = dict(_SPECS_DEFAUT)
+    base["nozzle_max_temp"] = 300
+    base["bed_max_temp"] = 100
     return base
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Catalogue multi-marques (Creality, Prusa, Anycubic, Flashforge, Elegoo, Qidi)
+# Généré depuis les profils officiels — voir tools/extract_printers.py.
+# ──────────────────────────────────────────────────────────────────────────────
+
+_DATA_DIR = Path(__file__).resolve().parent
+
+# Ordre d'affichage des marques dans le sélecteur (Bambu Lab géré via SERIES_ORDRE)
+MARQUES_ORDRE = ["Bambu Lab", "Creality", "Prusa", "Anycubic",
+                 "Flashforge", "Elegoo", "Qidi"]
+
+# Marques grand public affichées DIRECTEMENT dans le menu ; les autres sont
+# regroupées sous « Autres marques » pour raccourcir le menu (beaucoup de marques).
+POPULAR_BRANDS = [
+    "Creality", "Prusa", "Anycubic", "Elegoo", "Sovol", "Voron", "Snapmaker",
+    "Artillery", "Qidi", "Flashforge", "Anker", "FLSun", "Geeetech", "Raise3D",
+    "UltiMaker", "Tronxy", "TwoTrees",
+]
+
+
+def split_popular(brands: list[str]) -> tuple[list[str], list[str]]:
+    """Sépare une liste de marques en (courantes présentes, autres) en préservant
+    l'ordre : les courantes dans l'ordre de POPULAR_BRANDS, le reste tel quel."""
+    popular = [b for b in POPULAR_BRANDS if b in brands]
+    others = [b for b in brands if b not in popular]
+    return popular, others
+
+
+@functools.lru_cache(maxsize=1)
+def _catalogue() -> dict:
+    try:
+        return json.loads((_DATA_DIR / "printers_catalog.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+@functools.lru_cache(maxsize=1)
+def _machines() -> dict:
+    try:
+        return json.loads((_DATA_DIR / "printer_machines.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _display_model(model_key: str, marque: str) -> str:
+    """Retire le préfixe marque pour un affichage propre sous l'en-tête de marque."""
+    first_brand_word = marque.split(" ")[0].lower()
+    parts = model_key.split(" ", 1)
+    if len(parts) == 2 and parts[0].lower() == first_brand_word:
+        return parts[1]
+    return model_key
+
+
+@functools.lru_cache(maxsize=1)
+def _by_model() -> dict:
+    """Index : printer_model → {marque, display, nozzles:{nz_str: profile_name}, slicers, specs}."""
+    out: dict[str, dict] = {}
+    for name, e in _catalogue().items():
+        mk = e.get("printer_model") or name
+        slot = out.setdefault(mk, {
+            "marque": e.get("marque", ""),
+            "display": _display_model(mk, e.get("marque", "")),
+            "nozzles": {},
+            "slicers": set(),
+            "bed_size": e.get("bed_size", ""),
+            "height": e.get("printable_height", ""),
+            "max_speed": e.get("max_speed_mms", 500),
+            "max_accel": e.get("max_accel_mms2", 10000),
+            "gcode": e.get("gcode_flavor", ""),
+        })
+        slot["nozzles"][str(e.get("nozzle_diameter", "0.4"))] = name
+        slot["slicers"].update(e.get("slicers", ["bambu", "orca"]))
+    return out
+
+
+def _fmt_nozzle(mm: float) -> str:
+    return f"{float(mm):g}"
+
+
+def _brand_sort_key(b: str):
+    """Marques prioritaires en tête, puis ordre alphabétique."""
+    prio = [m for m in MARQUES_ORDRE if m != "Bambu Lab"]
+    return (prio.index(b) if b in prio else len(prio), b.lower())
+
+
+def catalogue_brands(slicer: str = "orca") -> list[str]:
+    """Marques tierces ayant ≥1 modèle supporté par ce slicer (bambu/orca)."""
+    present = {v["marque"] for v in _by_model().values() if slicer in v["slicers"]}
+    return sorted(present, key=_brand_sort_key)
+
+
+def models_for_brand(brand: str, slicer: str = "orca") -> list[tuple[str, str]]:
+    """[(libellé affiché, model_key)] triés, pour une marque et un slicer donnés."""
+    items = [(v["display"], mk) for mk, v in _by_model().items()
+             if v["marque"] == brand and slicer in v["slicers"]]
+    return sorted(items, key=lambda t: t[0].lower())
+
+
+def nozzles_for_model(model_key: str) -> list[float]:
+    """Diamètres de buse réellement disponibles pour ce modèle (triés)."""
+    nz = _by_model().get(model_key, {}).get("nozzles", {})
+    return sorted(float(x) for x in nz)
+
+
+def profile_name_for(model_key: str, nozzle_mm: float) -> str | None:
+    """Nom exact du profil (ex. 'Creality Ender-3 V3 0.4 nozzle') pour le 3MF."""
+    nz = _by_model().get(model_key, {}).get("nozzles", {})
+    if not nz:
+        return None
+    target = _fmt_nozzle(nozzle_mm)
+    if target in nz:
+        return nz[target]
+    # Repli : buse la plus proche
+    closest = min(nz, key=lambda k: abs(float(k) - float(nozzle_mm)))
+    return nz[closest]
+
+
+def machine_config_for(profile_name: str) -> dict:
+    """Config machine COMPLÈTE (résolue) pour injection dans project_settings.config."""
+    return dict(_machines().get(profile_name, {}))
+
+
+def is_catalogue_model(model_key: str) -> bool:
+    """True si l'identifiant correspond à une imprimante du catalogue (non-Bambu)."""
+    return model_key in _by_model()
+
+
+def brand_of(model_key: str) -> str:
+    """Marque d'un model_key catalogue ('' si Bambu/inconnu)."""
+    return _by_model().get(model_key, {}).get("marque", "")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Catalogue PrusaSlicer (sortie « PrusaSlicer ») — data/prusa_printers.json
+# ──────────────────────────────────────────────────────────────────────────────
+import re as _re
+
+
+@functools.lru_cache(maxsize=1)
+def _prusa_catalogue() -> dict:
+    try:
+        return json.loads((_DATA_DIR / "prusa_printers.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _prusa_display(preset_name: str) -> str:
+    """Retire les infos de buse du nom de preset PrusaSlicer (formats variés) :
+    'Original Prusa MK4S 0.4 nozzle', 'Creality CR-10 (0.3 mm nozzle)',
+    'Switchwire - 0.4mm Nozzle (High Flow)' → libellé propre."""
+    s = preset_name
+    s = _re.sub(r"\s*\([^)]*\)", "", s)                       # parenthèses (… nozzle), (High Flow)
+    s = _re.sub(r"\s*[-–]?\s*(HF)?\d(\.\d+)?\s*(mm)?\s*nozzle", "", s, flags=_re.I)  # 0.4 nozzle / 0.4mm Nozzle
+    s = _re.sub(r"\s*[-–]\s*$", "", s)                        # tiret traînant
+    return _re.sub(r"\s+", " ", s).strip()
+
+
+def _prusa_display_brand(preset: str, brand: str) -> str:
+    """Libellé d'un modèle Prusa sans la buse, et sans le préfixe marque si présent."""
+    disp = _prusa_display(preset)
+    bw = brand.split(" ")[0].lower()
+    parts = disp.split(" ", 1)
+    if len(parts) == 2 and parts[0].lower() == bw:
+        return parts[1]
+    return disp
+
+
+@functools.lru_cache(maxsize=1)
+def _prusa_by_model() -> dict:
+    """Index : printer_model → {marque, display, nozzles:{nz_str: preset_name}}."""
+    out: dict[str, dict] = {}
+    for preset, e in _prusa_catalogue().items():
+        mk = e.get("printer_model") or preset
+        brand = e.get("marque", "Prusa")
+        slot = out.setdefault(mk, {
+            "marque": brand,
+            "display": _prusa_display_brand(preset, brand),
+            "nozzles": {},
+        })
+        slot["nozzles"][str(e.get("nozzle_diameter", "0.4"))] = preset
+    return out
+
+
+# Ordre d'affichage des marques en mode PrusaSlicer (Prusa en tête, reste alpha)
+def prusa_brands() -> list[str]:
+    """Marques présentes dans le catalogue PrusaSlicer (Prusa en premier)."""
+    present = sorted({v["marque"] for v in _prusa_by_model().values()},
+                     key=lambda b: (b != "Prusa", b.lower()))
+    return present
+
+
+def prusa_models_for_brand(brand: str) -> list[tuple[str, str]]:
+    """[(libellé affiché, model_key)] triés, pour une marque en mode PrusaSlicer."""
+    items = [(v["display"], mk) for mk, v in _prusa_by_model().items()
+             if v["marque"] == brand]
+    return sorted(items, key=lambda t: t[0].lower())
+
+
+def prusa_models() -> list[tuple[str, str]]:
+    """[(libellé affiché, model_key)] triés (toutes marques) — compat."""
+    items = [(v["display"], mk) for mk, v in _prusa_by_model().items()]
+    return sorted(items, key=lambda t: t[0].lower())
+
+
+def prusa_nozzles_for_model(model_key: str) -> list[float]:
+    nz = _prusa_by_model().get(model_key, {}).get("nozzles", {})
+    return sorted(float(x) for x in nz)
+
+
+def prusa_preset_for(model_key: str, nozzle_mm: float) -> str | None:
+    """Nom de preset PrusaSlicer exact (ex. 'Original Prusa MK4S 0.4 nozzle')."""
+    nz = _prusa_by_model().get(model_key, {}).get("nozzles", {})
+    if not nz:
+        return None
+    target = _fmt_nozzle(nozzle_mm)
+    if target in nz:
+        return nz[target]
+    closest = min(nz, key=lambda k: abs(float(k) - float(nozzle_mm)))
+    return nz[closest]
+
+
+def is_prusa_model(model_key: str) -> bool:
+    return model_key in _prusa_by_model()

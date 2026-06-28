@@ -48,6 +48,16 @@ class PrintConfig(BaseModel):
     enable_arc_fitting: bool = True
     xy_contour_compensation: float = 0.0  # mm (-0.1 à 0.1)
     elefant_foot_compensation: float = 0.1  # mm (compensation patte éléphant)
+    seam_gap: float = 15.0                # % rétraction au niveau de la couture (0 = collé)
+
+    # --- Surplombs / Ponts (qualité des porte-à-faux) ---
+    detect_overhang_wall: bool = True     # détecter les parois en surplomb (oblig. pour ralentir)
+    slow_down_overhangs: bool = False     # ralentir les surplombs raides → moins d'affaissement
+    overhang_1_4_speed: int = 0           # 0-25 % de surplomb : 0 = vitesse normale
+    overhang_2_4_speed: int = 50          # 25-50 %
+    overhang_3_4_speed: int = 30          # 50-75 %
+    overhang_4_4_speed: int = 10          # 75-100 % (le plus raide → le plus lent)
+    bridge_flow: float = 0.95             # ratio de débit sur les ponts (étirement à chaud)
 
     # --- Multi-filament / AMS ---
     flush_into_infill: bool = False
@@ -60,6 +70,12 @@ class PrintConfig(BaseModel):
     support_on_build_plate_only: bool = False
     support_top_z_distance: float = 0.20    # gap dessus support → pièce (mm)
     support_bottom_z_distance: float = 0.20 # gap pièce → dessous support (mm)
+    # Interface de supports — dessous propre + retrait facile (réglages "ajusté")
+    support_interface_top_layers: int = 3       # couches solides de contact dessus
+    support_interface_bottom_layers: int = 1
+    support_interface_spacing: float = 0.2      # espacement serré → surface lisse
+    support_interface_pattern: str = "rectilinear"  # auto | rectilinear | concentric
+    support_object_xy_distance: float = 0.35    # gap horizontal support ↔ pièce (mm)
 
     # --- Températures (suggestions) ---
     nozzle_temperature: int = 220
@@ -73,21 +89,35 @@ class PrintConfig(BaseModel):
     neoslice_confidence: float = 1.0
     neoslice_support_mode: str = "auto"   # "auto" | "classic" | "tree"
 
-    def estimated_filament_g(self, volume_cm3: float) -> float:
+    def estimated_filament_g(self, volume_cm3: float, surface_area_cm2: float = 0.0) -> float:
         """Estimation du poids de filament (g).
 
-        Modèle physique : la coque (parois + couches haut/bas) est quasi pleine,
-        et l'intérieur est rempli au taux de remplissage. Donc :
-            poids ≈ densité × volume × [coque + (1 − coque) × remplissage]
-        où « coque » = part du volume occupée par les parois/couches solides
-        (dépend du nombre de parois et de couches → pièces fines = coque dominante).
-        Ce modèle fait VARIER le poids avec le remplissage (5 % ≪ 80 % ≪ 100 %),
-        contrairement à l'ancienne formule qui saturait à 0.98 dès le remplissage moyen."""
+        Si la SURFACE réelle de la pièce est fournie (depuis l'analyse mesh), on
+        utilise un modèle PHYSIQUE conscient de la taille :
+            coque  ≈ surface × parois (les murs verticaux) + peaux haut/bas
+            poids  ≈ densité × [ coque + remplissage × (volume − coque) ]
+        Bien plus juste que l'ancien modèle de ratio sur petites ET grandes pièces.
+        Coefficients calibrés sur des mesures PrusaSlicer (buse 0.4). Sans surface,
+        on retombe sur un modèle de ratio (parois/peaux/remplissage)."""
+        density = max(0.1, self.filament_density_g_cm3)
         infill = max(0.0, min(1.0, self.infill_density / 100.0))
-        shells = self.top_shell_layers + self.bottom_shell_layers
-        shell_share = min(0.60, 0.10 + 0.04 * self.wall_loops + 0.02 * shells)
-        effective = min(1.0, max(0.05, infill + (1.0 - infill) * shell_share))
-        return volume_cm3 * max(0.1, self.filament_density_g_cm3) * effective
+        vol = max(0.0, volume_cm3)
+        skins = self.top_shell_layers + self.bottom_shell_layers
+
+        if surface_area_cm2 and surface_area_cm2 > 0:
+            # Parois ∝ surface (~0.20 mm équivalent par paroi sur la surface totale,
+            # calibré) ; peaux haut/bas ∝ volume (forfait par couche solide, plafonné).
+            wall_vol = surface_area_cm2 * self.wall_loops * 0.020
+            skin_vol = vol * min(0.30, skins * 0.02)
+            shell_vol = min(vol, wall_vol + skin_vol)
+            material_vol = shell_vol + infill * max(0.0, vol - shell_vol)
+            material_vol = min(material_vol, vol * 0.92)   # un "plein" réel ≈ 92 % du géométrique
+            return material_vol * density
+
+        # Repli (pas de surface) : modèle de ratio parois/peaux/remplissage.
+        shell_share = min(0.60, 0.10 + 0.04 * self.wall_loops + 0.02 * skins)
+        effective = min(0.95, max(0.05, infill + (1.0 - infill) * shell_share))
+        return vol * density * effective
 
     def estimated_time_minutes(self, volume_cm3: float, height_mm: float, support_ratio: float = 0.0) -> int:
         """Estimation du temps total en minutes (impression + chauffe + calibration Bambu)."""

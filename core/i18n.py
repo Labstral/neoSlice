@@ -15,10 +15,10 @@ from __future__ import annotations
 _FR: dict[str, str] = {
 
     # ── Application / TopBar ──────────────────────────────────────────────────
-    "app.title":            "NEOSLICE",
+    "app.title":            "neoSlice",
     "app.subtitle":         "AI-POWERED 3D PRINT OPTIMIZER",
-    "app.beta":             "BÊTA",
     "app.btn_new_piece":    "↺  NOUVELLE PIÈCE",
+    "app.btn_diag":         "DIAGNOSTIC IA",
     "app.tip_feedback":     "Envoyer un retour / signaler un bug",
     "app.tip_guide":        "Guide d'utilisation",
     "app.tip_coffee":       "À propos / Soutenir le développement",
@@ -45,23 +45,26 @@ _FR: dict[str, str] = {
     "status.oh_tag":            " | surplombs {pct:.1f}%",
 
     # ── Export / Success Dialog ────────────────────────────────────────────────
-    "export.btn":               "↓  EXPORTER .3MF  →  BAMBU STUDIO",
+    "export.btn":               "↓  EXPORTER .3MF  →  {slicer}",
     "export.dialog_title":      "Enregistrer le fichier .3MF",
     "export.dialog_filter":     "Fichiers 3MF (*.3mf)",
     "export.success_title":     "✓   Fichier 3MF généré avec succès",
     "export.success_info":      (
         "Les paramètres d'impression (qualité, vitesse, supports…) sont intégrés dans le 3MF.<br>"
         "Les paramètres du <b>filament</b> (températures, ventilation, débit) doivent être "
-        "configurés manuellement dans Bambu Studio."
+        "configurés manuellement dans votre slicer."
     ),
     "export.dlg_title":         "Fichier .3MF généré",
     "export.btn_bambu":         "  Ouvrir dans Bambu Studio",
+    "export.btn_orca":          "  Ouvrir dans OrcaSlicer",
+    "export.btn_prusa":         "  Ouvrir dans PrusaSlicer",
     "export.btn_pdf":           "  Fiche filament PDF",
     "export.btn_close":         "Fermer",
 
     # ── DropZone ─────────────────────────────────────────────────────────────
     "drop.main_locked":     "VALIDEZ L'IMPRIMANTE",
-    "drop.sub_locked":      "et le filament pour continuer\nÉtape ①",
+    "drop.sub_locked":      "et le filament pour continuer",
+    "drop.step_locked":     "Étape ①",
     "drop.main":            "GLISSER FICHIER STL / 3MF",
     "drop.sub":             "ou cliquer pour parcourir",
     "drop.dialog_title":    "Ouvrir un fichier 3D",
@@ -87,7 +90,7 @@ _FR: dict[str, str] = {
     "analysis.orient_btn":  "↻  Appliquer l'orientation recommandée",
     "analysis.progress_init": "Initialisation...",
     "analysis.verdict_ok":  "✓  PRÊT À IMPRIMER",
-    "analysis.verdict_warn":"⚠  CONFIGURATION ADAPTÉE — CONTRÔLER DANS BAMBU STUDIO",
+    "analysis.verdict_warn":"⚠  CONFIGURATION ADAPTÉE — CONTRÔLER DANS VOTRE SLICER",
     "analysis.verdict_bad": "⛔  PIÈCE COMPLEXE — ATTENTION",
 
     "analysis.status_floating":   "⛔ Régions flottantes — supports générés automatiquement",
@@ -105,11 +108,11 @@ _FR: dict[str, str] = {
     "analysis.loading_pct":       "ANALYSE EN COURS",
     "analysis.orientation_applied_info": "Brim large (10+ mm) et plateau chauffé recommandés.",
     "analysis.disabled":        "DÉSACTIVÉ",
-    "analysis.lite_mode_warn":  "⚠ Mode Économique — surplombs non analysés · vérifiez les supports dans Bambu Studio",
+    "analysis.lite_mode_warn":  "⚠ Mode Économique — surplombs non analysés · vérifiez les supports dans votre slicer",
 
     "analysis.tip_oh":   (
         "Surplombs : zones inclinées à plus de 45° sans matière en-dessous.\n"
-        "Élevé → activez les supports dans Bambu Studio pour éviter l'effondrement."
+        "Élevé → activez les supports dans votre slicer pour éviter l'effondrement."
     ),
     "analysis.tip_stab": (
         "Stabilité sur le plateau : plus c'est haut, mieux la pièce tient.\n"
@@ -212,7 +215,8 @@ _FR: dict[str, str] = {
     "intent.sup_none_desc":     "Force l'absence de supports même si la pièce en a besoin",
 
     # UI
-    "intent.lock_msg":          "Chargez un fichier STL\npour accéder aux réglages",
+    "intent.lock_msg":          "CHARGEZ UN FICHIER STL",
+    "intent.lock_sub":          "pour accéder aux réglages",
     "intent.lock_step":         "Étape ②",
     "intent.presets_header":    "★  MES PRÉSETS",
     "intent.presets_empty":     "Aucun préset — sauvegardez vos réglages favoris",
@@ -392,6 +396,10 @@ _FR: dict[str, str] = {
     "settings.language":        "Langue",
     "settings.sec_print":       "IMPRESSION 3D",
     "settings.printer_default": "Imprimante par défaut",
+    "settings.slicer_output":   "Slicer de sortie",
+    "settings.slicer_bambu":    "Bambu Studio",
+    "settings.slicer_orca":     "OrcaSlicer",
+    "settings.slicer_prusa":    "PrusaSlicer",
     "settings.orient_suggest":  "Suggérer l'orientation optimale",
     "settings.sec_export":      "EXPORT",
     "settings.folder_ph":       "Dossier Téléchargements (par défaut)",
@@ -402,19 +410,13 @@ _FR: dict[str, str] = {
     # ── Welcome Dialog ────────────────────────────────────────────────────────
     "welcome.title":            "neoSlice",
     "welcome.subtitle":         "AI-POWERED 3D PRINT OPTIMIZER",
-    "welcome.beta":             "BÊTA",
     "welcome.copyright":        "© 2026 Emmanuel Percheron",
     "welcome.message":          (
         "Merci d'avoir téléchargé <b>neoSlice</b> !<br>"
         "Ce logiciel a été entièrement conçu et développé par <b>Emmanuel Percheron</b>, "
-        "pour simplifier et optimiser l'impression 3D avec les imprimantes Bambu Lab.<br><br>"
+        "pour simplifier et optimiser l'impression 3D avec votre imprimante — Bambu Lab, "
+        "Creality, Prusa, Anycubic et bien d'autres.<br><br>"
         "J'espère sincèrement qu'il vous sera utile dans vos projets."
-    ),
-    "welcome.beta_box":         (
-        "<b style='color:{amber}'>⚠  Version Bêta</b><br>"
-        "<span style='color:{label}'>Ce logiciel est en développement actif. "
-        "Des correctifs et de nouvelles fonctionnalités seront apportés régulièrement. "
-        "Si vous rencontrez un problème, n'hésitez pas à le signaler.</span>"
     ),
     "welcome.coffee_title":     "☕  Ce logiciel est <b>entièrement gratuit</b> et le restera.",
     "welcome.coffee_sub":       "Si vous souhaitez soutenir le développement :",
@@ -431,7 +433,8 @@ _FR: dict[str, str] = {
     "tuto.0.title": "Bienvenue dans neoSlice",
     "tuto.0.body":  (
         "neoSlice analyse votre fichier STL et génère automatiquement les paramètres "
-        "d'impression optimaux pour vos imprimantes Bambu Lab.\n\n"
+        "d'impression optimaux pour votre imprimante — Bambu Lab, Creality, Prusa, "
+        "Anycubic et bien d'autres.\n\n"
         "Ce guide vous présente les étapes du workflow.\n"
         "Adaptez le <b>mode de performance</b> dans les paramètres "
         "<span style='font-family:Segoe MDL2 Assets;font-size:10pt;'>&#xE713;</span>"
@@ -466,11 +469,13 @@ _FR: dict[str, str] = {
         "Sauvegardez vos combinaisons favorites en présets, "
         "puis cliquez sur <b>GÉNÉRER CONFIGURATION →</b>."
     ),
-    "tuto.4.title": "④ Export vers Bambu Studio",
+    "tuto.4.title": "④ Export vers votre slicer",
     "tuto.4.body":  (
         "Une fois la configuration générée, le <b>bouton d'export</b> s'active.\n\n"
         "neoSlice génère un fichier <b>.3MF</b> avec tous les paramètres optimisés "
         "selon votre matériau et la géométrie de la pièce.\n\n"
+        "Choisissez votre <b>slicer de sortie</b> dans les réglages (Bambu Studio, "
+        "OrcaSlicer ou PrusaSlicer) : le fichier s'ouvrira dans le bon logiciel.\n\n"
         "Des <b>alertes matériau</b> peuvent apparaître dans le panneau d'analyse : "
         "risque de warping, séchage recommandé, incompatibilité AMS…"
     ),
@@ -564,7 +569,7 @@ _FR: dict[str, str] = {
     "pdf.surface":          "Surface",
     "pdf.verdict":          "Verdict global",
     "pdf.verdict_ok":       "PRÊT À IMPRIMER",
-    "pdf.verdict_warn":     "CONFIGURATION ADAPTÉE — CONTRÔLER DANS BAMBU STUDIO",
+    "pdf.verdict_warn":     "CONFIGURATION ADAPTÉE — CONTRÔLER DANS VOTRE SLICER",
     "pdf.verdict_bad":      "PIÈCE COMPLEXE",
     "pdf.overhangs":        "Surplombs",
     "pdf.oh_angle":         "Angle max {angle}°",
@@ -618,7 +623,7 @@ _FR: dict[str, str] = {
     "pdf.footer_note":      (
         "Les paramètres d'impression (qualité, vitesse, supports, adhérence) sont intégrés "
         "dans le fichier 3MF généré par neoSlice et ne nécessitent pas de configuration "
-        "manuelle dans Bambu Studio."
+        "manuelle dans votre slicer."
     ),
     "pdf.generated_by":     "Généré par neoSlice v{version}",
 
@@ -697,10 +702,285 @@ _FR: dict[str, str] = {
     "diag.analyzing":                "Analyse en cours…",
     "diag.downloading_model":        "Téléchargement du modèle amélioré… {pct}%",
 
+    # ── Espace Pro (gestion d'atelier) ─────────────────────────────────────────
+    "pro.space_btn":                 "ESPACE PRO",
+    "pro.space_tooltip":             "Gestion d'atelier : bobines, devis, clients, facturation",
+    "pro.hub_title":                 "Espace Pro — Gestion d'atelier",
+    "pro.tab_spools":                "Bobines",
+    "pro.tab_quote":                 "Devis",
+    "pro.tab_clients":               "Clients",
+    "pro.tab_invoice":               "Facturation",
+    "pro.tab_dashboard":             "Tableau de bord",
+    "pro.tab_orders":                "Commandes",
+    "pro.tab_products":              "Articles",
+    "pro.edit":                      "Modifier",
+    # ── Commandes (file de production) ──
+    "ord.new":            "Nouvelle commande",
+    "ord.none":           "Aucune commande pour l'instant.",
+    "ord.intro":          "Suivez vos commandes de la prise en charge à l'encaissement.",
+    "ord.client":         "Client",
+    "ord.status":         "Statut",
+    "ord.due":            "Échéance",
+    "ord.spool":          "Bobine (déduction du stock)",
+    "ord.grams":          "Filament (g)",
+    "ord.notes":          "Notes",
+    "ord.label":          "Désignation",
+    "ord.save":           "Enregistrer la commande",
+    "ord.create_title":   "Nouvelle commande",
+    "ord.edit_title":     "Modifier la commande",
+    "ord.advance":        "Avancer →",
+    "ord.to_invoice":     "Facturer",
+    "ord.delete":         "Supprimer la commande",
+    "ord.delete_confirm": "Supprimer la commande {number} ?",
+    "ord.from_quote":     "→ Commande",
+    "ord.cancel_order":   "Annuler la commande",
+    "ord.no_client":      "— Sans client —",
+    "ord.no_spool":       "— Aucune (pas de déduction) —",
+    "ord.section_active": "EN COURS",
+    "ord.section_done":   "TERMINÉES / ARCHIVÉES",
+    "ord.due_in":         "dans {n} j",
+    "ord.overdue_days":   "retard {n} j",
+    "ord.status_todo":      "À faire",
+    "ord.status_printing":  "En impression",
+    "ord.status_done":      "Terminé",
+    "ord.status_delivered": "Livré",
+    "ord.status_paid":      "Payé",
+    "ord.status_cancelled": "Annulé",
+    "ord.created":        "Commande {number} créée.",
+    "ord.stock_note":     "Le stock est déduit automatiquement au passage en « En impression ».",
+    "ord.consumptions":   "Consommation filament (1 ligne par couleur)",
+    "ord.add_color":      "＋ Ajouter une couleur",
+    "ord.pdf":            "Bon",
+    "ord.total":          "TOTAL",
+    "ordpdf.title":       "BON DE PRODUCTION",
+    "ordpdf.footer":      "Document de production interne — neoSlice",
+    "ordpdf.unassigned":  "(bobine non assignée)",
+    "ord.est_mono":       "Mono-couleur : estimation pré-remplie — corrigez d'après votre slicer si besoin.",
+    "ord.fill_multi":     "Multi-couleur : pas d'estimation possible — saisissez la consommation de chaque couleur.",
+    # ── Articles (catalogue récurrent) ──
+    "art.new":            "Nouvel article",
+    "art.none":           "Aucun article. Créez vos produits récurrents pour les insérer en 1 clic.",
+    "art.intro":          "Vos produits récurrents : enregistrez-les une fois, réutilisez-les partout.",
+    "art.name":           "Nom de l'article",
+    "art.price":          "Prix (HT)",
+    "art.grams":          "Filament (g)",
+    "art.duration":       "Durée (h)",
+    "art.notes":          "Notes",
+    "art.save":           "Enregistrer l'article",
+    "art.create_title":   "Nouvel article",
+    "art.edit_title":     "Modifier l'article",
+    "art.delete":         "Supprimer",
+    "art.delete_confirm": "Supprimer l'article « {name} » ?",
+    # ── Relances / échéances factures ──
+    "fact.overdue":       "EN RETARD",
+    "fact.relance":       "Relancer",
+    "fact.echeance":      "Échéance",
+    "fact.relance_title": "Relance de paiement",
+    "fact.copy":          "Copier",
+    "fact.relance_done":  "Relance enregistrée. Copiez le message ci-dessous pour votre client :",
+    "fact.relance_msg":   "Bonjour,\n\nSauf erreur de notre part, la facture {number} d'un montant de {amount} reste impayée (échéance : {due}).\nNous vous remercions de bien vouloir procéder à son règlement.\n\nCordialement,\n{company}",
+    # ── Tableau de bord (production / retards / rapport) ──
+    "dash.sec_orders":    "PRODUCTION",
+    "dash.orders_active": "Commandes en cours",
+    "dash.orders_todo":   "À imprimer",
+    "dash.month_billed":  "CA du mois",
+    "dash.overdue":       "Factures en retard",
+    "dash.overdue_amount":"Montant dû en retard",
+    "dash.report_title":  "CHIFFRE D'AFFAIRES — 6 DERNIERS MOIS",
+    "dash.export":        "Exporter la compta (CSV)",
+    "dash.export_done":   "Export comptable enregistré : {path}",
+    "dash.export_none":   "Aucune facture à exporter.",
+    "dash.legend_paid":   "Encaissé",
+    "dash.legend_billed": "Facturé (en attente)",
+    # ── Stock / réappro ──
+    "spool.threshold":    "Seuil de réappro (g)",
+    "shop.title":         "LISTE DE COURSES",
+    "shop.none":          "Stock OK — rien à racheter.",
+    "shop.remaining":     "restant {g} g",
+    "shop.missing":       "racheter 1 bobine de {g} g",
+    "pro.coming_soon":               "Bientôt disponible",
+    "pro.coming_soon_desc":          "Ce module arrive dans une prochaine mise à jour.",
+    "pro.backup":                    "Sauvegarder mes données",
+    "pro.backup_done":               "Données sauvegardées : {path}",
+    "pro.export":                    "Exporter mes données",
+    "pro.import":                    "Importer des données",
+    "pro.export_done":               "Données exportées : {path}",
+    "pro.import_confirm":            "Importer remplacera vos données actuelles (bobines, devis…). Une copie de secours est conservée. Continuer ?",
+    "pro.import_done":               "{n} fichier(s) importé(s). Données restaurées.",
+    "pro.autosave":                  "💾 Sauvegarde automatique",
+    # Inventaire bobines
+    "spool.add":                     "Ajouter une bobine",
+    "spool.edit":                    "Modifier la bobine",
+    "spool.delete":                  "Supprimer",
+    "spool.delete_confirm":          "Supprimer cette bobine définitivement ?",
+    "spool.empty":                   "Aucune bobine pour l'instant.\nAjoutez votre première bobine pour suivre votre stock.",
+    "spool.save":                    "Enregistrer",
+    "spool.cancel":                  "Annuler",
+    "spool.material":                "Matériau",
+    "spool.brand":                   "Marque",
+    "spool.color":                   "Couleur",
+    "spool.color_name":              "Nom de la couleur",
+    "spool.finish":                  "Finition",
+    "spool.total_g":                 "Poids neuf (g)",
+    "spool.remaining_g":             "Poids restant (g)",
+    "spool.tare_g":                  "Poids bobine vide (g)",
+    "spool.cost_total":              "Prix payé",
+    "spool.cost_kg":                 "Coût/kg",
+    "spool.vendor":                  "Fournisseur",
+    "spool.purchase_date":           "Date d'achat",
+    "spool.location":                "Emplacement",
+    "spool.lot":                     "N° de lot",
+    "spool.notes":                   "Notes",
+    "spool.remaining":               "restant",
+    "spool.low_stock":               "Stock bas",
+    "spool.low_stock_banner":        "{n} bobine(s) en stock bas",
+    "spool.section_id":              "Identité",
+    "spool.section_stock":           "Stock & coût",
+    "spool.section_extra":           "Détails",
+    # Déduction après export
+    "spool.deduct_title":            "Filament utilisé",
+    "spool.deduct_prompt":           "Déduire ~{g} g de votre stock ?",
+    "spool.deduct_choose":           "Bobine à décompter",
+    "spool.deduct_none":             "Ne pas décompter",
+    "spool.deduct_ok":               "{g} g déduits de {name}",
+    "spool.use_for_quote":           "Bobine (coût auto)",
+
+    # ── Facturation (Espace Pro) ───────────────────────────────────────────────
+    "fact.status_draft":   "Brouillon",
+    "fact.status_sent":    "Envoyée",
+    "fact.status_paid":    "Payée",
+    "fact.sec_company":    "Ma société",
+    "fact.sec_new":        "Nouvelle facture",
+    "fact.sec_saved":      "Factures enregistrées",
+    "fact.c_name":         "Nom / raison sociale",
+    "fact.c_form":         "Forme juridique",
+    "fact.c_address":      "Adresse",
+    "fact.c_zip":          "Code postal",
+    "fact.c_city":         "Ville",
+    "fact.c_email":        "E-mail",
+    "fact.c_phone":        "Téléphone",
+    "fact.c_taxid":        "N° fiscal / TVA",
+    "fact.legal_section":  "Mentions légales (selon le pays)",
+    "fact.f_siret":        "N° SIRET",
+    "fact.f_rcs":          "RCS / RM",
+    "fact.f_capital":      "Capital social",
+    "fact.f_regime":       "Régime TVA",
+    "fact.regime_normal":  "Assujetti à la TVA",
+    "fact.regime_franchise": "Franchise en base (art. 293 B)",
+    "fact.f_steuernr":     "Steuernummer",
+    "fact.f_handelsreg":   "Registre du commerce (Handelsregister)",
+    "fact.f_bce":          "N° BCE",
+    "fact.f_rcsl":         "N° RCS Luxembourg",
+    "fact.f_companyno":    "Company number",
+    "fact.f_busno":        "Business Number (GST/HST)",
+    "fact.f_kvk":          "N° KvK",
+    "fact.f_rea":          "N° REA",
+    "fact.f_nif":          "NIF / CIF",
+    "fact.f_firmenbuch":   "N° Firmenbuch (FN)",
+    "fact.f_recovery":     "Frais de recouvrement (retard)",
+    "fact.doc_lang":       "Langue des documents",
+    "fact.doc_lang_auto":  "Auto (selon le pays)",
+    "fact.c_iban":         "IBAN",
+    "fact.c_terms":        "Conditions de paiement",
+    "fact.country":        "Pays",
+    "fact.save_company":   "💾  Enregistrer la société",
+    "fact.company_saved":  "Informations de société enregistrées.",
+    "fact.client":         "Client",
+    "fact.bill_country":   "Pays de facturation",
+    "fact.date":           "Date",
+    "fact.due":            "Échéance",
+    "fact.vat_rate":       "Taux de TVA (%)",
+    "fact.discount":       "Remise (%)",
+    "fact.col_desig":      "Désignation",
+    "fact.col_qty":        "Qté",
+    "fact.col_pu":         "PU HT",
+    "fact.add_line":       "＋ Ajouter une ligne",
+    "fact.notes_ph":       "Notes / message (facultatif)…",
+    "fact.total_ht":       "Total HT",
+    "fact.discount_l":     "Remise",
+    "fact.vat":            "TVA",
+    "fact.total_ttc":      "TOTAL TTC",
+    "fact.net_ht":         "Net HT",
+    "fact.save_invoice":   "Enregistrer la facture",
+    "fact.gen_pdf":        "Générer le PDF",
+    "fact.empty":          "Aucune facture enregistrée.",
+    "fact.need_line":      "Ajoutez au moins une ligne.",
+    "fact.invoice":        "Facture",
+    "fact.saved_msg":      "Facture {number} enregistrée.",
+    "fact.delete":         "Supprimer",
+    "fact.delete_confirm": "Supprimer la facture {number} ?",
+    "fact.pdf":            "PDF",
+    "fact.pdf_invoice":    "FACTURE",
+    "fact.pdf_num":        "N°",
+    "fact.pdf_billto":     "Facturé à",
+    "fact.pdf_your_company": "Votre société",
+    "fact.pdf_footer":     "Facture générée par neoSlice",
+    "fact.from_quote":     "D'après le devis {number}.",
+    "fact.client_select":  "Client enregistré",
+    "fact.client_none":    "— Saisie manuelle —",
+    "fact.client_save":    "＋ Enregistrer ce client",
+    "fact.client_saved":   "Client ajouté au répertoire.",
+
+    # ── Clients (mini-CRM) ─────────────────────────────────────────────────────
+    "client.add":            "Ajouter un client",
+    "client.edit":           "Modifier le client",
+    "client.delete":         "Supprimer",
+    "client.delete_confirm": "Supprimer ce client ? (ses devis/factures sont conservés)",
+    "client.empty":          "Aucun client.\nAjoutez votre premier client ou enregistrez-en un depuis une facture.",
+    "client.save":           "Enregistrer",
+    "client.cancel":         "Annuler",
+    "client.name":           "Nom du contact",
+    "client.company":        "Société",
+    "client.address":        "Adresse",
+    "client.zip":            "Code postal",
+    "client.city":           "Ville",
+    "client.country":        "Pays",
+    "client.email":          "E-mail",
+    "client.phone":          "Téléphone",
+    "client.taxid":          "N° fiscal / TVA",
+    "client.notes":          "Notes",
+    "client.n_quotes":       "{n} devis",
+    "client.n_invoices":     "{n} factures",
+    "client.billed":         "Facturé",
+    "client.paid":           "Payé",
+    "client.due":            "Dû",
+    "client.history":        "Historique",
+    "client.section_quotes": "Devis",
+    "client.section_invoices": "Factures",
+    "client.back":           "← Retour aux clients",
+    "client.open":           "Ouvrir la fiche",
+
+    # ── Tableau de bord ────────────────────────────────────────────────────────
+    "dash.sec_activity":   "ACTIVITÉ",
+    "dash.sec_docs":       "DOCUMENTS",
+    "dash.sec_stock":      "STOCK FILAMENT",
+    "dash.billed":         "Chiffre d'affaires",
+    "dash.paid":           "Encaissé",
+    "dash.due":            "En attente",
+    "dash.invoices":       "Factures",
+    "dash.unpaid":         "dont {n} impayée(s)",
+    "dash.quotes":         "Devis",
+    "dash.clients":        "Clients",
+    "dash.spools":         "Bobines",
+    "dash.stock_g":        "Filament restant",
+    "dash.stock_value":    "Valeur du stock",
+    "dash.low_stock":      "{n} en stock bas",
+    "dash.welcome":        "Bienvenue dans votre Espace Pro",
+    "dash.welcome_sub":    "Gérez vos bobines, devis, factures et clients — tout est local et sauvegardé automatiquement.",
+
     # ── Calculateur de coût / devis (Pro) ──────────────────────────────────────
     "cost.btn":                      "DEVIS",
     "cost.tooltip":                  "Calculer le coût de revient et générer un devis",
     "cost.title":                    "CALCULATEUR DE COÛT",
+    "cost.save_quote":               "ENREGISTRER LE DEVIS",
+    "cost.quote_saved":              "Devis {number} enregistré.",
+    "cost.saved_quotes":             "Devis enregistrés",
+    "cost.no_quotes":                "Aucun devis enregistré.",
+    "cost.to_invoice":               "→ Facture",
+    "cost.to_invoice_full":          "Convertir en facture",
+    "cost.converted":                "Converti → facture {number}",
+    "cost.del":                      "Supprimer",
+    "cost.del_quote_confirm":        "Supprimer le devis {number} ?",
     "cost.section_rates":            "MES TARIFS (enregistrés)",
     "cost.rates_note":               "Valeurs pré-remplies indicatives (moyennes 2025-2026) — ajustez selon votre contrat et un wattmètre pour plus de précision.",
     "cost.section_print":            "CETTE IMPRESSION",
@@ -720,7 +1000,7 @@ _FR: dict[str, str] = {
     "cost.time":                     "Durée (h / pièce)",
     "cost.labor_min":                "Main d'œuvre (min)",
     "cost.power":                    "Puissance imprimante (W)",
-    "cost.estimated_note":           "⚠️ Poids et durée estimés automatiquement par neoSlice — pour un devis fiable, remplacez-les par les chiffres exacts affichés par Bambu Studio après slicing.",
+    "cost.estimated_note":           "⚠️ Poids et durée estimés automatiquement par neoSlice — pour un devis fiable, remplacez-les par les chiffres exacts affichés par votre slicer après découpe.",
     "cost.row_material":             "Matière",
     "cost.row_electricity":          "Électricité",
     "cost.row_wear":                 "Usure machine",
@@ -745,7 +1025,7 @@ _FR: dict[str, str] = {
     "cost.quote_qty":                "Quantité",
     "cost.pdf_saved":                "Devis enregistré : {path}",
     "cost.pdf_error":                "Impossible de créer le PDF : {error}",
-    "cost.quote_disclaimer":         "Estimation indicative générée par neoSlice à titre informatif. Ce document ne constitue pas un devis officiel ni une pièce contractuelle et ne doit pas être utilisé comme tel dans un cadre professionnel. Pour un devis ayant valeur officielle, passez par un service ou un logiciel de devis dédié.",
+    "cost.quote_disclaimer":         "Estimation établie à titre indicatif, sous réserve de modification. Valable 30 jours à compter de la date d'émission.",
 }
 
 # ── English ───────────────────────────────────────────────────────────────────
@@ -753,10 +1033,10 @@ _FR: dict[str, str] = {
 _EN: dict[str, str] = {
 
     # ── Application / TopBar ──────────────────────────────────────────────────
-    "app.title":            "NEOSLICE",
+    "app.title":            "neoSlice",
     "app.subtitle":         "AI-POWERED 3D PRINT OPTIMIZER",
-    "app.beta":             "BETA",
     "app.btn_new_piece":    "↺  NEW PART",
+    "app.btn_diag":         "AI DIAGNOSTIC",
     "app.tip_feedback":     "Send feedback / report a bug",
     "app.tip_guide":        "User guide",
     "app.tip_coffee":       "About / Support development",
@@ -784,23 +1064,26 @@ _EN: dict[str, str] = {
     "status.oh_tag":            " | overhangs {pct:.1f}%",
 
     # ── Export / Success Dialog ────────────────────────────────────────────────
-    "export.btn":               "↓  EXPORT .3MF  →  BAMBU STUDIO",
+    "export.btn":               "↓  EXPORT .3MF  →  {slicer}",
     "export.dialog_title":      "Save .3MF file",
     "export.dialog_filter":     "3MF Files (*.3mf)",
     "export.success_title":     "✓   3MF file generated successfully",
     "export.success_info":      (
         "Print parameters (quality, speed, supports…) are embedded in the 3MF.<br>"
         "The <b>filament</b> parameters (temperatures, cooling, flow rate) must be "
-        "configured manually in Bambu Studio."
+        "configured manually in your slicer."
     ),
     "export.dlg_title":         ".3MF file generated",
     "export.btn_bambu":         "  Open in Bambu Studio",
+    "export.btn_orca":          "  Open in OrcaSlicer",
+    "export.btn_prusa":         "  Open in PrusaSlicer",
     "export.btn_pdf":           "  Filament PDF sheet",
     "export.btn_close":         "Close",
 
     # ── DropZone ─────────────────────────────────────────────────────────────
     "drop.main_locked":     "CONFIRM PRINTER",
-    "drop.sub_locked":      "and filament to continue\nStep ①",
+    "drop.sub_locked":      "and filament to continue",
+    "drop.step_locked":     "Step ①",
     "drop.main":            "DROP STL / 3MF FILE",
     "drop.sub":             "or click to browse",
     "drop.dialog_title":    "Open a 3D file",
@@ -826,7 +1109,7 @@ _EN: dict[str, str] = {
     "analysis.orient_btn":  "↻  Apply recommended orientation",
     "analysis.progress_init": "Initializing...",
     "analysis.verdict_ok":  "✓  READY TO PRINT",
-    "analysis.verdict_warn":"⚠  CONFIGURATION ADAPTED — CHECK IN BAMBU STUDIO",
+    "analysis.verdict_warn":"⚠  CONFIGURATION ADAPTED — CHECK IN YOUR SLICER",
     "analysis.verdict_bad": "⛔  COMPLEX PART — CAUTION",
 
     "analysis.status_floating":   "⛔ Floating regions — supports generated automatically",
@@ -844,11 +1127,11 @@ _EN: dict[str, str] = {
     "analysis.loading_pct":       "ANALYZING",
     "analysis.orientation_applied_info": "Wide brim (10+ mm) and heated bed recommended.",
     "analysis.disabled":        "DISABLED",
-    "analysis.lite_mode_warn":  "⚠ Lite mode — overhangs not analyzed · check supports in Bambu Studio",
+    "analysis.lite_mode_warn":  "⚠ Lite mode — overhangs not analyzed · check supports in your slicer",
 
     "analysis.tip_oh":   (
         "Overhangs: areas angled more than 45° with no material below.\n"
-        "High → enable supports in Bambu Studio to prevent collapse."
+        "High → enable supports in your slicer to prevent collapse."
     ),
     "analysis.tip_stab": (
         "Bed stability: the higher the score, the better the part holds.\n"
@@ -943,7 +1226,8 @@ _EN: dict[str, str] = {
     "intent.sup_none":          "No support",
     "intent.sup_none_desc":     "Forces no supports even if geometry requires them",
 
-    "intent.lock_msg":          "Load an STL file\nto access settings",
+    "intent.lock_msg":          "LOAD AN STL FILE",
+    "intent.lock_sub":          "to access the settings",
     "intent.lock_step":         "Step ②",
     "intent.presets_header":    "★  MY PRESETS",
     "intent.presets_empty":     "No presets — save your favorite settings",
@@ -1117,6 +1401,10 @@ _EN: dict[str, str] = {
     "settings.language":        "Language",
     "settings.sec_print":       "3D PRINTING",
     "settings.printer_default": "Default printer",
+    "settings.slicer_output":   "Output slicer",
+    "settings.slicer_bambu":    "Bambu Studio",
+    "settings.slicer_orca":     "OrcaSlicer",
+    "settings.slicer_prusa":    "PrusaSlicer",
     "settings.orient_suggest":  "Suggest optimal orientation",
     "settings.sec_export":      "EXPORT",
     "settings.folder_ph":       "Downloads folder (default)",
@@ -1127,19 +1415,13 @@ _EN: dict[str, str] = {
     # ── Welcome Dialog ────────────────────────────────────────────────────────
     "welcome.title":            "neoSlice",
     "welcome.subtitle":         "AI-POWERED 3D PRINT OPTIMIZER",
-    "welcome.beta":             "BETA",
     "welcome.copyright":        "© 2026 Emmanuel Percheron",
     "welcome.message":          (
         "Thank you for downloading <b>neoSlice</b>!<br>"
         "This software was entirely designed and developed by <b>Emmanuel Percheron</b>, "
-        "to simplify and optimize 3D printing with Bambu Lab printers.<br><br>"
+        "to simplify and optimize 3D printing with your printer — Bambu Lab, Creality, "
+        "Prusa, Anycubic and many more.<br><br>"
         "I sincerely hope it proves useful in your projects."
-    ),
-    "welcome.beta_box":         (
-        "<b style='color:{amber}'>⚠  Beta Version</b><br>"
-        "<span style='color:{label}'>This software is in active development. "
-        "Fixes and new features will be added regularly. "
-        "If you encounter an issue, don't hesitate to report it.</span>"
     ),
     "welcome.coffee_title":     "☕  This software is <b>completely free</b> and will stay that way.",
     "welcome.coffee_sub":       "If you'd like to support development:",
@@ -1156,7 +1438,7 @@ _EN: dict[str, str] = {
     "tuto.0.title": "Welcome to neoSlice",
     "tuto.0.body":  (
         "neoSlice analyzes your STL file and automatically generates optimal print "
-        "parameters for your Bambu Lab printers.\n\n"
+        "parameters for your printer — Bambu Lab, Creality, Prusa, Anycubic and many more.\n\n"
         "This guide walks you through the workflow.\n"
         "Adjust the <b>performance mode</b> in settings "
         "<span style='font-family:Segoe MDL2 Assets;font-size:10pt;'>&#xE713;</span>"
@@ -1190,11 +1472,13 @@ _EN: dict[str, str] = {
         "Save your favorite combinations as presets, "
         "then click <b>GENERATE CONFIGURATION →</b>."
     ),
-    "tuto.4.title": "④ Export to Bambu Studio",
+    "tuto.4.title": "④ Export to your slicer",
     "tuto.4.body":  (
         "Once the configuration is generated, the <b>export button</b> is activated.\n\n"
         "neoSlice generates a <b>.3MF</b> file with all parameters optimized "
         "for your material and part geometry.\n\n"
+        "Pick your <b>output slicer</b> in settings (Bambu Studio, OrcaSlicer or "
+        "PrusaSlicer): the file opens in the right software.\n\n"
         "<b>Material alerts</b> may appear in the analysis panel: "
         "warping risk, recommended drying, AMS incompatibility…"
     ),
@@ -1288,7 +1572,7 @@ _EN: dict[str, str] = {
     "pdf.surface":          "Surface",
     "pdf.verdict":          "Overall verdict",
     "pdf.verdict_ok":       "READY TO PRINT",
-    "pdf.verdict_warn":     "CONFIGURATION ADAPTED — CHECK IN BAMBU STUDIO",
+    "pdf.verdict_warn":     "CONFIGURATION ADAPTED — CHECK IN YOUR SLICER",
     "pdf.verdict_bad":      "COMPLEX PART",
     "pdf.overhangs":        "Overhangs",
     "pdf.oh_angle":         "Max angle {angle}°",
@@ -1342,7 +1626,7 @@ _EN: dict[str, str] = {
     "pdf.footer_note":      (
         "Print parameters (quality, speed, supports, adhesion) are embedded "
         "in the 3MF file generated by neoSlice and do not require manual "
-        "configuration in Bambu Studio."
+        "configuration in your slicer."
     ),
     "pdf.generated_by":     "Generated by neoSlice v{version}",
 
@@ -1421,10 +1705,284 @@ _EN: dict[str, str] = {
     "diag.analyzing":                "Analyzing…",
     "diag.downloading_model":        "Downloading improved model… {pct}%",
 
+    # ── Pro workspace (workshop management) ────────────────────────────────────
+    "pro.space_btn":                 "PRO SPACE",
+    "pro.space_tooltip":             "Workshop management: spools, quotes, clients, invoicing",
+    "pro.hub_title":                 "Pro Space — Workshop management",
+    "pro.tab_spools":                "Spools",
+    "pro.tab_quote":                 "Quote",
+    "pro.tab_clients":               "Clients",
+    "pro.tab_invoice":               "Invoicing",
+    "pro.tab_dashboard":             "Dashboard",
+    "pro.tab_orders":                "Orders",
+    "pro.tab_products":              "Products",
+    "pro.edit":                      "Edit",
+    # ── Orders (production queue) ──
+    "ord.new":            "New order",
+    "ord.none":           "No orders yet.",
+    "ord.intro":          "Track your orders from intake to payment.",
+    "ord.client":         "Client",
+    "ord.status":         "Status",
+    "ord.due":            "Due date",
+    "ord.spool":          "Spool (stock deduction)",
+    "ord.grams":          "Filament (g)",
+    "ord.notes":          "Notes",
+    "ord.label":          "Description",
+    "ord.save":           "Save order",
+    "ord.create_title":   "New order",
+    "ord.edit_title":     "Edit order",
+    "ord.advance":        "Advance →",
+    "ord.to_invoice":     "Invoice",
+    "ord.delete":         "Delete order",
+    "ord.delete_confirm": "Delete order {number}?",
+    "ord.from_quote":     "→ Order",
+    "ord.cancel_order":   "Cancel order",
+    "ord.no_client":      "— No client —",
+    "ord.no_spool":       "— None (no deduction) —",
+    "ord.section_active": "IN PROGRESS",
+    "ord.section_done":   "COMPLETED / ARCHIVED",
+    "ord.due_in":         "in {n} d",
+    "ord.overdue_days":   "{n} d late",
+    "ord.status_todo":      "To do",
+    "ord.status_printing":  "Printing",
+    "ord.status_done":      "Done",
+    "ord.status_delivered": "Delivered",
+    "ord.status_paid":      "Paid",
+    "ord.status_cancelled": "Cancelled",
+    "ord.created":        "Order {number} created.",
+    "ord.stock_note":     "Stock is deducted automatically when moving to “Printing”.",
+    "ord.consumptions":   "Filament usage (1 line per color)",
+    "ord.add_color":      "＋ Add a color",
+    "ord.pdf":            "Work order",
+    "ord.total":          "TOTAL",
+    "ordpdf.title":       "WORK ORDER",
+    "ordpdf.footer":      "Internal production document — neoSlice",
+    "ordpdf.unassigned":  "(spool unassigned)",
+    "ord.est_mono":       "Single color: estimate pre-filled — adjust to your slicer if needed.",
+    "ord.fill_multi":     "Multi-color: no estimate possible — enter each color's usage.",
+    # ── Products (recurring catalog) ──
+    "art.new":            "New product",
+    "art.none":           "No products yet. Create your recurring items to insert them in 1 click.",
+    "art.intro":          "Your recurring products: save once, reuse everywhere.",
+    "art.name":           "Product name",
+    "art.price":          "Price (excl. tax)",
+    "art.grams":          "Filament (g)",
+    "art.duration":       "Duration (h)",
+    "art.notes":          "Notes",
+    "art.save":           "Save product",
+    "art.create_title":   "New product",
+    "art.edit_title":     "Edit product",
+    "art.delete":         "Delete",
+    "art.delete_confirm": "Delete product “{name}”?",
+    # ── Invoice reminders / due dates ──
+    "fact.overdue":       "OVERDUE",
+    "fact.relance":       "Send reminder",
+    "fact.echeance":      "Due date",
+    "fact.relance_title": "Payment reminder",
+    "fact.copy":          "Copy",
+    "fact.relance_done":  "Reminder logged. Copy the message below for your client:",
+    "fact.relance_msg":   "Hello,\n\nUnless we are mistaken, invoice {number} for {amount} remains unpaid (due date: {due}).\nWe would be grateful if you could arrange payment.\n\nBest regards,\n{company}",
+    # ── Dashboard (production / overdue / report) ──
+    "dash.sec_orders":    "PRODUCTION",
+    "dash.orders_active": "Active orders",
+    "dash.orders_todo":   "To print",
+    "dash.month_billed":  "This month",
+    "dash.overdue":       "Overdue invoices",
+    "dash.overdue_amount":"Amount overdue",
+    "dash.report_title":  "REVENUE — LAST 6 MONTHS",
+    "dash.export":        "Export accounting (CSV)",
+    "dash.export_done":   "Accounting export saved: {path}",
+    "dash.export_none":   "No invoice to export.",
+    "dash.legend_paid":   "Collected",
+    "dash.legend_billed": "Billed (pending)",
+    # ── Stock / reorder ──
+    "spool.threshold":    "Reorder threshold (g)",
+    "shop.title":         "SHOPPING LIST",
+    "shop.none":          "Stock OK — nothing to reorder.",
+    "shop.remaining":     "{g} g left",
+    "shop.missing":       "reorder 1 spool of {g} g",
+    "pro.coming_soon":               "Coming soon",
+    "pro.coming_soon_desc":          "This module is coming in a future update.",
+    "pro.backup":                    "Back up my data",
+    "pro.backup_done":               "Data backed up: {path}",
+    "pro.export":                    "Export my data",
+    "pro.import":                    "Import data",
+    "pro.export_done":               "Data exported: {path}",
+    "pro.import_confirm":            "Importing will replace your current data (spools, quotes…). A backup copy is kept. Continue?",
+    "pro.import_done":               "{n} file(s) imported. Data restored.",
+    "pro.autosave":                  "💾 Auto-save on",
+    # Spool inventory
+    "spool.add":                     "Add a spool",
+    "spool.edit":                    "Edit spool",
+    "spool.delete":                  "Delete",
+    "spool.delete_confirm":          "Delete this spool permanently?",
+    "spool.empty":                   "No spools yet.\nAdd your first spool to track your stock.",
+    "spool.save":                    "Save",
+    "spool.cancel":                  "Cancel",
+    "spool.material":                "Material",
+    "spool.brand":                   "Brand",
+    "spool.color":                   "Color",
+    "spool.color_name":              "Color name",
+    "spool.finish":                  "Finish",
+    "spool.total_g":                 "New weight (g)",
+    "spool.remaining_g":             "Remaining weight (g)",
+    "spool.tare_g":                  "Empty spool weight (g)",
+    "spool.cost_total":              "Price paid",
+    "spool.cost_kg":                 "Cost/kg",
+    "spool.vendor":                  "Vendor",
+    "spool.purchase_date":           "Purchase date",
+    "spool.location":                "Location",
+    "spool.lot":                     "Lot no.",
+    "spool.notes":                   "Notes",
+    "spool.remaining":               "left",
+    "spool.low_stock":               "Low stock",
+    "spool.low_stock_banner":        "{n} spool(s) low on stock",
+    "spool.section_id":              "Identity",
+    "spool.section_stock":           "Stock & cost",
+    "spool.section_extra":           "Details",
+    "spool.deduct_title":            "Filament used",
+    "spool.deduct_prompt":           "Deduct ~{g} g from your stock?",
+    "spool.deduct_choose":           "Spool to deduct from",
+    "spool.deduct_none":             "Don't deduct",
+    "spool.deduct_ok":               "{g} g deducted from {name}",
+    "spool.use_for_quote":           "Spool (auto cost)",
+
+    # ── Invoicing (Pro Space) ──────────────────────────────────────────────────
+    "fact.status_draft":   "Draft",
+    "fact.status_sent":    "Sent",
+    "fact.status_paid":    "Paid",
+    "fact.sec_company":    "My company",
+    "fact.sec_new":        "New invoice",
+    "fact.sec_saved":      "Saved invoices",
+    "fact.c_name":         "Name / company",
+    "fact.c_form":         "Legal form",
+    "fact.c_address":      "Address",
+    "fact.c_zip":          "Postal code",
+    "fact.c_city":         "City",
+    "fact.c_email":        "Email",
+    "fact.c_phone":        "Phone",
+    "fact.c_taxid":        "Tax / VAT no.",
+    "fact.legal_section":  "Legal mentions (by country)",
+    "fact.f_siret":        "SIRET No.",
+    "fact.f_rcs":          "Trade register (RCS/RM)",
+    "fact.f_capital":      "Share capital",
+    "fact.f_regime":       "VAT regime",
+    "fact.regime_normal":  "VAT registered",
+    "fact.regime_franchise": "VAT-exempt (small business, art. 293 B)",
+    "fact.f_steuernr":     "Tax number (Steuernummer)",
+    "fact.f_handelsreg":   "Commercial register (Handelsregister)",
+    "fact.f_bce":          "Company No. (BCE)",
+    "fact.f_rcsl":         "Trade register (RCSL)",
+    "fact.f_companyno":    "Company number",
+    "fact.f_busno":        "Business Number (GST/HST)",
+    "fact.f_kvk":          "KvK No.",
+    "fact.f_rea":          "REA No.",
+    "fact.f_nif":          "NIF / CIF",
+    "fact.f_firmenbuch":   "Company register (FN)",
+    "fact.f_recovery":     "Late-payment recovery fee",
+    "fact.doc_lang":       "Document language",
+    "fact.doc_lang_auto":  "Auto (by country)",
+    "fact.c_iban":         "IBAN",
+    "fact.c_terms":        "Payment terms",
+    "fact.country":        "Country",
+    "fact.save_company":   "💾  Save company",
+    "fact.company_saved":  "Company details saved.",
+    "fact.client":         "Client",
+    "fact.bill_country":   "Billing country",
+    "fact.date":           "Date",
+    "fact.due":            "Due date",
+    "fact.vat_rate":       "VAT rate (%)",
+    "fact.discount":       "Discount (%)",
+    "fact.col_desig":      "Description",
+    "fact.col_qty":        "Qty",
+    "fact.col_pu":         "Unit price",
+    "fact.add_line":       "＋ Add a line",
+    "fact.notes_ph":       "Notes / message (optional)…",
+    "fact.total_ht":       "Subtotal (excl. tax)",
+    "fact.discount_l":     "Discount",
+    "fact.vat":            "VAT",
+    "fact.total_ttc":      "TOTAL (incl. tax)",
+    "fact.net_ht":         "Net (excl. tax)",
+    "fact.save_invoice":   "Save invoice",
+    "fact.gen_pdf":        "Generate PDF",
+    "fact.empty":          "No invoices saved yet.",
+    "fact.need_line":      "Add at least one line.",
+    "fact.invoice":        "Invoice",
+    "fact.saved_msg":      "Invoice {number} saved.",
+    "fact.delete":         "Delete",
+    "fact.delete_confirm": "Delete invoice {number}?",
+    "fact.pdf":            "PDF",
+    "fact.pdf_invoice":    "INVOICE",
+    "fact.pdf_num":        "No.",
+    "fact.pdf_billto":     "Bill to",
+    "fact.pdf_your_company": "Your company",
+    "fact.pdf_footer":     "Invoice generated by neoSlice",
+    "fact.from_quote":     "Based on quote {number}.",
+    "fact.client_select":  "Saved client",
+    "fact.client_none":    "— Manual entry —",
+    "fact.client_save":    "＋ Save this client",
+    "fact.client_saved":   "Client added to directory.",
+
+    # ── Clients (light CRM) ────────────────────────────────────────────────────
+    "client.add":            "Add a client",
+    "client.edit":           "Edit client",
+    "client.delete":         "Delete",
+    "client.delete_confirm": "Delete this client? (their quotes/invoices are kept)",
+    "client.empty":          "No clients yet.\nAdd your first client or save one from an invoice.",
+    "client.save":           "Save",
+    "client.cancel":         "Cancel",
+    "client.name":           "Contact name",
+    "client.company":        "Company",
+    "client.address":        "Address",
+    "client.zip":            "Postal code",
+    "client.city":           "City",
+    "client.country":        "Country",
+    "client.email":          "Email",
+    "client.phone":          "Phone",
+    "client.taxid":          "Tax / VAT no.",
+    "client.notes":          "Notes",
+    "client.n_quotes":       "{n} quotes",
+    "client.n_invoices":     "{n} invoices",
+    "client.billed":         "Billed",
+    "client.paid":           "Paid",
+    "client.due":            "Due",
+    "client.history":        "History",
+    "client.section_quotes": "Quotes",
+    "client.section_invoices": "Invoices",
+    "client.back":           "← Back to clients",
+    "client.open":           "Open profile",
+
+    # ── Dashboard ──────────────────────────────────────────────────────────────
+    "dash.sec_activity":   "ACTIVITY",
+    "dash.sec_docs":       "DOCUMENTS",
+    "dash.sec_stock":      "FILAMENT STOCK",
+    "dash.billed":         "Revenue",
+    "dash.paid":           "Collected",
+    "dash.due":            "Outstanding",
+    "dash.invoices":       "Invoices",
+    "dash.unpaid":         "incl. {n} unpaid",
+    "dash.quotes":         "Quotes",
+    "dash.clients":        "Clients",
+    "dash.spools":         "Spools",
+    "dash.stock_g":        "Filament left",
+    "dash.stock_value":    "Stock value",
+    "dash.low_stock":      "{n} low on stock",
+    "dash.welcome":        "Welcome to your Pro Space",
+    "dash.welcome_sub":    "Manage your spools, quotes, invoices and clients — all local and auto-saved.",
+
     # ── Cost / quote calculator (Pro) ──────────────────────────────────────────
     "cost.btn":                      "QUOTE",
     "cost.tooltip":                  "Calculate cost price and generate a quote",
     "cost.title":                    "COST CALCULATOR",
+    "cost.save_quote":               "SAVE QUOTE",
+    "cost.quote_saved":              "Quote {number} saved.",
+    "cost.saved_quotes":             "Saved quotes",
+    "cost.no_quotes":                "No quotes saved yet.",
+    "cost.to_invoice":               "→ Invoice",
+    "cost.to_invoice_full":          "Convert to invoice",
+    "cost.converted":                "Converted → invoice {number}",
+    "cost.del":                      "Delete",
+    "cost.del_quote_confirm":        "Delete quote {number}?",
     "cost.section_rates":            "MY RATES (saved)",
     "cost.rates_note":               "Pre-filled values are indicative (2025-2026 averages) — adjust to your contract and a power meter for more accuracy.",
     "cost.section_print":            "THIS PRINT",
@@ -1444,7 +2002,7 @@ _EN: dict[str, str] = {
     "cost.time":                     "Print time (h / part)",
     "cost.labor_min":                "Labor (min)",
     "cost.power":                    "Printer power (W)",
-    "cost.estimated_note":           "⚠️ Weight and time auto-estimated by neoSlice — for an accurate quote, replace them with the exact figures shown by Bambu Studio after slicing.",
+    "cost.estimated_note":           "⚠️ Weight and time auto-estimated by neoSlice — for an accurate quote, replace them with the exact figures shown by your slicer after slicing.",
     "cost.row_material":             "Material",
     "cost.row_electricity":          "Electricity",
     "cost.row_wear":                 "Machine wear",
@@ -1469,7 +2027,7 @@ _EN: dict[str, str] = {
     "cost.quote_qty":                "Quantity",
     "cost.pdf_saved":                "Quote saved: {path}",
     "cost.pdf_error":                "Could not create PDF: {error}",
-    "cost.quote_disclaimer":         "Indicative estimate generated by neoSlice for information only. This document is not an official quote or a contractual document and must not be used as such in a professional context. For an officially binding quote, please use a dedicated quoting service or software.",
+    "cost.quote_disclaimer":         "Estimate provided for information, subject to change. Valid for 30 days from the date of issue.",
 }
 
 # ── Engine ────────────────────────────────────────────────────────────────────

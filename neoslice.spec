@@ -256,7 +256,7 @@ if _ISCC and _ISS.exists():
     if result.returncode == 0:
         import re as _re
         _ver = _re.search(r'#define AppVersion\s+"([^"]+)"', _ISS.read_text()).group(1)
-        print(f"[post-build] Installateur cree : C:\\neoSlice\\dist\\installer\\neoSlice_Setup_v{_ver}-beta_Windows.exe")
+        print(f"[post-build] Installateur cree : C:\\neoSlice\\dist\\installer\\neoSlice_Setup_v{_ver}_Windows.exe")
     else:
         print(f"[post-build] ERREUR Inno Setup : {result.stderr[-300:]}")
 else:

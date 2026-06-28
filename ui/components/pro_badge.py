@@ -1,7 +1,7 @@
 """Badge « Pro » au dégradé cyan → violet, style futuriste.
 
-Widget réutilisable : utilisé dans la barre du haut (entre « neoSlice » et
-« BÊTA ») et dans le titre du PaywallDialog, pour un rendu identique partout.
+Widget réutilisable : utilisé dans la barre du haut (à côté de « neoSlice »)
+et dans le titre du PaywallDialog, pour un rendu identique partout.
 """
 from __future__ import annotations
 

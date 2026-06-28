@@ -27,6 +27,120 @@ def _body_color() -> str:
     return _T.palette()["TEXT_SECONDARY"] if not _T.is_dark() else "#8AAABF"
 
 
+# Glyphes ronds numérotés → chiffre simple (pour redessiner un badge propre).
+def _is_pro() -> bool:
+    """État Pro courant (tolérant : en cas d'erreur, on suppose non-Pro pour
+    afficher l'explication d'upsell plutôt que de la masquer à tort)."""
+    try:
+        from core import licensing
+        return bool(licensing.est_pro())
+    except Exception:
+        return False
+
+
+# Glyphes ronds numérotés → chiffre simple (pour redessiner un badge propre).
+_CIRCLED_TO_DIGIT = {
+    "①": "1", "②": "2", "③": "3", "④": "4",
+    "⑤": "5", "⑥": "6", "⑦": "7", "⑧": "8", "⑨": "9",
+}
+_BADGE_CACHE: dict = {}  # (digit, color) -> Path
+
+
+def _badge_png(digit: str, color: str):
+    """PNG d'un badge rond (cercle + chiffre centré sur l'encre), même design que
+    les en-têtes du panneau gauche. Rendu en 2× pour la netteté, mis en cache."""
+    key = (digit, color)
+    if key in _BADGE_CACHE:
+        return _BADGE_CACHE[key]
+    from PySide6.QtGui import (QPixmap, QPainter, QColor, QPen, QFont as _QF,
+                               QFontMetrics)
+    from PySide6.QtCore import QPointF
+    import tempfile, hashlib
+    from pathlib import Path as _P
+    S = 44          # taille widget 2× (badge final ~22px)
+    D = 36          # diamètre du cercle 2×
+    pix = QPixmap(S, S)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+    pen = QPen(QColor(color))
+    pen.setWidthF(3.2)
+    p.setPen(pen)
+    p.drawEllipse(QPointF(S / 2, S / 2), D / 2, D / 2)
+    f = _QF(FONT_MAIN, 18, _QF.Bold)
+    p.setFont(f)
+    fm = QFontMetrics(f)
+    br = fm.tightBoundingRect(digit)
+    # Horizontal sur la chasse (alignement en colonne) ; vertical sur l'encre.
+    bx = (S - fm.horizontalAdvance(digit)) / 2.0
+    by = S / 2 - br.height() / 2 - br.y()
+    p.drawText(QPointF(bx, by), digit)
+    p.end()
+    tag = hashlib.md5(f"{digit}{color}".encode()).hexdigest()[:8]
+    out = _P(tempfile.gettempdir()) / f"neoslice_badge_{tag}.png"
+    pix.save(str(out), "PNG")
+    _BADGE_CACHE[key] = out
+    return out
+
+
+_COFFEE_SQ_CACHE: dict = {}  # tint_hex -> (Path, w, h) | False
+
+
+def _coffee_square_path(tint_hex: str | None = None):
+    """PNG du café (assets/coffee.png) recadré AU PLUS JUSTE → (Path, w, h).
+
+    On recadre uniquement sur le contenu (boîte alpha), SANS canvas carré : ainsi
+    la tasse se cale au bord gauche comme les glyphes voisins du tuto (pas de
+    marge transparente qui la décalerait vers la droite). Le ratio est renvoyé
+    pour l'afficher à hauteur fixe sans déformation. Comme le logo du topbar,
+    l'image garde ses couleurs ; teinte en silhouette seulement si tint_hex.
+    Mis en cache par couleur → (Path, w, h).
+    """
+    key = tint_hex or "_raw"
+    if key in _COFFEE_SQ_CACHE:
+        v = _COFFEE_SQ_CACHE[key]
+        return v if v else None
+    from pathlib import Path as _P
+    src = _P(__file__).parent.parent.parent / "assets" / "coffee.png"
+    if not src.exists():
+        _COFFEE_SQ_CACHE[key] = False
+        return None
+    try:
+        import numpy as _np
+        from PySide6.QtGui import QPixmap, QImage, QPainter as _QP, QColor as _QC
+        import tempfile, hashlib
+        pix = QPixmap(str(src))
+        img = pix.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+        w, h = img.width(), img.height()
+        ptr = img.constBits()
+        arr = _np.frombuffer(ptr, _np.uint8).reshape(h, w, 4)
+        ys, xs = _np.where(arr[:, :, 3] > 12)
+        if len(xs) and len(ys):
+            x0, x1, y0, y1 = int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
+            pix = pix.copy(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+        # Teinte = silhouette monochrome dans la couleur des autres icônes
+        if tint_hex:
+            tinted = QPixmap(pix.size())
+            tinted.fill(Qt.transparent)
+            tp = _QP(tinted)
+            tp.drawPixmap(0, 0, pix)
+            tp.setCompositionMode(_QP.CompositionMode.CompositionMode_SourceIn)
+            tp.fillRect(tinted.rect(), _QC(tint_hex))
+            tp.end()
+            pix = tinted
+        tag = hashlib.md5(f"{src}{src.stat().st_mtime}{key}".encode()).hexdigest()[:8]
+        out = _P(tempfile.gettempdir()) / f"neoslice_coffee_tight_{tag}.png"
+        if not out.exists():
+            pix.save(str(out), "PNG")
+        res = (out, pix.width(), pix.height())
+        _COFFEE_SQ_CACHE[key] = res
+        return res
+    except Exception:
+        _COFFEE_SQ_CACHE[key] = False
+        return None
+
+
 def should_show_tutorial() -> bool:
     try:
         from ui.components.welcome_dialog import _load_prefs
@@ -58,8 +172,12 @@ _STEPS_FR: list[_Step] = [
         None,
         "Bienvenue dans neoSlice",
         "neoSlice analyse votre fichier STL, OBJ ou 3MF et génère automatiquement "
-        "les paramètres d'impression optimaux pour vos imprimantes Bambu Lab.\n\n"
-        "Ce guide vous présente les 4 étapes du workflow.\n"
+        "les paramètres d'impression optimaux pour votre imprimante.\n\n"
+        "Désormais compatible avec <b>3 slicers</b> — Bambu Studio, OrcaSlicer et "
+        "PrusaSlicer — et <b>plus de 50 marques / 300 imprimantes</b> : Bambu Lab, "
+        "Creality, Prusa, Anycubic, Elegoo, Sovol et bien d'autres.\n\n"
+        "Ce guide vous présente le workflow complet, du fichier à l'export, ainsi "
+        "que les fonctionnalités <b>Pro</b>.\n"
         "Cliquez sur <b>Suivant</b> pour commencer.",
     ),
     _Step(
@@ -68,8 +186,10 @@ _STEPS_FR: list[_Step] = [
         "Sélectionnez votre <b>imprimante cible</b> et votre <b>diamètre de buse</b>, "
         "puis cliquez sur <b>VALIDER</b>.\n"
         "Faites de même pour votre <b>filament</b>.\n\n"
-        "Choisissez ensuite votre <b>type de plateau</b> — neoSlice adapte "
-        "automatiquement les températures et l'adhérence.",
+        "Choisissez enfin votre <b>type de plateau</b> : la liste <b>s'adapte à "
+        "votre slicer</b> (plateaux Bambu Studio / OrcaSlicer, ou sheets "
+        "PrusaSlicer), et neoSlice ajuste automatiquement les températures et "
+        "l'adhérence.",
         pad=12,
     ),
     _Step(
@@ -89,8 +209,8 @@ _STEPS_FR: list[_Step] = [
         "<b>Qualité · Résistance · Vitesse · Supports · Adhérence · Usage · Mode</b>\n\n"
         "Le groupe <b>Mode</b> permet d'activer :\n"
         "— <b>Silencieux</b> : vitesses –40 % pour moins de bruit\n"
-        "— <b>Multicolore AMS</b> : active la <b>prime tower</b> (tour de purge "
-        "qui stabilise les changements de couleur) et le <b>flush</b> "
+        "— <b>Multicolore (AMS Bambu / MMU Prusa)</b> : active la <b>prime tower</b> "
+        "(tour de purge qui stabilise les changements de couleur) et le <b>flush</b> "
         "(purge automatique de la buse entre chaque filament)\n\n"
         "Sauvegardez vos combinaisons favorites en présets, "
         "puis cliquez sur <b>GÉNÉRER CONFIGURATION →</b>.",
@@ -98,22 +218,49 @@ _STEPS_FR: list[_Step] = [
     ),
     _Step(
         "statusbar",
-        "④ Export vers Bambu Studio",
+        "④ Export vers votre slicer",
         "Une fois la configuration générée, le <b>bouton d'export</b> s'active.\n\n"
         "neoSlice génère un fichier <b>.3MF</b> avec tous les paramètres "
         "optimisés selon votre matériau et la géométrie de la pièce.\n\n"
+        "Choisissez votre <b>slicer de sortie</b> (Bambu Studio, OrcaSlicer ou "
+        "PrusaSlicer) dans les réglages — tout le logiciel s'adapte : catalogue "
+        "d'imprimantes, plateaux et bouton d'export.\n\n"
         "Des <b>alertes matériau</b> peuvent apparaître dans le panneau d'analyse : "
-        "risque de warping, séchage recommandé, incompatibilité AMS…",
+        "risque de warping, séchage recommandé, incompatibilité multi-matériau "
+        "(AMS/MMU)…",
         pad=6,
     ),
     _Step(
+        "diag",
+        "⑤ Diagnostic IA — corriger une impression ratée",
+        "Une impression ratée ? Cliquez sur <b>DIAGNOSTIC IA</b>.\n\n"
+        "Prenez ou chargez une <b>photo</b> de votre pièce : l'intelligence "
+        "artificielle identifie le défaut — <b>stringing, warping, sous-extrusion, "
+        "décollement…</b> — et vous donne les <b>corrections concrètes</b> à "
+        "appliquer.\n\n"
+        "<b>Fonctionnalité neoSlice Pro</b> (essais gratuits inclus).",
+        pad=10,
+    ),
+    _Step(
+        "pro",
+        "⑥ Espace Pro — gérez votre activité",
+        "Le bouton <b>ESPACE PRO</b> ouvre votre hub de gestion complet :\n\n"
+        "— <b>Tableau de bord</b> : chiffre d'affaires, payé, dû, stock\n"
+        "— <b>Bobines</b> : suivi de votre stock de filament (grammes & valeur)\n"
+        "— <b>Devis</b> : calcul du coût réel + devis PDF professionnel\n"
+        "— <b>Facturation</b> : factures aux normes (TVA & devise de votre pays)\n"
+        "— <b>Clients</b> : historique devis + factures et CA payé / dû par client\n\n"
+        "<b>Fonctionnalité neoSlice Pro.</b>",
+        pad=10,
+    ),
+    _Step(
         "topbar",
-        "⑤ Barre de titre",
-        "Quatre raccourcis sont disponibles à tout moment :"
+        "⑦ Barre de titre",
+        "À droite de la barre, quatre raccourcis sont disponibles à tout moment :"
         "<br><br>"
         "<table cellspacing='0' cellpadding='0' width='100%'>"
         "<tr>"
-        "<td width='28' valign='top' style='padding-top:1px;'>"
+        "<td width='28' align='center' valign='top' style='padding-top:1px;'>"
         "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE713;</span>"
         "</td>"
         "<td valign='top'>Ouvrir les réglages : thème, langue, dossier "
@@ -121,7 +268,7 @@ _STEPS_FR: list[_Step] = [
         "</tr>"
         "<tr><td colspan='2' height='10'></td></tr>"
         "<tr>"
-        "<td width='28' valign='top' style='padding-top:1px;'>"
+        "<td width='28' align='center' valign='top' style='padding-top:1px;'>"
         "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE8BD;</span>"
         "</td>"
         "<td valign='top'>Signaler un bug ou partager votre expérience."
@@ -129,14 +276,14 @@ _STEPS_FR: list[_Step] = [
         "</tr>"
         "<tr><td colspan='2' height='10'></td></tr>"
         "<tr>"
-        "<td width='28' valign='top' style='padding-top:1px;'>"
+        "<td width='28' align='center' valign='top' style='padding-top:1px;'>"
         "<b style='color:#E8F4FF;font-size:11pt;'>?</b>"
         "</td>"
         "<td valign='top'>Relancer ce tutoriel.</td>"
         "</tr>"
         "<tr><td colspan='2' height='10'></td></tr>"
         "<tr>"
-        "<td width='28' valign='top' style='padding-top:2px;'>&#x2615;</td>"
+        "<td width='28' align='center' valign='top' style='padding-top:2px;'>{{COFFEE}}</td>"
         "<td valign='top'>Soutenir le développement du logiciel via un don volontaire.</td>"
         "</tr>"
         "</table>",
@@ -149,8 +296,12 @@ _STEPS_EN: list[_Step] = [
         None,
         "Welcome to neoSlice",
         "neoSlice analyzes your STL, OBJ or 3MF file and automatically generates "
-        "the optimal print settings for your Bambu Lab printers.\n\n"
-        "This guide walks you through the 4 steps of the workflow.\n"
+        "the optimal print settings for your printer.\n\n"
+        "Now compatible with <b>3 slicers</b> — Bambu Studio, OrcaSlicer and "
+        "PrusaSlicer — and <b>50+ brands / 300+ printers</b>: Bambu Lab, Creality, "
+        "Prusa, Anycubic, Elegoo, Sovol and many more.\n\n"
+        "This guide walks you through the full workflow, from file to export, plus "
+        "the <b>Pro</b> features.\n"
         "Click <b>Next</b> to begin.",
     ),
     _Step(
@@ -159,8 +310,9 @@ _STEPS_EN: list[_Step] = [
         "Select your <b>target printer</b> and <b>nozzle diameter</b>, "
         "then click <b>CONFIRM</b>.\n"
         "Do the same for your <b>filament</b>.\n\n"
-        "Then choose your <b>plate type</b> — neoSlice automatically adapts "
-        "temperatures and adhesion.",
+        "Finally choose your <b>plate type</b>: the list <b>adapts to your "
+        "slicer</b> (Bambu Studio / OrcaSlicer plates, or PrusaSlicer sheets), and "
+        "neoSlice automatically adjusts temperatures and adhesion.",
         pad=12,
     ),
     _Step(
@@ -180,8 +332,8 @@ _STEPS_EN: list[_Step] = [
         "<b>Quality · Strength · Speed · Supports · Adhesion · Use · Mode</b>\n\n"
         "The <b>Mode</b> group lets you enable:\n"
         "— <b>Silent</b>: speeds –40% for less noise\n"
-        "— <b>Multicolor AMS</b>: enables the <b>prime tower</b> (purge tower "
-        "that stabilizes color changes) and <b>flush</b> "
+        "— <b>Multicolor (Bambu AMS / Prusa MMU)</b>: enables the <b>prime tower</b> "
+        "(purge tower that stabilizes color changes) and <b>flush</b> "
         "(automatic nozzle purge between filaments)\n\n"
         "Save your favorite combinations as presets, "
         "then click <b>GENERATE CONFIGURATION →</b>.",
@@ -189,22 +341,47 @@ _STEPS_EN: list[_Step] = [
     ),
     _Step(
         "statusbar",
-        "④ Export to Bambu Studio",
+        "④ Export to your slicer",
         "Once the configuration is generated, the <b>export button</b> activates.\n\n"
         "neoSlice generates a <b>.3MF</b> file with all settings "
         "optimized for your material and the part's geometry.\n\n"
+        "Pick your <b>output slicer</b> (Bambu Studio, OrcaSlicer or PrusaSlicer) "
+        "in settings — the whole app adapts: printer catalog, plates and export "
+        "button.\n\n"
         "<b>Material alerts</b> may appear in the analysis panel: "
-        "warping risk, drying recommended, AMS incompatibility…",
+        "warping risk, drying recommended, multi-material incompatibility (AMS/MMU)…",
         pad=6,
     ),
     _Step(
+        "diag",
+        "⑤ AI Diagnostic — fix a failed print",
+        "Bad print? Click <b>AI DIAGNOSTIC</b>.\n\n"
+        "Take or load a <b>photo</b> of your part: the AI identifies the defect — "
+        "<b>stringing, warping, under-extrusion, lifting…</b> — and gives you the "
+        "<b>concrete fixes</b> to apply.\n\n"
+        "<b>neoSlice Pro feature</b> (free trials included).",
+        pad=10,
+    ),
+    _Step(
+        "pro",
+        "⑥ Pro Space — manage your business",
+        "The <b>PRO SPACE</b> button opens your full management hub:\n\n"
+        "— <b>Dashboard</b>: revenue, paid, due, stock\n"
+        "— <b>Spools</b>: track your filament stock (grams & value)\n"
+        "— <b>Quotes</b>: real cost calculation + professional PDF quote\n"
+        "— <b>Invoicing</b>: compliant invoices (VAT & your country's currency)\n"
+        "— <b>Clients</b>: quote + invoice history and paid / due revenue per client\n\n"
+        "<b>neoSlice Pro feature.</b>",
+        pad=10,
+    ),
+    _Step(
         "topbar",
-        "⑤ Title bar",
-        "Four shortcuts are available at any time:"
+        "⑦ Title bar",
+        "On the right of the bar, four shortcuts are available at any time:"
         "<br><br>"
         "<table cellspacing='0' cellpadding='0' width='100%'>"
         "<tr>"
-        "<td width='28' valign='top' style='padding-top:1px;'>"
+        "<td width='28' align='center' valign='top' style='padding-top:1px;'>"
         "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE713;</span>"
         "</td>"
         "<td valign='top'>Open settings: theme, language, export folder "
@@ -212,7 +389,7 @@ _STEPS_EN: list[_Step] = [
         "</tr>"
         "<tr><td colspan='2' height='10'></td></tr>"
         "<tr>"
-        "<td width='28' valign='top' style='padding-top:1px;'>"
+        "<td width='28' align='center' valign='top' style='padding-top:1px;'>"
         "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE8BD;</span>"
         "</td>"
         "<td valign='top'>Report a bug or share your experience."
@@ -220,14 +397,14 @@ _STEPS_EN: list[_Step] = [
         "</tr>"
         "<tr><td colspan='2' height='10'></td></tr>"
         "<tr>"
-        "<td width='28' valign='top' style='padding-top:1px;'>"
+        "<td width='28' align='center' valign='top' style='padding-top:1px;'>"
         "<b style='color:#E8F4FF;font-size:11pt;'>?</b>"
         "</td>"
         "<td valign='top'>Replay this tutorial.</td>"
         "</tr>"
         "<tr><td colspan='2' height='10'></td></tr>"
         "<tr>"
-        "<td width='28' valign='top' style='padding-top:2px;'>&#x2615;</td>"
+        "<td width='28' align='center' valign='top' style='padding-top:2px;'>{{COFFEE}}</td>"
         "<td valign='top'>Support the software's development with a voluntary donation.</td>"
         "</tr>"
         "</table>",
@@ -364,9 +541,38 @@ class TutorialOverlay(QDialog):
 
     def _body_html(self) -> str:
         icon_color = _T.palette()["TEXT_SECONDARY"]
-        return (_get_steps()[self._idx].body
+        # Icône café = même visuel que le logo de la barre du haut (couleurs en
+        # thème clair, silhouette teintée en sombre). Recadrée au plus juste et
+        # affichée à hauteur fixe (16px) avec largeur proportionnelle → calée au
+        # bord gauche comme les glyphes ⚙ 💬 ?, sans déformation. Repli emoji.
+        _tint = _T.palette()["TEXT_SECONDARY"] if _T.is_dark() else None
+        _cof = _coffee_square_path(_tint)
+        if _cof is not None:
+            _path, _cw, _ch = _cof
+            _dw = max(1, round(16 * _cw / _ch)) if _ch else 16
+            coffee_tag = f"<img src='{_path.as_uri()}' width='{_dw}' height='16'>"
+        else:
+            coffee_tag = "&#x2615;"
+        step = _get_steps()[self._idx]
+        body = step.body
+        # Étapes Pro (Diagnostic IA / Espace Pro) : pour un utilisateur SANS Pro,
+        # les boutons concernés sont masqués (remplacés par le bouton « neoSlice
+        # Pro »). On ajoute donc un encart expliquant que c'est réservé au Pro et
+        # qu'il faut cliquer sur le bouton mis en surbrillance pour débloquer.
+        if step.target in ("diag", "pro") and not _is_pro():
+            from core.i18n import lang as _lang
+            if _lang() == "en":
+                body += ("\n\n🔒 <b>Available with neoSlice Pro.</b> Click the "
+                         "highlighted <b>neoSlice Pro</b> button to unlock these "
+                         "features — free trials included.")
+            else:
+                body += ("\n\n🔒 <b>Réservé à neoSlice Pro.</b> Cliquez sur le "
+                         "bouton <b>neoSlice Pro</b> en surbrillance pour débloquer "
+                         "ces fonctionnalités — essais gratuits inclus.")
+        return (body
                 .replace("\n", "<br>")
-                .replace("#E8F4FF", icon_color))
+                .replace("#E8F4FF", icon_color)
+                .replace("{{COFFEE}}", coffee_tag))
 
     def _measure_card_height(self) -> int:
         text_w = _CARD_W - 2 * _PAD_H
@@ -510,11 +716,21 @@ class TutorialOverlay(QDialog):
 
         # ── Titre — setHtml avec couleur inline pour forcer l'application du thème ──
         _title_color = _tp["TEXT_PRIMARY"]
+        # Remplacer le glyphe rond (①②③…) par un badge dessiné identique au panneau
+        # gauche : cercle + chiffre centré, en couleur d'accent.
+        _title_txt = step.title
+        _badge_html = ""
+        if _title_txt and _title_txt[0] in _CIRCLED_TO_DIGIT:
+            _digit = _CIRCLED_TO_DIGIT[_title_txt[0]]
+            _badge = _badge_png(_digit, _tp["ACCENT"])
+            _badge_html = (f"<img src='{_badge.as_uri()}' width='22' height='22' "
+                           f"style='vertical-align:middle'>&nbsp;&nbsp;")
+            _title_txt = _title_txt[1:].lstrip()
         td = QTextDocument()
         td.setDefaultFont(QFont(FONT_MAIN, 13, QFont.Bold))
         td.setHtml(
-            f"<span style='color:{_title_color};font-family:{FONT_MAIN};"
-            f"font-size:13pt;font-weight:bold;'>{step.title}</span>"
+            f"{_badge_html}<span style='color:{_title_color};font-family:{FONT_MAIN};"
+            f"font-size:13pt;font-weight:bold;'>{_title_txt}</span>"
         )
         td.setTextWidth(tw)
         painter.save()

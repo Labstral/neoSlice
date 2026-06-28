@@ -237,6 +237,8 @@ class ParameterEngine:
             if getattr(intent, "precision", 0.0) > 0.8:
                 config.xy_contour_compensation = -0.05   # compense l'expansion plastique
                 config.elefant_foot_compensation = 0.05
+            # Couture plus discrète : on resserre le gap pour réduire le point de couture
+            config.seam_gap = 10.0
 
         # Silencieux → -40% vitesses sur tous les axes
         if getattr(intent, "silent", 0.0) > 0.5:
@@ -309,7 +311,7 @@ class ParameterEngine:
             elif analysis.fragility_severity > 0.45:      # fragilité modérée
                 config.outer_wall_speed = min(config.outer_wall_speed, 140)
 
-        # ── Surplombs → bridge speed + support ───────────────────────
+        # ── Surplombs → bridge speed + ralentissement + support ──────
         if analysis.overhang_severity > 0.0:
             if analysis.max_overhang_angle > 60:
                 config.bridge_speed = min(config.bridge_speed, 25)
@@ -317,6 +319,16 @@ class ParameterEngine:
                 config.bridge_speed = min(config.bridge_speed, 35)
             elif analysis.max_overhang_angle > 30:
                 config.bridge_speed = min(config.bridge_speed, 45)
+            # Ralentir les parois en surplomb raides → moins d'affaissement / meilleur état
+            # de surface, sans support. Plus le surplomb est sévère, plus on ralentit fort.
+            if analysis.max_overhang_angle > 45:
+                config.detect_overhang_wall = True
+                config.slow_down_overhangs = True
+                if analysis.overhang_severity > 0.6 or analysis.max_overhang_angle > 65:
+                    config.overhang_3_4_speed = 20
+                    config.overhang_4_4_speed = 8
+                # Léger sur-débit pont sur surplombs sévères → meilleure accroche des brins
+                config.bridge_flow = min(config.bridge_flow, 0.92)
 
         if analysis.support_needed:
             # Arborescents par défaut — plus faciles à retirer, meilleure qualité de surface

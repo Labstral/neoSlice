@@ -1,6 +1,5 @@
 ACCORD DE LICENCE UTILISATEUR FINAL — neoSlice
 ===============================================
-Version Bêta
 Copyright (c) 2026 Emmanuel Percheron. Tous droits réservés.
 
 VEUILLEZ LIRE ATTENTIVEMENT CET ACCORD AVANT D'INSTALLER OU D'UTILISER
@@ -82,9 +81,9 @@ Aucune publicité n'est intégrée au logiciel et aucun tiers n'a accès
 ───────────────────────────────────────────────
 6. MISES À JOUR ET ÉVOLUTIONS
 ───────────────────────────────────────────────
-neoSlice est actuellement distribué en version Bêta. À ce titre, il
-peut contenir des imperfections ou des comportements inattendus.
-Vos retours sont essentiels à son amélioration.
+neoSlice fait l'objet d'améliorations continues. À ce titre, il peut
+contenir des imperfections ou des comportements inattendus. Vos retours
+sont essentiels à son amélioration.
 
 Emmanuel Percheron s'efforce de proposer des mises à jour régulières
 en fonction des retours utilisateurs, mais n'est soumis à aucune

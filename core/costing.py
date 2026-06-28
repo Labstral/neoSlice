@@ -32,9 +32,13 @@ COUNTRY_DEFAULTS: dict[str, dict] = {
     "Belgique":        {"kwh": 0.37, "devise": "EUR"},
     "Luxembourg":      {"kwh": 0.23, "devise": "EUR"},
     "Allemagne":       {"kwh": 0.37, "devise": "EUR"},
+    "Royaume-Uni":     {"kwh": 0.25, "devise": "GBP"},
+    "Pays-Bas":        {"kwh": 0.35, "devise": "EUR"},
+    "Italie":          {"kwh": 0.31, "devise": "EUR"},
+    "Espagne":         {"kwh": 0.24, "devise": "EUR"},
+    "Autriche":        {"kwh": 0.25, "devise": "EUR"},
     "Canada":          {"kwh": 0.17, "devise": "CAD"},
     "États-Unis":      {"kwh": 0.18, "devise": "USD"},
-    "Royaume-Uni":     {"kwh": 0.25, "devise": "GBP"},
     "Autre / manuel":  {"kwh": 0.25, "devise": "EUR"},
 }
 

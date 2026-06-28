@@ -49,6 +49,19 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("🚀 Nouveautés v0.1.6",
+     "• Espace Pro — Gestion d'atelier complète : bobines (stock multi-couleur, "
+     "coût/kg, alertes de réappro, liste de courses), devis, factures, clients, "
+     "commandes (file de production) et catalogue d'articles — le tout connecté.\n"
+     "• Tableau de bord : chiffre d'affaires facturé / encaissé / dû, factures en "
+     "retard, graphe des 6 derniers mois et export comptable (CSV).\n"
+     "• Facturation internationale : 13 pays, documents rédigés dans la langue du "
+     "client (FR, EN, DE, NL, IT, ES), mentions légales par pays et frais de "
+     "recouvrement configurables.\n"
+     "• Décompte automatique du filament après chaque impression.\n"
+     "• Multi-marques / multi-slicer : Creality, Prusa, Anycubic, Voron… et sortie "
+     "vers Bambu Studio, OrcaSlicer ou PrusaSlicer.\n"
+     "• Nombreux correctifs d'affichage (barre de titre, fenêtres, listes)."),
     ("🔧 Correctif v0.1.5.6",
      "• macOS : l'activation Pro et les mises à jour échouaient avec « Pas de "
      "connexion Internet » alors que tout fonctionnait — corrigé (certificats SSL).\n"
@@ -127,7 +140,15 @@ class WelcomeDialog(QDialog):
             return
         avail = scr.availableGeometry()          # exclut barre des tâches / dock
         max_h = int(avail.height() * 0.92)
+        # Le scroll demande la hauteur EXACTE du contenu → pas de barre inutile ;
+        # il ne défilera que si l'écran est vraiment trop petit (cap ci-dessous).
+        try:
+            self._scroll.setMinimumHeight(self._welcome_content.sizeHint().height())
+            self.adjustSize()
+        except Exception:
+            pass
         if self.height() > max_h:
+            self._scroll.setMinimumHeight(0)
             self.resize(self.width(), max_h)
         g = self.frameGeometry()
         g.moveCenter(avail.center())
@@ -174,13 +195,14 @@ class WelcomeDialog(QDialog):
         _content = QWidget()
         _content.setStyleSheet("background: transparent;")
         self._scroll.setWidget(_content)
+        self._welcome_content = _content
         outer.addWidget(self._scroll, 1)
 
         root = QVBoxLayout(_content)
-        root.setContentsMargins(36, 30, 36, 14)
+        root.setContentsMargins(36, 12, 36, 12)
         root.setSpacing(0)
 
-        # ── Logo + Titre ──────────────────────────────────────────────────
+        # ── Logo (sans texte « neoSlice » : déjà dans le logo) ──────────────
         logo_lbl = QLabel()
         logo_lbl.setAlignment(Qt.AlignCenter)
 
@@ -191,25 +213,17 @@ class WelcomeDialog(QDialog):
                 px = QPixmap(str(px_path))
                 if not px.isNull():
                     logo_lbl.setPixmap(
-                        px.scaled(160, 160, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        px.scaled(190, 190, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     )
                     logo_loaded = True
 
         if not logo_loaded:
             logo_lbl.setText("◈")
-            logo_lbl.setFont(QFont(FONT_MAIN, 72))
+            logo_lbl.setFont(QFont(FONT_MAIN, 84))
             logo_lbl.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;")
 
         root.addWidget(logo_lbl)
         root.addSpacing(8)
-
-        title_lbl = QLabel("neoSlice")
-        title_lbl.setAlignment(Qt.AlignCenter)
-        title_lbl.setFont(QFont(FONT_MAIN, 24, QFont.Bold))
-        title_lbl.setStyleSheet(
-            f"color: {pal['TEXT_PRIMARY']}; letter-spacing: 6px; background: transparent;"
-        )
-        root.addWidget(title_lbl)
 
         sub_lbl = QLabel("AI-POWERED 3D PRINT OPTIMIZER")
         sub_lbl.setAlignment(Qt.AlignCenter)
@@ -221,18 +235,18 @@ class WelcomeDialog(QDialog):
 
         root.addSpacing(12)
 
-        # Badges version / bêta / auteur
+        # Badges version / auteur
         badges = QHBoxLayout()
         badges.setAlignment(Qt.AlignCenter)
         badges.setSpacing(8)
 
+        _version_text = f"v{__version__}"
         for text, fg, bg, border in [
-            (f"v{__version__}",           pal['ACCENT_BRIGHT'], pal['BG_SURFACE'], pal['ACCENT']),
-            ("BÊTA",                      pal['AMBER'],         "rgba(255,184,0,0.10)", pal['AMBER']),
+            (_version_text,               pal['ACCENT_BRIGHT'], pal['BG_SURFACE'], pal['ACCENT']),
             ("© 2026 Emmanuel Percheron", pal['TEXT_LABEL'],    "transparent",     "transparent"),
         ]:
             lbl = QLabel(text)
-            lbl.setFont(QFont(FONT_MONO, 7, QFont.Bold if text == "BÊTA" else QFont.Normal))
+            lbl.setFont(QFont(FONT_MONO, 7, QFont.Bold if text == _version_text else QFont.Normal))
             lbl.setStyleSheet(
                 f"color: {fg}; background: {bg}; border: 1px solid {border}; "
                 f"border-radius: 3px; padding: 2px 7px;"
@@ -240,9 +254,9 @@ class WelcomeDialog(QDialog):
             badges.addWidget(lbl)
 
         root.addLayout(badges)
-        root.addSpacing(20)
+        root.addSpacing(14)
         root.addWidget(self._sep())
-        root.addSpacing(16)
+        root.addSpacing(12)
 
         # ── Quoi de neuf (uniquement après une mise à jour) ───────────────
         if self._show_whats_new:
@@ -253,19 +267,42 @@ class WelcomeDialog(QDialog):
             root.addWidget(wn_title)
             root.addSpacing(12)
 
+            # Le changelog peut être long (plusieurs versions) → on le borne dans
+            # sa PROPRE zone défilante, sinon la fenêtre s'étire sur tout l'écran.
+            wn_scroll = QScrollArea()
+            wn_scroll.setWidgetResizable(True)
+            wn_scroll.setFrameShape(QFrame.NoFrame)
+            wn_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            wn_scroll.setMaximumHeight(240)
+            wn_scroll.setStyleSheet(
+                "QScrollArea{background:transparent;border:none;}"
+                f"QScrollBar:vertical{{background:{pal['BG_ELEVATED']};width:10px;margin:2px;border-radius:5px;}}"
+                f"QScrollBar::handle:vertical{{background:{pal['TEXT_SECONDARY']};border-radius:5px;min-height:30px;}}"
+                f"QScrollBar::handle:vertical:hover{{background:{pal['ACCENT']};}}"
+                "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}"
+                "QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical{background:transparent;}"
+            )
+            wn_inner = QWidget()
+            wn_inner.setStyleSheet("background: transparent;")
+            wn_lay = QVBoxLayout(wn_inner)
+            wn_lay.setContentsMargins(0, 0, 10, 0)   # marge droite = place pour la scrollbar
+            wn_lay.setSpacing(0)
             for title, body in _WHATS_NEW_FR:
                 t = QLabel(title)
                 t.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
                 t.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
                 t.setWordWrap(True)
-                root.addWidget(t)
+                wn_lay.addWidget(t)
 
                 b = QLabel(body)
                 b.setFont(QFont(FONT_MAIN, 8))
                 b.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
                 b.setWordWrap(True)
-                root.addWidget(b)
-                root.addSpacing(8)
+                wn_lay.addWidget(b)
+                wn_lay.addSpacing(8)
+            wn_lay.addStretch()
+            wn_scroll.setWidget(wn_inner)
+            root.addWidget(wn_scroll)
 
             root.addSpacing(4)
             root.addWidget(self._sep())
@@ -297,7 +334,16 @@ class WelcomeDialog(QDialog):
 
         root.addSpacing(16)
 
-        coffee_btn = QPushButton("☕ M'offrir un café")
+        from pathlib import Path as _Path
+        from PySide6.QtGui import QIcon as _QIcon
+        from PySide6.QtCore import QSize as _QSize
+        _coffee_png = _Path(__file__).parent.parent.parent / "assets" / "coffee.png"
+        if _coffee_png.exists():
+            coffee_btn = QPushButton(" M'offrir un café")
+            coffee_btn.setIcon(_QIcon(str(_coffee_png)))
+            coffee_btn.setIconSize(_QSize(22, 22))
+        else:
+            coffee_btn = QPushButton("☕ M'offrir un café")
         coffee_btn.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
         coffee_btn.setFixedHeight(40)
         coffee_btn.setCursor(Qt.PointingHandCursor)
@@ -319,27 +365,27 @@ class WelcomeDialog(QDialog):
 
         root.addSpacing(12)
 
-        # Encart bêta (discret)
-        beta_box = QWidget()
-        beta_box.setStyleSheet(f"""
+        # Encart « améliorations continues » (discret)
+        feedback_box = QWidget()
+        feedback_box.setStyleSheet(f"""
             QWidget {{
-                background: rgba(255,184,0,0.06);
-                border-left: 3px solid {pal['AMBER']};
+                background: rgba(30,144,255,0.06);
+                border-left: 3px solid {pal['ACCENT']};
                 border-radius: 2px;
             }}
         """)
-        beta_lay = QVBoxLayout(beta_box)
-        beta_lay.setContentsMargins(12, 7, 12, 7)
-        beta_lbl = QLabel(
-            f"<b style='color:{pal['AMBER']}'>⚠  Version Bêta</b>"
-            f"<span style='color:{pal['TEXT_LABEL']}'> — Des mises à jour régulières sont prévues. "
-            "N'hésitez pas à signaler tout problème rencontré.</span>"
+        feedback_lay = QVBoxLayout(feedback_box)
+        feedback_lay.setContentsMargins(12, 7, 12, 7)
+        feedback_lbl = QLabel(
+            f"<b style='color:{pal['ACCENT_BRIGHT']}'>💡  Améliorations continues</b>"
+            f"<span style='color:{pal['TEXT_LABEL']}'> — De nouvelles fonctionnalités arrivent "
+            "régulièrement. N'hésitez pas à signaler un problème ou à proposer une idée.</span>"
         )
-        beta_lbl.setFont(QFont(FONT_MAIN, 8))
-        beta_lbl.setStyleSheet("background: transparent;")
-        beta_lbl.setWordWrap(True)
-        beta_lay.addWidget(beta_lbl)
-        root.addWidget(beta_box)
+        feedback_lbl.setFont(QFont(FONT_MAIN, 8))
+        feedback_lbl.setStyleSheet("background: transparent;")
+        feedback_lbl.setWordWrap(True)
+        feedback_lay.addWidget(feedback_lbl)
+        root.addWidget(feedback_box)
 
         root.addSpacing(4)
 

@@ -3,7 +3,7 @@
 ; Pour compiler : ISCC.exe neoSlice_setup.iss
 
 #define AppName      "neoSlice"
-#define AppVersion   "0.1.5.6"
+#define AppVersion   "0.1.6"
 #define AppPublisher "Emmanuel Percheron"
 #define AppURL       "https://github.com/neoslice"
 #define AppExeName   "neoSlice.exe"
@@ -26,7 +26,7 @@ DisableProgramGroupPage=yes
 
 ; Fichiers de sortie
 OutputDir={#OutputDir}
-OutputBaseFilename=neoSlice_Setup_v{#AppVersion}-beta_Windows
+OutputBaseFilename=neoSlice_Setup_v{#AppVersion}_Windows
 SetupIconFile=..\assets\neoSlice.ico
 
 ; Compression

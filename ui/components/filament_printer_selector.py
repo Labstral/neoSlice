@@ -16,7 +16,14 @@ from PySide6.QtGui import QFont, QStandardItem, QStandardItemModel, QColor
 
 from core.i18n import _
 from data.filaments import FILAMENTS, FAMILLES_ORDRE
-from data.printers import PRINTERS, SERIES_ORDRE
+from data.printers import (
+    PRINTERS, SERIES_ORDRE,
+    catalogue_brands, models_for_brand, nozzles_for_model, is_catalogue_model,
+    prusa_brands, prusa_models_for_brand, prusa_nozzles_for_model, is_prusa_model,
+    split_popular,
+)
+from core.prefs import PREFS
+from ui.components.brand_menu_button import BrandMenuButton
 from ui.styles.theme import (
     BG_INPUT, BG_ELEVATED, BG_SURFACE,
     ACCENT, ACCENT_BRIGHT, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_LABEL, INACTIVE,
@@ -89,15 +96,39 @@ _BTN_DONE = f"""
 _NOZZLE_SIZES = [0.2, 0.4, 0.6, 0.8]
 _NOZZLE_DEFAULT = 0.4
 
-# (label affiché, valeur curr_bed_type dans le 3MF)
-_PLATES = [
+# Plateaux Bambu Studio / OrcaSlicer (label affiché, valeur curr_bed_type 3MF)
+_PLATES_BAMBU = [
     ("Textured PEI Plate",                 "Textured PEI Plate"),
     ("Cool Plate / PLA Plate",             "Cool Plate"),
+    ("Textured Cool Plate",                "Textured Cool Plate"),
+    ("Smooth Cool Plate (H2)",             "Smooth Cool Plate"),
     ("Smooth PEI Plate / High Temp Plate", "Hot Plate"),
     ("Engineering Plate",                  "Engineering Plate"),
     ("Bambu Cool Plate SuperTack",         "Bambu Cool Plate SuperTack"),
 ]
-_PLATE_DEFAULT = "Textured PEI Plate"
+_PLATE_DEFAULT_BAMBU = "Textured PEI Plate"
+
+# Plateaux (« sheets » acier) PrusaSlicer — réellement différents de Bambu/Orca.
+_PLATES_PRUSA = [
+    ("Textured PEI Sheet",                 "Textured PEI Sheet"),
+    ("Smooth PEI Sheet",                   "Smooth PEI Sheet"),
+    ("Satin Sheet",                        "Satin Sheet"),
+    ("Smooth PEI Sheet (High Temp)",       "Smooth PEI Sheet High Temp"),
+]
+_PLATE_DEFAULT_PRUSA = "Textured PEI Sheet"
+
+# Compat : ancien nom encore référencé ailleurs → pointe sur le catalogue Bambu.
+_PLATES = _PLATES_BAMBU
+_PLATE_DEFAULT = _PLATE_DEFAULT_BAMBU
+
+
+def _plates_for_slicer(slicer: str) -> tuple[list, str]:
+    """Retourne (liste [(label, valeur), …], valeur par défaut) selon le slicer
+    de sortie. PrusaSlicer a ses propres « sheets » acier ; Bambu et Orca
+    partagent les plateaux Bambu Studio."""
+    if slicer == "prusa":
+        return _PLATES_PRUSA, _PLATE_DEFAULT_PRUSA
+    return _PLATES_BAMBU, _PLATE_DEFAULT_BAMBU
 
 # Combinaisons plateau × filament à signaler à l'utilisateur
 _PLATE_WARNINGS: dict[str, dict[str, str]] = {
@@ -189,10 +220,10 @@ class FilamentPrinterSelector(QWidget):
         row_p = QHBoxLayout()
         row_p.setSpacing(6)
 
-        self._printer_combo = QComboBox()
+        self._printer_combo = BrandMenuButton()
         self._printer_combo.setStyleSheet(_COMBO_STYLE)
         self._populate_printers()
-        self._printer_combo.currentIndexChanged.connect(self._on_changed)
+        self._printer_combo.selectionChanged.connect(self._on_changed)
         row_p.addWidget(self._printer_combo, 1)
 
         # ── Sélecteur buse (inline, toujours actif) ───────────────────────
@@ -206,6 +237,8 @@ class FilamentPrinterSelector(QWidget):
             lambda _: self.nozzle_changed.emit(float(self._nozzle_combo.currentData()))
         )
         row_p.addWidget(self._nozzle_combo)
+        # Le combo imprimante est déjà peuplé : aligner les buses dispo sur la sélection
+        self._sync_nozzles()
 
         self._btn_confirm_printer = QPushButton(_("selector.validate_btn"))
         self._btn_confirm_printer.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
@@ -217,6 +250,15 @@ class FilamentPrinterSelector(QWidget):
         row_p.addWidget(self._btn_confirm_printer)
 
         layout.addLayout(row_p)
+
+        # Note imprimante non-Bambu (slicer cible) — masquée par défaut
+        self._printer_note = QLabel("")
+        self._printer_note.setFont(QFont(FONT_MAIN, 8))
+        self._printer_note.setWordWrap(True)
+        # Orange foncé (et non jaune) → lisible sur fond clair ET sombre
+        self._printer_note.setStyleSheet("color: #E07000; background: transparent;")
+        self._printer_note.hide()
+        layout.addWidget(self._printer_note)
         layout.addSpacing(2)
 
         # ── ② Filament (verrouillé jusqu'à validation imprimante) ─────────
@@ -264,10 +306,8 @@ class FilamentPrinterSelector(QWidget):
         self._plate_combo = QComboBox()
         self._plate_combo.setStyleSheet(_COMBO_STYLE)
         self._plate_combo.setEnabled(False)
-        for label, value in _PLATES:
-            self._plate_combo.addItem(label, value)
-        self._plate_combo.setCurrentIndex(0)
         self._plate_combo.setToolTip(_("selector.plate_tip"))
+        self._populate_plates()
         self._plate_combo.currentIndexChanged.connect(self._on_plate_changed)
         layout.addWidget(self._plate_combo)
 
@@ -282,7 +322,7 @@ class FilamentPrinterSelector(QWidget):
 
         # ── Badge compatibilité ───────────────────────────────────────────
         self._compat_badge = QLabel()
-        self._compat_badge.setFont(QFont(FONT_MONO, 9))
+        self._compat_badge.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._compat_badge.setWordWrap(True)
         self._compat_badge.setStyleSheet(f"color: {TELE_GREEN}; background: transparent;")
         layout.addWidget(self._compat_badge)
@@ -420,31 +460,33 @@ class FilamentPrinterSelector(QWidget):
 
     # ── Populations ─────────────────────────────────────────────────────────
 
+    def _printer_groups(self) -> list:
+        """Construit [(libellé, payload), …] selon le slicer de sortie. Les marques
+        courantes sont directes ; les autres sous « Autres marques ▸ »."""
+        slicer = PREFS.get("slicer_output", "bambu")
+        if slicer == "prusa":
+            brands = prusa_brands()
+            models = prusa_models_for_brand
+            groups: list = []
+        else:
+            brands = catalogue_brands(slicer)
+            models = lambda b: models_for_brand(b, slicer)
+            by_serie: dict[str, list[str]] = {}
+            for name, data in PRINTERS.items():
+                by_serie.setdefault(data.get("serie", "Autre"), []).append(name)
+            bambu = [(name, name) for serie in SERIES_ORDRE
+                     for name in by_serie.get(serie, [])]
+            groups = [("Bambu Lab", bambu)]
+
+        popular, others = split_popular(brands)
+        for b in popular:
+            groups.append((b, models(b)))
+        if others:
+            groups.append(("Autres marques", [(b, models(b)) for b in others]))
+        return groups
+
     def _populate_printers(self):
-        model = QStandardItemModel()
-        by_serie: dict[str, list[str]] = {}
-        for name, data in PRINTERS.items():
-            by_serie.setdefault(data.get("serie", "Autre"), []).append(name)
-
-        for serie in SERIES_ORDRE:
-            if serie not in by_serie:
-                continue
-            header = QStandardItem(f"── {serie.upper()} ──")
-            header.setEnabled(False)
-            header.setForeground(QColor(TEXT_SECONDARY))
-            header.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
-            model.appendRow(header)
-            for name in by_serie[serie]:
-                item = QStandardItem(f"  {name}")
-                item.setData(name, Qt.UserRole)
-                item.setFont(QFont(FONT_MAIN, 9))
-                model.appendRow(item)
-
-        self._printer_combo.setModel(model)
-        for i in range(model.rowCount()):
-            if model.item(i).isEnabled():
-                self._printer_combo.setCurrentIndex(i)
-                break
+        self._printer_combo.set_groups(self._printer_groups())
 
     def _populate_filaments(self):
         model = QStandardItemModel()
@@ -475,6 +517,8 @@ class FilamentPrinterSelector(QWidget):
     # ── Logique ─────────────────────────────────────────────────────────────
 
     def _on_changed(self):
+        self._sync_nozzles()
+        self._update_printer_note()
         self._update_compatibility()
         printer = self.current_printer()
         # Avertissement A2L : affiché dès la sélection (pas seulement à la validation)
@@ -499,19 +543,10 @@ class FilamentPrinterSelector(QWidget):
     def set_printer(self, name: str) -> None:
         if not name:
             return
-        model = self._printer_combo.model()
-        for i in range(model.rowCount()):
-            item = model.item(i)
-            if item and item.isEnabled() and (item.data(Qt.UserRole) or item.text().strip()) == name:
-                self._printer_combo.setCurrentIndex(i)
-                break
+        self._printer_combo.set_current_key(name, emit=False)
 
     def current_printer(self) -> str:
-        idx = self._printer_combo.currentIndex()
-        data = self._printer_combo.model().item(idx)
-        if data and data.isEnabled():
-            return data.data(Qt.UserRole) or data.text().strip()
-        return ""
+        return self._printer_combo.current_key()
 
     def current_filament(self) -> str:
         idx = self._filament_combo.currentIndex()
@@ -520,13 +555,94 @@ class FilamentPrinterSelector(QWidget):
             return data.data(Qt.UserRole) or data.text().strip()
         return ""
 
+    def refresh_printers(self) -> None:
+        """Reconstruit la liste d'imprimantes (ex. après changement du slicer de
+        sortie dans les réglages : on bascule entre catalogue Bambu/Orca et Prusa).
+        Reconstruit aussi les plateaux : PrusaSlicer a ses propres « sheets »."""
+        self._populate_printers()
+        self._sync_nozzles()
+        self._populate_plates()
+        self._update_printer_note()
+
+    def _populate_plates(self) -> None:
+        """Remplit le combo de plateaux selon le slicer de sortie (Bambu/Orca ↔
+        Prusa). Conserve le plateau courant s'il existe encore, sinon défaut."""
+        slicer = PREFS.get("slicer_output", "bambu")
+        plates, default = _plates_for_slicer(slicer)
+        prev = self._plate_combo.currentData() if self._plate_combo.count() else None
+        self._plate_combo.blockSignals(True)
+        self._plate_combo.clear()
+        for label, value in plates:
+            self._plate_combo.addItem(label, value)
+        values = [v for _, v in plates]
+        target = prev if prev in values else default
+        self._plate_combo.setCurrentIndex(values.index(target))
+        self._plate_combo.blockSignals(False)
+        # Réévaluer l'avertissement plateau×filament pour le nouveau catalogue
+        self._on_plate_changed()
+
+    def _update_printer_note(self) -> None:
+        """Note adaptée au slicer de sortie choisi et à l'imprimante sélectionnée."""
+        from data.printers import brand_of, is_prusa_model
+        key = self.current_printer()
+        slicer = PREFS.get("slicer_output", "bambu")
+
+        if slicer == "prusa" or (key and is_prusa_model(key)):
+            self._printer_note.setText(
+                "ⓘ Sortie PrusaSlicer : ouvrez le 3MF dans PrusaSlicer. Pour le profil "
+                "machine exact, installez l'imprimante (Configuration → Assistant)."
+            )
+            self._printer_note.show()
+            return
+
+        brand = brand_of(key) if key else ""
+        if not brand:                      # imprimante Bambu Lab → rien à signaler
+            self._printer_note.hide()
+            return
+
+        if slicer == "orca":
+            self._printer_note.setText(
+                f"ⓘ Imprimante {brand} : ouvrez le 3MF dans OrcaSlicer après avoir "
+                f"ajouté ce modèle dans Orca si besoin."
+            )
+        else:  # bambu
+            self._printer_note.setText(
+                f"ⓘ Imprimante {brand} : ouvrez le 3MF dans Bambu Studio après avoir "
+                f"ajouté ce modèle (menu « + » des imprimantes)."
+            )
+        self._printer_note.show()
+
+    def _sync_nozzles(self) -> None:
+        """Remplit le combo de buse avec les diamètres réellement disponibles pour
+        l'imprimante choisie. Bambu Lab → 0.2/0.4/0.6/0.8 ; marques tierces →
+        seulement les variantes présentes dans le catalogue."""
+        key = self.current_printer()
+        if key and is_prusa_model(key):
+            sizes = prusa_nozzles_for_model(key) or list(_NOZZLE_SIZES)
+        elif key and is_catalogue_model(key):
+            sizes = nozzles_for_model(key) or list(_NOZZLE_SIZES)
+        else:
+            sizes = list(_NOZZLE_SIZES)
+        prev = self.current_nozzle_diameter_mm()
+        self._nozzle_combo.blockSignals(True)
+        self._nozzle_combo.clear()
+        for d in sizes:
+            self._nozzle_combo.addItem(f"{d:.1f}mm", d)
+        # Conserver la buse précédente si dispo, sinon 0.4 si présent, sinon la 1ère
+        target = prev if prev in sizes else (_NOZZLE_DEFAULT if _NOZZLE_DEFAULT in sizes else sizes[0])
+        self._nozzle_combo.setCurrentIndex(sizes.index(target))
+        self._nozzle_combo.blockSignals(False)
+
     def current_nozzle_diameter_mm(self) -> float:
-        """Retourne le diamètre de buse sélectionné (0.2 / 0.4 / 0.6 / 0.8 mm)."""
+        """Retourne le diamètre de buse sélectionné (variable selon l'imprimante)."""
         return float(self._nozzle_combo.currentData() or _NOZZLE_DEFAULT)
 
     def current_plate_type(self) -> str:
-        """Retourne la valeur curr_bed_type Bambu Studio du plateau sélectionné."""
-        return self._plate_combo.currentData() or _PLATE_DEFAULT
+        """Retourne la valeur du plateau sélectionné (curr_bed_type Bambu/Orca, ou
+        « sheet » PrusaSlicer selon le slicer de sortie)."""
+        slicer = PREFS.get("slicer_output", "bambu")
+        _, default = _plates_for_slicer(slicer)
+        return self._plate_combo.currentData() or default
 
     def refresh_theme(self):
         pal = _T.palette()
@@ -577,6 +693,7 @@ class FilamentPrinterSelector(QWidget):
         """
         for combo in (self._printer_combo, self._filament_combo, self._plate_combo):
             combo.setStyleSheet(combo_style)
+        self._printer_combo.apply_theme()   # style du menu déroulant en cascade
         self._nozzle_combo.setStyleSheet(nozzle_style)
 
         label_active = f"color: {tl}; letter-spacing: 2px; background: transparent;"

@@ -171,6 +171,22 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
         overrides["xy_contour_compensation"] = s(config.xy_contour_compensation)
     if "elefant_foot_compensation" in fields:
         overrides["elefant_foot_compensation"] = s(config.elefant_foot_compensation)
+    if "seam_gap" in fields:
+        overrides["seam_gap"] = f"{config.seam_gap}%"
+
+    # Surplombs / Ponts — détecter + ralentir les porte-à-faux raides, débit pont calibré.
+    if "detect_overhang_wall" in fields:
+        overrides["detect_overhang_wall"] = "1" if config.detect_overhang_wall else "0"
+    if "bridge_flow" in fields:
+        overrides["bridge_flow"] = s(config.bridge_flow)
+    if "slow_down_overhangs" in fields:
+        # enable_overhang_speed + vitesses par tranche (arrays per-extrudeur, format Bambu)
+        overrides["enable_overhang_speed"] = ["1" if config.slow_down_overhangs else "0"]
+        if config.slow_down_overhangs:
+            overrides["overhang_1_4_speed"] = [s(config.overhang_1_4_speed)]
+            overrides["overhang_2_4_speed"] = [s(config.overhang_2_4_speed)]
+            overrides["overhang_3_4_speed"] = [s(config.overhang_3_4_speed)]
+            overrides["overhang_4_4_speed"] = [s(config.overhang_4_4_speed)]
 
     # AMS / Purge
     if "flush_into_infill" in fields:
@@ -188,14 +204,76 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
     else:
         overrides["enable_support"] = "1"
         overrides["support_type"] = config.support_type
-        overrides["support_style"] = "default"   # "default" = style normal BS, "tree_slim" = buisson dense
+        # "snug" = supports normaux ajustés (ne débordent pas) ; "default" pour l'arborescent
+        overrides["support_style"] = "snug" if config.support_type.startswith("normal") else "default"
         overrides["support_threshold_angle"] = s(int(config.support_threshold_angle))
         overrides["support_on_build_plate_only"] = "1" if config.support_on_build_plate_only else "0"
         overrides["support_angle"] = "0"
         overrides["support_top_z_distance"] = s(config.support_top_z_distance)
         overrides["support_bottom_z_distance"] = s(config.support_bottom_z_distance)
+        # Interface de supports — contact propre + retrait facile (dessous lisse).
+        # NB : on GARDE le gap Z ; le réduire fuserait support et pièce en mono-matériau.
+        overrides["support_interface_top_layers"] = s(int(config.support_interface_top_layers))
+        overrides["support_interface_bottom_layers"] = s(int(config.support_interface_bottom_layers))
+        overrides["support_interface_spacing"] = s(config.support_interface_spacing)
+        overrides["support_interface_pattern"] = config.support_interface_pattern
+        overrides["support_object_xy_distance"] = s(config.support_object_xy_distance)
 
     return overrides
+
+
+def _bed_center(machine: dict) -> tuple[float, float]:
+    """Centre du plateau (mm) depuis printable_area, repli 128×128."""
+    try:
+        xs, ys = [], []
+        for pt in machine.get("printable_area", []):
+            x, y = pt.split("x")
+            xs.append(float(x)); ys.append(float(y))
+        return ((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0)
+    except Exception:
+        return (128.0, 128.0)
+
+
+def _apply_non_bambu_machine(project_settings: dict, printer_ui_name: str,
+                             nozzle_mm: float) -> dict | None:
+    """Pour une imprimante du catalogue (Creality, Prusa, Anycubic, Flashforge,
+    Elegoo, Qidi), remplace le bloc machine du 3MF par celui de l'imprimante cible
+    (géométrie, g-code start/end, rétraction, identité) afin qu'OrcaSlicer / Bambu
+    Studio charge la BONNE machine à l'ouverture.
+
+    Retourne la config machine appliquée, ou None si l'imprimante est une Bambu Lab
+    (auquel cas le chemin Bambu existant garde la main)."""
+    from data.printers import (
+        is_catalogue_model, profile_name_for, machine_config_for, brand_of,
+    )
+    if not is_catalogue_model(printer_ui_name):
+        return None
+    pname = profile_name_for(printer_ui_name, nozzle_mm)
+    machine = machine_config_for(pname) if pname else {}
+    if not machine:
+        return None
+
+    brand = brand_of(printer_ui_name)
+    # Bloc machine complet de l'imprimante cible (écrase la géométrie Bambu du template)
+    project_settings.update(machine)
+    # Identité : le slicer fait correspondre printer_settings_id à un profil installé
+    project_settings["printer_settings_id"] = pname
+    project_settings["printer_model"] = machine.get("printer_model", printer_ui_name)
+    project_settings["nozzle_diameter"] = [str(nozzle_mm)]
+    # Filament générique de la marque (présent dans Orca/BS pour ce vendor)
+    deffil = machine.get("default_filament_profile")
+    if deffil:
+        project_settings["filament_settings_id"] = (
+            [deffil] if isinstance(deffil, str) else deffil
+        )
+    # print_settings_id reste INCONNU du slicer (préfixe neoSlice) → pas d'écrasement
+    _lh = project_settings.get("layer_height", "0.20")
+    try:
+        _lhd = f"{float(_lh):.2f}"
+    except (ValueError, TypeError):
+        _lhd = "0.20"
+    project_settings["print_settings_id"] = f"neoSlice {_lhd}mm @{brand}"
+    return machine
 
 
 # Correspondance nom UI → suffixe BBL dans les noms de profils système
@@ -338,6 +416,9 @@ class ThreeMFBuilder:
             _lh_display = "0.20"
         project_settings["print_settings_id"] = f"neoSlice {_lh_display}mm @BBL {bbl_id}"
 
+        # Imprimante non-Bambu (catalogue) → remplacer le bloc machine + identité
+        _apply_non_bambu_machine(project_settings, printer_ui_name, _D)
+
         # Injecter dans le ZIP en remplaçant uniquement project_settings.config
         tmp = output_path.with_suffix(".tmp")
         try:
@@ -375,14 +456,18 @@ class ThreeMFBuilder:
 
         # bbl_id : si le printer n'est pas dans le dict c'est un bug de code à corriger,
         # pas à masquer avec un fallback silencieux. On log l'erreur et on tente quand même.
+        # Exception : les imprimantes du catalogue (non-Bambu) sont gérées plus bas par
+        # _apply_non_bambu_machine — pas de bbl_id attendu, donc pas d'erreur.
+        from data.printers import is_catalogue_model as _is_cat
         bbl_id = _UI_TO_BBL.get(printer_ui_name)
         if bbl_id is None:
-            logger.error(
-                f"Printer '{printer_ui_name}' absent de _UI_TO_BBL — "
-                "ajouter ce modèle dans tmf_builder.py. "
-                "Export tenté avec le nom UI comme bbl_id."
-            )
-            bbl_id = printer_ui_name  # utiliser le nom tel quel, BS le rejettera proprement
+            if not _is_cat(printer_ui_name):
+                logger.error(
+                    f"Printer '{printer_ui_name}' absent de _UI_TO_BBL — "
+                    "ajouter ce modèle dans tmf_builder.py. "
+                    "Export tenté avec le nom UI comme bbl_id."
+                )
+            bbl_id = printer_ui_name  # utiliser le nom tel quel ; écrasé si catalogue
 
         # Paramètres : charger le template du bon printer (mis en cache par printer_id)
         if bbl_id not in _PRINTER_TEMPLATE_CACHE:
@@ -412,7 +497,8 @@ class ThreeMFBuilder:
         _base_id = _UI_TO_PRINTER_ID.get(printer_ui_name)
         if _base_id is None:
             _base_id = f"Bambu Lab {printer_ui_name} 0.4 nozzle"
-            logger.warning(f"printer_settings_id inconnu pour '{printer_ui_name}' — construit: {_base_id}")
+            if not _is_cat(printer_ui_name):
+                logger.warning(f"printer_settings_id inconnu pour '{printer_ui_name}' — construit: {_base_id}")
         project_settings["printer_settings_id"] = _base_id.replace("0.4 nozzle", f"{_D} nozzle")
 
         # Profil process par défaut — adapté au printer sélectionné (template peut être X1C)
@@ -461,10 +547,14 @@ class ThreeMFBuilder:
             "required_nozzle_HRC":               ["3"],
         })
 
-        # Positionner la pièce au centre du plateau (256×256 mm pour X1C)
+        # Imprimante non-Bambu (catalogue) → remplacer le bloc machine + identité
+        _machine = _apply_non_bambu_machine(project_settings, printer_ui_name, _D)
+
+        # Positionner la pièce au centre du plateau (selon la machine réelle)
         bb = mesh.bounding_box.extents
-        cx = 128.0 - bb[0] / 2
-        cy = 128.0 - bb[1] / 2
+        _bx, _by = _bed_center(_machine) if _machine else (128.0, 128.0)
+        cx = _bx - bb[0] / 2
+        cy = _by - bb[1] / 2
         transform = f"1 0 0 0 1 0 0 0 1 {cx:.4f} {cy:.4f} 0"
 
         tmp_path = output_path.with_suffix(".3mf.tmp")
@@ -490,8 +580,6 @@ class ThreeMFBuilder:
                 )
                 zf.writestr("Metadata/slice_info.config", self._slice_info())
                 zf.writestr("Metadata/cut_information.xml", self._cut_info())
-                zf.writestr("Metadata/filament_sequence.json",
-                           '{"plate_1":{"nozzle_sequence":[],"optimal_assignment":[],"sequence":[]}}')
                 zf.writestr("Metadata/filament_sequence.json",
                            '{"plate_1":{"nozzle_sequence":[],"optimal_assignment":[],"sequence":[]}}')
             tmp_path.replace(output_path)

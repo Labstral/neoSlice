@@ -436,7 +436,7 @@ _PRO_BTN_LEFT = f"""
         background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
             stop:0 {PRO_CYAN}, stop:1 {PRO_MID});
         color: #ffffff; border: none; border-radius: 3px;
-        padding: 0 10px; letter-spacing: 1px; font-weight: bold;
+        padding: 0 10px; font-weight: bold;
     }}
 """
 _PRO_BTN_RIGHT = f"""
@@ -444,7 +444,7 @@ _PRO_BTN_RIGHT = f"""
         background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
             stop:0 {PRO_MID}, stop:1 {PRO_VIOLET});
         color: #ffffff; border: none; border-radius: 3px;
-        padding: 0 10px; letter-spacing: 1px; font-weight: bold;
+        padding: 0 10px; font-weight: bold;
     }}
 """
 
@@ -492,17 +492,13 @@ class _TopBar(QWidget):
         self._pro_badge = ProBadge("Pro", point_size=17, letter_spacing=1.5)
         layout.addWidget(self._pro_badge, 0, Qt.AlignVCenter)
 
-        self._beta = QLabel("BÊTA")
-        self._beta.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
-        layout.addWidget(self._beta)
-
         self._sub = QLabel(_("app.subtitle"))
         self._sub.setFont(QFont(FONT_MAIN, 8))
         layout.addWidget(self._sub)
 
         layout.addStretch()
 
-        self._diag_btn = QPushButton("DIAGNOSTIC IA")
+        self._diag_btn = QPushButton(_("app.btn_diag"))
         self._diag_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
         self._diag_btn.setFixedHeight(26)
         self._diag_btn.setCursor(Qt.PointingHandCursor)
@@ -520,17 +516,17 @@ class _TopBar(QWidget):
         """)
         self._diag_btn.clicked.connect(self.diag_clicked)
 
-        # Bouton DEVIS (calculateur de coût Pro) — style sobre type "Nouvelle pièce"
-        self._cost_btn = QPushButton(_("cost.btn"))
+        # Bouton ESPACE PRO (hub de gestion : bobines, devis, clients…) — remplace DEVIS
+        self._cost_btn = QPushButton(_("pro.space_btn"))
         self._cost_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
         self._cost_btn.setFixedHeight(26)
         self._cost_btn.setCursor(Qt.PointingHandCursor)
-        self._cost_btn.setToolTip(_("cost.tooltip"))
+        self._cost_btn.setToolTip(_("pro.space_tooltip"))
         self._cost_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT_SECONDARY};
                 border: 1px solid {INACTIVE}; border-radius: 3px;
-                padding: 0 10px; letter-spacing: 1px;
+                padding: 0 10px;
             }}
             QPushButton:hover {{
                 background: rgba(30,144,255,0.10);
@@ -597,7 +593,13 @@ class _TopBar(QWidget):
             }}
         """)
         help_btn.clicked.connect(self.tutorial_clicked)
-        coffee_btn = QPushButton("☕")
+        coffee_btn = QPushButton()
+        _ci = _coffee_icon()
+        if _ci is not None:
+            coffee_btn.setIcon(_ci)
+            coffee_btn.setIconSize(QSize(18, 18))
+        else:
+            coffee_btn.setText("☕")
         coffee_btn.setFont(QFont(FONT_MAIN, 10))
         coffee_btn.setFixedSize(28, 28)
         coffee_btn.setToolTip("À propos / Soutenir le développement")
@@ -697,11 +699,7 @@ class _TopBar(QWidget):
         pal = _THEME.palette()
         self.setStyleSheet(f"background: {pal['BG_PANEL']};")
         self._title_bar.setStyleSheet(f"background: {pal['INACTIVE']}; border-radius: 1px;")
-        self._title_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent; font-size: 26px; font-weight: bold; letter-spacing: 3px;")
-        self._beta.setStyleSheet(
-            f"color: {pal['AMBER']}; border: 1px solid {pal['AMBER']}; "
-            f"border-radius: 2px; padding: 1px 4px; background: rgba(255,184,0,0.10);"
-        )
+        self._title_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent; font-size: 26px; font-weight: bold; letter-spacing: 0px;")
         self._sub.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
         if hasattr(self, '_version_lbl'):
             self._version_lbl.setStyleSheet(
@@ -749,6 +747,10 @@ class _TopBar(QWidget):
         """
         for btn in (self._settings_btn, self._feedback_btn, self._help_btn, self._coffee_btn):
             btn.setStyleSheet(_icon_style)
+        # Recolorer l'icône café selon le thème (silhouette claire en sombre)
+        _ci = _coffee_icon()
+        if _ci is not None:
+            self._coffee_btn.setIcon(_ci)
         # Ré-applique l'état Pro APRÈS le style de thème : sinon le style vert
         # ci-dessus du bouton diagnostic écrase le dégradé cyan→violet du mode Pro.
         self.refresh_pro()
@@ -802,7 +804,7 @@ class _TopBar(QWidget):
         _c2 = QColor(PRO_VIOLET); _c2.setAlpha(_a)
         # Bornes horizontales : la scan-line passe DERRIÈRE le sous-titre
         # (AI-POWERED) puis traverse l'espace vide jusqu'avant « Nouvelle pièce ».
-        # Le bord gauche démarre au sous-titre (sans le déborder vers le BÊTA).
+        # Le bord gauche démarre au sous-titre.
         _x1, _x2 = 0, self.width()
         try:
             _x1 = self._sub.geometry().left()           # démarre au sous-titre (passe derrière)
@@ -896,7 +898,7 @@ class _StatusBar(QWidget):
         self._apply_diag_btn_style()
         layout.addWidget(self._diag_btn)
 
-        self._export_btn = QPushButton(_("export.btn"))
+        self._export_btn = QPushButton(_("export.btn", slicer=_slicer_name()))
         self._export_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._export_btn.setFixedHeight(30)
         self._export_btn.setEnabled(False)
@@ -1048,6 +1050,54 @@ class _StatusBar(QWidget):
 
 # ── Section divider avec étape numérotée ──────────────────────────────────
 
+class _NumBadge(QWidget):
+    """Badge rond numéroté dessiné à la main (cercle + chiffre centré).
+
+    On n'utilise PAS les glyphes Unicode précomposés (①②③) : leur espacement
+    chiffre/anneau varie d'un chiffre à l'autre (le « 2 » touchait le cercle).
+    En dessinant nous-mêmes, tous les chiffres ont un rendu strictement
+    identique et bien lisible."""
+
+    _D = 20  # diamètre du cercle (px)
+
+    def __init__(self, digit: str, parent=None):
+        super().__init__(parent)
+        self._digit = digit
+        self._color = "#1E90FF"
+        self.setFixedSize(self._D + 4, self._D + 4)
+
+    def set_color(self, color: str):
+        self._color = color
+        self.update()
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor, QPen, QFontMetrics
+        from PySide6.QtCore import QPointF
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        d = self._D
+        x = (self.width() - d) / 2.0
+        y = (self.height() - d) / 2.0
+        pen = QPen(QColor(self._color))
+        pen.setWidthF(1.8)
+        p.setPen(pen)
+        p.drawEllipse(QPointF(x + d / 2.0, y + d / 2.0), d / 2.0, d / 2.0)
+        f = QFont(FONT_MAIN, 10, QFont.Bold)
+        p.setFont(f)
+        # HORIZONTAL : centrer sur l'AVANCE du chiffre (chasse), pas sur l'encre —
+        # les chiffres sont dessinés centrés dans leur chasse par le typographe, ce
+        # qui garantit un alignement en colonne identique pour 1, 2, 3…
+        # VERTICAL : centrer sur l'ENCRE (les chiffres n'ont pas de jambage → un
+        # simple AlignVCenter les ferait paraître remontés).
+        fm = QFontMetrics(f)
+        br = fm.tightBoundingRect(self._digit)
+        bx = (self.width() - fm.horizontalAdvance(self._digit)) / 2.0
+        by = self.height() / 2.0 - br.height() / 2.0 - br.y()
+        p.drawText(QPointF(bx, by), self._digit)
+        p.end()
+
+
 class _StepHeader(QWidget):
     """En-tête de section avec numéro d'étape et indicateur d'état."""
 
@@ -1064,8 +1114,8 @@ class _StepHeader(QWidget):
         self._bar.setFixedHeight(14)
         layout.addWidget(self._bar)
 
-        self._num = QLabel(number)
-        self._num.setFont(QFont(FONT_MONO, 11, QFont.Bold))
+        # Badge rond dessiné (espacement identique pour tous les chiffres).
+        self._num = _NumBadge(number)
         layout.addWidget(self._num)
 
         self._lbl = QLabel(title.upper())
@@ -1078,7 +1128,7 @@ class _StepHeader(QWidget):
     def _set_colors(self, bar_color: str, num_color: str):
         pal = _THEME.palette()
         self._bar.setStyleSheet(f"background: {bar_color}; border-radius: 1px;")
-        self._num.setStyleSheet(f"color: {num_color}; background: transparent;")
+        self._num.set_color(num_color)
         self._lbl.setStyleSheet(
             f"color: {pal['TEXT_PRIMARY']}; letter-spacing: 2px; background: transparent;"
         )
@@ -1106,6 +1156,108 @@ class _StepHeader(QWidget):
 
 class _GridWidget(QWidget):
     """Widget central — fond uni sans quadrillage."""
+
+
+# Exécutables des slicers par plateforme (pour ouvrir le 3MF dans le bon logiciel)
+_SLICER_EXES = {
+    "win32": {
+        "bambu": [r"C:\Program Files\Bambu Studio\bambu-studio.exe"],
+        "orca":  [r"C:\Program Files\OrcaSlicer\orca-slicer.exe",
+                  r"C:\Program Files\OrcaSlicer\OrcaSlicer.exe"],
+        "prusa": [r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer.exe"],
+    },
+    "darwin": {  # ouverts via `open -a <AppName>`
+        "bambu": ["BambuStudio"],
+        "orca":  ["OrcaSlicer"],
+        "prusa": ["PrusaSlicer"],
+    },
+}
+
+
+def _open_3mf_in_slicer(path: str, slicer: str) -> None:
+    """Ouvre le 3MF dans le slicer choisi (bambu/orca/prusa). Lance l'exécutable
+    précis si trouvé, sinon retombe sur l'association de fichier par défaut."""
+    import sys as _sys, subprocess as _sp, os as _os
+    try:
+        if _sys.platform == "win32":
+            for exe in _SLICER_EXES["win32"].get(slicer, []):
+                if _os.path.exists(exe):
+                    _sp.Popen([exe, path])
+                    return
+            _os.startfile(path)            # repli : appli associée au .3mf
+        elif _sys.platform == "darwin":
+            apps = _SLICER_EXES["darwin"].get(slicer, [])
+            if apps:
+                _sp.run(["open", "-a", apps[0], path], check=False)
+            else:
+                _sp.run(["open", path], check=False)
+        else:
+            _sp.run(["xdg-open", path], check=False)
+    except Exception:
+        try:
+            if _sys.platform == "win32":
+                _os.startfile(path)
+            else:
+                _sp.run(["open" if _sys.platform == "darwin" else "xdg-open", path], check=False)
+        except Exception:
+            pass
+
+
+def _slicer_name() -> str:
+    """Nom affiché du slicer de sortie choisi (Bambu Studio / OrcaSlicer / PrusaSlicer)."""
+    from core.prefs import PREFS as _P
+    sl = _P.get("slicer_output", "bambu")
+    return _({"orca": "settings.slicer_orca",
+              "prusa": "settings.slicer_prusa"}.get(sl, "settings.slicer_bambu"))
+
+
+def _coffee_icon():
+    """QIcon du café personnalisé (assets/coffee.png) si présent, sinon None.
+
+    Thème clair : image d'origine (tasse grise, bien visible sur fond clair).
+    Thème sombre : la tasse grise se fondrait dans le fond → on la recolore en
+    silhouette claire (via le canal alpha) pour qu'elle ressorte nettement."""
+    from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QImage
+    assets = Path(__file__).parent.parent / "assets"
+    p = assets / "coffee.png"
+    if not p.exists():
+        return None
+    pix = QPixmap(str(p))
+    if pix.isNull():
+        return None
+
+    # L'image source est portrait avec beaucoup de marge vide → on recadre sur le
+    # contenu (pixels non transparents) puis on centre sur un CARRÉ : l'icône reste
+    # proportionnée et alignée avec les glyphes voisins (plus d'effet « écrasé »).
+    try:
+        import numpy as _np
+        img = pix.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+        w, h = img.width(), img.height()
+        ptr = img.constBits()
+        arr = _np.frombuffer(ptr, _np.uint8).reshape(h, w, 4)
+        ys, xs = _np.where(arr[:, :, 3] > 12)
+        if len(xs) and len(ys):
+            x0, x1, y0, y1 = int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
+            pix = pix.copy(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+        side = max(pix.width(), pix.height())
+        sq = QPixmap(side, side); sq.fill(Qt.transparent)
+        pn = QPainter(sq)
+        pn.drawPixmap((side - pix.width()) // 2, (side - pix.height()) // 2, pix)
+        pn.end()
+        pix = sq
+    except Exception:
+        pass
+
+    if _THEME.is_dark():
+        tinted = QPixmap(pix.size())
+        tinted.fill(Qt.transparent)
+        painter = QPainter(tinted)
+        painter.drawPixmap(0, 0, pix)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(tinted.rect(), QColor(_THEME.palette()["TEXT_SECONDARY"]))
+        painter.end()
+        return QIcon(tinted)
+    return QIcon(pix)
 
 
 # ── Fenêtre principale ─────────────────────────────────────────────────────
@@ -1206,7 +1358,7 @@ class MainWindow(QMainWindow):
         self._topbar.settings_clicked.connect(self._open_settings)
         self._topbar.new_piece_clicked.connect(self._on_new_piece)
         self._topbar.diag_clicked.connect(self._open_diagnostic)
-        self._topbar.cost_clicked.connect(self._open_cost_calculator)
+        self._topbar.cost_clicked.connect(self._open_pro_hub)
         # Bouton CTA « neoSlice Pro » : « bientôt disponible » en pré-lancement,
         # sinon ouvre le diagnostic (essais gratuits → paywall).
         self._topbar.pro_clicked.connect(self._on_pro_cta)
@@ -1262,7 +1414,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(6)
 
         # ── Étape ① — Configuration ──
-        self._step_config = _StepHeader("①", "Configuration")
+        self._step_config = _StepHeader("1", "Configuration")
         self._step_config.set_active()
         layout.addWidget(self._step_config)
 
@@ -1288,7 +1440,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(sep0)
 
         # ── Étape ② — Import STL ──
-        self._step_stl = _StepHeader("②", "Import STL")
+        self._step_stl = _StepHeader("2", "Import STL")
         layout.addWidget(self._step_stl)
 
         self._drop_zone = DropZone()
@@ -1311,7 +1463,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(sep)
 
         # ── Étape ③ — Instructions ──
-        self._step_intent = _StepHeader("③", "Instruction Mission")
+        self._step_intent = _StepHeader("3", "Instruction Mission")
         layout.addWidget(self._step_intent)
 
         self._intent_selector = IntentSelector()
@@ -1465,6 +1617,7 @@ class MainWindow(QMainWindow):
     def _open_settings(self):
         from PySide6.QtCore import QPoint
         from core.prefs import PREFS as _PREFS
+        _slicer_before = _PREFS.get("slicer_output", "bambu")
         dlg = SettingsDialog(self)
         apply_title_bar_theme(dlg)
         dlg.update_request.connect(self._on_settings_update_request)
@@ -1473,6 +1626,14 @@ class MainWindow(QMainWindow):
         btn_br = btn.mapToGlobal(QPoint(btn.width(), btn.height()))
         dlg.move(btn_br.x() - 400, btn_br.y() + 4)
         dlg.exec()
+        # Changement de slicer de sortie → rebasculer le catalogue d'imprimantes
+        # (chaque slicer a son propre catalogue : Bambu 11 marques, Orca 58, Prusa 32)
+        _slicer_after = _PREFS.get("slicer_output", "bambu")
+        if _slicer_after != _slicer_before and hasattr(self, '_filament_selector'):
+            self._filament_selector.refresh_printers()
+            # Le bouton d'export est sur la barre de statut → mettre à jour le slicer
+            if hasattr(self, "_statusbar") and hasattr(self._statusbar, "_export_btn"):
+                self._statusbar._export_btn.setText(_("export.btn", slicer=_slicer_name()))
         # Sync printer default → FilamentPrinterSelector
         new_printer = _PREFS.get("printer_default", "")
         if new_printer and hasattr(self, '_filament_selector'):
@@ -1554,10 +1715,9 @@ class MainWindow(QMainWindow):
         apply_title_bar_theme(box)
         box.exec()
 
-    def _open_cost_calculator(self):
-        """Ouvre le calculateur de coût/devis (fonctionnalité Pro pure)."""
+    def _open_pro_hub(self):
+        """Ouvre l'Espace Pro (bobines, devis, clients…). Pro pur → paywall si non débloqué."""
         from core import licensing
-        # Pro pur : pas d'essai gratuit ici → paywall direct si non débloqué.
         if not licensing.est_pro():
             from ui.components.paywall_dialog import PaywallDialog
             wall = PaywallDialog(self)
@@ -1566,20 +1726,23 @@ class MainWindow(QMainWindow):
                 return
             self._topbar.refresh_pro()
 
-        from ui.components.cost_calculator import CostCalculatorDialog
-        from pathlib import Path
-        from PySide6.QtCore import QPoint
+        from ui.components.pro_hub import ProHubDialog
+        hub = ProHubDialog(self, devis_context=self._devis_context())
+        apply_title_bar_theme(hub)
+        # Le centrage sur l'écran est géré par ProHubDialog.showEvent (fiable).
+        hub.exec()
 
-        # Poids et durée = EXACTEMENT les estimations du panneau « EN RÉSUMÉ »
-        # (mêmes méthodes du PrintConfig + même analyse) → cohérence garantie.
-        # Uniquement si une configuration a été générée, sinon calculateur à zéro.
+    def _devis_context(self) -> dict:
+        """Contexte transmis au devis intégré (poids/durée/imprimante/pièce).
+        Mêmes estimations que le panneau « EN RÉSUMÉ » → cohérence garantie."""
+        from pathlib import Path
         est_weight_g = None
         est_time_h = None
         cfg = getattr(self, "_current_config", None)
         a = getattr(self, "_analysis", None)
         if cfg is not None and a is not None and getattr(a, "volume_cm3", 0) > 0:
             try:
-                est_weight_g = cfg.estimated_filament_g(a.volume_cm3)
+                est_weight_g = cfg.estimated_filament_g(a.volume_cm3, getattr(a, "surface_area_cm2", 0.0))
                 bb = getattr(a, "bounding_box_mm", None)
                 height_mm = bb[2] if (bb and len(bb) > 2) else 20.0
                 sup_ratio = (getattr(a, "estimated_support_ratio", 0.0)
@@ -1604,18 +1767,82 @@ class MainWindow(QMainWindow):
             except Exception:
                 part = ""
 
-        dlg = CostCalculatorDialog(
-            self, est_weight_g=est_weight_g, est_time_h=est_time_h,
-            printer_model=printer, part_name=part,
-        )
-        apply_title_bar_theme(dlg)
-        dlg.adjustSize()
-        w = dlg.sizeHint().width() or 460
-        btn = self._topbar._cost_btn
-        br = btn.mapToGlobal(QPoint(btn.width(), btn.height()))
-        x = max(0, br.x() - w)
-        dlg.move(x, br.y() + 4)
-        dlg.exec()
+        return {"est_weight_g": est_weight_g, "est_time_h": est_time_h,
+                "printer_model": printer, "part_name": part}
+
+    def _offer_spool_deduction(self, config):
+        """Après export, propose de décompter le filament estimé d'une bobine du stock
+        (Espace Pro). Sans effet si non-Pro ou aucune bobine du bon matériau."""
+        try:
+            from core import licensing
+            if not licensing.est_pro():
+                return
+            from core.business import store
+            a = getattr(self, "_analysis", None)
+            if a is None or getattr(a, "volume_cm3", 0) <= 0:
+                return
+            grams = config.estimated_filament_g(a.volume_cm3, getattr(a, "surface_area_cm2", 0.0))
+            if not grams or grams <= 0:
+                return
+            material = (self._filament_selector.current_filament() or "").strip()
+            spools = store.spools_for_material(material)
+            if not spools:
+                return
+
+            from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                                           QComboBox, QPushButton)
+            dlg = QDialog(self)
+            dlg.setWindowTitle(_("spool.deduct_title"))
+            apply_title_bar_theme(dlg)
+            pal = _THEME.palette()
+            dlg.setStyleSheet(f"QDialog {{ background: {pal['BG_PANEL']}; }}")
+            lay = QVBoxLayout(dlg)
+            lay.setContentsMargins(20, 16, 20, 16)
+            lay.setSpacing(12)
+            msg = QLabel(_("spool.deduct_prompt", g=f"{grams:.0f}"))
+            msg.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
+            msg.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+            msg.setWordWrap(True)
+            lay.addWidget(msg)
+
+            combo = QComboBox()
+            for s in spools:
+                label = (f"{s.get('materiau','')} · {s.get('marque','')} "
+                         f"{s.get('couleur_nom','')} — {float(s.get('poids_restant_g') or 0):.0f} g")
+                combo.addItem(label.strip(), s["id"])
+            combo.setStyleSheet(
+                f"QComboBox {{ background: {pal['BG_INPUT']}; color: {pal['TEXT_PRIMARY']}; "
+                f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 4px 8px; }}")
+            lay.addWidget(combo)
+
+            row = QHBoxLayout()
+            row.addStretch()
+            skip = QPushButton(_("spool.deduct_none"))
+            skip.setCursor(Qt.PointingHandCursor)
+            skip.clicked.connect(dlg.reject)
+            ok = QPushButton(_("spool.save"))
+            ok.setCursor(Qt.PointingHandCursor)
+            ok.clicked.connect(dlg.accept)
+            skip.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {pal['TEXT_SECONDARY']}; "
+                f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 5px 14px; }}")
+            ok.setStyleSheet(
+                f"QPushButton {{ background: {pal['ACCENT']}; color: #fff; border: none; "
+                f"border-radius: 3px; padding: 5px 16px; font-weight: bold; }}")
+            row.addWidget(skip)
+            row.addWidget(ok)
+            lay.addLayout(row)
+
+            if dlg.exec() == QDialog.Accepted:
+                sid = combo.currentData()
+                if sid:
+                    store.consume(sid, grams)
+                    s = store.get_spool(sid)
+                    nm = f"{s.get('marque','')} {s.get('couleur_nom','')}".strip() if s else ""
+                    self._statusbar.set_message(
+                        _("spool.deduct_ok", g=f"{grams:.0f}", name=nm), TELE_GREEN)
+        except Exception as exc:
+            logger.warning(f"Décompte bobine ignoré : {exc}")
 
     def _apply_defect_corrections(self, result):
         """L'utilisateur a cliqué « Utiliser ces corrections » dans le dialog.
@@ -1670,11 +1897,23 @@ class MainWindow(QMainWindow):
 
         # Cible = [titre de section + contenu] pour que l'encadré du tutoriel
         # englobe aussi le titre (① Configuration, ② Import STL, ③ Mission…).
+        # Cibles Pro : si la version Pro n'est pas active, les boutons DIAGNOSTIC IA
+        # et ESPACE PRO sont masqués → on surligne le bouton « neoSlice Pro » visible
+        # (le tutoriel explique alors le contenu Pro et invite à le débloquer).
+        from core import licensing as _lic
+        try:
+            _is_pro = _lic.est_pro()
+        except Exception:
+            _is_pro = False
+        _diag_anchor = self._topbar._diag_btn if _is_pro else self._topbar._pro_cta_btn
+        _pro_anchor  = self._topbar._cost_btn if _is_pro else self._topbar._pro_cta_btn
         targets = {
             "config":    [self._step_config, self._filament_selector],
             "drop":      [self._step_stl, self._drop_zone],
             "intent":    [self._step_intent, self._intent_selector],
             "statusbar": self._statusbar._export_btn,
+            "diag":      _diag_anchor,
+            "pro":       _pro_anchor,
             "topbar":    self._topbar.icon_group,
         }
         self._tutorial = TutorialOverlay(self, targets)
@@ -2165,6 +2404,11 @@ class MainWindow(QMainWindow):
 
     def _on_analysis_complete(self, report: AnalysisReport):
         self._analysis_timeout.stop()
+        # La pièce a été réinitialisée (Nouvelle pièce) pendant que l'analyse
+        # tournait → ce résultat est obsolète, on l'ignore pour ne pas re-remplir
+        # le panneau qu'on vient de vider.
+        if self._mesh is None:
+            return
         self._analysis = report
         logger.info(f"Analyse terminée en {report.analysis_time_ms:.0f}ms")
 
@@ -2510,7 +2754,20 @@ class MainWindow(QMainWindow):
             _is_3mf_input = bool(_src_3mf and str(_src_3mf).lower().endswith(".3mf")
                                   and self._threemf_data is not None)
             logger.info(f"[EXPORT] src={_src_3mf} is_3mf={_is_3mf_input} threemf={self._threemf_data is not None}")
-            if _is_3mf_input:
+
+            from core.prefs import PREFS as _PREFS
+            if _PREFS.get("slicer_output", "bambu") == "prusa":
+                # Sortie PrusaSlicer : format 3MF différent → toujours reconstruire depuis le mesh
+                from core.export.prusa_3mf_builder import PrusaThreeMFBuilder
+                path = PrusaThreeMFBuilder().build(
+                    mesh=self._mesh,
+                    config=config,
+                    output_path=Path(output_path),
+                    printer_ui_name=self._current_printer,
+                    filament_ui_name=self._current_filament,
+                    nozzle_diameter_mm=nozzle_mm,
+                )
+            elif _is_3mf_input:
                 path = self._tmf_builder.inject_settings_into_3mf(
                     source_path=_src_3mf,
                     config=config,
@@ -2529,6 +2786,9 @@ class MainWindow(QMainWindow):
                     nozzle_diameter_mm=nozzle_mm,
                 )
             logger.info(f"3MF exporté : {path}")
+
+            # Espace Pro : proposer de décompter le filament utilisé d'une bobine
+            self._offer_spool_deduction(config)
 
             selection = getattr(self, "_current_selection", None)
             self._show_success_dialog(config, selection, path)
@@ -2692,10 +2952,10 @@ class MainWindow(QMainWindow):
         _ep = _THEME.palette()
         btn_pdf.setStyleSheet(f"""
             QPushButton {{
-                background: {_ep['BG_ELEVATED']}; color: {_ep['ERROR_RED']};
+                background: transparent; color: {_ep['ERROR_RED']};
                 border: 1px solid {_ep['ERROR_RED']}; border-radius: 4px; padding: 0 16px;
             }}
-            QPushButton:hover {{ background: {_ep['ERROR_RED']}; color: {_ep['EXPORT_FG']}; }}
+            QPushButton:hover {{ background: {_ep['ERROR_RED']}; color: {_ep['EXPORT_FG']}; border: none; }}
         """)
 
         btn_close = QPushButton("Fermer")
@@ -2761,7 +3021,11 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(dlg, "Erreur PDF", "Génération échouée — reportlab installé ?")
 
 
-        btn_bambu = QPushButton("  Ouvrir dans Bambu Studio")
+        from core.prefs import PREFS as _PREFS_btn
+        _slicer_sel = _PREFS_btn.get("slicer_output", "bambu")
+        _btn_open_key = {"prusa": "export.btn_prusa",
+                         "orca": "export.btn_orca"}.get(_slicer_sel, "export.btn_bambu")
+        btn_bambu = QPushButton(_(_btn_open_key))
         btn_bambu.setIcon(_make_printer_icon())
         btn_bambu.setIconSize(QSize(18, 18))
         btn_bambu.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
@@ -2778,17 +3042,7 @@ class MainWindow(QMainWindow):
 
         def _open_in_bambu():
             if tmf_path and tmf_path.exists():
-                import sys as _sys, subprocess as _sp
-                try:
-                    if _sys.platform == "win32":
-                        import os as _os
-                        _os.startfile(str(tmf_path))
-                    elif _sys.platform == "darwin":
-                        _sp.run(["open", str(tmf_path)], check=False)
-                    else:
-                        _sp.run(["xdg-open", str(tmf_path)], check=False)
-                except Exception:
-                    pass
+                _open_3mf_in_slicer(str(tmf_path), _slicer_sel)
 
         btn_bambu.clicked.connect(_open_in_bambu)
 

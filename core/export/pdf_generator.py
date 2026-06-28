@@ -63,14 +63,29 @@ _PLATE_BED_TEMPS: dict[str, dict[str, tuple[int, int]]] = {
         "TPU": (40, 40),   # non documenté — estimé (avertissement UI)
         "TPE": (40, 40),   # non documenté — estimé (avertissement UI)
     },
+    "Textured Cool Plate": {                         # plateau froid texturé (PLA/PETG)
+        "PLA": (45, 45), "PETG": (65, 65), "ABS": (100, 100), "ASA": (100, 100),
+        "Nylon": (100, 100), "PC": (100, 100), "TPU": (40, 40), "TPE": (40, 40),
+    },
+    "Smooth Cool Plate": {                           # série H2 — plateau froid lisse
+        "PLA": (45, 45), "PETG": (65, 65), "ABS": (100, 100), "ASA": (100, 100),
+        "Nylon": (100, 100), "PC": (100, 100), "TPU": (40, 40), "TPE": (40, 40),
+    },
 }
 
 _PLATE_DISPLAY: dict[str, str] = {
     "Textured PEI Plate":         "Textured PEI Plate",
     "Cool Plate":                  "Cool Plate / PLA Plate",
+    "Textured Cool Plate":         "Textured Cool Plate",
+    "Smooth Cool Plate":           "Smooth Cool Plate (H2)",
     "Hot Plate":                   "Smooth PEI / High Temp Plate",
     "Engineering Plate":           "Engineering Plate",
     "Bambu Cool Plate SuperTack":  "Bambu Cool Plate SuperTack",
+    # « Sheets » acier PrusaSlicer (slicer de sortie = Prusa)
+    "Textured PEI Sheet":          "Textured PEI Sheet",
+    "Smooth PEI Sheet":            "Smooth PEI Sheet",
+    "Satin Sheet":                 "Satin Sheet",
+    "Smooth PEI Sheet High Temp":  "Smooth PEI Sheet (High Temp)",
 }
 
 
@@ -87,48 +102,67 @@ def _assets_dir() -> Path:
         return Path(meipass) / "assets"
     return Path(__file__).parent.parent.parent / "assets"
 
+
+_PDF_LOGO_CACHE: "str | bool | None" = None
+
+
+def _pdf_logo() -> Path | None:
+    """Logo réduit (~360 px) pour le PDF, mis en cache. Le logo source fait
+    1536×1024 / ~1,5 Mo : l'embarquer à pleine résolution pour un affichage de
+    2,8 cm alourdissait chaque PDF de ~1,5 Mo. On embarque une version réduite."""
+    global _PDF_LOGO_CACHE
+    if _PDF_LOGO_CACHE is not None:
+        return Path(_PDF_LOGO_CACHE) if _PDF_LOGO_CACHE else None
+    src = _assets_dir() / "neoSlice.png"
+    if not src.exists():
+        _PDF_LOGO_CACHE = False
+        return None
+    try:
+        from PIL import Image as _PilImg
+        import tempfile, hashlib
+        tag = hashlib.md5(f"{src}{src.stat().st_mtime}".encode()).hexdigest()[:8]
+        out = Path(tempfile.gettempdir()) / f"neoslice_pdflogo_{tag}.png"
+        if not out.exists():
+            im = _PilImg.open(src).convert("RGBA")
+            w, h = im.size
+            tw = 360
+            if w > tw:
+                im = im.resize((tw, max(1, round(h * tw / w))), _PilImg.LANCZOS)
+            im.save(out, "PNG", optimize=True)
+        _PDF_LOGO_CACHE = str(out)
+        return out
+    except Exception:
+        _PDF_LOGO_CACHE = False
+        return src   # repli : logo d'origine plutôt que pas de logo
+
 if TYPE_CHECKING:
     from core.geometry.analysis_report import AnalysisReport
     from core.parameters.print_config import PrintConfig
 
 
 def _pdf_palette(dark: bool) -> dict:
-    """Retourne les couleurs reportlab selon le thème."""
+    """Couleurs reportlab des PDF. TOUJOURS clair (blanc classique), même si
+    l'application est en thème sombre : un PDF destiné à l'impression / à un
+    client doit rester blanc. Le paramètre `dark` est ignoré volontairement."""
     try:
         from reportlab.lib.colors import HexColor, white
     except ImportError:
         return {}
 
-    if dark:
-        return {
-            "BG":       HexColor("#070D14"),
-            "PANEL":    HexColor("#0A1628"),
-            "ELEVATED": HexColor("#0F1F35"),
-            "ACCENT":   HexColor("#1E90FF"),
-            "GREEN":    HexColor("#00FF9F"),
-            "AMBER":    HexColor("#FFB800"),
-            "RED":      HexColor("#FF3B3B"),
-            "TEXT":     HexColor("#C8DCF0"),
-            "MUTED":    HexColor("#4A7A9B"),
-            "INACTIVE": HexColor("#1A3550"),
-            "FOOTER":   HexColor("#2A5070"),
-            "HL_TEXT":  white,
-        }
-    else:
-        return {
-            "BG":       HexColor("#FFFFFF"),
-            "PANEL":    HexColor("#F4F6F8"),
-            "ELEVATED": HexColor("#DDE3EA"),
-            "ACCENT":   HexColor("#2d8a4e"),
-            "GREEN":    HexColor("#27ae60"),
-            "AMBER":    HexColor("#B05F00"),
-            "RED":      HexColor("#c0392b"),
-            "TEXT":     HexColor("#1a1a1a"),
-            "MUTED":    HexColor("#555555"),
-            "INACTIVE": HexColor("#C0CCDA"),
-            "FOOTER":   HexColor("#888888"),
-            "HL_TEXT":  white,
-        }
+    return {
+        "BG":       HexColor("#FFFFFF"),
+        "PANEL":    HexColor("#F4F6F8"),
+        "ELEVATED": HexColor("#DDE3EA"),
+        "ACCENT":   HexColor("#2d8a4e"),
+        "GREEN":    HexColor("#27ae60"),
+        "AMBER":    HexColor("#B05F00"),
+        "RED":      HexColor("#c0392b"),
+        "TEXT":     HexColor("#1a1a1a"),
+        "MUTED":    HexColor("#555555"),
+        "INACTIVE": HexColor("#C0CCDA"),
+        "FOOTER":   HexColor("#888888"),
+        "HL_TEXT":  white,
+    }
 
 
 def generate_filament_pdf(
@@ -252,8 +286,8 @@ def generate_filament_pdf(
     story = []
 
     story.append(Spacer(1, 0.3*cm))
-    _logo_path = _assets_dir() / "neoSlice.png"
-    if _logo_path.exists():
+    _logo_path = _pdf_logo()
+    if _logo_path and _logo_path.exists():
         try:
             from PIL import Image as _PilImg
             _pw, _ph = _PilImg.open(_logo_path).size
@@ -493,8 +527,8 @@ def generate_full_report_pdf(
 
     # ── En-tête ───────────────────────────────────────────────────────────
     story.append(Spacer(1, 0.3*cm))
-    _logo_path = _assets_dir() / "neoSlice.png"
-    if _logo_path.exists():
+    _logo_path = _pdf_logo()
+    if _logo_path and _logo_path.exists():
         try:
             from PIL import Image as _PilImg
             _pw, _ph = _PilImg.open(_logo_path).size
@@ -558,7 +592,7 @@ def generate_full_report_pdf(
     est_min   = config.estimated_time_minutes(analysis.volume_cm3, height_mm, sup_ratio)
     h, m = divmod(int(est_min), 60)
     time_str = f"~{h}h{m:02d}" if h > 0 else f"~{m} min"
-    fil_g = config.estimated_filament_g(analysis.volume_cm3)
+    fil_g = config.estimated_filament_g(analysis.volume_cm3, getattr(analysis, "surface_area_cm2", 0.0))
 
     param_rows = [
         _row(_("pdf.time_est"),      time_str, "", _("pdf.time_with_supp") if analysis.support_needed else ""),

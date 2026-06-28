@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from core.i18n import _
 from core.prefs import PREFS
 from data.printers import PRINTERS, SERIES_ORDRE
+from ui.components.brand_menu_button import BrandMenuButton
 from ui.styles.theme import MANAGER as _T, FONT_MAIN
 
 
@@ -186,14 +187,34 @@ class SettingsDialog(QDialog):
         printer_row.setContentsMargins(0, 0, 0, 0)
         self._printer_lbl = QLabel(_("settings.printer_default"))
         self._printer_lbl.setFont(QFont(FONT_MAIN, 9))
-        self._printer_combo = QComboBox()
+        self._printer_combo = BrandMenuButton(placeholder=_("settings.printer_none"))
         self._printer_combo.setFixedWidth(160)
         self._populate_printers()
-        self._printer_combo.currentIndexChanged.connect(self._on_printer_changed)
+        self._printer_combo.selectionChanged.connect(self._on_printer_changed)
         printer_row.addWidget(self._printer_lbl)
         printer_row.addStretch()
         printer_row.addWidget(self._printer_combo)
         lay.addLayout(printer_row)
+        lay.addSpacing(8)
+
+        # Slicer de sortie (Bambu/Orca par défaut | PrusaSlicer)
+        slicer_row = QHBoxLayout()
+        slicer_row.setContentsMargins(0, 0, 0, 0)
+        self._slicer_lbl = QLabel(_("settings.slicer_output"))
+        self._slicer_lbl.setFont(QFont(FONT_MAIN, 9))
+        self._slicer_combo = QComboBox()
+        self._slicer_combo.setFixedWidth(160)
+        self._slicer_combo.addItem(_("settings.slicer_bambu"), "bambu")
+        self._slicer_combo.addItem(_("settings.slicer_orca"), "orca")
+        self._slicer_combo.addItem(_("settings.slicer_prusa"), "prusa")
+        _saved_slicer = PREFS.get("slicer_output", "bambu")
+        _slicer_idx = {"bambu": 0, "orca": 1, "prusa": 2}.get(_saved_slicer, 0)
+        self._slicer_combo.setCurrentIndex(_slicer_idx)
+        self._slicer_combo.currentIndexChanged.connect(self._on_slicer_changed)
+        slicer_row.addWidget(self._slicer_lbl)
+        slicer_row.addStretch()
+        slicer_row.addWidget(self._slicer_combo)
+        lay.addLayout(slicer_row)
         lay.addSpacing(8)
 
         lay.addSpacing(18)
@@ -268,7 +289,8 @@ class SettingsDialog(QDialog):
         lay.addSpacing(6)
 
         self._perf_result_lbl = QLabel("")
-        self._perf_result_lbl.setFont(QFont(FONT_MAIN, 8))
+        # Même police/style que les autres états verts (ex. statut diagnostic)
+        self._perf_result_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         self._perf_result_lbl.setWordWrap(True)
         self._perf_result_lbl.hide()
         lay.addWidget(self._perf_result_lbl)
@@ -310,7 +332,7 @@ class SettingsDialog(QDialog):
         self._update_check_btn.setFixedHeight(28)
         self._update_check_btn.clicked.connect(self._on_check_update)
         self._update_status_lbl = QLabel("")
-        self._update_status_lbl.setFont(QFont(FONT_MAIN, 9))
+        self._update_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         self._update_status_lbl.hide()
         update_row.addWidget(self._update_check_btn)
         update_row.addSpacing(10)
@@ -400,6 +422,9 @@ class SettingsDialog(QDialog):
             self._pro_status_lbl.setText(_("pro.settings_status_pro"))
             self._pro_status_lbl.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
             self._pro_btn.setText(_("pro.settings_btn_deactivate"))
+            # Mode désactivation = action secondaire → police NON grasse, identique
+            # au bouton « Désactiver » du diagnostic (sinon il paraît plus foncé).
+            self._pro_btn.setFont(QFont(FONT_MAIN, 8))
             self._pro_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent; color: {pal['TEXT_SECONDARY']};
@@ -414,6 +439,8 @@ class SettingsDialog(QDialog):
             )
             self._pro_status_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
             self._pro_btn.setText(_("pro.settings_btn_upgrade"))
+            # Mode achat = CTA principal plein → gras assumé.
+            self._pro_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
             self._pro_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: {pal['ACCENT']}; color: {pal['EXPORT_FG']};
@@ -495,41 +522,35 @@ class SettingsDialog(QDialog):
         return lbl, cb
 
     def _populate_printers(self):
-        model = QStandardItemModel()
-        none_item = QStandardItem(_("settings.printer_none"))
-        none_item.setData("", Qt.UserRole)
-        none_item.setFont(QFont(FONT_MAIN, 10))
-        model.appendRow(none_item)
+        from data.printers import (
+            catalogue_brands, models_for_brand,
+            prusa_brands, prusa_models_for_brand, split_popular,
+        )
+        groups: list = [(_("settings.printer_none"), [(_("settings.printer_none"), "")])]
+        slicer = PREFS.get("slicer_output", "bambu")
+        if slicer == "prusa":
+            brands = prusa_brands()
+            models = prusa_models_for_brand
+        else:
+            brands = catalogue_brands(slicer)
+            models = lambda b: models_for_brand(b, slicer)
+            by_serie: dict[str, list[str]] = {}
+            for name, data in PRINTERS.items():
+                by_serie.setdefault(data.get("serie", "Autre"), []).append(name)
+            bambu = [(name, name) for serie in SERIES_ORDRE
+                     for name in by_serie.get(serie, [])]
+            groups.append(("Bambu Lab", bambu))
 
-        by_serie: dict[str, list[str]] = {}
-        for name, data in PRINTERS.items():
-            by_serie.setdefault(data.get("serie", "Autre"), []).append(name)
+        popular, others = split_popular(brands)
+        for b in popular:
+            groups.append((b, models(b)))
+        if others:
+            groups.append(("Autres marques", [(b, models(b)) for b in others]))
 
-        from PySide6.QtGui import QColor
-        for serie in SERIES_ORDRE:
-            if serie not in by_serie:
-                continue
-            sep = QStandardItem(f"── {serie.upper()} ──")
-            sep.setEnabled(False)
-            sep.setForeground(QColor(_T.palette()["TEXT_LABEL"]))
-            sep.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
-            model.appendRow(sep)
-            for name in by_serie[serie]:
-                item = QStandardItem(f"  {name}")
-                item.setData(name, Qt.UserRole)
-                item.setFont(QFont(FONT_MAIN, 10))
-                model.appendRow(item)
-
-        self._printer_combo.setModel(model)
-
+        self._printer_combo.set_groups(groups)
         saved = PREFS.get("printer_default", "")
         if saved:
-            for i in range(model.rowCount()):
-                it = model.item(i)
-                if it and it.data(Qt.UserRole) == saved:
-                    self._printer_combo.setCurrentIndex(i)
-                    return
-        self._printer_combo.setCurrentIndex(0)
+            self._printer_combo.set_current_key(saved, emit=False)
 
     # ── Slots ─────────────────────────────────────────────────────────────────
 
@@ -553,12 +574,14 @@ class SettingsDialog(QDialog):
             self._restart_lbl.hide()
             self._restart_btn.hide()
 
-    def _on_printer_changed(self):
-        model = self._printer_combo.model()
-        idx = self._printer_combo.currentIndex()
-        item = model.item(idx)
-        if item and item.isEnabled():
-            PREFS.set("printer_default", item.data(Qt.UserRole) or "")
+    def _on_printer_changed(self, key: str = ""):
+        PREFS.set("printer_default", self._printer_combo.current_key() or "")
+
+    def _on_slicer_changed(self):
+        PREFS.set("slicer_output", self._slicer_combo.currentData() or "bambu")
+        # Le catalogue d'imprimantes dépend du slicer → reconstruire la liste
+        # « imprimante par défaut » immédiatement (sinon elle garde l'ancien slicer).
+        self._populate_printers()
 
     def _on_browse_folder(self):
         current = self._folder_edit.text() or str(Path.home())
@@ -777,8 +800,9 @@ class SettingsDialog(QDialog):
                 border: 1px solid {pal['INACTIVE']};
             }}
         """
-        for combo in (self._lang_combo, self._printer_combo, self._perf_combo):
+        for combo in (self._lang_combo, self._printer_combo, self._slicer_combo, self._perf_combo):
             combo.setStyleSheet(combo_style)
+        self._printer_combo.apply_theme()   # style du menu déroulant en cascade
 
         self._folder_edit.setStyleSheet(f"""
             QLineEdit {{
