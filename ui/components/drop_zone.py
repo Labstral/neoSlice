@@ -1,10 +1,12 @@
 from __future__ import annotations
 from pathlib import Path
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFileDialog, QPushButton
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QFileDialog, QPushButton,
+)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
-    QPainter, QPen, QColor, QFont, QPixmap,
+    QPainter, QPen, QColor, QFont, QPixmap, QFontMetrics,
     QDragEnterEvent, QDropEvent, QMouseEvent,
 )
 
@@ -55,11 +57,12 @@ class DropZone(QWidget):
         self._main_label.setAlignment(Qt.AlignCenter)
         self._main_label.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
         self._main_label.setStyleSheet(f"color: {INACTIVE}; background: transparent; letter-spacing: 1px;")
+        self._main_full = ""   # texte complet, pour re-elider au resize
         layout.addWidget(self._main_label)
 
         self._sub_label = QLabel(_("drop.sub_locked"))
         self._sub_label.setAlignment(Qt.AlignCenter)
-        self._sub_label.setWordWrap(True)
+        self._sub_label.setWordWrap(False)   # tient sur une seule ligne (layout centré)
         self._sub_label.setFont(QFont(FONT_MONO, 9))
         self._sub_label.setStyleSheet(f"color: {INACTIVE}; background: transparent;")
         layout.addWidget(self._sub_label)
@@ -73,6 +76,7 @@ class DropZone(QWidget):
         layout.addWidget(self._step_label)
 
         self._recent_path: "Path | None" = None
+        self._recent_full = ""   # texte complet du bouton Réouvrir
         self._recent_btn = QPushButton()
         self._recent_btn.setFont(QFont(FONT_MONO, 9))
         self._recent_btn.setStyleSheet(f"""
@@ -83,6 +87,37 @@ class DropZone(QWidget):
         self._recent_btn.hide()
         self._recent_btn.clicked.connect(self._on_recent_clicked)
         layout.addWidget(self._recent_btn)
+
+    # ── Élidage (noms de fichiers longs) ──────────────────────────────────
+    def _avail_text_width(self) -> int:
+        # Largeur dispo dans la carte (marges layout 16+16 + petite garde).
+        return max(60, self.width() - 40)
+
+    def _set_main_text(self, name: str):
+        """Nom de fichier : élidé au milieu pour ne jamais déborder la colonne."""
+        self._main_full = name
+        self._apply_main_elide()
+
+    def _apply_main_elide(self):
+        if self._main_full:
+            fm = QFontMetrics(self._main_label.font())
+            self._main_label.setText(
+                fm.elidedText(self._main_full, Qt.ElideMiddle, self._avail_text_width()))
+
+    def _set_recent_text(self, name: str):
+        self._recent_full = _("drop.reopen", name=name)
+        self._apply_recent_elide()
+
+    def _apply_recent_elide(self):
+        if self._recent_full:
+            fm = QFontMetrics(self._recent_btn.font())
+            self._recent_btn.setText(
+                fm.elidedText(self._recent_full, Qt.ElideMiddle, self._avail_text_width()))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_main_elide()
+        self._apply_recent_elide()
 
     # ── État verrouillé / déverrouillé ────────────────────────────────────
 
@@ -99,6 +134,7 @@ class DropZone(QWidget):
         if self._locked:
             self._icon.setText("⊘")
             self._icon.setStyleSheet(f"font-size: 30px; color: {ts}; background: transparent;")
+            self._main_full = ""   # état court : pas d'élidage au resize
             self._main_label.setText(_("drop.main_locked"))
             self._main_label.setStyleSheet(f"color: {ts}; background: transparent; letter-spacing: 1px;")
             self._sub_label.setText(_("drop.sub_locked"))
@@ -113,13 +149,14 @@ class DropZone(QWidget):
         else:
             self._icon.setText("⬆")
             self._icon.setStyleSheet(f"font-size: 30px; color: {inc}; background: transparent;")
+            self._main_full = ""   # état court : pas d'élidage au resize
             self._main_label.setText(_("drop.main"))
             self._main_label.setStyleSheet(f"color: {ts}; background: transparent; letter-spacing: 2px;")
             self._sub_label.setText(_("drop.sub"))
             self._sub_label.setStyleSheet(f"color: {tl}; background: transparent;")
             self._step_label.hide()
             if hasattr(self, "_recent_btn") and hasattr(self, "_recent_path") and self._recent_path:
-                self._recent_btn.setText(_("drop.reopen", name=self._recent_path.name))
+                self._set_recent_text(self._recent_path.name)
                 self._recent_btn.show()
 
     # ── Drag & Drop ────────────────────────────────────────────────────────
@@ -186,7 +223,7 @@ class DropZone(QWidget):
         self._icon.setStyleSheet(
             f"font-size: 22px; color: {_T.palette()['TELE_GREEN']}; background: transparent;"
         )
-        self._main_label.setText(path.name)
+        self._set_main_text(path.name)
         self._main_label.setStyleSheet(
             f"color: {_T.palette()['TELE_GREEN']}; background: transparent; font-size: 11px;"
         )
@@ -205,14 +242,14 @@ class DropZone(QWidget):
         self._icon.show()
         self._refresh_labels()
         if hasattr(self, "_recent_path") and self._recent_path and not self._locked:
-            self._recent_btn.setText(_("drop.reopen", name=self._recent_path.name))
+            self._set_recent_text(self._recent_path.name)
             self._recent_btn.show()
         self.update()
 
     def set_recent_file(self, path: "Path | None"):
         self._recent_path = path
         if path and not self._locked and not self._loaded:
-            self._recent_btn.setText(_("drop.reopen", name=path.name))
+            self._set_recent_text(path.name)
             self._recent_btn.show()
         else:
             self._recent_btn.hide()

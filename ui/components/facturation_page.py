@@ -29,7 +29,7 @@ def _status_label(key: str) -> str:
 class _Row(QWidget):
     """Une ligne de facture : désignation, quantité, PU HT, suppression."""
 
-    def __init__(self, page, designation="", qty="1", pu="", parent=None):
+    def __init__(self, page, designation="", qty="1", pu="", disc="", parent=None):
         super().__init__(parent)
         self._page = page
         lay = QHBoxLayout(self)
@@ -42,14 +42,20 @@ class _Row(QWidget):
         self.pu = QLineEdit(pu); self.pu.setFont(QFont(FONT_MAIN, 9))
         self.pu.setFixedWidth(90); self.pu.setAlignment(Qt.AlignRight)
         self.pu.setValidator(QDoubleValidator(0, 1e7, 2, self.pu))
+        # Remise par ligne (%) — optionnelle, vide = 0
+        self.disc = QLineEdit(disc); self.disc.setFont(QFont(FONT_MAIN, 9))
+        self.disc.setFixedWidth(54); self.disc.setAlignment(Qt.AlignRight)
+        self.disc.setPlaceholderText("0")
+        self.disc.setValidator(QDoubleValidator(0, 100, 2, self.disc))
         self.rm = QPushButton("✕"); self.rm.setFixedSize(26, 26)
         self.rm.setCursor(Qt.PointingHandCursor)
         self.rm.clicked.connect(lambda: page._remove_row(self))
-        for w in (self.des, self.qty, self.pu):
+        for w in (self.des, self.qty, self.pu, self.disc):
             w.textChanged.connect(page._recompute)
         lay.addWidget(self.des, 1)
         lay.addWidget(self.qty)
         lay.addWidget(self.pu)
+        lay.addWidget(self.disc)
         lay.addWidget(self.rm)
 
     def data(self) -> dict:
@@ -59,7 +65,8 @@ class _Row(QWidget):
             except ValueError:
                 return 0.0
         return {"designation": self.des.text().strip(),
-                "qty": _f(self.qty.text()), "unit_price_ht": _f(self.pu.text())}
+                "qty": _f(self.qty.text()), "unit_price_ht": _f(self.pu.text()),
+                "line_discount_pct": _f(self.disc.text())}
 
 
 class FacturationPage(QWidget):
@@ -323,7 +330,7 @@ class FacturationPage(QWidget):
         # Lignes
         hdr = QHBoxLayout(); hdr.setSpacing(6)
         for t, w_ in ((_("fact.col_desig"), None), (_("fact.col_qty"), 60),
-                      (_("fact.col_pu"), 90), ("", 26)):
+                      (_("fact.col_pu"), 90), (_("fact.col_disc"), 54), ("", 26)):
             l = QLabel(t); l.setFont(QFont(FONT_MAIN, 8, QFont.Bold)); l.setObjectName("colh")
             if w_:
                 l.setFixedWidth(w_); l.setAlignment(Qt.AlignRight)
@@ -384,8 +391,8 @@ class FacturationPage(QWidget):
         return l
 
     # ── Lignes ──────────────────────────────────────────────────────────────
-    def _add_row(self, designation="", qty="1", pu=""):
-        row = _Row(self, designation, qty, pu)
+    def _add_row(self, designation="", qty="1", pu="", disc=""):
+        row = _Row(self, designation, qty, pu, disc)
         self._rows.append(row)
         self._items_box.addWidget(row)
         self.apply_theme()
@@ -758,7 +765,7 @@ class FacturationPage(QWidget):
             if b:
                 b.setStyleSheet(accent_btn)
         soft = (f"QPushButton {{ background: transparent; color: {pal['TEXT_SECONDARY']}; "
-                f"border: 1px solid {pal['INACTIVE']}; border-radius: 4px; }}"
+                f"border: 1px solid {pal['INACTIVE']}; border-radius: 4px; padding: 0 14px; }}"
                 f"QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}")
         for b in (getattr(self, "_add_line_btn", None), getattr(self, "_save_client_btn", None)):
             if b:

@@ -34,7 +34,7 @@ _DARK: dict = {
     "INACTIVE":       "#1A3550",
 
     "FONT_MAIN": "Segoe UI",
-    "FONT_MONO": "Courier New",
+    "FONT_MONO": "Segoe UI",
     "RADIUS": 4,
 
     # Viewer 3D PyVista — fond studio sombre avec dégradé (bas → haut)
@@ -69,7 +69,7 @@ _LIGHT: dict = {
     "INACTIVE":       "#d0d0d0",
 
     "FONT_MAIN": "Segoe UI",
-    "FONT_MONO": "Courier New",
+    "FONT_MONO": "Segoe UI",
     "RADIUS": 4,
 
     # Viewer 3D PyVista — fond studio clair avec dégradé subtil
@@ -404,7 +404,10 @@ INACTIVE       = _DARK["INACTIVE"]
 
 import sys as _sys
 FONT_MAIN = "Segoe UI" if _sys.platform == "win32" else "SF Pro Text" if _sys.platform == "darwin" else "Ubuntu"
-FONT_MONO = "Courier New" if _sys.platform == "win32" else "SF Mono" if _sys.platform == "darwin" else "Ubuntu Mono"
+# FONT_MONO n'est plus une police à chasse fixe (Courier) : remplacée par la même
+# police propre que FONT_MAIN dans toute l'UI (préférence utilisateur). On garde la
+# constante pour ne pas casser les ~55 appels existants ; seules les TAILLES comptent.
+FONT_MONO = FONT_MAIN
 RADIUS = 4
 
 # Aliases backward compat

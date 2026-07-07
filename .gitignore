@@ -14,6 +14,11 @@ graphify-out/
 models/
 recovered/
 
+# Base de connaissances Oen (~5 Go : wikis moissonnés + index RAG) — JAMAIS dans
+# git (vectors.npy = 1,5 Go > limite GitHub 100 Mo, un push planterait). Ces
+# fichiers vivent dans la release GitHub `neoslice-assets` (voir kb_update.py).
+data/kb/
+
 # Fichiers sensibles (NE JAMAIS committer)
 Backup codes Lemon Squeezy.txt
 *secret*

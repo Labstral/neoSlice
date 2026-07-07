@@ -27,6 +27,17 @@ _PROFILE_DIRS_BY_SLICER = {
         Path(r"C:\Program Files (x86)\OrcaSlicer\resources\profiles"),
         Path.home() / "AppData/Local/Programs/OrcaSlicer/resources/profiles",
     ],
+    # CrealityPrint 5+/6+ = fork OrcaSlicer (même format de profils). Dossier
+    # versionné (« Creality Print 6.3 ») → on globe pour rester robuste aux MAJ.
+    "creality": [
+        *sorted(Path(r"C:\Program Files\Creality").glob("Creality Print*/resources/profiles")),
+        *sorted(Path(r"C:\Program Files (x86)\Creality").glob("Creality Print*/resources/profiles")),
+    ],
+    # ElegooSlicer = fork OrcaSlicer (profils en SOUS-DOSSIERS EC/ECC2… → scan récursif).
+    "elegoo": [
+        Path(r"C:\Program Files\ElegooSlicer\resources\profiles"),
+        Path(r"C:\Program Files (x86)\ElegooSlicer\resources\profiles"),
+    ],
 }
 
 # Bambu Lab (BBL) géré à part via PRINTERS (catalogue enrichi). On l'exclut ici.
@@ -58,6 +69,19 @@ def _first(v, default=None):
     return v if v is not None else default
 
 
+def _num(v, default):
+    """Numérique robuste : liste → 1er élément ; chaîne « 500,500 » (klipper,
+    CrealityPrint) → 1er token ; sinon valeur. Repli sur `default` si invalide."""
+    if isinstance(v, list):
+        v = v[0] if v else default
+    if isinstance(v, str) and "," in v:
+        v = v.split(",")[0]
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def _bed_size(printable_area) -> str:
     """'0x0','220x0','220x220','0x220' → '220×220 mm'."""
     try:
@@ -78,9 +102,10 @@ _MACHINE_SKIP = {"type", "from", "setting_id", "instantiation", "inherits",
 
 
 def _scan_vendor(mdir: Path, vendor_root: Path) -> dict[str, dict]:
-    """Indexe les profils machine d'un vendor par 'name' (pour résoudre inherits)."""
+    """Indexe les profils machine d'un vendor par 'name' (pour résoudre inherits).
+    Récursif : ElegooSlicer range ses profils dans des sous-dossiers (EC, ECC2…)."""
     by_name: dict[str, dict] = {}
-    for f in mdir.glob("*.json"):
+    for f in mdir.rglob("*.json"):
         d = _load(f)
         nm = d.get("name")
         if nm:
@@ -132,9 +157,9 @@ def extract() -> tuple[dict, dict]:
                         "printer_variant": full.get("printer_variant", str(nozzle)),
                         "bed_size": _bed_size(full.get("printable_area", [])),
                         "printable_height": str(full.get("printable_height", "")),
-                        "max_speed_mms": int(float(_first(full.get("machine_max_speed_x"), 500))),
-                        "max_accel_mms2": int(float(_first(full.get("machine_max_acceleration_extruding"),
-                                                           _first(full.get("machine_max_acceleration_x"), 10000)))),
+                        "max_speed_mms": int(_num(full.get("machine_max_speed_x"), 500)),
+                        "max_accel_mms2": int(_num(full.get("machine_max_acceleration_extruding"),
+                                                   _num(full.get("machine_max_acceleration_x"), 10000))),
                         "gcode_flavor": full.get("gcode_flavor", ""),
                         "default_print_profile": full.get("default_print_profile", ""),
                         "default_filament_profile": _first(full.get("default_filament_profile"), ""),
@@ -148,6 +173,71 @@ def extract() -> tuple[dict, dict]:
     return catalog, machines
 
 
+# Slicers-forks « stricts » (CrealityPrint, ElegooSlicer) pour lesquels on génère
+# le vocabulaire de clés valides → sert au filtrage 3MF (tmf_builder).
+_STRICT_SLICERS = ("creality", "elegoo")
+# Métadonnées de hiérarchie à NE PAS compter comme clés de réglage.
+_VOCAB_SKIP = {"type", "name", "inherits", "from", "instantiation", "setting_id",
+               "version", "url", "filament_id", "is_custom_defined"}
+
+
+def dump_slicer_vocab(data_dir: Path) -> None:
+    """Écrit data/<slicer>_keys.json = union de TOUTES les clés des profils du
+    slicer (process+machine+filament+commons). Permet à l'export de retirer du 3MF
+    les clés Bambu-only que ce slicer ne connaît pas. Régénéré à chaque extraction."""
+    for slicer in _STRICT_SLICERS:
+        keys: set[str] = set()
+        nfiles = 0
+        for root in _PROFILE_DIRS_BY_SLICER.get(slicer, []):
+            if not root.exists():
+                continue
+            for f in root.rglob("*.json"):
+                d = _load(f)
+                if not isinstance(d, dict):
+                    continue
+                nfiles += 1
+                keys |= {k for k in d.keys() if k not in _VOCAB_SKIP}
+        if keys:
+            out = data_dir / f"{slicer}_keys.json"
+            out.write_text(json.dumps(sorted(keys), ensure_ascii=False, indent=0),
+                           encoding="utf-8")
+            print(f"Vocabulaire {slicer:8}: {out}  ({len(keys)} clés, {nfiles} fichiers)")
+
+
+def dump_slicer_presets(data_dir: Path) -> None:
+    """Écrit data/<slicer>_presets.json = {"machines":[…], "filaments":[…]} = noms
+    EXACTS des préréglages SYSTÈME installés (instantiation=true) de ce fork. Sert à
+    l'export à aligner printer_settings_id/filament_settings_id sur de vrais
+    préréglages → le fork les reconnaît comme « système » et n'affiche plus
+    « préréglage personnalisé / confirmez le G-code »."""
+    for slicer in _STRICT_SLICERS:
+        machines_n: set[str] = set()
+        filaments_n: set[str] = set()
+        for root in _PROFILE_DIRS_BY_SLICER.get(slicer, []):
+            if not root.exists():
+                continue
+            for f in root.rglob("*.json"):
+                d = _load(f)
+                if not isinstance(d, dict):
+                    continue
+                nm = d.get("name")
+                # Seuls les préréglages réellement sélectionnables comptent.
+                if not nm or str(d.get("instantiation", "")).lower() != "true":
+                    continue
+                low = str(f).lower()
+                if "machine" in low:
+                    machines_n.add(nm)
+                elif "filament" in low:
+                    filaments_n.add(nm)
+        if machines_n or filaments_n:
+            out = data_dir / f"{slicer}_presets.json"
+            out.write_text(json.dumps(
+                {"machines": sorted(machines_n), "filaments": sorted(filaments_n)},
+                ensure_ascii=False, indent=0), encoding="utf-8")
+            print(f"Préréglages {slicer:8}: {out}  "
+                  f"({len(machines_n)} machines, {len(filaments_n)} filaments)")
+
+
 def main():
     catalog, machines = extract()
     data = Path(__file__).resolve().parent.parent / "data"
@@ -155,6 +245,8 @@ def main():
     out_mac = data / "printer_machines.json"
     out_cat.write_text(json.dumps(catalog, ensure_ascii=False, indent=1), encoding="utf-8")
     out_mac.write_text(json.dumps(machines, ensure_ascii=False, indent=1), encoding="utf-8")
+    dump_slicer_vocab(data)     # régénère creality_keys.json / elegoo_keys.json
+    dump_slicer_presets(data)   # régénère creality_presets.json / elegoo_presets.json
 
     # Résumé console
     nb_bambu = sum(1 for e in catalog.values() if "bambu" in e["slicers"])

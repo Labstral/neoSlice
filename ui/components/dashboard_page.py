@@ -151,6 +151,20 @@ class DashboardPage(QWidget):
         ]))
         lay.addSpacing(8)
 
+        # ── Rentabilité (encaissé vs investi + consommables) ─────────────────
+        lay.addWidget(self._section(_("dash.sec_profit")))
+        lay.addLayout(self._row([
+            ("invested", "AMBER", _("dash.invested")),
+            ("consumables_bought", "AMBER", _("dash.consumables_bought")),
+            ("net_result", "TELE_GREEN", _("dash.net_result")),
+        ]))
+        self._profit_status = QLabel("")
+        self._profit_status.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        self._profit_status.setWordWrap(True)
+        self._profit_status.setContentsMargins(2, 4, 0, 0)
+        lay.addWidget(self._profit_status)
+        lay.addSpacing(8)
+
         # ── Production (commandes / retards) ─────────────────────────────────
         lay.addWidget(self._section(_("dash.sec_orders")))
         lay.addLayout(self._row([
@@ -257,6 +271,26 @@ class DashboardPage(QWidget):
         # CA du mois
         self._cards["month_billed"].value.setText(f"{st['month_billed']:.2f} {cur}")
 
+        # Rentabilité
+        pal = _T.palette()
+        self._cards["invested"].value.setText(f"{st['invested']:.2f} {cur}")
+        self._cards["consumables_bought"].value.setText(f"{st['consumables_bought']:.2f} {cur}")
+        nr = self._cards["net_result"]
+        nr.value.setText(f"{st['net_result']:+.2f} {cur}")
+        nr._color_role = "TELE_GREEN" if st["is_profitable"] else "ERROR_RED"
+        nr.value.setStyleSheet(f"color: {pal[nr._color_role]}; background: transparent;")
+        if st["is_profitable"]:
+            self._profit_status.setText(_("dash.profit_ok",
+                                          amount=f"{st['net_result']:.2f} {cur}"))
+            self._profit_color_role = "TELE_GREEN"
+        else:
+            self._profit_status.setText(_("dash.profit_recover",
+                                          amount=f"{st['to_recover']:.2f} {cur}",
+                                          pct=f"{st['recover_pct']:.0f}"))
+            self._profit_color_role = "AMBER"
+        self._profit_status.setStyleSheet(
+            f"color: {pal[self._profit_color_role]}; background: transparent;")
+
         # Production
         self._cards["orders_active"].value.setText(str(st["n_orders_active"]))
         oa = self._cards["orders_active"]
@@ -303,6 +337,9 @@ class DashboardPage(QWidget):
             card.title.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
             sub_col = pal["ERROR_RED"] if key == "overdue" else pal["AMBER"]
             card.sub.setStyleSheet(f"color: {sub_col}; background: transparent;")
+        # Statut de rentabilité : garder sa couleur cohérente au changement de thème
+        role = getattr(self, "_profit_color_role", "TELE_GREEN")
+        self._profit_status.setStyleSheet(f"color: {pal[role]}; background: transparent;")
         self._overdue_banner.setStyleSheet(
             f"color: {pal['ERROR_RED']}; background: rgba(239,83,80,0.10); "
             f"border: 1px solid {pal['ERROR_RED']}; border-radius: 4px; padding: 6px 10px;")

@@ -937,7 +937,7 @@ class IntentSelector(QWidget):
             empty = QLabel(_("intent.presets_empty"))
             empty.setFont(QFont(FONT_MAIN, 9))
             empty.setContentsMargins(10, 4, 0, 4)
-            empty.setStyleSheet(f"color: {_dp['INACTIVE']}; background: transparent;")
+            empty.setStyleSheet(f"color: {_dp['TEXT_SECONDARY']}; background: transparent;")
             layout.insertWidget(0, empty)
             if self._presets_open:
                 self._presets_scroll.setMaximumHeight(38)

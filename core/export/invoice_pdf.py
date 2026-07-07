@@ -119,7 +119,10 @@ def render_invoice(path: str, invoice: dict, company: dict) -> str:
             des = str(it.get("designation", ""))
             q = float(it.get("qty") or 0)
             pu = float(it.get("unit_price_ht") or 0)
-            lt = q * pu
+            ld = max(0.0, min(100.0, float(it.get("line_discount_pct") or 0)))
+            if ld > 0:                       # remise par ligne → notée près du libellé
+                des = f"{des}  (-{ld:g}%)"
+            lt = q * pu * (1.0 - ld / 100.0)
             p.setPen(ink); p.setFont(f_n)
             p.drawText(cx_des + 8, int(y), cx_qty - 16, 30, Qt.AlignLeft | Qt.AlignVCenter,
                        elided(f_n, des, cx_qty - 16))

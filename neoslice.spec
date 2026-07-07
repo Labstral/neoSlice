@@ -1,7 +1,38 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_data_files
 import subprocess as _sp
+
+# ── Garde-fou version Python (CRITIQUE) ───────────────────────────
+# La v0.1.6 a été empaquetée en mélangeant deux venvs (.venv=3.14 et
+# .venv312=3.12) : l'interpréteur embarqué et les modules natifs VTK
+# n'étaient pas de la même version -> au démarrage chez l'utilisateur :
+#   "Module use of python312.dll conflicts with this version of Python"
+#   -> import de pyvistaqt échoue -> plus de viewer 3D (placeholder).
+# Cible officielle du projet = Python 3.12. On refuse de builder avec
+# un autre Python, et on vérifie que les .pyd VTK visibles sont bien
+# compilés pour cette version (pas de cp3xx étranger qui traînerait).
+_TARGET = (3, 12)
+if sys.version_info[:2] != _TARGET:
+    raise SystemExit(
+        f"[neoslice.spec] Build refusé : lancé avec Python "
+        f"{sys.version_info.major}.{sys.version_info.minor}, cible = "
+        f"{_TARGET[0]}.{_TARGET[1]}. Active .venv312 puis relance "
+        f"`python -m PyInstaller --clean -y neoslice.spec`.")
+try:
+    import vtkmodules, glob as _glob
+    _tag = f"cp{_TARGET[0]}{_TARGET[1]}"
+    _pyds = _glob.glob(str(Path(vtkmodules.__file__).parent / "*.pyd"))
+    _bad = [p for p in _pyds if "cp3" in p and _tag not in p]
+    if _bad:
+        raise SystemExit(
+            f"[neoslice.spec] Build refusé : modules VTK d'une AUTRE "
+            f"version de Python détectés (attendu {_tag}) : "
+            f"{Path(_bad[0]).name}. Environnement mélangé — réinstalle "
+            f"pyvista/vtk/pyvistaqt dans .venv312 uniquement.")
+except ImportError:
+    pass
 
 # ── Pré-build : fermer neoSlice.exe s'il tourne (sinon Windows bloque l'écrasement)
 _sp.run(["taskkill", "/F", "/IM", "neoSlice.exe"], capture_output=True)
@@ -37,14 +68,15 @@ _VTK_UNUSED = {
     'vtkWebCore', 'vtkWebGLExporter',
     'vtkDomainsChemistry', 'vtkDomainsChemistryOpenGL2',
     'vtkGeovisCore', 'vtkGeovisGDAL',
-    'vtkViewsContext2D', 'vtkViewsInfovis',
+    'vtkViewsInfovis',
     'vtkRenderingImage', 'vtkRenderingParallel',
-    'vtkRenderingSceneGraph', 'vtkRenderingVolumeOpenGL2',
+    'vtkRenderingSceneGraph',
     'vtkFiltersAMR', 'vtkFiltersFlowPaths', 'vtkFiltersParallelImaging',
     'vtkFiltersParallelStatistics', 'vtkFiltersTemporal',
     'vtkFiltersTopology', 'vtkFiltersParallel',
     'vtkInfovisLayout', 'vtkInfovisCore',
-    'vtkChartsCore',
+    # NE PAS exclure vtkChartsCore ni vtkRenderingVolumeOpenGL2 : pyvista les
+    # importe au chargement, les exclure casse le viewer ("installez pyvistaqt").
 }
 
 def _keep_pyside6(path: str) -> bool:
@@ -99,8 +131,17 @@ project_datas = [
     ('assets', 'assets'),
     ('core/parameters/profiles', 'core/parameters/profiles'),
 ]
+# data/ SAUF data/kb : les wikis moissonnés + l'index RAG pèsent ~5 Go et ne
+# servent PAS à l'app distribuée (l'installateur d'Oen télécharge l'index dans
+# ~/.neoslice/assistant/kb ; les .md bruts ne servent qu'à tools/kb_index.py en
+# dev). Les embarquer ferait exploser le build (et le retrait --clean plantait
+# déjà sur des fichiers kb verrouillés).
 if Path('data').exists():
-    project_datas.append(('data', 'data'))
+    for _item in sorted(Path('data').iterdir()):
+        if _item.name == 'kb':
+            continue
+        dest = f'data/{_item.name}' if _item.is_dir() else 'data'
+        project_datas.append((str(_item), dest))
 
 a = Analysis(
     ['main.py'],

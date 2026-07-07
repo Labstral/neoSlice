@@ -219,6 +219,14 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
         overrides["support_interface_pattern"] = config.support_interface_pattern
         overrides["support_object_xy_distance"] = s(config.support_object_xy_distance)
 
+    # Sortie OrcaSlicer : l'ancienne valeur Bambu "enabled" de
+    # ensure_vertical_shell_thickness a été renommée en "ensure_all" dans Orca.
+    # Écrire la valeur moderne évite le popup de migration d'Orca (« a été remplacé
+    # par ensure_all »). Sans effet pour la sortie Bambu.
+    from core.prefs import PREFS
+    if PREFS.get("slicer_output", "bambu") == "orca":
+        overrides["ensure_vertical_shell_thickness"] = "ensure_all"
+
     return overrides
 
 
@@ -273,7 +281,228 @@ def _apply_non_bambu_machine(project_settings: dict, printer_ui_name: str,
     except (ValueError, TypeError):
         _lhd = "0.20"
     project_settings["print_settings_id"] = f"neoSlice {_lhd}mm @{brand}"
+    # Aligner imprimante + filament sur de VRAIS préréglages système du fork strict
+    # (évite « préréglage personnalisé / confirmez le G-code » sur CrealityPrint/Elegoo).
+    _align_strict_preset_names(project_settings, pname, brand)
     return machine
+
+
+def _sanitize_strict(project_settings: dict) -> None:
+    """Corrige des valeurs TOLÉRÉES par OrcaSlicer/Bambu mais REFUSÉES par
+    CrealityPrint (validation stricte), sans rien changer pour les autres :
+      • index de filament (clés `*_filament`) 1-based → 0 devient 1 ;
+      • `tree_support_wall_count` = -1 (« auto » Orca) → 0 (plage CrealityPrint [0,2]).
+    Ces valeurs « 1 » et « 0 » sont aussi correctes pour Bambu/Orca → sûr partout."""
+    for k, v in list(project_settings.items()):
+        if k.endswith("_filament"):
+            val = v[0] if isinstance(v, list) and v else v
+            if str(val).strip() in ("0", "0.0"):
+                project_settings[k] = ["1"] if isinstance(v, list) else "1"
+    tsw = project_settings.get("tree_support_wall_count")
+    val = tsw[0] if isinstance(tsw, list) and tsw else tsw
+    try:
+        if val is not None and int(float(val)) < 0:
+            project_settings["tree_support_wall_count"] = ["0"] if isinstance(tsw, list) else "0"
+    except (ValueError, TypeError):
+        pass
+    # nozzle_type dédoublé pour mono-extrudeur (["hardened_steel","hardened_steel"]
+    # ou "x,x") → valeur unique, sinon CrealityPrint le met « Non défini ».
+    nt = project_settings.get("nozzle_type")
+    if isinstance(nt, list) and len(set(map(str, nt))) == 1 and nt:
+        project_settings["nozzle_type"] = nt[0]
+    elif isinstance(nt, str) and "," in nt:
+        parts = [s.strip() for s in nt.split(",") if s.strip()]
+        if parts and len(set(parts)) == 1:
+            project_settings["nozzle_type"] = parts[0]
+
+
+# Vocabulaire de clés réellement comprises par chaque slicer-fork strict (généré
+# depuis TOUS leurs profils : data/<slicer>_keys.json). Sert à retirer les clés
+# Bambu-only (ex. locked_skeleton_infill_pattern) que CrealityPrint refuse.
+_SLICER_VOCAB_CACHE: dict[str, set | None] = {}
+# Clés d'identité / méta 3MF toujours conservées même si absentes du vocabulaire.
+_KEEP_ALWAYS = {"printer_settings_id", "print_settings_id", "filament_settings_id",
+                "printer_model", "printer_variant", "nozzle_diameter", "version", "from", "name"}
+
+
+def _slicer_vocab(slicer: str) -> set | None:
+    if slicer not in _SLICER_VOCAB_CACHE:
+        vocab = None
+        f = _DATA_DIR / f"{slicer}_keys.json"
+        if f.exists():
+            try:
+                vocab = set(json.loads(f.read_text(encoding="utf-8")))
+            except Exception:
+                vocab = None
+        _SLICER_VOCAB_CACHE[slicer] = vocab
+    return _SLICER_VOCAB_CACHE[slicer]
+
+
+# Noms EXACTS des préréglages système installés de chaque fork strict
+# (data/<slicer>_presets.json : {"machines":[…],"filaments":[…]}). Sert à aligner
+# printer_settings_id / filament_settings_id sur de VRAIS préréglages → le fork les
+# reconnaît comme « système » et n'affiche plus « préréglage personnalisé / G-code ».
+_SLICER_PRESETS_CACHE: dict[str, dict | None] = {}
+
+
+def _slicer_presets(slicer: str) -> dict | None:
+    if slicer not in _SLICER_PRESETS_CACHE:
+        data = None
+        f = _DATA_DIR / f"{slicer}_presets.json"
+        if f.exists():
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                data = None
+        _SLICER_PRESETS_CACHE[slicer] = data
+    return _SLICER_PRESETS_CACHE[slicer]
+
+
+def _align_strict_preset_names(project_settings: dict, pname: str, brand: str) -> None:
+    """Pour un fork strict (CrealityPrint/ElegooSlicer), remplace les noms de
+    préréglages imprimante/filament par les VRAIS noms système installés. Sans ça,
+    un nom inexistant (ex. filament « @K2-all », imprimante « … (0.4 nozzle) »
+    communautaire) est traité comme « personnalisé » → avertissement G-code.
+    Aucun effet pour bambu/orca/prusa (pas de fichier presets → on ne touche à rien)."""
+    from core.prefs import PREFS
+    presets = _slicer_presets(PREFS.get("slicer_output", "bambu"))
+    if not presets:
+        return
+    machines = set(presets.get("machines", []))
+    filaments = set(presets.get("filaments", []))
+
+    # 1) Imprimante : si le nom n'est pas un préréglage réel, tenter la variante
+    #    sans parenthèses (« Elegoo Neptune 4 Pro (0.4 nozzle) » → « … 0.4 nozzle »).
+    real_machine = pname
+    if machines and pname not in machines:
+        alt = pname.replace(" (", " ").replace(")", "")
+        if alt in machines:
+            real_machine = alt
+        else:
+            cand = [m for m in machines
+                    if m.replace(" (", " ").replace(")", "") == alt]
+            if cand:
+                real_machine = cand[0]
+    if real_machine != pname and real_machine in machines:
+        project_settings["printer_settings_id"] = real_machine
+
+    # 2) Filament : choisir un vrai « Generic PLA @… » (préréglage installé).
+    if filaments:
+        for cand in (f"Generic PLA @{real_machine}", f"Generic PLA @{brand}"):
+            if cand in filaments:
+                project_settings["filament_settings_id"] = [cand]
+                return
+        brand_fils = [x for x in filaments
+                      if x.startswith("Generic PLA @") and brand and brand in x]
+        any_fils = [x for x in filaments if x.startswith("Generic PLA @")]
+        pick = brand_fils or any_fils
+        if pick:
+            project_settings["filament_settings_id"] = [min(pick, key=len)]
+
+
+def _filter_for_strict_slicer(project_settings: dict) -> None:
+    """Pour un slicer-fork strict (CrealityPrint/ElegooSlicer) : ne garde que les
+    clés que CE slicer connaît → supprime les clés Bambu-only inconnues (qui
+    déclenchent « Non défini » à l'ouverture). Aucun effet si pas de vocabulaire
+    (bambu/orca/prusa → fichier absent → on ne touche à rien)."""
+    from core.prefs import PREFS
+    vocab = _slicer_vocab(PREFS.get("slicer_output", "bambu"))
+    if not vocab:
+        return
+    for k in list(project_settings.keys()):
+        if k not in vocab and k not in _KEEP_ALWAYS:
+            project_settings.pop(k, None)
+
+    # Clamp des accélérations absolues au plafond machine (sinon CrealityPrint
+    # avertit qu'il auto-limite). Les valeurs en « % » sont relatives → ignorées.
+    mx = project_settings.get("machine_max_acceleration_extruding")
+    mxv = mx[0] if isinstance(mx, list) and mx else mx
+    try:
+        cap = float(mxv)
+    except (TypeError, ValueError):
+        cap = 0.0
+    if cap > 0:
+        for ak in [k for k in project_settings if k.endswith("_acceleration")]:
+            v = project_settings[ak]
+            vv = v[0] if isinstance(v, list) and v else v
+            s = str(vv).strip()
+            if s.endswith("%") or not s:
+                continue
+            try:
+                if float(s) > cap:
+                    project_settings[ak] = [str(int(cap))] if isinstance(v, list) else str(int(cap))
+            except (ValueError, TypeError):
+                pass
+
+
+# ── « Déguisement » du 3MF en projet natif du slicer-fork de sortie ──────────
+# Sans ça, CrealityPrint affiche « Ce fichier de projet n'est pas de Creality Print,
+# sélectionnez l'imprimante » ET ignore l'imprimante embarquée (retombe sur l'Ender-3
+# V2 par défaut). Un vrai projet CrealityPrint se reconnaît à 3 marqueurs (relevés sur
+# resources/calib/.../CrealityToleranceTest.3mf) : Application="Creality_Print V…",
+# header slice_info X-CX-Client-Type="creality_print", et un fichier Metadata/creality.config.
+# ElegooSlicer/OrcaSlicer acceptent les marqueurs Bambu par défaut → rien à changer.
+_CREALITY_APP_VERSION = "7.2.0"
+# ElegooSlicer reconnaît le producteur « ElegooSlicer-<version> » (littéral présent
+# dans ElegooSlicer.dll, à côté de BambuStudio-/OrcaSlicer-). Avec ce producteur il
+# ouvre le 3MF comme SON projet → plus de « may be incompatible / Load Whole File ».
+# Il garde les headers X-BBL et n'a pas de fichier config dédié.
+_ELEGOO_APP_VERSION = "1.5.2.2"
+# OrcaSlicer reconnaît le producteur « OrcaSlicer-<version> » (comme ElegooSlicer,
+# tous deux forks de BambuStudio). Avec ce producteur, Orca ouvre le 3MF comme SON
+# projet → plus de popup « Le fichier 3MF a été créé par BambuStudio ». Il garde les
+# clés/headers Bambu (qu'il lit nativement) → slice_info=None, pas de fichier dédié.
+_ORCA_APP_VERSION = "02.03.00.58"
+
+
+def _creality_config_xml() -> str:
+    today = datetime.now().strftime("%Y-%m-%d")
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n'
+        '    <metadata key="Company" value="Creality"/>\n'
+        '    <metadata key="Application" value="Creality_Print"/>\n'
+        f'    <metadata key="AppVersion" value="{_CREALITY_APP_VERSION}"/>\n'
+        '    <metadata key="AppStage" value="Release"/>\n'
+        '    <metadata key="FileVersion" value="1.0"/>\n'
+        '    <metadata key="FileType" value="Undefined"/>\n'
+        f'    <metadata key="CreationDate" value="{today}"/>\n'
+        '</config>'
+    )
+
+
+def _slicer_branding() -> dict:
+    """Marqueurs d'identité à écrire pour que le slicer-fork de sortie ouvre le 3MF
+    comme SON projet. Renvoie {application, slice_info(xml|None), extra_files{path:xml}}.
+    Par défaut (bambu/orca/elegoo/prusa) → identité Bambu Studio (comportement inchangé)."""
+    from core.prefs import PREFS
+    slicer = PREFS.get("slicer_output", "bambu")
+    if slicer == "creality":
+        return {
+            "application": f"Creality_Print V{_CREALITY_APP_VERSION}",
+            "slice_info": (
+                '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <header>\n'
+                '    <header_item key="X-CX-Client-Type" value="creality_print"/>\n'
+                f'    <header_item key="X-CX-Client-Version" value="{_CREALITY_APP_VERSION}"/>\n'
+                '  </header>\n</config>'
+            ),
+            "extra_files": {"Metadata/creality.config": _creality_config_xml()},
+        }
+    if slicer == "elegoo":
+        # Producteur natif ElegooSlicer ; headers X-BBL conservés (slice_info=None).
+        return {
+            "application": f"ElegooSlicer-{_ELEGOO_APP_VERSION}",
+            "slice_info": None,
+            "extra_files": {},
+        }
+    if slicer == "orca":
+        # Producteur natif OrcaSlicer → ouvre le 3MF comme son projet (pas de popup
+        # « créé par BambuStudio »). Clés Bambu conservées (Orca les lit).
+        return {
+            "application": f"OrcaSlicer-{_ORCA_APP_VERSION}",
+            "slice_info": None,
+            "extra_files": {},
+        }
+    return {"application": f"BambuStudio-{BAMBU_VERSION}", "slice_info": None, "extra_files": {}}
 
 
 # Correspondance nom UI → suffixe BBL dans les noms de profils système
@@ -418,6 +647,8 @@ class ThreeMFBuilder:
 
         # Imprimante non-Bambu (catalogue) → remplacer le bloc machine + identité
         _apply_non_bambu_machine(project_settings, printer_ui_name, _D)
+        _sanitize_strict(project_settings)   # valeurs refusées par CrealityPrint
+        _filter_for_strict_slicer(project_settings)   # retire les clés Bambu-only
 
         # Injecter dans le ZIP en remplaçant uniquement project_settings.config
         tmp = output_path.with_suffix(".tmp")
@@ -549,13 +780,21 @@ class ThreeMFBuilder:
 
         # Imprimante non-Bambu (catalogue) → remplacer le bloc machine + identité
         _machine = _apply_non_bambu_machine(project_settings, printer_ui_name, _D)
+        _sanitize_strict(project_settings)   # valeurs refusées par CrealityPrint
+        _filter_for_strict_slicer(project_settings)   # retire les clés Bambu-only
 
-        # Positionner la pièce au centre du plateau (selon la machine réelle)
-        bb = mesh.bounding_box.extents
+        # Centrer la pièce sur le plateau d'après ses bornes RÉELLES.
+        # Un STL conserve ses coordonnées d'origine (souvent centré sur son
+        # centroïde, pas coin mini à 0,0) → l'ancien calcul `centre - taille/2`
+        # supposait min=(0,0) et décalait la pièce vers l'avant-gauche.
+        # On translate le CENTRE de la bbox sur le centre du plateau, et on pose
+        # la base (z min) sur le plateau (z=0).
+        lo, hi = mesh.bounds
         _bx, _by = _bed_center(_machine) if _machine else (128.0, 128.0)
-        cx = _bx - bb[0] / 2
-        cy = _by - bb[1] / 2
-        transform = f"1 0 0 0 1 0 0 0 1 {cx:.4f} {cy:.4f} 0"
+        cx = _bx - (lo[0] + hi[0]) / 2
+        cy = _by - (lo[1] + hi[1]) / 2
+        cz = -lo[2]
+        transform = f"1 0 0 0 1 0 0 0 1 {cx:.4f} {cy:.4f} {cz:.4f}"
 
         tmp_path = output_path.with_suffix(".3mf.tmp")
         try:
@@ -582,6 +821,10 @@ class ThreeMFBuilder:
                 zf.writestr("Metadata/cut_information.xml", self._cut_info())
                 zf.writestr("Metadata/filament_sequence.json",
                            '{"plate_1":{"nozzle_sequence":[],"optimal_assignment":[],"sequence":[]}}')
+                # Marqueurs propres au slicer-fork de sortie (ex. Metadata/creality.config)
+                # → le fork ouvre le 3MF comme SON projet et honore l'imprimante embarquée.
+                for _path, _xml in _slicer_branding()["extra_files"].items():
+                    zf.writestr(_path, _xml)
             tmp_path.replace(output_path)
         except Exception:
             tmp_path.unlink(missing_ok=True)
@@ -632,7 +875,7 @@ class ThreeMFBuilder:
         today = datetime.now().strftime("%Y-%m-%d")
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="{_NS_3MF}" xmlns:BambuStudio="{_NS_BBL}" xmlns:p="{_NS_PROD}" requiredextensions="p">
- <metadata name="Application">BambuStudio-{BAMBU_VERSION}</metadata>
+ <metadata name="Application">{_slicer_branding()["application"]}</metadata>
  <metadata name="BambuStudio:3mfVersion">1.9.0</metadata>
  <metadata name="CreationDate">{today}</metadata>
  <metadata name="ModificationDate">{today}</metadata>
@@ -682,7 +925,7 @@ class ThreeMFBuilder:
         )
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="{_NS_3MF}" xmlns:BambuStudio="{_NS_BBL}" xmlns:p="{_NS_PROD}" requiredextensions="p">
- <metadata name="Application">BambuStudio-{BAMBU_VERSION}</metadata>
+ <metadata name="Application">{_slicer_branding()["application"]}</metadata>
  <metadata name="BambuStudio:3mfVersion">1.9.0</metadata>
  <metadata name="CreationDate">{today}</metadata>
  <metadata name="ModificationDate">{today}</metadata>
@@ -785,6 +1028,9 @@ class ThreeMFBuilder:
         return json.dumps(data, ensure_ascii=False)
 
     def _slice_info(self) -> str:
+        custom = _slicer_branding()["slice_info"]
+        if custom:
+            return custom
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <config>
   <header>
@@ -819,10 +1065,11 @@ class ThreeMFBuilder:
             comp_uuid = str(uuid.uuid4())
             item_uuid = str(uuid.uuid4())
             build_uuid = str(uuid.uuid4())
-            bb = mesh.bounding_box.extents
-            cx = 128.0 - bb[0] / 2
-            cy = 128.0 - bb[1] / 2
-            transform = f"1 0 0 0 1 0 0 0 1 {cx:.4f} {cy:.4f} 0"
+            lo, hi = mesh.bounds
+            cx = 128.0 - (lo[0] + hi[0]) / 2
+            cy = 128.0 - (lo[1] + hi[1]) / 2
+            cz = -lo[2]
+            transform = f"1 0 0 0 1 0 0 0 1 {cx:.4f} {cy:.4f} {cz:.4f}"
             zf.writestr("3D/3dmodel.model", self._main_model(
                 obj_uuid, comp_uuid, item_uuid, build_uuid, transform, object_name
             ))

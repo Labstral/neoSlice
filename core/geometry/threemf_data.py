@@ -44,6 +44,9 @@ class ThreeMFData:
     model_xml: str = ""
     plate_count: int = 1
     modifier_meshes: "list[MeshObject]" = field(default_factory=list)
+    # Vrai si plusieurs parts de couleurs s'imbriquent pour former UN solide (badge
+    # multicolore) : l'analyse ne doit pas y détecter de fausses régions flottantes.
+    is_color_assembly: bool = False
 
     @property
     def object_count(self) -> int:

@@ -126,7 +126,10 @@ class _LoadingOverlay(QWidget):
         font = QFont(FONT_MAIN, 9, QFont.Bold)
         font.setLetterSpacing(QFont.AbsoluteSpacing, 2)
         painter.setFont(font)
-        painter.drawText(QRect(cx - 160, text_y, 320, 26), Qt.AlignCenter, self._text)
+        # Élider à la largeur du cadre (320px) : un nom de fichier long ne doit pas
+        # être coupé aux deux bouts.
+        _txt = painter.fontMetrics().elidedText(self._text, Qt.ElideMiddle, 306)
+        painter.drawText(QRect(cx - 160, text_y, 320, 26), Qt.AlignCenter, _txt)
 
         # ── Sous-titre pulsant ──
         sub_alpha = int(100 + 80 * self._pulse)
@@ -134,7 +137,7 @@ class _LoadingOverlay(QWidget):
             painter.setPen(QColor(80, 130, 170, sub_alpha))
         else:
             painter.setPen(QColor(55, 85, 120, min(255, sub_alpha + 70)))
-        sub_font = QFont("Courier New", 7)
+        sub_font = QFont(FONT_MAIN, 7)
         sub_font.setLetterSpacing(QFont.AbsoluteSpacing, 1)
         painter.setFont(sub_font)
         painter.drawText(QRect(cx - 160, text_y + 24, 320, 18), Qt.AlignCenter, _("viewer.loading_sub"))
@@ -181,6 +184,94 @@ class Viewer3D(QWidget):
         self._setup_ui()
         self._overlay = _LoadingOverlay(self)
         self._setup_rotation()
+        self._setup_strands()
+
+    _STRANDS_SIZE = 120     # côté de la sphère décorative (px)
+    _STRANDS_MARGIN_X = 0   # marge gauche (px, négatif = décale vers la gauche)
+    _STRANDS_MARGIN_Y = -6  # marge basse (px, négatif = descend la sphère)
+
+    def _setup_strands(self):
+        """Prépare l'overlay sphère. La création réelle est différée à showEvent :
+        à l'__init__, le viewer n'est pas encore rattaché → self.window() serait faux."""
+        self._strands = None
+        self._strands_win = None
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if (getattr(self, "_strands", None) is None and HAS_PYVISTA
+                and self._plotter is not None):
+            try:
+                # Mini-fenêtre top-level translucide (vraie transparence via le système,
+                # au-dessus de la fenêtre native VTK). Suit neoSlice via l'eventFilter.
+                from ui.components.strands_widget import StrandsOverlay
+                win = self.window()
+                self._strands = StrandsOverlay(win, px=self._STRANDS_SIZE, translucent=True)
+                self._strands.clicked.connect(self._open_assistant)
+                self._strands_win = win
+                if win is not None:
+                    win.installEventFilter(self)
+            except Exception as e:
+                logger.warning(f"Strands overlay non disponible : {e}")
+                self._strands = None
+        self._reposition_strands()
+
+    def _open_assistant(self):
+        """Clic sur la sphère → ouvre (ou ferme) la fenêtre glass de l'assistant."""
+        try:
+            from ui.components.glass_panel import GlassPanel
+        except Exception as e:
+            logger.warning(f"GlassPanel indisponible : {e}")
+            return
+        if getattr(self, "_glass", None) is None:
+            self._glass = GlassPanel(self.window())
+            # Pendant que l'IA rédige, la sphère s'anime plus (vagues plus vives)
+            if self._strands is not None:
+                self._glass.busy_changed.connect(self._strands.set_active)
+        if self._glass.isVisible():
+            self._glass.close_anim()
+            return
+        from PySide6.QtCore import QPoint
+        s = self._strands
+        anchor = s.mapToGlobal(QPoint(s.width() // 2, s.height() // 3)) if s else None
+        self._glass.open_from(anchor)
+
+    def _begin_settle(self):
+        """Agrandir/réduire (WindowStateChange) : la fenêtre s'anime côté OS. On masque
+        la sphère et on ignore les repositionnements tant que ça bouge, puis on la
+        remet une fois stabilisée → plus de « saut » en avance."""
+        s = getattr(self, "_strands", None)
+        if s is None:
+            return
+        self._strands_settling = True
+        s.hide()
+        if not hasattr(self, "_strands_settle"):
+            from PySide6.QtCore import QTimer
+            self._strands_settle = QTimer(self)
+            self._strands_settle.setSingleShot(True)
+            self._strands_settle.timeout.connect(self._end_settle)
+        self._strands_settle.start(220)
+
+    def _end_settle(self):
+        self._strands_settling = False
+        self._reposition_strands()
+
+    def _reposition_strands(self):
+        """Cale l'overlay sphère sur le coin bas-gauche du viewer (coords écran)."""
+        s = getattr(self, "_strands", None)
+        if s is None:
+            return
+        from PySide6.QtCore import QPoint
+        win = self.window()
+        if (win is not None and win.isMinimized()) or not self.isVisible():
+            s.hide()
+            return
+        g = self.mapToGlobal(QPoint(
+            self._STRANDS_MARGIN_X,
+            self.height() - self._STRANDS_SIZE - self._STRANDS_MARGIN_Y))
+        s.move(g)
+        if not s.isVisible():
+            s.show()
+        s.raise_()
 
     def _apply_rot_checkbox_style(self):
         pal = _T.palette()
@@ -318,6 +409,9 @@ class Viewer3D(QWidget):
         if hasattr(self, "_overlay"):
             self._overlay.resize(self.size())
 
+        if getattr(self, "_strands", None) is not None and not getattr(self, "_strands_settling", False):
+            self._reposition_strands()
+
         if hasattr(self, "_rot_checkbox") and hasattr(self, "_plate_checkbox"):
             cw = max(
                 self._rot_checkbox.sizeHint().width() + 16,
@@ -335,6 +429,7 @@ class Viewer3D(QWidget):
 
         self._plotter = None
         self._init_cover = None
+        self._gl_failed = False   # True si l'init OpenGL échoue (≠ lib absente)
         if HAS_PYVISTA:
             try:
                 pal = _T.palette()
@@ -348,16 +443,63 @@ class Viewer3D(QWidget):
                 QTimer.singleShot(900, self._init_opengl_effects)
                 return
             except Exception as e:
-                logger.warning(f"pyvistaqt non disponible (init) : {e}")
+                logger.warning(f"init 3D (OpenGL) échouée : {e}")
                 self._plotter = None
+                self._gl_failed = True
 
-        placeholder = QLabel(_("viewer.no_pyvista"))
-        placeholder.setAlignment(Qt.AlignCenter)
-        placeholder.setStyleSheet(
-            "color: #4A4A6A; font-size: 13px; "
-            "background-color: #070710; border-radius: 10px;"
-        )
-        layout.addWidget(placeholder)
+        self._build_viewer_placeholder(layout)
+
+    def _build_viewer_placeholder(self, layout):
+        """Message d'indisponibilité du viewer, distinct selon la cause :
+        - lib pyvista absente (cas dev),
+        - OpenGL non supporté par la machine (cas le plus courant côté utilisateur)
+          → propose le mode compatibilité (rendu logiciel) avec redémarrage.
+        - échec même en mode compatibilité."""
+        from core.prefs import PREFS
+        software_on = PREFS.get("viewer_software_gl", False)
+        if not HAS_PYVISTA:
+            msg = _("viewer.no_pyvista")
+        elif software_on:
+            msg = _("viewer.software_failed")
+        else:
+            msg = _("viewer.no_opengl")
+
+        holder = QWidget()
+        hl = QVBoxLayout(holder)
+        hl.setAlignment(Qt.AlignCenter)
+        hl.setSpacing(14)
+        holder.setStyleSheet("background-color: #070710; border-radius: 10px;")
+
+        label = QLabel(msg)
+        label.setAlignment(Qt.AlignCenter)
+        label.setWordWrap(True)
+        label.setStyleSheet("color: #6A6A8A; font-size: 13px; background: transparent;")
+        hl.addWidget(label)
+
+        # Bouton mode compatibilité : uniquement si l'OpenGL a échoué et qu'on n'est
+        # pas déjà en logiciel (sinon inutile).
+        if HAS_PYVISTA and self._gl_failed and not software_on:
+            btn = QPushButton(_("viewer.btn_software"))
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(
+                "QPushButton { color: #fff; background: #1E90FF; border: none; "
+                "border-radius: 5px; padding: 8px 16px; font-size: 12px; }"
+                "QPushButton:hover { background: #3AA0FF; }")
+            btn.clicked.connect(self._enable_software_gl_and_restart)
+            hl.addWidget(btn, alignment=Qt.AlignCenter)
+
+        layout.addWidget(holder)
+
+    def _enable_software_gl_and_restart(self):
+        """Active le rendu OpenGL logiciel et redémarre neoSlice pour l'appliquer."""
+        import sys as _sys
+        from core.prefs import PREFS
+        from PySide6.QtCore import QProcess
+        from PySide6.QtWidgets import QApplication
+        PREFS.set("viewer_software_gl", True)
+        args = _sys.argv[1:] if getattr(_sys, "frozen", False) else _sys.argv
+        QProcess.startDetached(_sys.executable, args)
+        QApplication.quit()
 
     def _init_background(self):
         """Force le rendu du fond dès que VTK est prêt."""
@@ -563,6 +705,18 @@ class Viewer3D(QWidget):
             self._plotter.removeEventFilter(self)
 
     def eventFilter(self, obj, event):
+        # Suivre la fenêtre principale pour recaler l'overlay sphère (top-level)
+        if getattr(self, "_strands", None) is not None and obj is getattr(self, "_strands_win", None):
+            t = event.type()
+            if t == QEvent.WindowStateChange:
+                self._begin_settle()               # agrandir/réduire : anti-décalage
+            elif t == QEvent.Hide:
+                self._strands.hide()
+            elif not getattr(self, "_strands_settling", False):
+                # PAS de WindowActivate ici : s.raise_() churnait l'activation →
+                # boucle d'événements → event loop saturé → sphère jamais peinte.
+                if t in (QEvent.Move, QEvent.Resize, QEvent.Show):
+                    self._reposition_strands()      # suivi immédiat (sinon)
         if obj is self._plotter:
             t = event.type()
             if t == QEvent.MouseButtonPress:
@@ -643,7 +797,7 @@ class Viewer3D(QWidget):
             spacing = max(round(raw / magnitude) * magnitude, 5.0)
 
             plate = pv.Plane(
-                center=(cx, cy, -0.5),
+                center=(cx, cy, -1.0),
                 direction=(0, 0, 1),
                 i_size=pw,
                 j_size=ph,
@@ -663,7 +817,11 @@ class Viewer3D(QWidget):
             ny = max(2, round(ph / spacing))
             lines_v = np.linspace(cx - hw, cx + hw, nx + 1)
             lines_h = np.linspace(cy - hh, cy + hh, ny + 1)
-            _gz = -0.1
+            # Grille nettement SOUS le dessous des pièces (à z=0) : évite que la
+            # grille traverse le bas des pièces selon l'angle (Z-fighting), surtout
+            # avec le polygon-offset VTK actif. 0.5 mm d'écart = séparation franche
+            # sans que les pièces paraissent flotter.
+            _gz = -0.5
             pts, segs, idx = [], [], 0
             for x in lines_v:
                 pts += [[x, cy - hh, _gz], [x, cy + hh, _gz]]
@@ -876,8 +1034,18 @@ class Viewer3D(QWidget):
         self._pv_mesh_cache = None
         self._face_colors = None
         self._view_mode = "normal"
+        # Memoire (object_id -> slot) pour la re-colorisation live par slot
+        # (previsualisation des couleurs choisies a l'export).
+        self._slot_object_ids = [
+            (o.object_id, int(o.extruder)) for o in threemf_data.objects]
         self._plotter.clear()
         self._setup_lights()
+
+        # NB : on n'active PAS le polygon-offset global de VTK ici. Il décalait les
+        # lignes (grille du plateau) vers la caméra → la grille traversait le bas
+        # des objets selon l'angle. L'empilement correct des couleurs (chaque
+        # couche remplit le creux de la base, cf. offset Z global) suffit à éviter
+        # le Z-fighting du multicouleur sans ce réglage global néfaste.
 
         # Afficher TOUS les objets de tous les plateaux.
         # L'auto-arrange gère la disposition compacte si les positions Bambu sont dispersées.
@@ -941,6 +1109,13 @@ class Viewer3D(QWidget):
             do_arrange, arrange_offsets = self._compute_arrange(transformed)
 
         # 3) Construire les meshes finaux (avec arrange + poser sur plateau)
+        # Pour un assemblage MULTICOLORE (couches de couleur empilées), on abaisse
+        # TOUT l'ensemble d'un SEUL offset (z_min global) afin de PRÉSERVER
+        # l'empilement relatif des couches. Sinon chaque couche est collée au
+        # plateau, les couches se chevauchent au même Z et leurs surfaces
+        # coïncident → Z-fighting (scintillement, couleurs hachurées).
+        _is_color_assembly = threemf_data.slot_count > 1
+        _gzmin = min((float(t.bounds[0][2]) for t in transformed), default=0.0)
         final_meshes = []
         for m, (dx, dy) in zip(transformed, arrange_offsets):
             mc = m.copy()
@@ -948,14 +1123,12 @@ class Viewer3D(QWidget):
                 # Arrange XY + poser chaque pièce indépendamment sur le plateau (Z_min→0)
                 mc.apply_translation([dx, dy, -float(m.bounds[0][2])])
             else:
-                # Assemblé multi-couleur : centrage XY global + Z_min individuel → plateau.
-                # Utiliser bounds individuels pour Z (pas global) évite le flottement
-                # quand les matrices Bambu placent les pièces à des hauteurs différentes.
                 b = threemf_data.combined_mesh.bounds
+                _zoff = -_gzmin if _is_color_assembly else -float(m.bounds[0][2])
                 mc.apply_translation([
                     -(float(b[0][0]) + float(b[1][0])) / 2,
                     -(float(b[0][1]) + float(b[1][1])) / 2,
-                    -float(m.bounds[0][2]),   # Z individuel — chaque pièce part du plateau
+                    _zoff,
                 ])
             final_meshes.append(mc)
 
@@ -1348,6 +1521,35 @@ class Viewer3D(QWidget):
             self._plotter.render()
         except Exception as _me:
             logger.warning(f"PBR upgrade échoué : {_me}")
+
+    def set_slot_colors(self, mapping: dict) -> None:
+        """Re-colore en direct chaque objet d'un 3MF multi-objets selon la couleur
+        choisie pour son slot. `mapping` = {slot:int -> couleur hex}. Sans effet si
+        aucun 3MF multi-objets n'est affiche. Utilise pour la previsualisation des
+        couleurs a l'export."""
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+        ids = getattr(self, "_slot_object_ids", None)
+        if not ids or not mapping:
+            return
+        changed = False
+        for object_id, slot in ids:
+            hexc = mapping.get(slot) or mapping.get(int(slot))
+            if not hexc:
+                continue
+            actor = self._plotter.actors.get(f"obj_{object_id}")
+            if actor is None:
+                continue
+            try:
+                actor.prop.color = hexc
+                changed = True
+            except Exception:
+                pass
+        if changed:
+            try:
+                self._plotter.render()
+            except Exception:
+                pass
 
     def colorize_overhangs(self, mesh, face_colors: np.ndarray, _keep_camera: bool = False) -> None:
         """Recolorie le mesh selon les zones de surplomb — rendu smooth par vertex."""

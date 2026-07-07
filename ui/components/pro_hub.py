@@ -23,6 +23,23 @@ from ui.styles.theme import MANAGER as _T, FONT_MAIN, FONT_MONO
 
 _LOW_STOCK_G = 100.0
 
+# Finitions d'aspect (le « PLA Mat » de Kévin = matériau PLA + finition Mat).
+# On stocke une clé canonique ; le libellé est traduit à l'affichage.
+_FINITIONS = [
+    ("", "spool.finish_none"), ("mat", "spool.finish_matte"),
+    ("soie", "spool.finish_silk"), ("metallique", "spool.finish_metal"),
+    ("bois", "spool.finish_wood"), ("paillete", "spool.finish_glitter"),
+    ("translucide", "spool.finish_translucent"), ("fluo", "spool.finish_fluo"),
+    ("bicolore", "spool.finish_dual"),
+]
+
+
+def _finition_label(key: str) -> str:
+    for k, i18n_key in _FINITIONS:
+        if k == key:
+            return _(i18n_key)
+    return key or ""
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Formulaire d'ajout / édition d'une bobine
@@ -69,6 +86,15 @@ class SpoolForm(QDialog):
         self._material.setCurrentIndex(max(0, i))
         grid.addWidget(self._lbl(_("spool.material")), row, 0)
         grid.addWidget(self._material, row, 1); row += 1
+
+        # Finition (aspect) — Mat, Soie, Métallique… → « PLA Mat » = PLA + Mat
+        self._finition = QComboBox()
+        for key, i18n_key in _FINITIONS:
+            self._finition.addItem(_(i18n_key), key)
+        fi = self._finition.findData(self._spool.get("finition", ""))
+        self._finition.setCurrentIndex(max(0, fi))
+        grid.addWidget(self._lbl(_("spool.finish")), row, 0)
+        grid.addWidget(self._finition, row, 1); row += 1
 
         # Marque / nom couleur
         row = self._add_edit(grid, row, "marque", _("spool.brand"))
@@ -140,6 +166,7 @@ class SpoolForm(QDialog):
 
     def data(self) -> dict:
         out = {"materiau": self._material.currentData() or "PLA",
+               "finition": self._finition.currentData() or "",
                "couleur_hex": self._color_hex}
         for key, e in self._edits.items():
             txt = e.text().strip()
@@ -160,12 +187,311 @@ class SpoolForm(QDialog):
                     f"color: {pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
                     f"border-radius: 3px; padding: 3px 6px; }}")
         self._material.setStyleSheet(edit_css)
+        self._finition.setStyleSheet(edit_css)
         for e in self._edits.values():
             e.setStyleSheet(edit_css)
         for q in self.findChildren(QLabel):
             if q is not self._title:
                 q.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         self._refresh_color_btn()
+        self._save.setStyleSheet(
+            f"QPushButton {{ background: {pal['ACCENT']}; color: #fff; border: none; "
+            f"border-radius: 3px; padding: 5px 16px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}")
+        self._cancel.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['TEXT_SECONDARY']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 5px 14px; }}"
+            f"QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Formulaire d'ajout d'un achat (investissement ou consommable)
+# ══════════════════════════════════════════════════════════════════════════════
+# Catégories par nature. Filament → auto-création de bobines ; carton/emballage →
+# incrément d'une fourniture (voir store.add_purchase).
+_PURCHASE_CATS = {
+    "investissement": [("imprimante", "purchase.cat_printer"),
+                       ("materiel", "purchase.cat_equipment"),
+                       ("logiciel", "purchase.cat_software"),
+                       ("autre", "purchase.cat_other")],
+    "consommable": [("filament", "purchase.cat_filament"),
+                    ("carton", "purchase.cat_box"),
+                    ("emballage", "purchase.cat_packaging"),
+                    ("autre", "purchase.cat_other")],
+}
+
+
+def _purchase_nature_label(nature: str) -> str:
+    return _("purchase.nature_invest" if nature == "investissement"
+             else "purchase.nature_consum")
+
+
+def _purchase_cat_label(cat: str) -> str:
+    for lst in _PURCHASE_CATS.values():
+        for key, i18n_key in lst:
+            if key == cat:
+                return _(i18n_key)
+    return cat or ""
+
+
+class PurchaseForm(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(_("purchase.add"))
+        self.setMinimumWidth(440)
+        self._color_hex = "#1E90FF"
+        self._edits: dict[str, QLineEdit] = {}
+        self._fil_rows: list[tuple] = []   # (label, widget) du bloc filament
+        self._build()
+        self._on_nature_changed()
+        self._apply_theme()
+
+    def _lbl(self, text: str) -> QLabel:
+        q = QLabel(text); q.setFont(QFont(FONT_MAIN, 9))
+        return q
+
+    def _add_edit(self, grid, row, key, label, num=False, default="", fil=False):
+        lblw = self._lbl(label)
+        e = QLineEdit(str(default)); e.setFont(QFont(FONT_MONO, 9))
+        if num:
+            from PySide6.QtGui import QDoubleValidator
+            e.setValidator(QDoubleValidator(0.0, 1e9, 2, e))
+        self._edits[key] = e
+        grid.addWidget(lblw, row, 0); grid.addWidget(e, row, 1)
+        if fil:
+            self._fil_rows.append((lblw, e))
+        return row + 1
+
+    def _grid_row(self, grid, row, label, widget, fil=True):
+        lblw = self._lbl(label)
+        grid.addWidget(lblw, row, 0); grid.addWidget(widget, row, 1)
+        if fil:
+            self._fil_rows.append((lblw, widget))
+        return row + 1
+
+    def _build(self):
+        from datetime import date as _date
+        lay = QVBoxLayout(self); lay.setContentsMargins(20, 18, 20, 18); lay.setSpacing(10)
+        self._title = QLabel(_("purchase.add"))
+        self._title.setFont(QFont(FONT_MAIN, 13, QFont.Bold))
+        lay.addWidget(self._title)
+
+        grid = QGridLayout(); grid.setHorizontalSpacing(10); grid.setVerticalSpacing(8)
+        lay.addLayout(grid); row = 0
+
+        self._nature = QComboBox()
+        self._nature.addItem(_("purchase.nature_invest"), "investissement")
+        self._nature.addItem(_("purchase.nature_consum"), "consommable")
+        self._nature.setCurrentIndex(1)   # consommable par défaut
+        self._nature.currentIndexChanged.connect(self._on_nature_changed)
+        row = self._grid_row(grid, row, _("purchase.nature"), self._nature, fil=False)
+
+        self._category = QComboBox()
+        self._category.currentIndexChanged.connect(self._on_category_changed)
+        row = self._grid_row(grid, row, _("purchase.category"), self._category, fil=False)
+
+        row = self._add_edit(grid, row, "designation", _("purchase.designation"))
+        row = self._add_edit(grid, row, "date", _("purchase.date"), default=_date.today().isoformat())
+        row = self._add_edit(grid, row, "montant", _("purchase.amount"), num=True, default="0")
+        row = self._add_edit(grid, row, "quantite", _("purchase.qty"), num=True, default="1")
+        row = self._add_edit(grid, row, "fournisseur", _("purchase.vendor"))
+
+        # Bloc filament (visible uniquement pour Consommable → Filament)
+        self._material = QComboBox()
+        for name in FILAMENTS:
+            self._material.addItem(name, name)
+        row = self._grid_row(grid, row, _("spool.material"), self._material)
+        self._finition = QComboBox()
+        for key, i18n_key in _FINITIONS:
+            self._finition.addItem(_(i18n_key), key)
+        row = self._grid_row(grid, row, _("spool.finish"), self._finition)
+        row = self._add_edit(grid, row, "couleur_nom", _("spool.color_name"), fil=True)
+        self._color_btn = QPushButton(); self._color_btn.setFixedHeight(26)
+        self._color_btn.setCursor(Qt.PointingHandCursor)
+        self._color_btn.clicked.connect(self._pick_color)
+        row = self._grid_row(grid, row, _("spool.color"), self._color_btn)
+        row = self._add_edit(grid, row, "poids_bobine_g", _("purchase.weight_g"),
+                             num=True, default="1000", fil=True)
+
+        self._hint = QLabel("")
+        self._hint.setFont(QFont(FONT_MAIN, 8)); self._hint.setWordWrap(True)
+        lay.addWidget(self._hint)
+
+        btns = QHBoxLayout(); btns.addStretch()
+        self._cancel = QPushButton(_("spool.cancel")); self._cancel.setCursor(Qt.PointingHandCursor)
+        self._cancel.clicked.connect(self.reject)
+        self._save = QPushButton(_("spool.save")); self._save.setCursor(Qt.PointingHandCursor)
+        self._save.clicked.connect(self.accept)
+        btns.addWidget(self._cancel); btns.addWidget(self._save)
+        lay.addLayout(btns)
+
+    def _on_nature_changed(self):
+        nature = self._nature.currentData()
+        self._category.blockSignals(True)
+        self._category.clear()
+        for key, i18n_key in _PURCHASE_CATS.get(nature, []):
+            self._category.addItem(_(i18n_key), key)
+        self._category.setCurrentIndex(0)
+        self._category.blockSignals(False)
+        self._on_category_changed()
+
+    def _on_category_changed(self):
+        is_fil = (self._nature.currentData() == "consommable"
+                  and self._category.currentData() == "filament")
+        for lblw, w in self._fil_rows:
+            lblw.setVisible(is_fil); w.setVisible(is_fil)
+        if is_fil:
+            self._hint.setText(_("purchase.hint_filament"))
+        elif self._category.currentData() in ("carton", "emballage"):
+            self._hint.setText(_("purchase.hint_supply"))
+        else:
+            self._hint.setText("")
+        self.adjustSize()
+
+    def _pick_color(self):
+        from PySide6.QtGui import QColor
+        col = QColorDialog.getColor(QColor(self._color_hex), self, _("spool.color"))
+        if col.isValid():
+            self._color_hex = col.name()
+            self._refresh_color_btn()
+
+    def _refresh_color_btn(self):
+        self._color_btn.setText(self._color_hex)
+        self._color_btn.setStyleSheet(
+            f"QPushButton {{ background: {self._color_hex}; color: white; "
+            f"border: 1px solid rgba(0,0,0,0.3); border-radius: 3px; }}")
+
+    def _num(self, key: str) -> float:
+        try:
+            return float(self._edits[key].text().strip().replace(",", ".") or 0)
+        except ValueError:
+            return 0.0
+
+    def data(self) -> dict:
+        nature = self._nature.currentData()
+        cat = self._category.currentData()
+        out = {
+            "nature": nature, "categorie": cat,
+            "designation": self._edits["designation"].text().strip(),
+            "date": self._edits["date"].text().strip(),
+            "fournisseur": self._edits["fournisseur"].text().strip(),
+            "montant": self._num("montant"), "quantite": self._num("quantite") or 1,
+        }
+        if nature == "consommable" and cat == "filament":
+            out.update({
+                "materiau": self._material.currentData() or "PLA",
+                "finition": self._finition.currentData() or "",
+                "couleur_nom": self._edits["couleur_nom"].text().strip(),
+                "couleur_hex": self._color_hex,
+                "poids_bobine_g": self._num("poids_bobine_g") or 1000,
+            })
+            if not out["designation"]:
+                fin = _finition_label(out["finition"]) if out["finition"] else ""
+                out["designation"] = " ".join(
+                    p for p in (out["materiau"], fin, out["couleur_nom"]) if p).strip()
+        return out
+
+    def _apply_theme(self):
+        pal = _T.palette()
+        self.setStyleSheet(f"QDialog {{ background: {pal['BG_PANEL']}; }}")
+        self._title.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+        self._hint.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
+        edit_css = (f"QLineEdit, QComboBox {{ background: {pal['BG_INPUT']}; "
+                    f"color: {pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
+                    f"border-radius: 3px; padding: 3px 6px; }}")
+        for w in (self._nature, self._category, self._material, self._finition):
+            w.setStyleSheet(edit_css)
+        for e in self._edits.values():
+            e.setStyleSheet(edit_css)
+        for q in self.findChildren(QLabel):
+            if q not in (self._title, self._hint):
+                q.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        self._refresh_color_btn()
+        self._save.setStyleSheet(
+            f"QPushButton {{ background: {pal['ACCENT']}; color: #fff; border: none; "
+            f"border-radius: 3px; padding: 5px 16px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}")
+        self._cancel.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['TEXT_SECONDARY']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 5px 14px; }}"
+            f"QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Formulaire d'une fourniture (carton, emballage…) — régler quantité + seuil
+# ══════════════════════════════════════════════════════════════════════════════
+class SupplyForm(QDialog):
+    def __init__(self, parent=None, supply: dict | None = None):
+        super().__init__(parent)
+        self._supply = supply or {}
+        self.setWindowTitle(_("supply.edit") if supply else _("supply.add"))
+        self.setMinimumWidth(400)
+        self._edits: dict[str, QLineEdit] = {}
+        self._build()
+        self._apply_theme()
+
+    def _lbl(self, text: str) -> QLabel:
+        q = QLabel(text); q.setFont(QFont(FONT_MAIN, 9))
+        return q
+
+    def _add_edit(self, grid, row, key, label, num=False, default=""):
+        e = QLineEdit(str(self._supply.get(key, default))); e.setFont(QFont(FONT_MONO, 9))
+        if num:
+            from PySide6.QtGui import QDoubleValidator
+            e.setValidator(QDoubleValidator(0.0, 1e9, 2, e))
+        self._edits[key] = e
+        grid.addWidget(self._lbl(label), row, 0); grid.addWidget(e, row, 1)
+        return row + 1
+
+    def _build(self):
+        lay = QVBoxLayout(self); lay.setContentsMargins(20, 18, 20, 18); lay.setSpacing(10)
+        self._title = QLabel(_("supply.edit") if self._supply else _("supply.add"))
+        self._title.setFont(QFont(FONT_MAIN, 13, QFont.Bold))
+        lay.addWidget(self._title)
+        grid = QGridLayout(); grid.setHorizontalSpacing(10); grid.setVerticalSpacing(8)
+        lay.addLayout(grid); row = 0
+        row = self._add_edit(grid, row, "nom", _("supply.name"))
+        row = self._add_edit(grid, row, "quantite", _("supply.qty"), num=True, default="0")
+        row = self._add_edit(grid, row, "unite", _("supply.unit"), default="u")
+        row = self._add_edit(grid, row, "seuil", _("supply.threshold"), num=True, default="0")
+        row = self._add_edit(grid, row, "fournisseur", _("spool.vendor"))
+        hint = QLabel(_("supply.threshold_hint"))
+        hint.setFont(QFont(FONT_MAIN, 8)); hint.setWordWrap(True); hint.setObjectName("hint")
+        lay.addWidget(hint)
+        btns = QHBoxLayout(); btns.addStretch()
+        self._cancel = QPushButton(_("spool.cancel")); self._cancel.setCursor(Qt.PointingHandCursor)
+        self._cancel.clicked.connect(self.reject)
+        self._save = QPushButton(_("spool.save")); self._save.setCursor(Qt.PointingHandCursor)
+        self._save.clicked.connect(self.accept)
+        btns.addWidget(self._cancel); btns.addWidget(self._save)
+        lay.addLayout(btns)
+
+    def data(self) -> dict:
+        out = {}
+        for k, e in self._edits.items():
+            t = e.text().strip()
+            if k in ("quantite", "seuil"):
+                try:
+                    out[k] = float(t.replace(",", ".") or 0)
+                except ValueError:
+                    out[k] = 0.0
+            else:
+                out[k] = t
+        return out
+
+    def _apply_theme(self):
+        pal = _T.palette()
+        self.setStyleSheet(f"QDialog {{ background: {pal['BG_PANEL']}; }}")
+        self._title.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+        edit_css = (f"QLineEdit {{ background: {pal['BG_INPUT']}; color: {pal['TEXT_PRIMARY']}; "
+                    f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 3px 6px; }}")
+        for e in self._edits.values():
+            e.setStyleSheet(edit_css)
+        for q in self.findChildren(QLabel):
+            if q is self._title:
+                continue
+            col = pal['TEXT_LABEL'] if q.objectName() == "hint" else pal['TEXT_SECONDARY']
+            q.setStyleSheet(f"color: {col}; background: transparent;")
         self._save.setStyleSheet(
             f"QPushButton {{ background: {pal['ACCENT']}; color: #fff; border: none; "
             f"border-radius: 3px; padding: 5px 16px; font-weight: bold; }}"
@@ -210,8 +536,11 @@ class _SpoolCard(QFrame):
         info.setSpacing(2)
         nom = s.get("couleur_nom") or s.get("materiau", "")
         marque = s.get("marque", "")
-        titre = f"{s.get('materiau','')} · {marque}".strip(" ·")
-        if nom and nom != s.get("materiau"):
+        mat = s.get("materiau", "")
+        fin = _finition_label(s.get("finition", ""))
+        mat_fin = f"{mat} {fin}".strip() if fin else mat
+        titre = f"{mat_fin} · {marque}".strip(" ·")
+        if nom and nom != mat:
             titre = f"{titre} — {nom}" if titre else nom
         t = QLabel(titre)
         t.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
@@ -285,10 +614,12 @@ class ProHubDialog(QDialog):
     """Fenêtre Espace Pro. `devis_launcher` : callable() ouvrant le devis (contexte
     fourni par la fenêtre principale)."""
 
-    def __init__(self, parent=None, devis_context: dict | None = None):
+    def __init__(self, parent=None, devis_context: dict | None = None,
+                 initial_tab: str | None = None):
         super().__init__(parent)
         self._devis_context = devis_context or {}
         self._devis_calc = None
+        self._initial_tab = initial_tab
         # Barre de titre : « Espace Pro » seul (le sous-titre est dans la sidebar)
         self.setWindowTitle(_("pro.hub_title").split("—")[0].strip())
         # Boutons agrandir/réduire → l'utilisateur peut passer en plein écran
@@ -322,6 +653,12 @@ class ProHubDialog(QDialog):
                           g.y() + (g.height() - self.height()) // 2)
             except Exception:
                 pass
+            # Basculer sur l'onglet initial demandé APRÈS le premier affichage
+            # (fenêtre dimensionnée) → pas d'artefact de peinture sur la liste.
+            if self._initial_tab and self._initial_tab in getattr(self, "_tab_index", {}):
+                from PySide6.QtCore import QTimer
+                _idx = self._tab_index[self._initial_tab]
+                QTimer.singleShot(0, lambda: self._select(_idx))
 
     def closeEvent(self, event):
         _T.unregister(self._apply_theme)
@@ -370,6 +707,7 @@ class ProHubDialog(QDialog):
         tabs = [
             ("dashboard", _("pro.tab_dashboard"), self._build_dashboard_page),
             ("spools",    _("pro.tab_spools"),    self._build_spools_page),
+            ("purchases", _("pro.tab_purchases"), self._build_purchases_page),
             ("quote",     _("pro.tab_quote"),     self._build_devis_page),
             ("orders",    _("pro.tab_orders"),    self._build_orders_page),
             ("invoice",   _("pro.tab_invoice"),   self._build_invoice_page),
@@ -390,12 +728,18 @@ class ProHubDialog(QDialog):
 
         side.addStretch()
 
-        # Sauvegarde auto (les données s'enregistrent à chaque modif) + export/import
-        self._autosave_lbl = QLabel(_("pro.autosave"))
-        self._autosave_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
-        self._autosave_lbl.setWordWrap(True)
-        side.addWidget(self._autosave_lbl)
-        side.addSpacing(4)
+        # Sauvegarde automatique (ZIP dans un dossier choisi) + export/import manuels
+        self._autobk_status = QLabel(_("pro.autobk_active"))
+        self._autobk_status.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        self._autobk_status.setWordWrap(False)   # une seule ligne
+        side.addWidget(self._autobk_status)
+        self._autobk_btn = QPushButton(_("pro.autobk_configure"))
+        self._autobk_btn.setFont(QFont(FONT_MAIN, 8))
+        self._autobk_btn.setCursor(Qt.PointingHandCursor)
+        self._autobk_btn.setFixedHeight(30)
+        self._autobk_btn.clicked.connect(self._open_autobk)
+        side.addWidget(self._autobk_btn)
+        side.addSpacing(8)
         self._export_btn = QPushButton(_("pro.export"))
         self._export_btn.setFont(QFont(FONT_MAIN, 8))
         self._export_btn.setCursor(Qt.PointingHandCursor)
@@ -411,7 +755,18 @@ class ProHubDialog(QDialog):
 
         root.addWidget(self._sidebar)
         root.addWidget(self._stack, 1)
-        self._select(0)   # ouvrir sur le Tableau de bord
+        # Toujours construire sur le Tableau de bord (léger). Un éventuel onglet
+        # initial (ex. "spools" depuis la fenêtre d'export) est sélectionné APRÈS
+        # affichage (showEvent) pour éviter un rendu avant dimensionnement de la
+        # fenêtre → artefacts de peinture sur la liste des bobines.
+        self._select(0)
+
+        # Sauvegarde automatique : statut + déclenchement si due, à l'ouverture
+        self._refresh_autobk_status()
+        try:
+            store.run_auto_backup_if_due()
+        except Exception:
+            pass
 
     def _select(self, idx: int):
         self._stack.setCurrentIndex(idx)
@@ -428,6 +783,8 @@ class ProHubDialog(QDialog):
             self._products_page.refresh()
         elif idx == ti.get("spools"):
             self._refresh_spools()
+        elif idx == ti.get("purchases"):
+            self._refresh_purchases()
 
     # ── Boîtes de dialogue thématisées (texte toujours lisible) ───────────────
     def _box_qss(self) -> str:
@@ -497,6 +854,45 @@ class ProHubDialog(QDialog):
         lay.addWidget(self._empty_lbl)
         return page
 
+    def _build_color_summary(self, groups: list[dict]) -> QWidget:
+        """Résumé du stock AGRÉGÉ par couleur (cumul des bobines de même
+        matériau+couleur) → l'alerte se lit sur le total, pas bobine par bobine."""
+        pal = _T.palette()
+        box = QFrame()
+        box.setStyleSheet(f"QFrame {{ background: {pal['BG_ELEVATED']}; "
+                          f"border: 1px solid {pal['INACTIVE']}; border-radius: 6px; }}")
+        v = QVBoxLayout(box); v.setContentsMargins(12, 10, 12, 10); v.setSpacing(6)
+        title = QLabel(_("spool.by_color_title"))
+        title.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        title.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent; "
+                            f"letter-spacing: 1px;")
+        v.addWidget(title)
+        for g in groups:
+            row = QHBoxLayout(); row.setSpacing(8)
+            sw = QLabel(); sw.setFixedSize(16, 16)
+            sw.setStyleSheet(f"background: {g['couleur_hex']}; border-radius: 8px; "
+                             f"border: 1px solid {pal['BG_SURFACE']};")
+            row.addWidget(sw)
+            fin = f" {_finition_label(g['finition'])}" if g['finition'] else ""
+            col = g['couleur_nom'] or ""
+            name = f"{g['materiau']}{fin} — {col}".strip(" —")
+            lbl = QLabel(f"{name}  ·  " + _("spool.color_n_spools", n=g['n_bobines']))
+            lbl.setFont(QFont(FONT_MAIN, 9))
+            lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+            row.addWidget(lbl); row.addStretch()
+            grams = QLabel(f"{g['restant_g']:.0f} g")
+            grams.setFont(QFont(FONT_MONO, 9))
+            grams.setStyleSheet(f"color: {pal['ERROR_RED'] if g['manque'] else pal['TEXT_SECONDARY']}; "
+                                f"background: transparent;")
+            row.addWidget(grams)
+            if g['manque']:
+                tag = QLabel("⚠ " + _("spool.color_low"))
+                tag.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
+                tag.setStyleSheet(f"color: {pal['ERROR_RED']}; background: transparent;")
+                row.addWidget(tag)
+            v.addLayout(row)
+        return box
+
     def _refresh_spools(self):
         # vider la liste (sauf le stretch final)
         while self._list_lay.count() > 1:
@@ -505,6 +901,12 @@ class ProHubDialog(QDialog):
             if w:
                 w.deleteLater()
         spools = store.list_spools()
+
+        # Résumé « stock par couleur » (cumul) en tête de liste
+        groups = store.stock_by_color()
+        if groups:
+            self._list_lay.insertWidget(self._list_lay.count() - 1,
+                                        self._build_color_summary(groups))
         for s in spools:
             card = _SpoolCard(s, self._edit_spool, self._delete_spool)
             self._list_lay.insertWidget(self._list_lay.count() - 1, card)
@@ -512,26 +914,27 @@ class ProHubDialog(QDialog):
         self._empty_lbl.setVisible(not spools)
         self._scroll.setVisible(bool(spools))
 
-        low = store.low_stock()   # seuil propre à chaque bobine
+        # Alerte PAR COULEUR (cumul), plus par bobine → fini les fausses alertes
+        low = store.low_stock_by_color()
         if low:
-            self._low_banner.setText("⚠  " + _("spool.low_stock_banner", n=len(low)))
+            self._low_banner.setText("⚠  " + _("spool.low_color_banner", n=len(low)))
             self._low_banner.show()
         else:
             self._low_banner.hide()
 
     def _show_shopping_list(self):
-        """Liste de courses : bobines à racheter (sous leur seuil de réappro)."""
-        items = store.shopping_list()
+        """Liste de courses PAR COULEUR : couleurs dont le cumul est sous le seuil."""
+        items = store.shopping_list_by_color()
         if not items:
             self._msg(_("shop.title").title(), _("shop.none"))
             return
         lines = []
         for x in items:
-            name = " ".join(p for p in (x["materiau"], x["marque"], x["couleur_nom"]) if p)
-            vendor = f" — {x['fournisseur']}" if x.get("fournisseur") else ""
+            fin = f" {_finition_label(x['finition'])}" if x.get("finition") else ""
+            name = f"{x['materiau']}{fin} {x['couleur_nom']}".strip()
             lines.append(f"• {name or x['materiau']} : "
                          + _("shop.remaining", g=int(x["restant_g"]))
-                         + "  →  " + _("shop.missing", g=int(x["racheter_g"])) + vendor)
+                         + "  →  " + _("shop.missing", g=int(x["racheter_g"])))
         self._msg(_("shop.title").title(), "\n".join(lines))
 
     def _add_spool(self):
@@ -550,6 +953,207 @@ class ProHubDialog(QDialog):
         if self._ask(_("spool.delete"), _("spool.delete_confirm")):
             store.delete_spool(spool["id"])
             self._refresh_spools()
+
+    # ── Page Achats (investissements + consommables) ──────────────────────────
+    def _build_purchases_page(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page); lay.setContentsMargins(22, 18, 22, 18); lay.setSpacing(12)
+
+        header = QHBoxLayout()
+        self._purch_totals = QLabel("")
+        self._purch_totals.setFont(QFont(FONT_MAIN, 9))
+        self._purch_totals.setWordWrap(True)
+        header.addWidget(self._purch_totals, 1)
+        _btn_font = QFont(FONT_MAIN, 9)
+        sup_btn = QPushButton("＋ " + _("supply.add"))
+        sup_btn.setCursor(Qt.PointingHandCursor); sup_btn.setFixedHeight(30)
+        sup_btn.setFont(_btn_font)
+        sup_btn.clicked.connect(self._add_supply_manual)
+        header.addWidget(sup_btn)
+        add_btn = QPushButton("＋ " + _("purchase.add"))
+        add_btn.setCursor(Qt.PointingHandCursor); add_btn.setFixedHeight(30)
+        add_btn.setFont(_btn_font)
+        add_btn.clicked.connect(self._add_purchase)
+        header.addWidget(add_btn)
+        lay.addLayout(header)
+
+        self._purch_scroll = QScrollArea(); self._purch_scroll.setWidgetResizable(True)
+        self._purch_scroll.setFrameShape(QFrame.NoFrame)
+        self._purch_host = QWidget()
+        self._purch_lay = QVBoxLayout(self._purch_host)
+        self._purch_lay.setContentsMargins(0, 0, 0, 0); self._purch_lay.setSpacing(8)
+        self._purch_lay.addStretch()
+        self._purch_scroll.setWidget(self._purch_host)
+        lay.addWidget(self._purch_scroll, 1)
+
+        self._purch_empty = QLabel(_("purchase.empty"))
+        self._purch_empty.setAlignment(Qt.AlignCenter); self._purch_empty.setWordWrap(True)
+        self._purch_empty.setFont(QFont(FONT_MAIN, 10))
+        lay.addWidget(self._purch_empty)
+        return page
+
+    def _purch_section(self, text: str) -> QLabel:
+        pal = _T.palette()
+        lbl = QLabel(text); lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        lbl.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent; "
+                          f"letter-spacing: 1px;")
+        return lbl
+
+    def _purchase_card(self, p: dict, cur: str) -> QFrame:
+        pal = _T.palette()
+        invest = p.get("nature") == "investissement"
+        card = QFrame()
+        card.setStyleSheet(f"QFrame {{ background: {pal['BG_ELEVATED']}; "
+                           f"border: 1px solid {pal['INACTIVE']}; border-radius: 6px; }}")
+        lay = QHBoxLayout(card); lay.setContentsMargins(12, 10, 12, 10); lay.setSpacing(10)
+
+        info = QVBoxLayout(); info.setSpacing(2)
+        title = QLabel(p.get("designation") or _purchase_cat_label(p.get("categorie", "")))
+        title.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
+        title.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+        info.addWidget(title)
+        bits = [p.get("date", ""), _purchase_nature_label(p.get("nature", "")),
+                _purchase_cat_label(p.get("categorie", ""))]
+        if p.get("spool_ids"):
+            bits.append(_("purchase.created_spools", n=len(p["spool_ids"])))
+        elif p.get("supply_id"):
+            bits.append(_("purchase.supply_added"))
+        sub = QLabel("  ·  ".join(b for b in bits if b))
+        sub.setFont(QFont(FONT_MONO, 8))
+        sub.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
+        info.addWidget(sub)
+        lay.addLayout(info, 1)
+
+        amount = QLabel(f"{float(p.get('montant', 0) or 0):.2f} {cur}")
+        amount.setFont(QFont(FONT_MAIN, 11, QFont.Bold))
+        amount.setStyleSheet(f"color: {pal['AMBER'] if invest else pal['TEXT_PRIMARY']}; "
+                             f"background: transparent;")
+        lay.addWidget(amount)
+
+        dele = QPushButton(_("spool.delete"))
+        dele.setCursor(Qt.PointingHandCursor); dele.setFixedHeight(26)
+        dele.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['ERROR_RED']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 0 10px; }}"
+            f"QPushButton:hover {{ border-color: {pal['ERROR_RED']}; }}")
+        dele.clicked.connect(lambda _c=False, pid=p.get("id"): self._delete_purchase(pid))
+        lay.addWidget(dele)
+        return card
+
+    def _supply_row(self, s: dict) -> QFrame:
+        pal = _T.palette()
+        low = float(s.get("seuil") or 0) > 0 and float(s.get("quantite") or 0) <= float(s.get("seuil") or 0)
+        card = QFrame()
+        card.setStyleSheet(f"QFrame {{ background: {pal['BG_ELEVATED']}; "
+                           f"border: 1px solid {pal['INACTIVE']}; border-radius: 6px; }}")
+        lay = QHBoxLayout(card); lay.setContentsMargins(12, 8, 12, 8); lay.setSpacing(10)
+        name = QLabel(s.get("nom", "")); name.setFont(QFont(FONT_MAIN, 9))
+        name.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+        lay.addWidget(name, 1)
+        qty = QLabel(f"{float(s.get('quantite', 0) or 0):.0f} {s.get('unite', 'u')}")
+        qty.setFont(QFont(FONT_MONO, 9))
+        qty.setStyleSheet(f"color: {pal['ERROR_RED'] if low else pal['TEXT_SECONDARY']}; "
+                          f"background: transparent;")
+        lay.addWidget(qty)
+        if low:
+            tag = QLabel("⚠ " + _("spool.color_low"))
+            tag.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
+            tag.setStyleSheet(f"color: {pal['ERROR_RED']}; background: transparent;")
+            lay.addWidget(tag)
+        edit = QPushButton(_("spool.edit"))
+        edit.setCursor(Qt.PointingHandCursor); edit.setFixedHeight(24)
+        edit.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['ACCENT']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 0 8px; }}"
+            f"QPushButton:hover {{ border-color: {pal['ACCENT']}; }}")
+        edit.clicked.connect(lambda _c=False, sup=s: self._edit_supply(sup))
+        lay.addWidget(edit)
+        dele = QPushButton(_("spool.delete"))
+        dele.setCursor(Qt.PointingHandCursor); dele.setFixedHeight(24)
+        dele.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['ERROR_RED']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 0 8px; }}"
+            f"QPushButton:hover {{ border-color: {pal['ERROR_RED']}; }}")
+        dele.clicked.connect(lambda _c=False, sid=s.get("id"): self._delete_supply(sid))
+        lay.addWidget(dele)
+        return card
+
+    def _refresh_purchases(self):
+        from core.business import invoicing
+        cur = invoicing.currency(store.get_company().get("pays", ""))
+        while self._purch_lay.count() > 1:
+            item = self._purch_lay.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        purchases = store.list_purchases()
+        supplies = store.list_supplies()
+        pos = 0
+
+        def _add(widget):
+            nonlocal pos
+            self._purch_lay.insertWidget(pos, widget); pos += 1
+
+        # Totaux
+        inv = store.total_investments(); con = store.total_consumables_purchased()
+        self._purch_totals.setText(
+            _("purchase.total_invest", amount=f"{inv:.2f} {cur}") + "   ·   "
+            + _("purchase.total_consum", amount=f"{con:.2f} {cur}"))
+
+        if purchases:
+            _add(self._purch_section(_("purchase.sec_purchases")))
+            for p in purchases:
+                _add(self._purchase_card(p, cur))
+        if supplies:
+            _add(self._purch_section(_("purchase.sec_supplies")))
+            for s in supplies:
+                _add(self._supply_row(s))
+
+        has_any = bool(purchases or supplies)
+        self._purch_empty.setVisible(not has_any)
+        self._purch_scroll.setVisible(has_any)
+
+    def _add_purchase(self):
+        form = PurchaseForm(self)
+        if form.exec() == QDialog.Accepted:
+            data = form.data()
+            if float(data.get("montant") or 0) <= 0 and not data.get("designation"):
+                return
+            store.add_purchase(data)
+            self._refresh_purchases()
+            # L'achat a pu créer des bobines / fournitures → garder le stock à jour
+            if getattr(self, "_list_lay", None) is not None:
+                self._refresh_spools()
+
+    def _delete_purchase(self, pid: str):
+        if not pid:
+            return
+        if self._ask(_("purchase.delete"), _("purchase.delete_confirm")):
+            store.delete_purchase(pid)
+            self._refresh_purchases()
+
+    def _add_supply_manual(self):
+        form = SupplyForm(self)
+        if form.exec() == QDialog.Accepted:
+            data = form.data()
+            if not data.get("nom"):
+                return
+            store.add_supply(data)
+            self._refresh_purchases()
+
+    def _edit_supply(self, supply: dict):
+        form = SupplyForm(self, supply=supply)
+        if form.exec() == QDialog.Accepted:
+            store.update_supply(supply["id"], form.data())
+            self._refresh_purchases()
+
+    def _delete_supply(self, sid: str):
+        if not sid:
+            return
+        if self._ask(_("purchase.delete"), _("purchase.delete_confirm")):
+            store.delete_supply(sid)
+            self._refresh_purchases()
 
     # ── Page Devis (calculateur intégré, pas de fenêtre séparée) ──────────────
     def _build_devis_page(self) -> QWidget:
@@ -759,6 +1363,33 @@ class ProHubDialog(QDialog):
         lay.addWidget(sub)
         return page
 
+    def _refresh_autobk_status(self):
+        """Affiche « ✓ Sauvegarde automatique active » (vert) seulement si configurée."""
+        from core.prefs import PREFS
+        on = bool(PREFS.get("autobk_enabled", False)) and bool(PREFS.get("autobk_dir", ""))
+        if hasattr(self, "_autobk_status"):
+            self._autobk_status.setVisible(on)
+
+    def _open_autobk(self):
+        from ui.components.auto_backup_dialog import AutoBackupDialog
+        from ui.styles.theme import apply_title_bar_theme
+        dlg = AutoBackupDialog(self)
+        apply_title_bar_theme(dlg)
+        dlg.configured.connect(self._on_autobk_configured)
+        dlg.exec()
+
+    def _on_autobk_configured(self):
+        self._refresh_autobk_status()
+        # Lance une 1re sauvegarde tout de suite si elle est due
+        try:
+            path = store.run_auto_backup_if_due()
+            if path:
+                self._msg(_("pro.autobk_title"), _("pro.autobk_done", path=str(path)))
+            else:
+                self._msg(_("pro.autobk_title"), _("pro.autobk_saved"))
+        except Exception:
+            self._msg(_("pro.autobk_title"), _("pro.autobk_saved"))
+
     def _do_export(self):
         downloads = Path.home() / "Downloads"
         start = downloads if downloads.is_dir() else Path.home()
@@ -844,11 +1475,12 @@ class ProHubDialog(QDialog):
             f"QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}")
         if hasattr(self, "_shop_btn"):
             self._shop_btn.setStyleSheet(_soft_btn)
-        for b in (getattr(self, "_export_btn", None), getattr(self, "_import_btn", None)):
+        for b in (getattr(self, "_export_btn", None), getattr(self, "_import_btn", None),
+                  getattr(self, "_autobk_btn", None)):
             if b:
                 b.setStyleSheet(_soft_btn)
-        if hasattr(self, "_autosave_lbl"):
-            self._autosave_lbl.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
+        if hasattr(self, "_autobk_status"):
+            self._autobk_status.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
         # Placeholders « Bientôt »
         for badge in self.findChildren(QLabel):
             if badge.objectName() == "coming":

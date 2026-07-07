@@ -181,6 +181,21 @@ _STEPS_FR: list[_Step] = [
         "Cliquez sur <b>Suivant</b> pour commencer.",
     ),
     _Step(
+        "settings",
+        "Première étape : choisissez votre slicer de sortie",
+        "La toute première chose à faire : cliquez sur la <b>roue de réglages</b> "
+        "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE713;</span> "
+        "(en haut à droite) et sélectionnez votre <b>slicer de sortie</b> — "
+        "<b>Bambu Studio</b>, <b>OrcaSlicer</b> ou <b>PrusaSlicer</b>.\n\n"
+        "C'est essentiel : <b>toutes les imprimantes ne sont pas compatibles avec "
+        "tous les slicers</b>. Le catalogue d'imprimantes <b>s'adapte au slicer "
+        "choisi</b> — par exemple, les <b>Prusa</b> (XL, CORE One…) n'apparaissent "
+        "qu'en sélectionnant <b>PrusaSlicer</b> ou <b>OrcaSlicer</b>.\n\n"
+        "Choisissez donc d'abord votre slicer pour voir apparaître l'imprimante que "
+        "vous cherchez.",
+        pad=10,
+    ),
+    _Step(
         "config",
         "① Configuration — Imprimante, Filament & Plateau",
         "Sélectionnez votre <b>imprimante cible</b> et votre <b>diamètre de buse</b>, "
@@ -303,6 +318,20 @@ _STEPS_EN: list[_Step] = [
         "This guide walks you through the full workflow, from file to export, plus "
         "the <b>Pro</b> features.\n"
         "Click <b>Next</b> to begin.",
+    ),
+    _Step(
+        "settings",
+        "First step: choose your output slicer",
+        "The very first thing to do: click the <b>settings gear</b> "
+        "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE713;</span>"
+        " (top right) and select your <b>output slicer</b> — <b>Bambu Studio</b>, "
+        "<b>OrcaSlicer</b> or <b>PrusaSlicer</b>.\n\n"
+        "This matters: <b>not all printers work with every slicer</b>. The printer "
+        "catalog <b>adapts to the slicer you choose</b> — for example, <b>Prusa</b> "
+        "models (XL, CORE One…) only appear when you pick <b>PrusaSlicer</b> or "
+        "<b>OrcaSlicer</b>.\n\n"
+        "So pick your slicer first to reveal the printer you are looking for.",
+        pad=10,
     ),
     _Step(
         "config",

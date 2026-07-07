@@ -26,6 +26,8 @@ _QUOTES = _DIR / "devis.json"
 _CLIENTS = _DIR / "clients.json"
 _ORDERS = _DIR / "orders.json"
 _PRODUCTS = _DIR / "products.json"
+_PURCHASES = _DIR / "purchases.json"   # achats : investissements + consommables
+_SUPPLIES = _DIR / "supplies.json"     # stock de fournitures (cartons, emballages…)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -238,6 +240,79 @@ def shopping_list() -> list[dict]:
             "fournisseur": s.get("fournisseur", ""),
             "restant_g": round(rem, 0),
             "racheter_g": round(tot, 0),   # bobine pleine (valeur initiale)
+        })
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stock AGRÉGÉ PAR COULEUR (matériau + couleur)
+# ──────────────────────────────────────────────────────────────────────────────
+# Kévin (retour user) : l'alerte « stock insuffisant » ne doit PAS se faire ligne
+# par ligne (chaque bobine) mais sur le CUMUL d'une même couleur. Ex. 3 bobines de
+# PLA Noir à 100 g = 300 g au total → pas d'alerte, alors qu'en per-bobine les 3
+# passaient en « à racheter ». On regroupe donc par (matériau + couleur).
+def _color_key(s: dict) -> tuple[str, str]:
+    """Clé de regroupement : matériau + couleur (nom si présent, sinon hex)."""
+    mat = (s.get("materiau") or "").strip()
+    col = (s.get("couleur_nom") or "").strip() or (s.get("couleur_hex") or "").strip()
+    return (mat, col.lower())
+
+
+def stock_by_color() -> list[dict]:
+    """Inventaire regroupé par couleur : une entrée par (matériau + couleur), avec
+    le cumul du restant/total, le nombre de bobines et le seuil effectif. `manque`
+    = True si le CUMUL restant est sous le seuil (seuil = le plus élevé du groupe)."""
+    groups: dict[tuple, dict] = {}
+    for s in list_spools():
+        key = _color_key(s)
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = {
+                "materiau": (s.get("materiau") or "").strip(),
+                "couleur_nom": (s.get("couleur_nom") or "").strip(),
+                "couleur_hex": s.get("couleur_hex") or "#888888",
+                "finition": (s.get("finition") or "").strip(),
+                "n_bobines": 0, "restant_g": 0.0, "total_g": 0.0, "seuil_g": 0.0,
+                "cout_total": 0.0,
+            }
+        g["n_bobines"] += 1
+        g["restant_g"] += float(s.get("poids_restant_g") or 0)
+        g["total_g"] += float(s.get("poids_total_g") or 0)
+        g["cout_total"] += float(s.get("cout_total") or 0)
+        g["seuil_g"] = max(g["seuil_g"], _spool_threshold(s))
+        if not g["couleur_nom"] and s.get("couleur_nom"):
+            g["couleur_nom"] = s.get("couleur_nom").strip()
+        if not g["finition"] and s.get("finition"):
+            g["finition"] = s.get("finition").strip()
+    out = []
+    for g in groups.values():
+        g["restant_g"] = round(g["restant_g"], 0)
+        g["total_g"] = round(g["total_g"], 0)
+        g["manque"] = g["restant_g"] <= g["seuil_g"]
+        out.append(g)
+    return sorted(out, key=lambda x: (x["materiau"].lower(), x["couleur_nom"].lower()))
+
+
+def low_stock_by_color() -> list[dict]:
+    """Couleurs à réapprovisionner : cumul restant ≤ seuil (vue agrégée)."""
+    return [g for g in stock_by_color() if g["manque"]]
+
+
+def shopping_list_by_color() -> list[dict]:
+    """Liste de courses par couleur : pour chaque couleur en manque, une bobine à
+    racheter (poids typique = plus grosse bobine connue de cette couleur)."""
+    typical: dict[tuple, float] = {}
+    for s in list_spools():
+        k = _color_key(s)
+        typical[k] = max(typical.get(k, 0.0), float(s.get("poids_total_g") or 0))
+    out = []
+    for g in low_stock_by_color():
+        key = (g["materiau"], (g["couleur_nom"] or g["couleur_hex"]).lower())
+        out.append({
+            "materiau": g["materiau"], "couleur_nom": g["couleur_nom"],
+            "couleur_hex": g["couleur_hex"], "finition": g["finition"],
+            "n_bobines": g["n_bobines"], "restant_g": g["restant_g"],
+            "racheter_g": round(typical.get(key, 1000.0) or 1000.0, 0),
         })
     return out
 
@@ -776,6 +851,200 @@ def delete_product(pid: str) -> bool:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Fournitures (stock non-filament : cartons, emballages…)
+# ──────────────────────────────────────────────────────────────────────────────
+def _supply_defaults() -> dict:
+    return {"nom": "", "quantite": 0.0, "unite": "u", "seuil": 0.0,
+            "cout_unitaire": 0.0, "fournisseur": "", "notes": ""}
+
+
+def list_supplies() -> list[dict]:
+    return sorted(_load(_SUPPLIES), key=lambda x: (x.get("nom") or "").lower())
+
+
+def add_supply(data: dict) -> dict:
+    items = _load(_SUPPLIES)
+    s = _supply_defaults()
+    s.update({k: v for k, v in data.items() if k in s})
+    s["id"] = uuid.uuid4().hex
+    s["cree_le"] = s["modifie_le"] = _now()
+    items.append(s)
+    _save(_SUPPLIES, items)
+    return s
+
+
+def update_supply(sid: str, data: dict) -> dict | None:
+    items = _load(_SUPPLIES)
+    for s in items:
+        if s.get("id") == sid:
+            for k, v in data.items():
+                if k not in ("id", "cree_le"):
+                    s[k] = v
+            s["modifie_le"] = _now()
+            _save(_SUPPLIES, items)
+            return s
+    return None
+
+
+def delete_supply(sid: str) -> bool:
+    items = _load(_SUPPLIES)
+    new = [s for s in items if s.get("id") != sid]
+    if len(new) != len(items):
+        _save(_SUPPLIES, new)
+        return True
+    return False
+
+
+def _supply_increment(nom: str, qty: float, cout_unitaire: float = 0.0,
+                      fournisseur: str = "") -> dict | None:
+    """Incrémente (ou crée) une fourniture par son nom → stock à jour à l'achat."""
+    nom = (nom or "").strip()
+    if not nom:
+        return None
+    for s in _load(_SUPPLIES):
+        if (s.get("nom") or "").strip().lower() == nom.lower():
+            new_q = float(s.get("quantite") or 0) + float(qty or 0)
+            data = {"quantite": round(new_q, 2)}
+            if cout_unitaire:
+                data["cout_unitaire"] = round(float(cout_unitaire), 2)
+            if fournisseur and not s.get("fournisseur"):
+                data["fournisseur"] = fournisseur
+            return update_supply(s["id"], data)
+    return add_supply({"nom": nom, "quantite": round(float(qty or 0), 2),
+                       "cout_unitaire": round(float(cout_unitaire or 0), 2),
+                       "fournisseur": fournisseur})
+
+
+def supplies_low_stock() -> list[dict]:
+    """Fournitures dont la quantité est ≤ seuil (seuil > 0)."""
+    out = []
+    for s in list_supplies():
+        seuil = float(s.get("seuil") or 0)
+        if seuil > 0 and float(s.get("quantite") or 0) <= seuil:
+            out.append(s)
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Achats : Investissements (durables) + Consommables (filament, cartons…)
+# ──────────────────────────────────────────────────────────────────────────────
+# nature      : "investissement" (imprimante, matériel — s'amortit) | "consommable"
+# categorie   : invest → imprimante/materiel/logiciel/autre
+#               conso  → filament/carton/emballage/autre
+# Un achat de FILAMENT crée automatiquement N bobines (quantite) dans l'inventaire,
+# coût réparti. Un achat de CARTON/EMBALLAGE incrémente une fourniture (stock auto).
+_INVEST_CATEGORIES = ("imprimante", "materiel", "logiciel", "autre")
+_CONSUM_CATEGORIES = ("filament", "carton", "emballage", "autre")
+
+
+def _purchase_defaults() -> dict:
+    return {
+        "date": "", "nature": "consommable", "categorie": "filament",
+        "designation": "", "montant": 0.0, "quantite": 1.0,
+        "fournisseur": "", "notes": "",
+        # Champs filament (auto-création de bobines) :
+        "materiau": "PLA", "marque": "", "couleur_hex": "#1E90FF",
+        "couleur_nom": "", "finition": "", "poids_bobine_g": 1000.0,
+        # Traçabilité des effets de bord (stock) :
+        "spool_ids": [], "supply_id": "",
+    }
+
+
+def list_purchases() -> list[dict]:
+    """Achats du plus récent au plus ancien (par date)."""
+    return sorted(_load(_PURCHASES),
+                  key=lambda p: (p.get("date") or "", p.get("cree_le") or ""),
+                  reverse=True)
+
+
+def get_purchase(pid: str) -> dict | None:
+    return next((p for p in _load(_PURCHASES) if p.get("id") == pid), None)
+
+
+def add_purchase(data: dict) -> dict:
+    """Enregistre un achat + applique l'effet de stock (bobines / fournitures).
+    NB : supprimer un achat ne supprime PAS les bobines créées (elles sont
+    physiques et peuvent déjà être entamées) — voir delete_purchase."""
+    items = _load(_PURCHASES)
+    p = _purchase_defaults()
+    p.update({k: v for k, v in data.items() if k in p})
+    p["id"] = uuid.uuid4().hex
+    p["cree_le"] = p["modifie_le"] = _now()
+    if not p.get("date"):
+        p["date"] = datetime.now().strftime("%Y-%m-%d")
+
+    if p["nature"] == "consommable" and p["categorie"] == "filament":
+        n = max(1, int(float(p.get("quantite") or 1)))
+        cout_unit = float(p.get("montant") or 0) / n if n else 0.0
+        poids = float(p.get("poids_bobine_g") or 1000)
+        ids = []
+        for _ in range(n):
+            sp = add_spool({
+                "materiau": p["materiau"], "marque": p["marque"],
+                "couleur_hex": p["couleur_hex"], "couleur_nom": p["couleur_nom"],
+                "finition": p.get("finition", ""),
+                "poids_total_g": poids, "poids_restant_g": poids,
+                "cout_total": round(cout_unit, 2),
+                "fournisseur": p.get("fournisseur", ""), "date_achat": p["date"],
+            })
+            ids.append(sp["id"])
+        p["spool_ids"] = ids
+    elif p["nature"] == "consommable" and p["categorie"] in ("carton", "emballage", "autre"):
+        qty = float(p.get("quantite") or 0)
+        if qty > 0 and (p.get("designation") or "").strip():
+            cu = float(p.get("montant") or 0) / qty if qty else 0.0
+            sup = _supply_increment(p["designation"], qty, cu, p.get("fournisseur", ""))
+            if sup:
+                p["supply_id"] = sup["id"]
+
+    items.append(p)
+    _save(_PURCHASES, items)
+    return p
+
+
+def update_purchase(pid: str, data: dict) -> dict | None:
+    """Met à jour les champs d'un achat (n'ré-applique PAS l'effet de stock —
+    éviter les doublons de bobines ; l'inventaire s'ajuste à la main si besoin)."""
+    items = _load(_PURCHASES)
+    for p in items:
+        if p.get("id") == pid:
+            for k, v in data.items():
+                if k not in ("id", "cree_le", "spool_ids", "supply_id"):
+                    p[k] = v
+            p["modifie_le"] = _now()
+            _save(_PURCHASES, items)
+            return p
+    return None
+
+
+def delete_purchase(pid: str, remove_spools: bool = False) -> bool:
+    """Supprime un achat. Par défaut, garde les bobines/fournitures créées (stock
+    physique). remove_spools=True supprime aussi les bobines liées non entamées."""
+    items = _load(_PURCHASES)
+    target = next((p for p in items if p.get("id") == pid), None)
+    if not target:
+        return False
+    if remove_spools:
+        for sid in target.get("spool_ids", []):
+            sp = get_spool(sid)
+            # Sécurité : ne supprimer que si la bobine est intacte (non entamée)
+            if sp and float(sp.get("poids_restant_g") or 0) >= float(sp.get("poids_total_g") or 0):
+                delete_spool(sid)
+    _save(_PURCHASES, [p for p in items if p.get("id") != pid])
+    return True
+
+
+def total_investments() -> float:
+    return round(sum(float(p.get("montant") or 0) for p in _load(_PURCHASES)
+                     if p.get("nature") == "investissement"), 2)
+
+
+def total_consumables_purchased() -> float:
+    return round(sum(float(p.get("montant") or 0) for p in _load(_PURCHASES)
+                     if p.get("nature") == "consommable"), 2)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Rapport mensuel + export comptable
 # ──────────────────────────────────────────────────────────────────────────────
 def monthly_revenue(months: int = 6) -> list[dict]:
@@ -888,7 +1157,26 @@ def dashboard_stats() -> dict:
         stock_g += rem
         stock_value += (rem / 1000.0) * cout_par_kg(s)
 
+    # Rentabilité : encaissé − (investissements + consommables achetés).
+    # net ≥ 0 → bénéfice net ; sinon il reste `to_recover` à rentabiliser.
+    invested = total_investments()
+    consumables = total_consumables_purchased()
+    total_costs = round(invested + consumables, 2)
+    net_result = round(paid - total_costs, 2)
+    to_recover = round(max(0.0, total_costs - paid), 2)
+    recover_pct = round(min(100.0, (paid / total_costs * 100.0)) if total_costs > 0 else 100.0, 1)
+
     return {
+        "invested": invested,
+        "consumables_bought": consumables,
+        "total_costs": total_costs,
+        "net_result": net_result,
+        "is_profitable": net_result >= 0,
+        "to_recover": to_recover,
+        "recover_pct": recover_pct,
+        "n_purchases": len(_load(_PURCHASES)),
+        "n_supplies_low": len(supplies_low_stock()),
+        "n_low_color": len(low_stock_by_color()),
         "currency": currency,
         "billed": round(billed, 2),
         "paid": round(paid, 2),
@@ -922,6 +1210,40 @@ def export_backup(dest_zip: Path) -> Path:
         for f in _DIR.glob("*.json"):
             zf.write(f, f.name)
     return dest_zip
+
+
+def run_auto_backup_if_due() -> Path | None:
+    """Sauvegarde automatique : si activée (prefs) et DUE selon la fréquence,
+    écrit un ZIP daté dans le dossier choisi et met à jour la date. Sinon None.
+    Le fichier est daté au jour → une réouverture le même jour écrase le même ZIP
+    (pas d'accumulation), les jours suivants créent un nouvel historique."""
+    from core.prefs import PREFS
+    from datetime import datetime, timedelta
+    if not PREFS.get("autobk_enabled", False):
+        return None
+    folder = str(PREFS.get("autobk_dir", "") or "").strip()
+    if not folder or not Path(folder).is_dir():
+        return None
+    freq = PREFS.get("autobk_freq", "weekly")
+    now = datetime.now()
+    last_s = PREFS.get("autobk_last", "")
+    due = True
+    if freq != "open" and last_s:
+        try:
+            interval = {"daily": timedelta(days=1), "weekly": timedelta(days=7),
+                        "monthly": timedelta(days=30)}.get(freq, timedelta(days=7))
+            due = (now - datetime.fromisoformat(last_s)) >= interval
+        except Exception:
+            due = True
+    if not due:
+        return None
+    try:
+        dest = Path(folder) / f"neoslice_atelier_{now:%Y-%m-%d}.zip"
+        export_backup(dest)
+        PREFS.set("autobk_last", now.isoformat(timespec="minutes"))
+        return dest
+    except Exception:
+        return None
 
 
 def import_backup(src_zip: Path) -> int:

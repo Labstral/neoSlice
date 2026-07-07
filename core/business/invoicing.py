@@ -290,14 +290,24 @@ def company_footer(company: dict, lang: str | None = None) -> str:
     return "  ·  ".join(p for p in parts if p)
 
 
+def line_total_ht(it: dict) -> float:
+    """Total HT d'une ligne = qty × PU × (1 − remise_ligne %). Remise ligne
+    optionnelle (`line_discount_pct`, défaut 0) → rétro-compatible."""
+    try:
+        qty = float(it.get("qty") or 0)
+        pu = float(it.get("unit_price_ht") or 0)
+        ld = max(0.0, min(100.0, float(it.get("line_discount_pct") or 0)))
+        return qty * pu * (1.0 - ld / 100.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def compute(items: list[dict], vat_rate: float, discount_pct: float = 0.0) -> dict:
-    """items = [{designation, qty, unit_price_ht}]. Retourne HT/remise/TVA/TTC."""
+    """items = [{designation, qty, unit_price_ht, line_discount_pct?}]. La remise
+    par ligne s'applique AVANT la remise globale. Retourne HT/remise/TVA/TTC."""
     total_ht = 0.0
     for it in items:
-        try:
-            total_ht += float(it.get("qty") or 0) * float(it.get("unit_price_ht") or 0)
-        except (TypeError, ValueError):
-            continue
+        total_ht += line_total_ht(it)
     discount = total_ht * max(0.0, min(100.0, discount_pct)) / 100.0
     net_ht = max(0.0, total_ht - discount)
     tva = net_ht * max(0.0, vat_rate) / 100.0

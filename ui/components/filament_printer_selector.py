@@ -122,6 +122,18 @@ _PLATES = _PLATES_BAMBU
 _PLATE_DEFAULT = _PLATE_DEFAULT_BAMBU
 
 
+def _make_combo_shrinkable(combo: QComboBox) -> None:
+    """Empêche un QComboBox de FORCER la largeur de la colonne à celle de son item
+    le plus long. Sans ça, un plateau/filament au nom long impose une largeur mini
+    énorme (mesuré : 480px) qui déborde du panneau de 360px → boutons ✓, flèches et
+    bord droit COUPÉS (et aggravé par la mise à l'échelle Windows). On laisse le
+    combo rétrécir et s'adapter à la place ; la liste déroulante reste complète."""
+    from PySide6.QtWidgets import QSizePolicy
+    combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+    combo.setMinimumContentsLength(6)
+    combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+
+
 def _plates_for_slicer(slicer: str) -> tuple[list, str]:
     """Retourne (liste [(label, valeur), …], valeur par défaut) selon le slicer
     de sortie. PrusaSlicer a ses propres « sheets » acier ; Bambu et Orca
@@ -272,6 +284,7 @@ class FilamentPrinterSelector(QWidget):
 
         self._filament_combo = QComboBox()
         self._filament_combo.setStyleSheet(_COMBO_STYLE)
+        _make_combo_shrinkable(self._filament_combo)
         self._filament_combo.setEnabled(False)
         self._populate_filaments()
         self._filament_combo.currentIndexChanged.connect(self._on_changed)
@@ -292,6 +305,7 @@ class FilamentPrinterSelector(QWidget):
         # Hint sous le filament (visible avant validation imprimante)
         self._hint_filament = QLabel(_("selector.hint_printer_first"))
         self._hint_filament.setFont(QFont(FONT_MONO, 9))
+        self._hint_filament.setWordWrap(True)   # sinon sa largeur mini déborde le panneau (coupure droite)
         self._hint_filament.setStyleSheet(f"color: {INACTIVE}; background: transparent;")
         layout.addWidget(self._hint_filament)
 
@@ -305,6 +319,7 @@ class FilamentPrinterSelector(QWidget):
 
         self._plate_combo = QComboBox()
         self._plate_combo.setStyleSheet(_COMBO_STYLE)
+        _make_combo_shrinkable(self._plate_combo)
         self._plate_combo.setEnabled(False)
         self._plate_combo.setToolTip(_("selector.plate_tip"))
         self._populate_plates()
@@ -604,6 +619,16 @@ class FilamentPrinterSelector(QWidget):
             self._printer_note.setText(
                 f"ⓘ Imprimante {brand} : ouvrez le 3MF dans OrcaSlicer après avoir "
                 f"ajouté ce modèle dans Orca si besoin."
+            )
+        elif slicer == "creality":
+            self._printer_note.setText(
+                f"ⓘ Imprimante {brand} : ouvrez le 3MF dans CrealityPrint après avoir "
+                f"ajouté ce modèle dans CrealityPrint si besoin."
+            )
+        elif slicer == "elegoo":
+            self._printer_note.setText(
+                f"ⓘ Imprimante {brand} : ouvrez le 3MF dans ElegooSlicer après avoir "
+                f"ajouté ce modèle dans ElegooSlicer si besoin."
             )
         else:  # bambu
             self._printer_note.setText(

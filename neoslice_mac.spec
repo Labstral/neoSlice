@@ -34,15 +34,16 @@ _VTK_UNUSED = {
     'vtkWebCore', 'vtkWebGLExporter', 'web',
     'vtkDomainsChemistry', 'vtkDomainsChemistryOpenGL2',
     'vtkGeovisCore', 'vtkGeovisGDAL',
-    'vtkViewsContext2D', 'vtkViewsInfovis',
-    'vtkRenderingContext2D', 'vtkRenderingContextOpenGL2',
+    'vtkViewsInfovis',
+    'vtkRenderingContextOpenGL2',
     'vtkRenderingImage', 'vtkRenderingParallel',
-    'vtkRenderingSceneGraph', 'vtkRenderingVolumeOpenGL2',
+    'vtkRenderingSceneGraph',
     'vtkFiltersAMR', 'vtkFiltersFlowPaths', 'vtkFiltersParallelImaging',
     'vtkFiltersParallelStatistics', 'vtkFiltersTemporal',
     'vtkFiltersTopology', 'vtkFiltersParallel',
     'vtkInfovisLayout', 'vtkInfovisCore',
-    'vtkChartsCore',
+    # NE PAS exclure vtkChartsCore ni vtkRenderingVolumeOpenGL2 : pyvista les
+    # importe au chargement, les exclure casse le viewer ("installez pyvistaqt").
 }
 
 def _keep_pyside6(path: str) -> bool:
@@ -124,8 +125,15 @@ project_datas = [
     ('assets', 'assets'),
     ('core/parameters/profiles', 'core/parameters/profiles'),
 ]
+# data/ SAUF data/kb : wikis + index RAG (~5 Go) inutiles à l'app distribuée
+# (l'installateur d'Oen télécharge l'index dans ~/.neoslice). Aligné sur
+# neoslice.spec — ne pas ré-embarquer.
 if Path('data').exists():
-    project_datas.append(('data', 'data'))
+    for _item in sorted(Path('data').iterdir()):
+        if _item.name == 'kb':
+            continue
+        dest = f'data/{_item.name}' if _item.is_dir() else 'data'
+        project_datas.append((str(_item), dest))
 
 a = Analysis(
     ['main.py'],

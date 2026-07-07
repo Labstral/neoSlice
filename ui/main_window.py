@@ -125,10 +125,14 @@ class AnalysisWorker(QObject):
     analysis_complete = Signal(object)
     error = Signal(str)
 
-    def __init__(self, mesh, nozzle_diameter_mm: float = 0.4):
+    def __init__(self, mesh, nozzle_diameter_mm: float = 0.4, is_color_assembly: bool = False):
         super().__init__()
         self._mesh = mesh
         self._nozzle_mm = float(nozzle_diameter_mm)
+        # Assemblage multicolore imbriqué (badge) : pièce solide qui s'imprime à
+        # plat → sur le maillage non-manifold (parts qui se chevauchent) l'analyse
+        # voit de faux surplombs/régions flottantes. Neutralisés en fin de run.
+        self._is_color_assembly = bool(is_color_assembly)
 
     def run(self):
         try:
@@ -302,16 +306,50 @@ class AnalysisWorker(QObject):
 
                 # ── Dispatch parallèle selon le mode ──────────────────────────
                 n_workers = {"full": 3, "balanced": 2, "lite": 1}[perf_mode]
-                self.progress.emit(10, "Analyses en cours…")
+                self.progress.emit(12, "Analyses en cours…")
 
-                with ThreadPoolExecutor(max_workers=n_workers) as pool:
-                    fut_ov   = pool.submit(_task_overhangs) if perf_mode != "lite" else None
-                    fut_stab = pool.submit(_task_stability)
+                # Ticker de progression : les tâches (surplombs + stabilité)
+                # tournent en parallèle sans jalons intermédiaires. Un thread léger
+                # fait avancer la barre régulièrement (12 → 66) pendant l'attente,
+                # pour un pourcentage réaliste plutôt qu'un saut 10 → 100.
+                import threading as _thp
+                import random as _rnd
+                _stop_tick = _thp.Event()
 
-                    ov, floating = fut_ov.result() if fut_ov else (None, False)
-                    lr           = fut_stab.result()
+                def _tick():
+                    # Progression NATURELLE (pas un défilement mécanique) : intervalles
+                    # variables, pauses aléatoires (le % se fige un instant), et sauts
+                    # de tailles différentes — comme un vrai calcul qui accélère et
+                    # ralentit. Plafonné à 66 (la suite = fusion/finalisation).
+                    p = 12
+                    _labels = ("Analyses en cours…", "Analyse des surplombs…",
+                               "Calcul de stabilité…", "Détection de fragilité…",
+                               "Analyse par couches…")
+                    while not _stop_tick.wait(_rnd.uniform(0.12, 0.55)):
+                        r = _rnd.random()
+                        if r < 0.22:
+                            continue                      # pause : le % se fige
+                        elif r < 0.80:
+                            step = _rnd.choice((1, 1, 2, 2, 3))   # petit pas courant
+                        else:
+                            step = _rnd.choice((4, 5, 7))         # saut occasionnel
+                        p = min(66, p + step)
+                        try:
+                            self.progress.emit(p, _rnd.choice(_labels))
+                        except Exception:
+                            break
+                _thp.Thread(target=_tick, daemon=True).start()
+                try:
+                    with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                        fut_ov   = pool.submit(_task_overhangs) if perf_mode != "lite" else None
+                        fut_stab = pool.submit(_task_stability)
 
-            self.progress.emit(70, "Fusion des résultats…")
+                        ov, floating = fut_ov.result() if fut_ov else (None, False)
+                        lr           = fut_stab.result()
+                finally:
+                    _stop_tick.set()
+
+            self.progress.emit(72, "Fusion des résultats…")
 
             # ── Application résultats surplombs ───────────────────────────────
             if ov is not None:
@@ -323,14 +361,30 @@ class AnalysisWorker(QObject):
                 report.overhang_ratio           = ov.overhang_ratio
                 report.projected_overhang_ratio = ov.projected_ratio
                 report.max_overhang_angle       = ov.max_angle_deg
-                # Utilise display_mask pour le ratio support — cohérent avec la jauge et les couleurs
+                # Ratio support basé sur display_mask (cohérent avec jauge et couleurs)
                 _dm_ratio = (float(ov.display_mask.sum()) / len(ov.display_mask)
                              if ov.display_mask is not None and len(ov.display_mask) > 0
                              else ov.overhang_ratio)
-                # Seuil 1.5% : évite les faux positifs des micro-artefacts de bord (ex: plaque hexagonale)
-                report.support_needed           = _dm_ratio > 0.015 or ov.has_floating_regions
-                # VOL. SUPPORT = 0 si aucun support réel nécessaire
-                report.estimated_support_ratio  = min(0.60, _dm_ratio * 2.0) if report.support_needed else 0.0
+                # Règle voulue : dès qu'il y a des surplombs rouges (même petits), on
+                # active les supports. Le slicer gère ensuite la quantité et le placement.
+                # On mesure l'AIRE réelle en surplomb (mm2) plutôt qu'un pourcentage
+                # relatif : sur une grande pièce plate, un petit surplomb réel doit
+                # quand même déclencher les supports. Petit plancher (10 mm2, environ
+                # 3x3 mm) pour ignorer 1-2 faces de bruit (micro-artefacts de bord).
+                _oh_area_mm2 = 0.0
+                try:
+                    if (ov.display_mask is not None and ov.display_mask.any()
+                            and self._mesh is not None
+                            and len(ov.display_mask) == len(self._mesh.area_faces)):
+                        _oh_area_mm2 = float(self._mesh.area_faces[ov.display_mask].sum())
+                except Exception:
+                    _oh_area_mm2 = 0.0
+                report.support_needed           = (
+                    _oh_area_mm2 > 10.0 or _dm_ratio > 0.002 or ov.has_floating_regions
+                )
+                report.estimated_support_ratio  = (
+                    min(0.60, max(_dm_ratio * 2.0, 0.04)) if report.support_needed else 0.0
+                )
                 viz_mask = ov.display_mask if ov.display_mask is not None else ov.critical_face_mask
                 self._support_mask = viz_mask
                 self._ov_result    = ov
@@ -371,6 +425,38 @@ class AnalysisWorker(QObject):
             bb = report.bounding_box_mm
             max_dim = max(bb)
             report.is_large_flat_part = (max_dim > 100 and bb[2] < max_dim * 0.15)
+
+            # Assemblage multicolore imbriqué (badge) : pièce solide qui s'imprime à
+            # plat. Le maillage combiné (parts qui se chevauchent) n'est pas manifold
+            # → l'analyse y voit de FAUX surplombs internes (dessous des couches,
+            # creux gravés remplis) et de fausses régions flottantes.
+            if self._is_color_assembly:
+                report.has_floating_regions = False
+                report.support_needed = False
+                report.estimated_support_ratio = 0.0
+                # Si la pièce est PLATE (badge/coaster/plaque : hauteur << largeur),
+                # il n'y a aucun vrai surplomb → on neutralise les métriques de
+                # surplomb (faussées par les faces internes). Un assemblage couleur
+                # EN RELIEF (rare) garde sa détection ; les pièces non-couleur aussi.
+                _ext = self._mesh.bounds[1] - self._mesh.bounds[0]
+                _flat = float(_ext[2]) < 0.25 * max(float(_ext[0]), float(_ext[1]), 1.0)
+                if _flat:
+                    report.overhang_severity = 0.0
+                    report.overhang_ratio = 0.0
+                    report.projected_overhang_ratio = 0.0
+                    report.max_overhang_angle = 0.0
+                    # Le bandeau SURPLOMBS calcule son % depuis les MASQUES de
+                    # l'OverhangResult (display_mask), pas depuis les champs ci-dessus.
+                    # On vide donc aussi les masques, sinon la jauge afficherait
+                    # encore les faces internes (23%).
+                    if self._ov_result is not None:
+                        try:
+                            if getattr(self._ov_result, "display_mask", None) is not None:
+                                self._ov_result.display_mask = np.zeros_like(self._ov_result.display_mask)
+                            if getattr(self._ov_result, "critical_face_mask", None) is not None:
+                                self._ov_result.critical_face_mask = np.zeros_like(self._ov_result.critical_face_mask)
+                        except Exception:
+                            pass
 
             # ── Avertissements ────────────────────────────────────────────────
             if not info["is_watertight"]:
@@ -464,12 +550,19 @@ class _TopBar(QWidget):
         super().__init__(parent)
         self.setFixedHeight(52)
         self._scanline_y = 0
+        # Animation de la scan-line activable/désactivable (réglages). Désactivée =
+        # scan-line FIGÉE juste sous le sous-titre (soulignement), grille en pause.
+        self._anim_enabled = bool(PREFS.get("scanbar_anim", True))
+        self._radar_last = None
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(16)   # ~60 fps → glissement fluide (était 80 ms / saccadé)
         self.destroyed.connect(self._timer.stop)
         self._setup_ui()
         self.refresh_theme()
+        if self._anim_enabled:
+            self._timer.start(16)   # ~60 fps → glissement fluide
+        else:
+            self._scanline_y = self._frozen_y()
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
@@ -700,7 +793,10 @@ class _TopBar(QWidget):
         self.setStyleSheet(f"background: {pal['BG_PANEL']};")
         self._title_bar.setStyleSheet(f"background: {pal['INACTIVE']}; border-radius: 1px;")
         self._title_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent; font-size: 26px; font-weight: bold; letter-spacing: 0px;")
-        self._sub.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
+        # Animation coupée → sous-titre en couleur claire (bien lisible) ; animée →
+        # base ternie, l'effet radar gère la mise en surbrillance au passage.
+        _sub_col = pal['TEXT_PRIMARY'] if not getattr(self, '_anim_enabled', True) else pal['TEXT_LABEL']
+        self._sub.setStyleSheet(f"color: {_sub_col}; background: transparent;")
         if hasattr(self, '_version_lbl'):
             self._version_lbl.setStyleSheet(
                 f"color: {pal['ACCENT_BRIGHT']}; background: {pal['BG_SURFACE']}; "
@@ -756,6 +852,33 @@ class _TopBar(QWidget):
         self.refresh_pro()
         self.update()
 
+    def _frozen_y(self) -> float:
+        """Position FIGÉE de la scan-line quand l'animation est coupée : juste sous
+        le TEXTE du sous-titre « AI-POWERED 3D PRINT OPTIMIZER » (soulignement).
+        ⚠️ Le QLabel occupe toute la hauteur de la barre (texte centré dedans), donc
+        on vise le bas du TEXTE = centre du label + demi-hauteur de police, pas
+        `geometry().bottom()` (= bas de la barre)."""
+        try:
+            fm = self._sub.fontMetrics()
+            cy = self._sub.geometry().center().y()      # = centre vertical du texte
+            return float(cy + fm.height() / 2.0 + 2.0)  # 2px sous le texte
+        except Exception:
+            return float(max(1, int(self.height() * 0.62)))
+
+    def set_scanbar_animation(self, enabled: bool):
+        """Active/désactive l'animation. Désactivée → scan-line figée sous le
+        sous-titre, grille en pause autour, sous-titre bien lisible."""
+        self._anim_enabled = bool(enabled)
+        self._radar_last = None
+        if self._anim_enabled:
+            if not self._timer.isActive():
+                self._timer.start(16)
+        else:
+            self._timer.stop()
+            self._scanline_y = self._frozen_y()
+        self.refresh_theme()   # recolore le sous-titre selon l'état
+        self.update()
+
     def _tick(self):
         # Déplacement fractionnaire à ~60 fps → mouvement fluide.
         # 0.55 px/frame ≈ 33 px/s (rythme posé et lent).
@@ -787,6 +910,8 @@ class _TopBar(QWidget):
     def paintEvent(self, event):
         super().paintEvent(event)
         pal = _THEME.palette()
+        if not self._anim_enabled:           # scan-line FIGÉE sous le sous-titre
+            self._scanline_y = self._frozen_y()
         painter = QPainter(self)
         painter.setPen(QPen(QColor(pal["ACCENT"]), 1))
         painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
@@ -798,7 +923,8 @@ class _TopBar(QWidget):
         # Puissance 3 → fondu bien plus marqué aux deux extrémités, pleine
         # visibilité concentrée au centre.
         _fade = (4.0 * _t * (1.0 - _t)) ** 3   # 0 aux bords → 1 au centre
-        _a = max(0, min(255, int(255 * _fade)))
+        # Figée → soulignement net (pleine visibilité) ; animée → fondu vertical.
+        _a = 230 if not self._anim_enabled else max(0, min(255, int(255 * _fade)))
         _c1 = QColor(PRO_CYAN);   _c1.setAlpha(_a)
         _cm = QColor(PRO_MID);    _cm.setAlpha(_a)
         _c2 = QColor(PRO_VIOLET); _c2.setAlpha(_a)
@@ -1159,17 +1285,28 @@ class _GridWidget(QWidget):
 
 
 # Exécutables des slicers par plateforme (pour ouvrir le 3MF dans le bon logiciel)
+# CrealityPrint s'installe dans un dossier VERSIONNÉ (« Creality Print 6.3 ») → glob.
+_CREALITY_EXES = [
+    str(p)
+    for base in (r"C:\Program Files\Creality", r"C:\Program Files (x86)\Creality")
+    for p in sorted(Path(base).glob("Creality Print*/CrealityPrint.exe"))
+]
+
 _SLICER_EXES = {
     "win32": {
         "bambu": [r"C:\Program Files\Bambu Studio\bambu-studio.exe"],
         "orca":  [r"C:\Program Files\OrcaSlicer\orca-slicer.exe",
                   r"C:\Program Files\OrcaSlicer\OrcaSlicer.exe"],
         "prusa": [r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer.exe"],
+        "creality": _CREALITY_EXES,
+        "elegoo": [r"C:\Program Files\ElegooSlicer\elegoo-slicer.exe"],
     },
     "darwin": {  # ouverts via `open -a <AppName>`
         "bambu": ["BambuStudio"],
         "orca":  ["OrcaSlicer"],
         "prusa": ["PrusaSlicer"],
+        "creality": ["Creality Print"],
+        "elegoo": ["ElegooSlicer"],
     },
 }
 
@@ -1208,7 +1345,9 @@ def _slicer_name() -> str:
     from core.prefs import PREFS as _P
     sl = _P.get("slicer_output", "bambu")
     return _({"orca": "settings.slicer_orca",
-              "prusa": "settings.slicer_prusa"}.get(sl, "settings.slicer_bambu"))
+              "prusa": "settings.slicer_prusa",
+              "creality": "settings.slicer_creality",
+              "elegoo": "settings.slicer_elegoo"}.get(sl, "settings.slicer_bambu"))
 
 
 def _coffee_icon():
@@ -1266,6 +1405,8 @@ class MainWindow(QMainWindow):
 
     # Signal thread-safe pour la popup de mise à jour (émis depuis thread background)
     _update_ready = Signal(str, str, str)  # version, url, notes
+    # Signal thread-safe : une MAJ de la base de connaissances d'Oen est disponible
+    _kb_update_ready = Signal(str)         # kb_version
 
     def __init__(self):
         super().__init__()
@@ -1305,6 +1446,38 @@ class MainWindow(QMainWindow):
 
         self._update_ready.connect(self._show_update_dialog_signal)
         QTimer.singleShot(3000, self._check_for_updates)
+        # Verifie discretement si la base de connaissances d'Oen a une MAJ (Pro +
+        # Oen installe seulement). Non bloquant, hors-ligne-safe.
+        self._kb_update_ready.connect(self._on_kb_update_available)
+        QTimer.singleShot(6000, self._check_kb_update)
+
+        # L'assistant IA lit l'etat courant de l'appli (params + analyse viewer)
+        try:
+            from core.assistant import context as _assist_ctx
+            _assist_ctx.register_app_state(self._assistant_snapshot)
+        except Exception:
+            pass
+
+    def _assistant_snapshot(self) -> dict:
+        """Instantane de l'etat courant pour l'assistant IA : imprimante, filament,
+        buse, config de generation et analyse geometrique de l'objet charge."""
+        stl_path = getattr(self, "_stl_path", None)
+        name = None
+        if stl_path:
+            try:
+                from pathlib import Path as _P
+                name = _P(str(stl_path)).name
+            except Exception:
+                name = str(stl_path)
+        return {
+            "filename": name,
+            "has_mesh": getattr(self, "_mesh", None) is not None,
+            "printer": getattr(self, "_current_printer", "") or "",
+            "filament": getattr(self, "_current_filament", "") or "",
+            "nozzle_mm": getattr(self, "_current_nozzle_mm", None),
+            "config": getattr(self, "_current_config", None),
+            "analysis": getattr(self, "_analysis", None),
+        }
 
     def closeEvent(self, event):
         event.accept()
@@ -1622,9 +1795,19 @@ class MainWindow(QMainWindow):
         apply_title_bar_theme(dlg)
         dlg.update_request.connect(self._on_settings_update_request)
         dlg.pro_activated.connect(self._topbar.refresh_pro)
+        dlg.scanbar_anim_changed.connect(self._topbar.set_scanbar_animation)
         btn = self._topbar._settings_btn
         btn_br = btn.mapToGlobal(QPoint(btn.width(), btn.height()))
-        dlg.move(btn_br.x() - 400, btn_br.y() + 4)
+        # Position sous la roue crantee, mais bornee pour rester dans l'ecran
+        # (la fenetre peut etre haute : elle defile et ne doit pas sortir en bas).
+        from PySide6.QtGui import QGuiApplication
+        dlg.adjustSize()
+        avail = QGuiApplication.primaryScreen().availableGeometry()
+        x = btn_br.x() - 400
+        y = btn_br.y() + 4
+        if y + dlg.height() > avail.bottom():
+            y = max(avail.top() + 8, avail.bottom() - dlg.height() - 8)
+        dlg.move(x, y)
         dlg.exec()
         # Changement de slicer de sortie → rebasculer le catalogue d'imprimantes
         # (chaque slicer a son propre catalogue : Bambu 11 marques, Orca 58, Prusa 32)
@@ -1715,8 +1898,9 @@ class MainWindow(QMainWindow):
         apply_title_bar_theme(box)
         box.exec()
 
-    def _open_pro_hub(self):
-        """Ouvre l'Espace Pro (bobines, devis, clients…). Pro pur → paywall si non débloqué."""
+    def _open_pro_hub(self, initial_tab: str | None = None):
+        """Ouvre l'Espace Pro (bobines, devis, clients…). Pro pur → paywall si non débloqué.
+        `initial_tab` : clé d'onglet à ouvrir directement (ex. "spools")."""
         from core import licensing
         if not licensing.est_pro():
             from ui.components.paywall_dialog import PaywallDialog
@@ -1727,7 +1911,7 @@ class MainWindow(QMainWindow):
             self._topbar.refresh_pro()
 
         from ui.components.pro_hub import ProHubDialog
-        hub = ProHubDialog(self, devis_context=self._devis_context())
+        hub = ProHubDialog(self, devis_context=self._devis_context(), initial_tab=initial_tab)
         apply_title_bar_theme(hub)
         # Le centrage sur l'écran est géré par ProHubDialog.showEvent (fiable).
         hub.exec()
@@ -1844,6 +2028,77 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logger.warning(f"Décompte bobine ignoré : {exc}")
 
+    def _build_color_section(self, layout, config, tmf_path, sep_fn, section_lbl_fn):
+        """Ajoute (si Pro) la section de répartition des couleurs + décompte du stock
+        DANS la fenêtre de succès d'export. Estime le grammage par couleur selon les
+        slots détectés, prévisualise les couleurs dans le viewer, et décompte le
+        stock au clic sur Valider (une seule fenêtre)."""
+        try:
+            from core import licensing
+            if not licensing.est_pro():
+                return False
+            a = getattr(self, "_analysis", None)
+            if a is None or getattr(a, "volume_cm3", 0) <= 0:
+                return False
+            from core.export.color_breakdown import compute as _compute_breakdown
+            breakdown = _compute_breakdown(self._threemf_data, self._mesh, a, config)
+            if breakdown.total_g <= 0:
+                return False
+            material = (self._filament_selector.current_filament() or "").strip()
+
+            def _spool_provider():
+                from core.business import store
+                return store.spools_for_material(material)
+
+            def _register_cb():
+                self._open_pro_hub(initial_tab="spools")
+
+            def _on_confirm(rows, purge):
+                from core.business import store
+                deducted = 0
+                total_g = 0.0
+                extra = purge if len(rows) > 1 else 0.0
+                for r in rows:
+                    if r.spool_id and r.grams > 0:
+                        g = r.grams + extra
+                        store.consume(r.spool_id, g)
+                        deducted += 1
+                        total_g += g
+                # Écrire les couleurs choisies dans le 3MF (best-effort).
+                try:
+                    from core.export.color_patch import patch_filament_colours
+                    colors = [x.hex for x in sorted(rows, key=lambda x: x.slot)]
+                    if len(colors) > 1 and tmf_path:
+                        patch_filament_colours(tmf_path, colors)
+                except Exception:
+                    pass
+                if deducted:
+                    self._statusbar.set_message(
+                        _("color_export.deduct_ok", n=deducted, g=f"{total_g:.0f}"), TELE_GREEN)
+                return deducted
+
+            # S'assurer que le viewer est en mode multi-objets (acteurs par objet
+            # presents) pour que la previsualisation des couleurs par slot marche,
+            # meme si une analyse (surplombs) avait bascule l'affichage.
+            try:
+                if breakdown.kind == "multiobject" and self._threemf_data is not None:
+                    self._viewer._load_multipart_mesh(self._threemf_data)
+            except Exception:
+                pass
+
+            layout.addWidget(sep_fn())
+            layout.addWidget(section_lbl_fn(_("color_export.section")))
+            from ui.components.color_export_dialog import ColorBreakdownWidget
+            widget = ColorBreakdownWidget(
+                self, breakdown, material, viewer=self._viewer,
+                spool_provider=_spool_provider, register_cb=_register_cb,
+                on_confirm=_on_confirm)
+            layout.addWidget(widget)
+            return True
+        except Exception as exc:
+            logger.warning(f"Section couleur ignorée : {exc}")
+            return False
+
     def _apply_defect_corrections(self, result):
         """L'utilisateur a cliqué « Utiliser ces corrections » dans le dialog.
         On mémorise le résultat ; le bouton n'apparaît dans la barre de statut
@@ -1908,6 +2163,7 @@ class MainWindow(QMainWindow):
         _diag_anchor = self._topbar._diag_btn if _is_pro else self._topbar._pro_cta_btn
         _pro_anchor  = self._topbar._cost_btn if _is_pro else self._topbar._pro_cta_btn
         targets = {
+            "settings":  self._topbar._settings_btn,
             "config":    [self._step_config, self._filament_selector],
             "drop":      [self._step_stl, self._drop_zone],
             "intent":    [self._step_intent, self._intent_selector],
@@ -1941,6 +2197,42 @@ class MainWindow(QMainWindow):
         """Slot connecté à _update_ready — appelé sur le main thread."""
         self._pending_update = (version, url, notes)
         self._show_update_dialog()
+
+    def _check_kb_update(self):
+        """Vérifie en arrière-plan si une nouvelle base de connaissances d'Oen existe.
+        Ne fait rien si Oen n'est pas installé ou hors Pro. 100% hors-ligne-safe :
+        aucune popup si offline, aucune exception ne remonte."""
+        try:
+            from core import licensing
+            from core.assistant.engine import AssistantEngine
+            from core.assistant.installer import is_installed
+            if not licensing.est_pro():
+                return
+            if not (is_installed() or AssistantEngine.available()):
+                return
+        except Exception:
+            return
+        import threading
+
+        def _work():
+            try:
+                from core.assistant.kb_update import available_update
+                info = available_update()
+                if info and info.get("kb_version") and not info.get("incompatible_app"):
+                    # Signal thread-safe -> repasse sur le main thread pour l'UI.
+                    self._kb_update_ready.emit(str(info.get("kb_version")))
+            except Exception:
+                pass
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _on_kb_update_available(self, version: str):
+        """MAJ de la base d'Oen dispo : toast discret, clic -> ouvre les Réglages."""
+        try:
+            from ui.components.toast import show_toast
+            show_toast(self, _("oen.kb_update_toast"), on_click=self._open_settings)
+        except Exception:
+            pass
 
     def _show_update_dialog(self):
         info = getattr(self, "_pending_update", None)
@@ -2255,9 +2547,23 @@ class MainWindow(QMainWindow):
         # ── Feedback instantané (< 1 ms) ────────────────────────────────────
         self._step_stl.set_active()
         self._viewer.stop_auto_rotate()
+        # L'overlay du viewer élide lui-même le texte à la largeur du cadre.
         self._viewer.set_loading(True, f"CHARGEMENT — {path.name}")
         self._statusbar.set_message(f"Chargement — {path.name}", AMBER)
         self._original_mesh = None
+
+        # Nouveau fichier : purger immédiatement l'état du précédent, sinon la
+        # colonne de droite (paramètres) et l'analyse gardent les anciennes valeurs
+        # jusqu'à la fin de la nouvelle analyse.
+        self._threemf_data = None
+        self._analysis = None
+        self._current_config = None
+        self._current_selection = None
+        try:
+            self._params_preview.reset()
+            self._analysis_panel.reset()
+        except Exception:
+            pass
 
         # ── Annuler un chargement précédent si encore actif ─────────────────
         if self._stl_load_worker:
@@ -2377,6 +2683,7 @@ class MainWindow(QMainWindow):
         self._analysis_worker = AnalysisWorker(
             self._mesh,
             nozzle_diameter_mm=self._current_nozzle_mm,
+            is_color_assembly=bool(getattr(self._threemf_data, "is_color_assembly", False)),
         )
         self._analysis_worker.moveToThread(self._analysis_thread)
 
@@ -2707,6 +3014,21 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "_current_config") or self._mesh is None:
             return
 
+        # Lire l'imprimante/filament ACTUELLEMENT sélectionnés (source de vérité) :
+        # l'utilisateur a pu changer d'imprimante sans re-valider → `self._current_*`
+        # (mis à jour par signal) pouvait être périmé (ex. Ender-3 V2 au lieu de K2 Pro).
+        try:
+            _sel = self._filament_selector
+            _cp = _sel.current_printer()
+            if _cp:
+                self._current_printer = _cp
+            _cf = _sel.current_filament()
+            if _cf:
+                self._current_filament = _cf
+            self._current_nozzle_mm = _sel.current_nozzle_diameter_mm()
+        except Exception:
+            pass
+
         config = self._current_config
         profile_name = f"neoSlice - {config.neoslice_profile_name.replace('_', ' ').title()}"
 
@@ -2756,6 +3078,7 @@ class MainWindow(QMainWindow):
             logger.info(f"[EXPORT] src={_src_3mf} is_3mf={_is_3mf_input} threemf={self._threemf_data is not None}")
 
             from core.prefs import PREFS as _PREFS
+            from data.printers import is_catalogue_model as _is_cat_model
             if _PREFS.get("slicer_output", "bambu") == "prusa":
                 # Sortie PrusaSlicer : format 3MF différent → toujours reconstruire depuis le mesh
                 from core.export.prusa_3mf_builder import PrusaThreeMFBuilder
@@ -2767,7 +3090,13 @@ class MainWindow(QMainWindow):
                     filament_ui_name=self._current_filament,
                     nozzle_diameter_mm=nozzle_mm,
                 )
-            elif _is_3mf_input:
+            elif _is_3mf_input and not _is_cat_model(self._current_printer):
+                # Injecter dans le 3MF source UNIQUEMENT pour une Bambu Lab : le 3MF
+                # source est alors cohérent. Pour une imprimante du CATALOGUE
+                # (Creality, Elegoo…), le 3MF source est souvent un projet Bambu/autre
+                # imprimante → ses métadonnées non patchées font apparaître la MAUVAISE
+                # imprimante (X1C, Ender-3 V2…) dans CrealityPrint/Elegoo. On reconstruit
+                # alors proprement depuis le mesh (chemin natif ci-dessous).
                 path = self._tmf_builder.inject_settings_into_3mf(
                     source_path=_src_3mf,
                     config=config,
@@ -2787,9 +3116,8 @@ class MainWindow(QMainWindow):
                 )
             logger.info(f"3MF exporté : {path}")
 
-            # Espace Pro : proposer de décompter le filament utilisé d'une bobine
-            self._offer_spool_deduction(config)
-
+            # Espace Pro : la répartition des couleurs + décompte du stock est
+            # intégrée DANS la fenêtre de succès (une seule fenêtre).
             selection = getattr(self, "_current_selection", None)
             self._show_success_dialog(config, selection, path)
 
@@ -3024,7 +3352,9 @@ class MainWindow(QMainWindow):
         from core.prefs import PREFS as _PREFS_btn
         _slicer_sel = _PREFS_btn.get("slicer_output", "bambu")
         _btn_open_key = {"prusa": "export.btn_prusa",
-                         "orca": "export.btn_orca"}.get(_slicer_sel, "export.btn_bambu")
+                         "orca": "export.btn_orca",
+                         "creality": "export.btn_creality",
+                         "elegoo": "export.btn_elegoo"}.get(_slicer_sel, "export.btn_bambu")
         btn_bambu = QPushButton(_(_btn_open_key))
         btn_bambu.setIcon(_make_printer_icon())
         btn_bambu.setIconSize(QSize(18, 18))
@@ -3054,5 +3384,34 @@ class MainWindow(QMainWindow):
         btn_hl.addWidget(btn_close, 0)
         layout.addWidget(btn_row)
 
+        # ── Couleurs et décompte du stock (Pro), dans la même fenêtre ──
+        _has_colors = self._build_color_section(layout, config, tmf_path, _sep, _section_lbl)
+
         apply_title_bar_theme(dlg)
-        dlg.exec()
+        if _has_colors:
+            # Fenêtre NON-MODALE accolée au bord droit : le viewer principal reste
+            # en place (contexte OpenGL intact, pas de réparentage) et visible à
+            # gauche pour voir la prévisualisation des couleurs en direct.
+            try:
+                dlg.adjustSize()
+                _g = self.frameGeometry()
+                dlg.move(max(0, _g.right() - dlg.width() - 20), max(0, _g.top() + 70))
+            except Exception:
+                pass
+            self._success_dlg = dlg   # garder une référence (sinon GC en non-modal)
+            dlg.finished.connect(lambda *_: setattr(self, "_success_dlg", None))
+            dlg.setModal(False)
+            dlg.show()
+        else:
+            # Pas de section couleur : fenêtre modale centrée classique.
+            try:
+                from PySide6.QtWidgets import QApplication as _QApp
+                dlg.adjustSize()
+                _scr = self.screen() or _QApp.primaryScreen()
+                if _scr is not None:
+                    _g = _scr.availableGeometry()
+                    dlg.move(_g.center().x() - dlg.width() // 2,
+                             _g.center().y() - dlg.height() // 2)
+            except Exception:
+                pass
+            dlg.exec()

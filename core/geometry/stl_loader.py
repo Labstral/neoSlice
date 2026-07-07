@@ -53,9 +53,15 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
             _znames = zf.namelist()
             _has_config = "Metadata/model_settings.config" in _znames
 
+            # root = arbre XML de model_settings.config. None si absent (3MF exporté
+            # par Fusion/trimesh…) : les boucles qui le lisent sont alors sautées au
+            # lieu de lever UnboundLocalError (bug connu post-0.1.6). Même précaution
+            # pour les collections remplies dans ce bloc mais lues plus bas.
+            root = None
+            modifier_part_ids: set[str] = set()  # IDs des parts non-imprimables
+            part_to_obj_id: dict[str, str] = {}  # part_id → parent object_id
             if _has_config:
                 model_settings_xml = zf.read("Metadata/model_settings.config").decode("utf-8")
-                # DEBUG: afficher les 800 premiers chars du config pour diagnostiquer la structure XML
                 root = ET.fromstring(model_settings_xml)
                 # Subtypes non-imprimables à exclure du rendu et de l'analyse.
                 # negative_part = bloqueur de support / volume négatif (BS/Prusa)
@@ -65,8 +71,6 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
                     "support_modifier", "modifier",
                     "modifier_part",   # Generic-Cube, Generic-Cylinder, etc. (Infill Display)
                 }
-                modifier_part_ids: set[str] = set()  # IDs des parts non-imprimables
-                part_to_obj_id: dict[str, str] = {}   # part_id → parent object_id (pour plate_index)
                 for obj in root.findall("object"):
                     obj_id = obj.get("id", "")
                     # Extruder au niveau objet (fallback)
@@ -113,7 +117,7 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
                 except (ValueError, IndexError):
                     return None
 
-            for obj in root.findall("object"):
+            for obj in (root.findall("object") if root is not None else []):
                 _oid = obj.get("id", "")
                 # plate_index au niveau objet (nouvelle structure BS)
                 for meta in obj.findall("metadata"):
@@ -143,7 +147,7 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
             # Format A (BS récent): <model_instance objectid="X"/>
             # Format B (BS ancienne): <model_instance><metadata key="object_id" value="X"/></model_instance>
             # plater_id dans <metadata key="plater_id" value="N"/> (1-based → converti 0-based)
-            for plate_el in root.findall("plate"):
+            for plate_el in (root.findall("plate") if root is not None else []):
                 # plater_id : dans metadata ou attribut index
                 _plate_num = 0
                 _pid_attr = plate_el.get("index", plate_el.get("id", None))
@@ -198,14 +202,17 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
                             if _comps is None:
                                 continue
                             _comp_list = _comps.findall(f'{_mns}component')
-                            # Uniquement pour les objets avec > 1 composant ET au moins 1 modifier_part
-                            _has_modifier = any(
-                                _mobj.get('id', '') in modifier_part_ids or
-                                any(str(c.get('objectid', '')) in modifier_part_ids
-                                    for c in _comp_list)
-                                for _ in [0]  # trick for inline check
-                            )
-                            # Vérifier si l'un des composants reference un modifier
+                            # Ce mecanisme "geometrie propre" ne sert QU'AU cas du
+                            # modifier fusionne (Generic-Cube) : un objet dont un
+                            # composant est un modifier_part. Pour un objet
+                            # multi-parts MULTICOLORE sans modifier, il ne faut PAS
+                            # collapser, sinon les N parts deviennent N copies de la
+                            # 1re (badge multicolore affiche en doublons decales).
+                            _has_modifier = (_mobj.get('id', '') in modifier_part_ids) or any(
+                                str(c.get('objectid', '')) in modifier_part_ids
+                                for c in _comp_list)
+                            if not _has_modifier:
+                                continue
                             _normal_comp = None
                             for _c in _comp_list:
                                 _sub_id = _c.get('objectid', '')
@@ -243,6 +250,73 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
 
             if _clean_geom_by_obj:
                 logger.info(f"[3MF] {len(_clean_geom_by_obj)} géométries propres (sans modifier) prêtes")
+
+            # Multi-parts MULTICOLORE : quand un objet est compose de composants
+            # referencant des sous-objets d'un .model EXTERNE, trimesh renvoie le
+            # mesh FUSIONNE (somme de toutes les parts) pour CHAQUE composant -> les
+            # N parts deviennent N copies identiques (badge multicolore affiche en
+            # doublons decales). On relit donc chaque sous-objet distinctement pour
+            # rendre a chaque part sa vraie geometrie.
+            _part_geom_by_id: dict[str, "trimesh.Trimesh"] = {}
+            if model_xml:
+                try:
+                    _mns = '{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}'
+                    _mnsp = '{http://schemas.microsoft.com/3dmanufacturing/production/2015/06}'
+                    _mroot2 = ET.fromstring(model_xml)
+                    _res2 = _mroot2.find(f'{_mns}resources')
+                    _sub_cache: dict[str, dict] = {}   # zip_path -> {sub_id: <object el>}
+
+                    def _sub_index(zip_path: str) -> dict:
+                        if zip_path in _sub_cache:
+                            return _sub_cache[zip_path]
+                        idx: dict = {}
+                        try:
+                            with zipfile.ZipFile(path) as _zf3:
+                                if zip_path in _zf3.namelist():
+                                    _r = ET.fromstring(_zf3.read(zip_path).decode('utf-8'))
+                                    _rr = _r.find(f'{_mns}resources')
+                                    if _rr is not None:
+                                        for _so in _rr.findall(f'{_mns}object'):
+                                            idx[_so.get('id')] = _so
+                        except Exception as _e:
+                            logger.debug(f"index sous-modele {zip_path}: {_e}")
+                        _sub_cache[zip_path] = idx
+                        return idx
+
+                    if _res2 is not None:
+                        for _mobj in _res2.findall(f'{_mns}object'):
+                            _comps = _mobj.find(f'{_mns}components')
+                            if _comps is None:
+                                continue
+                            _cl = _comps.findall(f'{_mns}component')
+                            if len(_cl) < 2:
+                                continue
+                            for _c in _cl:
+                                _sid = _c.get('objectid', '')
+                                _cp = _c.get(f'{_mnsp}path', '')
+                                if (not _sid or not _cp or _sid in modifier_part_ids
+                                        or _sid in _part_geom_by_id):
+                                    continue
+                                _so = _sub_index(_cp.lstrip('/')).get(_sid)
+                                _sm = _so.find(f'{_mns}mesh') if _so is not None else None
+                                if _sm is None:
+                                    continue
+                                try:
+                                    _vs = _sm.find(f'{_mns}vertices')
+                                    _ts = _sm.find(f'{_mns}triangles')
+                                    _verts = np.array([[float(v.get('x')), float(v.get('y')), float(v.get('z'))]
+                                                       for v in _vs.findall(f'{_mns}vertex')])
+                                    _faces = np.array([[int(t.get('v1')), int(t.get('v2')), int(t.get('v3'))]
+                                                       for t in _ts.findall(f'{_mns}triangle')])
+                                    if len(_verts) and len(_faces):
+                                        _part_geom_by_id[_sid] = trimesh.Trimesh(
+                                            vertices=_verts, faces=_faces, process=False)
+                                except Exception as _ge2:
+                                    logger.debug(f"part geom {_sid}: {_ge2}")
+                except Exception as _pe2:
+                    logger.debug(f"Parse per-part geoms: {_pe2}")
+            if _part_geom_by_id:
+                logger.info(f"[3MF] {len(_part_geom_by_id)} géométries de parts distinctes (multi-composants)")
 
     except Exception as e:
         logger.debug(f"3MF multi-objet parse error : {e}")
@@ -353,7 +427,15 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
             # Utiliser la géométrie propre (sans modifier fusionné) si disponible.
             # Sans ça, geom 1_19 = flat_tile(188f) + generic_cube(12f) × 20 = 4000 faces
             # et les cubes Generic apparaissent dans le viewer.
-            _display_mesh = _clean_geom_by_obj.get(_parent_oid, mesh).copy()
+            # Priorite : geom "propre" (cas modifier) ; sinon geom de la part relue
+            # distinctement (cas multi-composants externe) ; sinon le mesh trimesh.
+            _display_mesh = _clean_geom_by_obj.get(_parent_oid)
+            if _display_mesh is None:
+                _display_mesh = (_part_geom_by_id.get(str(geom_id))
+                                 or _part_geom_by_id.get(str(_matched or "")))
+            if _display_mesh is None:
+                _display_mesh = mesh
+            _display_mesh = _display_mesh.copy()
             objects.append(MeshObject(
                 object_id=f"{geom_id}_{node_name}" if len(nodes) > 1 else str(geom_id),
                 name=name,
@@ -438,6 +520,15 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
     else:
         combined = objects[0].mesh
 
+    # Assemblage multicolore : les parts s'imbriquent pour former UN solide qui
+    # s'imprime a plat (les couches de couleur remplissent les creux de la base).
+    # Le mesh combine (parts qui se chevauchent) n'est PAS manifold -> la detection
+    # de regions flottantes y voit des faces internes comme flottantes et propose
+    # des supports fantomes. On marque donc l'assemblage pour que l'analyse
+    # N'AJOUTE PAS de supports pour flottant (voir has_color_assembly). L'AFFICHAGE
+    # garde bien les 4 parts (lisse), on ne touche pas combined.
+    _is_color_assembly = len({o.extruder for o in objects}) > 1 and len(objects) > 1
+
     logger.info(f"3MF multi-objets : {len(objects)} parties · {len({o.extruder for o in objects})} slot(s) · {plate_count} plateau(x) · {len(modifier_objects)} modificateur(s)")
     return ThreeMFData(
         combined_mesh=combined,
@@ -447,6 +538,7 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
         model_xml=model_xml,
         plate_count=plate_count,
         modifier_meshes=modifier_objects,
+        is_color_assembly=_is_color_assembly,
     )
 
 

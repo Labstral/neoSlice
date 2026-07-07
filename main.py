@@ -99,12 +99,28 @@ class SplashScreen(QWidget):
         )
 
     def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor
+        from PySide6.QtCore import QRectF
+        p = QPainter(self)
         if self._bg_pixmap:
-            from PySide6.QtGui import QPainter
-            p = QPainter(self)
             p.drawPixmap(0, 0, self._bg_pixmap)
         else:
             super().paintEvent(event)
+
+        # « Chargement… » sous le slogan (incrusté dans l'image), au-dessus de la barre
+        try:
+            from core.i18n import _ as _t
+            txt = _t("app.loading")
+        except Exception:
+            txt = "Chargement…"
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        f = QFont(FONT_MAIN, 10)
+        f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.0)
+        p.setFont(f)
+        p.setPen(QColor(255, 255, 255, 205))
+        p.drawText(QRectF(0, self.height() - 35, self.width(), 22),
+                   Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter, txt)
+        p.end()
 
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(
@@ -149,6 +165,19 @@ def main():
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
+
+    # Mode compatibilité : rendu OpenGL LOGICIEL (Mesa, livré par PySide6). Pour les
+    # machines dont la carte graphique ne gère pas l'affichage 3D. Le viewer VTK passe
+    # par un QOpenGLWidget, donc forcer Qt en logiciel force aussi le rendu 3D en
+    # logiciel. À activer AVANT QApplication.
+    try:
+        from core.prefs import PREFS
+        if PREFS.get("viewer_software_gl", False):
+            os.environ["QT_OPENGL"] = "software"
+            QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseSoftwareOpenGL, True)
+            logger.info("Rendu OpenGL logiciel activé (mode compatibilité).")
+    except Exception as _e:
+        logger.warning(f"mode compatibilité OpenGL : {_e}")
 
     app = QApplication(sys.argv)
     app.setApplicationName("neoSlice")
@@ -229,6 +258,11 @@ def main():
     _tb_filter = _TitleBarFilter()
     app.installEventFilter(_tb_filter)
     globals()["_TB_FILTER"] = _tb_filter  # anti-GC
+
+    # Molette : empeche un simple scroll EN SURVOL de changer la valeur d'un menu
+    # deroulant / champ numerique / curseur (couvre TOUTE l'app). Voir ui/wheel_guard.
+    from ui.wheel_guard import install as _install_wheel_guard
+    globals()["_WHEEL_GUARD"] = _install_wheel_guard(app)
 
     def _retheme_titlebars():
         for w in app.topLevelWidgets():
