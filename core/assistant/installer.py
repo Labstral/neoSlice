@@ -41,11 +41,15 @@ OLLAMA_RUNTIME: dict[str, tuple[str, str]] = {
     "darwin": ("ollama-darwin.tgz",        "tgz"),
 }
 
-# 2) Modele de discussion (GGUF). Un fichier si <= 2 Go (ex. 3B), sinon une liste
-#    de parties concatenees (limite d'un asset GitHub = 2 Go ; ex. 7B en 3 parties).
+# 2) Modele de discussion (GGUF). Un fichier si <= 2 Go, sinon une liste de parties
+#    concatenees (limite d'un asset GitHub = 2 Go).
+#    IMPORTANT (2026-07-08) : le modele est passe a Qwen3 8B (voir engine.CHAT_BASE_MODEL).
+#    Le GGUF hebergé sous ces noms DOIT etre Qwen3 8B (~5 Go en 3 parties), PAS l'ancien
+#    Qwen2.5 7B — sinon l'alias serait cree depuis le mauvais modele. Alternative plus
+#    simple : supprimer ces assets et laisser _ensure_model faire `ollama pull qwen3:8b`
+#    depuis le registre (l'installateur a deja besoin d'Internet). Decision distribution
+#    a trancher par Emmanuel.
 CHAT_GGUF_ASSET = "model.gguf"
-# Qwen2.5 7B en Q4 = ~4.4 Go > limite 2 Go d'un asset GitHub -> livre en 3 parties
-# (concatenees par l'installateur). Voir _fetch_asset / _download_multipart.
 CHAT_GGUF_PARTS: tuple[str, ...] = ("model.gguf.00", "model.gguf.01", "model.gguf.02")
 
 # 3) Modele d'embedding (GGUF). bge-m3 (multilingue, 1024 dim) ~= 1,0 a 1,3 Go selon

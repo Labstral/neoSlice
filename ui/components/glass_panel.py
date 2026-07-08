@@ -169,20 +169,26 @@ def _apply_win11_glass(hwnd: int) -> bool:
 
 class _ChatWorker(QThread):
     """Execute l'inference du modele local dans un thread (UI non bloquee).
-    Emet chaque morceau de texte au fur et a mesure (streaming)."""
+    Emet chaque morceau au fur et a mesure : `token` = reponse, `thinking` =
+    raisonnement (uniquement si le mode Reflexion est actif)."""
     token = Signal(str)
+    thinking = Signal(str)
     done = Signal()
     failed = Signal(str)
 
-    def __init__(self, history: list):
+    def __init__(self, history: list, think: bool = False):
         super().__init__()
         self._history = history
+        self._think = think
 
     def run(self):
         try:
             from core.assistant.engine import AssistantEngine
-            for tok in AssistantEngine.instance().stream(self._history):
-                self.token.emit(tok)
+            for kind, txt in AssistantEngine.instance().stream(self._history, think=self._think):
+                if kind == "thinking":
+                    self.thinking.emit(txt)
+                else:
+                    self.token.emit(txt)
             self.done.emit()
         except Exception as e:
             self.failed.emit(str(e))
@@ -289,7 +295,26 @@ class GlassPanel(QWidget):
             "padding: 0 16px; }"
             "QLineEdit:focus { border-color: rgba(255,180,220,150); }")
         self._input.returnPressed.connect(self._on_send)
-        lay.addWidget(self._input)
+
+        # Toggle « Réflexion » : Oen raisonne avant de repondre (Qwen3 thinking).
+        # Plus precis, plus lent. Etat persistant (prefs). Off par defaut.
+        from core.prefs import PREFS as _PREFS
+        self._think_btn = QPushButton("Réflexion")
+        self._think_btn.setCheckable(True)
+        self._think_btn.setChecked(bool(_PREFS.get("oen_thinking", False)))
+        self._think_btn.setCursor(Qt.PointingHandCursor)
+        self._think_btn.setFixedHeight(40)
+        self._think_btn.setToolTip(
+            "Réflexion : Oen raisonne avant de répondre (plus précis, plus lent).")
+        self._think_btn.toggled.connect(self._on_think_toggled)
+        self._apply_think_btn_style()
+
+        input_row = QHBoxLayout()
+        input_row.setContentsMargins(0, 0, 0, 0)
+        input_row.setSpacing(6)
+        input_row.addWidget(self._input, 1)
+        input_row.addWidget(self._think_btn)
+        lay.addLayout(input_row)
 
         self._greeted = False
         self._typing_wrap = None
@@ -298,6 +323,43 @@ class GlassPanel(QWidget):
         self._stream_bubble = None
         self._stream_text = ""
         self._option_wrap = None      # bloc de boutons de reponse cliquables
+
+    def _apply_think_btn_style(self):
+        on = self._think_btn.isChecked()
+        if on:
+            self._think_btn.setStyleSheet(
+                "QPushButton { color: #fff; background: rgba(255,140,175,150); "
+                "border: 1px solid rgba(255,180,210,160); border-radius: 20px; padding: 0 14px; }"
+                "QPushButton:hover { background: rgba(255,140,175,190); }")
+        else:
+            self._think_btn.setStyleSheet(
+                "QPushButton { color: rgba(255,255,255,170); background: rgba(255,255,255,22); "
+                "border: 1px solid rgba(255,255,255,45); border-radius: 20px; padding: 0 14px; }"
+                "QPushButton:hover { background: rgba(255,255,255,40); color: #fff; }")
+
+    def _on_think_toggled(self, on: bool):
+        try:
+            from core.prefs import PREFS as _PREFS
+            _PREFS.set("oen_thinking", bool(on))
+        except Exception:
+            pass
+        self._apply_think_btn_style()
+
+    def _on_thinking(self, tok: str):
+        """Affiche le raisonnement (mode Réflexion) dans une bulle grisee distincte,
+        au-dessus de la reponse."""
+        if getattr(self, "_think_bubble", None) is None:
+            self._remove_typing()
+            self._think_text = ""
+            self._think_bubble = self._add_message("", "assistant")
+            self._think_bubble.setFont(QFont("Segoe UI", 9))
+            self._think_bubble.setStyleSheet(
+                "color: rgba(255,255,255,150); background: rgba(255,255,255,14); "
+                "border: 1px solid rgba(255,255,255,26); border-radius: 12px; "
+                "padding: 8px 12px; font-style: italic;")
+        self._think_text += tok
+        self._think_bubble.setText("Réflexion — " + self._think_text)
+        self._scroll_bottom()
 
     def _add_message(self, text: str, role: str = "assistant"):
         bubble = QLabel(text)
@@ -397,8 +459,12 @@ class GlassPanel(QWidget):
         self.busy_changed.emit(True)
         self._stream_text = ""
         self._stream_bubble = None
-        self._worker = _ChatWorker(list(self._history))
+        self._think_bubble = None
+        self._think_text = ""
+        think = self._think_btn.isChecked()
+        self._worker = _ChatWorker(list(self._history), think=think)
         self._worker.token.connect(self._on_token)
+        self._worker.thinking.connect(self._on_thinking)
         self._worker.done.connect(self._on_done)
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
@@ -433,6 +499,7 @@ class GlassPanel(QWidget):
         else:
             self._remove_typing()
         self._stream_bubble = None
+        self._think_bubble = None
         self.busy_changed.emit(False)
 
     # ── Réponses cliquables (questions à choix) ──────────────────────────────

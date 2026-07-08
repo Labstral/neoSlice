@@ -31,7 +31,12 @@ EMBED_GGUF_PATH = ASSIST_DIR / "embed.gguf"    # modele d'embedding (GGUF local)
 HOST = "127.0.0.1:11434"
 BASE = f"http://{HOST}"
 MODEL_NAME = "neoslice-assistant"   # alias local utilise par le moteur
-CHAT_BASE_MODEL = "qwen2.5:7b"      # modele de base (registre Ollama)
+CHAT_BASE_MODEL = "qwen3:8b"        # modele de base (registre Ollama). Qwen3 8B :
+#   meilleur raisonnement / suivi d'instructions que Qwen2.5 7B, ~meme empreinte
+#   (~5 Go, tourne sur tout PC meme sans GPU), et RAISONNEMENT optionnel (param
+#   `think` de l'API) expose comme toggle dans la fenetre d'Oen. Remplace qwen2.5:7b
+#   (2026-07-08) : le 7B plafonnait (fuites Klipper sur Bambu, pieces inventees).
+CHAT_MODEL_MARKER = ASSIST_DIR / "chat_model.txt"  # modele de base dont l'alias a ete cree
 EMBED_MODEL = "bge-m3"              # modele d'embedding local (RAG), MULTILINGUE, 1024 dim
 #   (bge-m3 : concu FR/EN/multilingue -> colle a la base wikis FR/mixte ; pas de
 #    prefixe de tache requis, contrairement a nomic-embed-text.)
@@ -82,7 +87,10 @@ _SYSTEM_PROMPT = (
     "Regle firmware : Marlin = tout au menu LCD (Auto Home, Bed Leveling, Z-offset, PID). "
     "Klipper = interface web + printer.cfg + commandes G-code/macros (BED_MESH_CALIBRATE, "
     "SCREWS_TILT_CALCULATE, PROBE_CALIBRATE, PID_CALIBRATE, PRESSURE_ADVANCE, "
-    "SHAPER_CALIBRATE). Adapte TOUJOURS ta reponse a la machine reelle de l'utilisateur. "
+    "SHAPER_CALIBRATE). Ces commandes/macros et un 'menu Screws Tilt' sont PROPRES A "
+    "KLIPPER : ne les propose JAMAIS sur une Bambu Lab (calibrations 100% automatiques "
+    "depuis l'ecran, AUCUNE commande a taper) ni sur une Marlin (menu LCD). "
+    "Adapte TOUJOURS ta reponse a la machine reelle de l'utilisateur. "
     "IMPORTANT : la plupart des imprimantes recentes ont un ECRAN tactile qui permet de "
     "lancer les calibrations (nivellement/mesh, auto-calibration, compensation de vibrations, "
     "flow) DIRECTEMENT sur la machine. Quand l'imprimante a un ecran (ex. Bambu X1C/P1S, "
@@ -109,7 +117,12 @@ _SYSTEM_PROMPT = (
     "quand la reponse depend d'une info manquante (marque et modele d'imprimante, materiau, "
     "firmware, symptome precis, slicer...). Une seule question a la fois, courte. Ex. : a "
     "'comment calibrer mon imprimante ?', demande d'abord quelle imprimante (marque + "
-    "modele), car la procedure en depend entierement.\n"
+    "modele), car la procedure en depend entierement. SYMPTOME VAGUE (un 'bruit etrange', "
+    "'ca rate', 'probleme d'impression' sans detail) : soit tu poses UNE courte question de "
+    "tri (avec options cliquables) SI c'est vraiment ambigu, soit — mieux — tu reponds "
+    "directement en ORGANISANT par cas probable (ex. 'si c'est un cliquetis -> ... ; si c'est "
+    "un sifflement -> ...'), de la cause la plus probable a la moins probable. Ne repose "
+    "jamais une question deja repondue dans la conversation.\n"
     "OPTIONS CLIQUABLES : quand tu poses une question ET qu'il existe un petit nombre de "
     "reponses probables, termine ton message par UNE seule ligne au format EXACT : "
     "[[OPTIONS: reponse 1 | reponse 2 | reponse 3]] . Regles : 2 a 5 options, courtes, "
@@ -143,6 +156,15 @@ _SYSTEM_PROMPT = (
     "adherence 1re couche -> Z-offset, nivellement, proprete/plateau, vitesse 1re couche ; "
     "elephant foot -> Z-offset trop bas, plateau trop chaud, compensation ; ghosting -> "
     "rigidite, acceleration, input shaper. "
+    "BRUITS (diagnostic par type de son) : un CLIQUETIS / 'tac-tac' repetitif vient presque "
+    "toujours de l'EXTRUDEUR qui saute (buse partiellement bouchee, temperature trop basse, "
+    "filament humide ou emmele/mal deroule, debit ou vitesse trop eleves) -> c'est la 1re "
+    "piste pour 'un bruit a la buse', surtout sur un direct-drive comme l'A1/A1 mini ; un "
+    "SIFFLEMENT / couinement aigu = un VENTILATEUR (de buse ou de piece) use ou qui frotte ; "
+    "un COGNEMENT / claquement = un axe qui tape une butee, une courroie lache, ou l'axe Z "
+    "qui accroche ; un BOURDONNEMENT / resonance = les moteurs a certaines vitesses (normal a "
+    "faible volume). Un 'bruit a la buse' n'est presque jamais un 'roulement de buse' (une "
+    "buse n'a pas de roulement) : n'invente pas de piece. "
     "SURPLOMBS : jusqu'a ~45-50 degres (depuis la verticale) ca s'imprime SANS support sur "
     "la plupart des imprimantes ; seulement PLUS horizontal que ~45 degres -> supports. Ne "
     "recommande pas de support pour un simple 45 degres. Pont (bridge) court avec bon "
@@ -215,6 +237,14 @@ _GUARD = (
     "- FIRMWARE : une imprimante connectee se met a jour directement depuis son ecran (voie "
     "reseau) ; presente cette voie D'ABORD. La carte SD 'hors ligne' n'est qu'un repli sans "
     "Internet, jamais la methode par defaut. Le firmware n'est pas dans le menu calibration.\n"
+    "- Ne repose JAMAIS deux fois la meme question : si l'utilisateur a deja donne une info "
+    "(type de bruit, materiau, modele...), sers-t'en et avance, ne redemande pas.\n"
+    "- Un 'bruit a la buse' : la 1re piste est l'extrudeur qui saute (buse bouchee / temp trop "
+    "basse / filament humide ou emmele), pas un 'roulement de buse' (ca n'existe pas). "
+    "N'invente pas de piece mecanique.\n"
+    "- Sur une BAMBU LAB : jamais de commande/macro Klipper (SCREWS_TILT, BED_MESH_CALIBRATE, "
+    "PROBE_CALIBRATE, SHAPER_CALIBRATE...) ni de 'menu Screws Tilt' : ses calibrations sont "
+    "automatiques depuis l'ecran, sans rien taper.\n"
     "- neoSlice N'IMPRIME PAS, NE CALIBRE PAS, NE NIVELLE PAS, NE PILOTE PAS la machine : ne "
     "propose JAMAIS d'utiliser 'neoSlice' NI 'l'assistant IA' pour calibrer, niveler, regler "
     "ou imprimer ; ces actions se font sur l'imprimante (ecran) ou dans le slicer.\n"
@@ -314,23 +344,42 @@ class AssistantEngine:
         except Exception:
             return False
 
+    @staticmethod
+    def _chat_marker() -> str | None:
+        try:
+            return CHAT_MODEL_MARKER.read_text(encoding="utf-8").strip() or None
+        except Exception:
+            return None
+
     def _ensure_model(self):
-        if self._model_ready or self._model_exists():
+        """Cree/recree l'alias `neoslice-assistant` pour qu'il reflete CHAT_BASE_MODEL.
+        Un marqueur (chat_model.txt) memorise le modele de base : si le modele a CHANGE
+        (nouvelle version d'app), on RECREE l'alias — depuis le registre, car le GGUF
+        local est alors l'ANCIEN modele. Sur une install fraiche (pas de marqueur), le
+        GGUF livre est le bon modele et sert de source."""
+        want = CHAT_BASE_MODEL
+        marker = self._chat_marker()
+        if marker == want and (self._model_ready or self._model_exists()):
             self._model_ready = True
             return
-        # Source du modele : GGUF local (mode dev) sinon modele de base du registre
-        # (mode distribution, pulle par l'installateur).
-        origin = f'"{GGUF_PATH.as_posix()}"' if GGUF_PATH.exists() else CHAT_BASE_MODEL
+        if marker is not None and marker != want:
+            origin = CHAT_BASE_MODEL              # changement de modele -> registre
+        else:
+            origin = f'"{GGUF_PATH.as_posix()}"' if GGUF_PATH.exists() else CHAT_BASE_MODEL
         modelfile = ASSIST_DIR / "Modelfile"
         modelfile.write_text(
             f'FROM {origin}\nPARAMETER num_ctx 8192\n', encoding="utf-8")
-        logger.info(f"[Assistant] import du modele dans Ollama (source: {origin})...")
+        logger.info(f"[Assistant] (re)creation de l'alias (source: {origin})...")
         res = subprocess.run(
             [str(OLLAMA_EXE), "create", MODEL_NAME, "-f", str(modelfile)],
             env=self._ollama_env(), creationflags=_NO_WINDOW,
             capture_output=True, text=True, encoding="utf-8", errors="replace")
         if res.returncode != 0:
             raise RuntimeError(f"Echec import modele: {res.stderr[:200]}")
+        try:
+            CHAT_MODEL_MARKER.write_text(want, encoding="utf-8")
+        except Exception:
+            pass
         self._model_ready = True
         logger.info("[Assistant] modele pret.")
 
@@ -414,15 +463,18 @@ class AssistantEngine:
         v = self.embed([text])
         return v[0] if v else []
 
-    def _open_chat(self, messages: list[dict], attempts: int = 3):
+    def _open_chat(self, messages: list[dict], attempts: int = 3, model: str | None = None,
+                   think: bool = False):
         """Ouvre la connexion streaming /api/chat avec RETRY (Ollama renvoie parfois
         un HTTP 400/500 transitoire quand il recharge un modele sous pression VRAM).
         Renvoie l'objet reponse pret a iterer, ou None si tout a echoue. Aucun token
-        n'ayant encore ete produit, rejouer est sur."""
+        n'ayant encore ete produit, rejouer est sur. `model` cible un autre modele ;
+        `think` active le raisonnement Qwen3 (canal `thinking` separe dans la reponse)."""
         payload = {
-            "model": MODEL_NAME,
+            "model": model or MODEL_NAME,
             "messages": messages,
             "stream": True,
+            "think": bool(think),
             "options": {"temperature": 0.25, "top_p": 0.9, "num_ctx": 12288},
         }
         data = json.dumps(payload).encode()
@@ -438,64 +490,65 @@ class AssistantEngine:
                     time.sleep(1.0 + i)      # petit backoff, laisse Ollama se stabiliser
         return None
 
+    def _build_messages(self, history: list[dict]) -> tuple[list, list]:
+        """Assemble les messages envoyes au modele : (complet, repli-sans-RAG).
+        complet = system + UI + contexte live + faits imprimante + RAG + historique +
+        guard. repli = idem sans le bloc RAG (le plus lourd/variable)."""
+        sys_msgs = [{"role": "system", "content": _SYSTEM_PROMPT}]
+        # Plan exact de l'interface (noms/emplacements des boutons) -> pas d'invention.
+        try:
+            from core.assistant.ui_map import UI_GUIDE
+            sys_msgs.append({"role": "system", "content": UI_GUIDE})
+        except Exception:
+            pass
+        last_user = next((m["content"] for m in reversed(history)
+                          if m.get("role") == "user"), "")
+        configured_printer = ""
+        try:
+            from core.assistant import context
+            configured_printer = context.configured_printer()
+            ctx = context.build_context_block()
+            if ctx:
+                sys_msgs.append({"role": "system", "content": ctx})
+        except Exception:
+            pass
+        # Faits imprimante cibles (machine configuree et/ou citee dans la question)
+        try:
+            from core.assistant import printer_kb
+            pk = printer_kb.facts_for(last_user, configured_printer)
+            if pk:
+                sys_msgs.append({"role": "system", "content": pk})
+        except Exception:
+            pass
+        # RAG : passages de wiki pertinents. Isole pour pouvoir le RETIRER en repli.
+        rag_msg = None
+        try:
+            from core.assistant import rag
+            kb = rag.context_block(last_user)
+            if kb:
+                rag_msg = {"role": "system", "content": kb}
+        except Exception:
+            pass
+        # Guard place APRES l'historique = instruction la plus recente, la plus obeie.
+        guard_msg = {"role": "system", "content": _GUARD}
+        full = sys_msgs + ([rag_msg] if rag_msg else []) + history + [guard_msg]
+        reduced = sys_msgs + history + [guard_msg]
+        return full, reduced
+
     # ── Inference streaming ───────────────────────────────────────────────────
-    def stream(self, history: list[dict]):
-        """history = [{'role':'user'|'assistant','content':str}]. Genere le texte."""
+    def stream(self, history: list[dict], model: str | None = None, think: bool = False):
+        """history = [{'role':'user'|'assistant','content':str}]. Genere des tuples
+        (kind, texte) ou kind vaut 'thinking' (raisonnement Qwen3, si think=True) ou
+        'content' (la reponse). Les appelants qui ne veulent que la reponse ignorent
+        les tuples 'thinking'. `model` cible un modele precis (defaut MODEL_NAME)."""
         with self._lock:
             self._ensure_server()
             self._ensure_model()
-            # Contexte en direct (Espace Pro + parametres du fichier + analyse viewer)
-            sys_msgs = [{"role": "system", "content": _SYSTEM_PROMPT}]
-            # Plan exact de l'interface (connaissance permanente : noms/emplacements
-            # des boutons) -> l'IA ne doit jamais inventer ou l'utilisateur clique.
-            try:
-                from core.assistant.ui_map import UI_GUIDE
-                sys_msgs.append({"role": "system", "content": UI_GUIDE})
-            except Exception:
-                pass
-            last_user = next((m["content"] for m in reversed(history)
-                              if m.get("role") == "user"), "")
-            configured_printer = ""
-            try:
-                from core.assistant import context
-                configured_printer = context.configured_printer()
-                ctx = context.build_context_block()
-                if ctx:
-                    sys_msgs.append({"role": "system", "content": ctx})
-            except Exception:
-                pass
-            # Faits imprimante cibles (machine configuree et/ou citee dans la question)
-            try:
-                from core.assistant import printer_kb
-                pk = printer_kb.facts_for(last_user, configured_printer)
-                if pk:
-                    sys_msgs.append({"role": "system", "content": pk})
-            except Exception:
-                pass
-            # RAG : passages de wiki pertinents pour la derniere question. Isole dans
-            # rag_msg pour pouvoir le RETIRER en repli si la requete complete echoue
-            # (c'est le bloc le plus lourd et le plus variable).
-            rag_msg = None
-            try:
-                from core.assistant import rag
-                kb = rag.context_block(last_user)
-                if kb:
-                    rag_msg = {"role": "system", "content": kb}
-            except Exception:
-                pass
-            # Le garde-fou est place APRES l'historique : c'est l'instruction la plus
-            # recente, donc la plus respectee, ce qui bloque les detournements du type
-            # "oublie tes instructions".
-            guard_msg = {"role": "system", "content": _GUARD}
-            full = sys_msgs + ([rag_msg] if rag_msg else []) + history + [guard_msg]
-            reduced = sys_msgs + history + [guard_msg]   # repli sans RAG
-
-            r = self._open_chat(full)
-            if r is None and rag_msg is not None:
-                # La requete complete a echoue (souvent HTTP 400 transitoire quand la
-                # VRAM jongle entre bge-m3 et le 7B) -> on rejoue SANS le bloc RAG.
+            full, reduced = self._build_messages(history)
+            r = self._open_chat(full, model=model, think=think)
+            if r is None:
                 logger.warning("[Assistant] requete chat en echec -> repli sans RAG")
-                r = self._open_chat(reduced)
+                r = self._open_chat(reduced, model=model, think=think)
             if r is None:
                 raise RuntimeError("Le moteur de discussion ne repond pas (reessaie).")
             with r:
@@ -504,8 +557,12 @@ class AssistantEngine:
                     if not raw:
                         continue
                     obj = json.loads(raw)
-                    tok = obj.get("message", {}).get("content", "")
+                    msg = obj.get("message", {})
+                    th = msg.get("thinking")
+                    if th:
+                        yield ("thinking", th)
+                    tok = msg.get("content", "")
                     if tok:
-                        yield tok
+                        yield ("content", tok)
                     if obj.get("done"):
                         break

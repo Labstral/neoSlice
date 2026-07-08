@@ -57,3 +57,6 @@ context7-mcp.bat
 _calib/
 _orca_help.txt
 *.gcode
+
+# Log de build transitoire
+build_log.txt
