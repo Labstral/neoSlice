@@ -1,8 +1,9 @@
 """Fenêtre de déblocage neoSlice Pro.
 
-Affichée quand l'utilisateur a épuisé ses diagnostics photo gratuits. Propose
-l'achat (paiement unique via Gumroad, ouvert dans le navigateur) et un
-champ pour coller/activer une clé de licence déjà achetée.
+Affichée pour débloquer neoSlice Pro (Diagnostic IA, Espace Pro, Oen, export
+multicouleur). Propose l'achat (paiement unique via Gumroad, ouvert dans le
+navigateur), un champ pour coller/activer une clé déjà achetée, et un lien
+« voir en détail » (ProFeaturesDialog).
 
 Retourne QDialog.Accepted si l'activation a réussi pendant la session.
 """
@@ -255,7 +256,17 @@ class PaywallDialog(QDialog):
         self._subtitle_lbl.setAlignment(Qt.AlignCenter)
         self._subtitle_lbl.setWordWrap(True)
         lay.addWidget(self._subtitle_lbl)
-        lay.addSpacing(18)
+        lay.addSpacing(6)
+
+        # Lien « voir en détail tout ce que contient Pro » → fenêtre détaillée.
+        self._details_link = QLabel(f"<a href='#'>{_('pro.see_details')}</a>")
+        self._details_link.setFont(QFont(FONT_MAIN, 8))
+        self._details_link.setAlignment(Qt.AlignCenter)
+        self._details_link.setCursor(Qt.PointingHandCursor)
+        self._details_link.setOpenExternalLinks(False)
+        self._details_link.linkActivated.connect(self._show_features)
+        lay.addWidget(self._details_link)
+        lay.addSpacing(16)
 
         # Prix + bouton acheter
         self._price_lbl = QLabel(_("pro.price_suffix", price=licensing.PRIX_AFFICHE))
@@ -316,6 +327,12 @@ class PaywallDialog(QDialog):
     # ── Actions ──────────────────────────────────────────────────────────────
     def _on_buy(self):
         QDesktopServices.openUrl(QUrl(licensing.LIEN_ACHAT))
+
+    def _show_features(self):
+        from ui.styles.theme import apply_title_bar_theme
+        dlg = ProFeaturesDialog(self)
+        apply_title_bar_theme(dlg)
+        dlg.exec()
 
     def _on_activate(self):
         key = self._key_edit.text().strip()
@@ -403,3 +420,82 @@ class PaywallDialog(QDialog):
             }}
             QPushButton:hover {{ color: {pal['TEXT_PRIMARY']}; }}
         """)
+
+
+class ProFeaturesDialog(QDialog):
+    """Fenêtre détaillant TOUT ce que contient neoSlice Pro (ouverte depuis le lien du
+    paywall). Contenu défilant car la liste est longue."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedWidth(470)
+        self._setup_ui()
+        self._apply_theme()
+        _T.register(self._apply_theme)
+
+    def closeEvent(self, event):
+        _T.unregister(self._apply_theme)
+        super().closeEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        scr = (self.parent().screen() if self.parent() else None) or self.screen()
+        if scr is not None:
+            g = scr.availableGeometry()
+            self.move(g.center().x() - self.width() // 2,
+                      max(g.top() + 20, g.center().y() - self.height() // 2))
+
+    def _setup_ui(self):
+        from PySide6.QtWidgets import QScrollArea
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        self._card = QWidget()
+        self._card.setObjectName("features_card")
+        lay = QVBoxLayout(self._card)
+        lay.setContentsMargins(26, 20, 26, 20)
+        lay.setSpacing(0)
+        root.addWidget(self._card)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        self._title_lbl = QLabel("neoSlice")
+        self._title_lbl.setFont(QFont(FONT_MAIN, 13, QFont.Bold))
+        title_row.addWidget(self._title_lbl)
+        self._title_pro = ProBadge("PRO", point_size=13, letter_spacing=2.0)
+        title_row.addWidget(self._title_pro)
+        title_row.addStretch()
+        self._close_btn = QPushButton("✕")
+        self._close_btn.setFixedSize(22, 22)
+        self._close_btn.setCursor(Qt.PointingHandCursor)
+        self._close_btn.clicked.connect(self.close)
+        title_row.addWidget(self._close_btn)
+        lay.addLayout(title_row)
+        lay.addSpacing(12)
+
+        self._content = QLabel(_("pro.features_detail_html"))
+        self._content.setTextFormat(Qt.RichText)
+        self._content.setWordWrap(True)
+        self._content.setFont(QFont(FONT_MAIN, 9))
+        self._content.setAlignment(Qt.AlignTop)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setWidget(self._content)
+        self._scroll.setMaximumHeight(440)
+        lay.addWidget(self._scroll)
+
+    def _apply_theme(self):
+        pal = _T.palette()
+        self._card.setStyleSheet(
+            f"#features_card {{ background: {pal['BG_PANEL']}; border-radius: 10px; }}")
+        self._title_lbl.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+        self._close_btn.setStyleSheet(
+            f"QPushButton {{ color: {pal['TEXT_SECONDARY']}; background: transparent; "
+            f"border: none; font-size: 12px; }}"
+            f"QPushButton:hover {{ color: {pal['ERROR_RED']}; }}")
+        self._content.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        self._scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        self._scroll.viewport().setStyleSheet("background: transparent;")

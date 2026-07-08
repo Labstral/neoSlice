@@ -679,7 +679,37 @@ _FR: dict[str, str] = {
     "settings.update_found":         "Mise à jour disponible !",
 
     # ── neoSlice Pro / Licence ────────────────────────────────────────────────
-    "pro.paywall_subtitle":          "Vous avez utilisé vos diagnostics photo gratuits.\nDébloquez les diagnostics illimités.",
+    "pro.paywall_subtitle":          "Débloquez le Diagnostic IA, l'Espace Pro, l'assistant Oen et l'export multicouleur.",
+    "pro.see_details":               "Voir tout ce que contient neoSlice Pro",
+    "pro.features_title":            "neoSlice Pro — en détail",
+    "pro.features_detail_html": (
+        "<b>Diagnostic IA</b><br>"
+        "Prenez une photo de votre impression ratée : l'IA identifie le défaut "
+        "(stringing, warping, sous-extrusion, décollement, elephant foot…) et vous "
+        "donne les corrections concrètes à appliquer. Illimité.<br><br>"
+        "<b>Oen — assistant IA local</b><br>"
+        "Assistant 100 % hors ligne (aucune donnée envoyée). Il connaît votre "
+        "imprimante, vos paramètres et l'analyse de la pièce en cours, et vous aide "
+        "sur :<br>"
+        "• le choix et le réglage d'impression (toutes marques)<br>"
+        "• le dépannage, la calibration et l'entretien de la machine<br>"
+        "• la gestion de votre atelier<br>"
+        "Mode « Réflexion » pour des réponses plus précises. Base de connaissances "
+        "mise à jour depuis les réglages.<br><br>"
+        "<b>Export multicouleur</b><br>"
+        "Après l'export d'un fichier multicouleur, calcule le poids de filament par "
+        "couleur, colore l'aperçu 3D, associe vos bobines et décompte votre stock "
+        "automatiquement.<br><br>"
+        "<b>Espace Pro — gestion d'atelier complète</b><br>"
+        "• <b>Tableau de bord</b> : chiffre d'affaires, encaissé, dû, rentabilité, alertes de stock<br>"
+        "• <b>Bobines</b> : stock de filament par couleur (grammes &amp; valeur)<br>"
+        "• <b>Devis</b> : calcul du coût réel + devis PDF professionnel<br>"
+        "• <b>Facturation</b> : factures aux normes (TVA &amp; devise de votre pays, 13 pays / 6 langues)<br>"
+        "• <b>Commandes</b> : file de production<br>"
+        "• <b>Clients</b> : historique devis + factures, CA payé / dû par client<br>"
+        "• <b>Articles</b> : catalogue<br>"
+        "• <b>Sauvegarde automatique</b> de votre atelier<br><br>"
+        "<b>Activation unique, à vie</b> — un seul paiement, pas d'abonnement."),
     "pro.price_suffix":              "{price} · paiement unique, à vie",
     "pro.unlock_btn":                "Débloquer neoSlice Pro",
     "pro.already_bought":            "Déjà acheté ? Collez votre clé de licence",
@@ -1836,7 +1866,35 @@ _EN: dict[str, str] = {
     "settings.update_found":         "Update available!",
 
     # ── neoSlice Pro / License ────────────────────────────────────────────────
-    "pro.paywall_subtitle":          "You've used your free photo diagnostics.\nUnlock unlimited diagnostics.",
+    "pro.paywall_subtitle":          "Unlock AI Diagnostic, the Pro workspace, the Oen assistant and multicolor export.",
+    "pro.see_details":               "See everything neoSlice Pro includes",
+    "pro.features_title":            "neoSlice Pro — in detail",
+    "pro.features_detail_html": (
+        "<b>AI Diagnostic</b><br>"
+        "Take a photo of your failed print: the AI identifies the defect (stringing, "
+        "warping, over/under-extrusion, lifting, elephant foot…) and gives you the "
+        "concrete fixes to apply. Unlimited.<br><br>"
+        "<b>Oen — local AI assistant</b><br>"
+        "100% offline assistant (no data sent). It knows your printer, your settings "
+        "and the analysis of the current part, and helps you with:<br>"
+        "• choosing and tuning print settings (any brand)<br>"
+        "• troubleshooting, calibration and machine maintenance<br>"
+        "• running your workshop<br>"
+        "« Thinking » mode for more accurate answers. Knowledge base updated from the "
+        "settings.<br><br>"
+        "<b>Multicolor export</b><br>"
+        "After exporting a multicolor file, computes filament weight per color, colors "
+        "the 3D preview, matches your spools and deducts your stock automatically.<br><br>"
+        "<b>Pro workspace — full workshop management</b><br>"
+        "• <b>Dashboard</b>: revenue, collected, due, profitability, stock alerts<br>"
+        "• <b>Spools</b>: filament stock per color (grams &amp; value)<br>"
+        "• <b>Quotes</b>: real cost calculation + professional PDF quote<br>"
+        "• <b>Invoicing</b>: compliant invoices (VAT &amp; your country's currency, 13 countries / 6 languages)<br>"
+        "• <b>Orders</b>: production queue<br>"
+        "• <b>Clients</b>: quote + invoice history, paid / due revenue per client<br>"
+        "• <b>Products</b>: catalog<br>"
+        "• <b>Automatic backup</b> of your workshop<br><br>"
+        "<b>One-time activation, lifetime</b> — a single payment, no subscription."),
     "pro.price_suffix":              "{price} · one-time payment, lifetime",
     "pro.unlock_btn":                "Unlock neoSlice Pro",
     "pro.already_bought":            "Already purchased? Paste your license key",
