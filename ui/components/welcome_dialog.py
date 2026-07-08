@@ -49,6 +49,27 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("🤖 Oen — assistant IA local (Pro)",
+     "Un modèle Qwen3 tourne directement sur votre machine (hors ligne, privé), "
+     "nourri d'une base de connaissances imprimantes toutes marques. Activez le "
+     "mode « Réflexion » pour des réponses raisonnées. La base se met à jour depuis "
+     "GitHub sans réinstaller l'application."),
+    ("🎨 Export multicouleur (Pro)",
+     "Coloriez vos pièces après l'export 3MF, appliquez un filament par slot et "
+     "obtenez le grammage par couleur/bobine — le stock est déduit automatiquement "
+     "après impression."),
+    ("🖨️ 5 slicers, 80+ marques, 600+ imprimantes",
+     "Sortie compatible Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et "
+     "ElegooSlicer — le catalogue d'imprimantes s'adapte au slicer choisi. "
+     "Nouvelles machines : Flashforge Creator 5 / 5 Pro, Phrozen Arco et gamme "
+     "Anycubic Kobra étendue."),
+    ("💎 Version Pro",
+     "Le Diagnostic IA et Oen deviennent des fonctionnalités Pro ; l'interface "
+     "standard reste entièrement gratuite pour optimiser et exporter ses pièces."),
+    ("🔧 Correctif v0.1.7",
+     "• Barre de titre sombre native fiable sous Windows (plus de retour au thème "
+     "clair).\n"
+     "• Tutoriel enrichi (Oen + export multicouleur), adapté selon Pro/standard."),
     ("🚀 Nouveautés v0.1.6",
      "• Espace Pro — Gestion d'atelier complète : bobines (stock multi-couleur, "
      "coût/kg, alertes de réappro, liste de courses), devis, factures, clients, "
