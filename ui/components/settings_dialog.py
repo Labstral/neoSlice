@@ -433,22 +433,27 @@ class SettingsDialog(QDialog):
         lay.addLayout(update_row)
         lay.addSpacing(8)
 
+        # ── Sections Pro (Diagnostic IA + Oen) : masquées en version non-Pro ──
+        self._pro_features_section = QWidget()
+        _pflay = QVBoxLayout(self._pro_features_section)
+        _pflay.setContentsMargins(0, 0, 0, 0)
+        _pflay.setSpacing(0)
         # ── Section DIAGNOSTIC IA ─────────────────────────────────────────────
-        lay.addSpacing(10)
+        _pflay.addSpacing(10)
         self._sep_diag = self._make_sep()
-        lay.addWidget(self._sep_diag)
-        lay.addSpacing(14)
+        _pflay.addWidget(self._sep_diag)
+        _pflay.addSpacing(14)
 
         self._lbl_diag = self._make_section_label("DIAGNOSTIC IA")
-        lay.addWidget(self._lbl_diag)
-        lay.addSpacing(10)
+        _pflay.addWidget(self._lbl_diag)
+        _pflay.addSpacing(10)
 
         # Statut (pleine largeur)
         self._diag_status_lbl = QLabel()
         self._diag_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         self._diag_status_lbl.setWordWrap(True)
-        lay.addWidget(self._diag_status_lbl)
-        lay.addSpacing(6)
+        _pflay.addWidget(self._diag_status_lbl)
+        _pflay.addSpacing(6)
 
         # Bouton sur sa propre ligne, aligné à droite
         btn_row = QHBoxLayout()
@@ -461,24 +466,24 @@ class SettingsDialog(QDialog):
         self._refresh_diag_status()
         btn_row.addStretch()
         btn_row.addWidget(self._revoke_btn)
-        lay.addLayout(btn_row)
-        lay.addSpacing(4)
+        _pflay.addLayout(btn_row)
+        _pflay.addSpacing(4)
 
         # ── Section ASSISTANT IA ──────────────────────────────────────────────
-        lay.addSpacing(10)
+        _pflay.addSpacing(10)
         self._sep_assist = self._make_sep()
-        lay.addWidget(self._sep_assist)
-        lay.addSpacing(14)
+        _pflay.addWidget(self._sep_assist)
+        _pflay.addSpacing(14)
 
         self._lbl_assist = self._make_section_label(_("oen.section"))
-        lay.addWidget(self._lbl_assist)
-        lay.addSpacing(10)
+        _pflay.addWidget(self._lbl_assist)
+        _pflay.addSpacing(10)
 
         self._assist_status_lbl = QLabel()
         self._assist_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         self._assist_status_lbl.setWordWrap(True)
-        lay.addWidget(self._assist_status_lbl)
-        lay.addSpacing(6)
+        _pflay.addWidget(self._assist_status_lbl)
+        _pflay.addSpacing(6)
 
         self._assist_progress = QProgressBar()
         self._assist_progress.setRange(0, 100)
@@ -486,8 +491,8 @@ class SettingsDialog(QDialog):
         self._assist_progress.setTextVisible(True)
         self._assist_progress.setFixedHeight(16)
         self._assist_progress.hide()
-        lay.addWidget(self._assist_progress)
-        lay.addSpacing(6)
+        _pflay.addWidget(self._assist_progress)
+        _pflay.addSpacing(6)
 
         assist_btn_row = QHBoxLayout()
         assist_btn_row.setContentsMargins(0, 0, 0, 0)
@@ -509,14 +514,16 @@ class SettingsDialog(QDialog):
         assist_btn_row.addWidget(self._kb_btn)
         assist_btn_row.addSpacing(6)
         assist_btn_row.addWidget(self._assist_btn)
-        lay.addLayout(assist_btn_row)
+        _pflay.addLayout(assist_btn_row)
 
         self._assist_worker = None
         self._uninstall_worker = None
         self._kb_check_worker = None
         self._kb_update_worker = None
         self._refresh_assistant_status()
-        lay.addSpacing(4)
+        _pflay.addSpacing(4)
+
+        lay.addWidget(self._pro_features_section)
 
         # ── Section NEOSLICE PRO ──────────────────────────────────────────────
         lay.addSpacing(10)
@@ -774,6 +781,10 @@ class SettingsDialog(QDialog):
     def _refresh_pro_status(self):
         from core import licensing
         pal = _T.palette()
+        # Sections Diagnostic IA + Oen : réservées au Pro → masquées en version non-Pro
+        # (la section NEOSLICE PRO ci-dessous indique déjà qu'elles sont réservées).
+        if hasattr(self, "_pro_features_section"):
+            self._pro_features_section.setVisible(licensing.est_pro())
         # Pré-lancement : pas d'activation possible, juste « bientôt disponible ».
         if not licensing.est_pro() and getattr(licensing, "PRO_COMING_SOON", False):
             self._pro_status_lbl.setText(_("pro.coming_soon_short"))
