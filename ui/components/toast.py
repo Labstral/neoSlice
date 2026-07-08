@@ -19,6 +19,7 @@ class Toast(QFrame):
                  timeout_ms: int = 9000):
         super().__init__(parent)
         self._on_click = on_click
+        self._dismissed = False
         self.setCursor(QCursor(Qt.PointingHandCursor) if on_click else QCursor(Qt.ArrowCursor))
         pal = _T.palette()
         self.setStyleSheet(f"""
@@ -83,16 +84,27 @@ class Toast(QFrame):
         self._anim = anim  # garder une reference
 
     def _dismiss(self):
-        if not self.isVisible():
+        # Idempotent et sur : le flag Python reste lisible meme si l'objet C++ a ete
+        # detruit (evite RuntimeError si _dismiss est rappele apres suppression).
+        if self._dismissed:
             return
-        self._fade(self.windowOpacity(), 0.0, 220, self.deleteLater)
+        self._dismissed = True
+        try:
+            self._fade(self.windowOpacity(), 0.0, 220, self.deleteLater)
+        except RuntimeError:
+            pass
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and self._on_click:
-            try:
-                self._on_click()
-            finally:
-                self._dismiss()
+            # On ferme le toast TOUT DE SUITE puis on differe l'action : sinon
+            # l'action ouvre une fenetre modale (exec()) pendant laquelle le toast
+            # peut etre detruit, et on toucherait un objet C++ deja supprime.
+            cb = self._on_click
+            self._on_click = None
+            self._dismissed = True
+            self.hide()
+            self.deleteLater()
+            QTimer.singleShot(0, cb)
 
     def showEvent(self, event):
         super().showEvent(event)
