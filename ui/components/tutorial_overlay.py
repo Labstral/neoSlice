@@ -564,7 +564,14 @@ class TutorialOverlay(QDialog):
             rect = r if rect is None else rect.united(r)
         if rect is None:
             return None
-        return rect.adjusted(-step.pad, -step.pad, step.pad, step.pad)
+        spot = rect.adjusted(-step.pad, -step.pad, step.pad, step.pad)
+        # Ne jamais laisser le cadre sortir de la fenetre : une cible collee au bord
+        # (ex. les icones de la barre de titre, tout en haut) donnait un `top` negatif
+        # -> le bord superieur etait rogne. On borne a l'overlay avec une petite marge
+        # pour que le contour arrondi reste entierement dessine.
+        m = 3
+        bounds = self.rect().adjusted(m, m, -m, -m)
+        return spot.intersected(bounds)
 
     # ── Layout ───────────────────────────────────────────────────────────────
 
