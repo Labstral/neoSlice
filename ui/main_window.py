@@ -2170,7 +2170,11 @@ class MainWindow(QMainWindow):
             "statusbar": self._statusbar._export_btn,
             "diag":      _diag_anchor,
             "pro":       _pro_anchor,
-            "topbar":    self._topbar.icon_group,
+            # Les 4 boutons d'icones (pas le conteneur icon_group, qui est etire a
+            # toute la hauteur de la barre -> cadre de surbrillance trop haut). L'union
+            # de leurs rects = la hauteur reelle des icones (28 px), comme les autres.
+            "topbar":    [self._topbar._settings_btn, self._topbar._feedback_btn,
+                          self._topbar._help_btn, self._topbar._coffee_btn],
         }
         self._tutorial = TutorialOverlay(self, targets)
         self._tutorial.finished.connect(self._on_tutorial_finished)

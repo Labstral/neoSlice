@@ -302,7 +302,7 @@ _STEPS_FR: list[_Step] = [
         "<td valign='top'>Soutenir le développement du logiciel via un don volontaire.</td>"
         "</tr>"
         "</table>",
-        pad=12,
+        pad=10,
     ),
 ]
 
