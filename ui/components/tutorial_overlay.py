@@ -166,6 +166,7 @@ class _Step:
     body: str
     pad: int = 16
     pro: bool = False   # etape presentant une fonctionnalite Pro (gating + tuto Pro)
+    no_auto_lock: bool = False  # ne pas ajouter la note « Reserve a Pro » (corps deja complet)
 
 
 _STEPS_FR: list[_Step] = [
@@ -174,9 +175,10 @@ _STEPS_FR: list[_Step] = [
         "Bienvenue dans neoSlice",
         "neoSlice analyse votre fichier STL, OBJ ou 3MF et génère automatiquement "
         "les paramètres d'impression optimaux pour votre imprimante.\n\n"
-        "Désormais compatible avec <b>3 slicers</b> — Bambu Studio, OrcaSlicer et "
-        "PrusaSlicer — et <b>plus de 50 marques / 300 imprimantes</b> : Bambu Lab, "
-        "Creality, Prusa, Anycubic, Elegoo, Sovol et bien d'autres.\n\n"
+        "Désormais compatible avec <b>5 slicers</b> — Bambu Studio, OrcaSlicer, "
+        "PrusaSlicer, CrealityPrint et ElegooSlicer — et <b>plus de 80 marques / "
+        "600 imprimantes</b> : Bambu Lab, Creality, Prusa, Anycubic, Elegoo, Sovol, "
+        "Qidi, Flashforge, Voron et bien d'autres.\n\n"
         "Ce guide vous présente le workflow complet, du fichier à l'export, ainsi "
         "que les fonctionnalités <b>Pro</b>.\n"
         "Cliquez sur <b>Suivant</b> pour commencer.",
@@ -187,7 +189,8 @@ _STEPS_FR: list[_Step] = [
         "La toute première chose à faire : cliquez sur la <b>roue de réglages</b> "
         "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE713;</span> "
         "(en haut à droite) et sélectionnez votre <b>slicer de sortie</b> — "
-        "<b>Bambu Studio</b>, <b>OrcaSlicer</b> ou <b>PrusaSlicer</b>.\n\n"
+        "<b>Bambu Studio</b>, <b>OrcaSlicer</b>, <b>PrusaSlicer</b>, "
+        "<b>CrealityPrint</b> ou <b>ElegooSlicer</b>.\n\n"
         "C'est essentiel : <b>toutes les imprimantes ne sont pas compatibles avec "
         "tous les slicers</b>. Le catalogue d'imprimantes <b>s'adapte au slicer "
         "choisi</b> — par exemple, les <b>Prusa</b> (XL, CORE One…) n'apparaissent "
@@ -238,8 +241,9 @@ _STEPS_FR: list[_Step] = [
         "Une fois la configuration générée, le <b>bouton d'export</b> s'active.\n\n"
         "neoSlice génère un fichier <b>.3MF</b> avec tous les paramètres "
         "optimisés selon votre matériau et la géométrie de la pièce.\n\n"
-        "Choisissez votre <b>slicer de sortie</b> (Bambu Studio, OrcaSlicer ou "
-        "PrusaSlicer) dans les réglages — tout le logiciel s'adapte : catalogue "
+        "Choisissez votre <b>slicer de sortie</b> (Bambu Studio, OrcaSlicer, "
+        "PrusaSlicer, CrealityPrint ou ElegooSlicer) dans les réglages — tout le "
+        "logiciel s'adapte : catalogue "
         "d'imprimantes, plateaux et bouton d'export.\n\n"
         "Des <b>alertes matériau</b> peuvent apparaître dans le panneau d'analyse : "
         "risque de warping, séchage recommandé, incompatibilité multi-matériau "
@@ -344,9 +348,10 @@ _STEPS_EN: list[_Step] = [
         "Welcome to neoSlice",
         "neoSlice analyzes your STL, OBJ or 3MF file and automatically generates "
         "the optimal print settings for your printer.\n\n"
-        "Now compatible with <b>3 slicers</b> — Bambu Studio, OrcaSlicer and "
-        "PrusaSlicer — and <b>50+ brands / 300+ printers</b>: Bambu Lab, Creality, "
-        "Prusa, Anycubic, Elegoo, Sovol and many more.\n\n"
+        "Now compatible with <b>5 slicers</b> — Bambu Studio, OrcaSlicer, PrusaSlicer, "
+        "CrealityPrint and ElegooSlicer — and <b>80+ brands / 600+ printers</b>: Bambu "
+        "Lab, Creality, Prusa, Anycubic, Elegoo, Sovol, Qidi, Flashforge, Voron and "
+        "many more.\n\n"
         "This guide walks you through the full workflow, from file to export, plus "
         "the <b>Pro</b> features.\n"
         "Click <b>Next</b> to begin.",
@@ -357,7 +362,8 @@ _STEPS_EN: list[_Step] = [
         "The very first thing to do: click the <b>settings gear</b> "
         "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE713;</span>"
         " (top right) and select your <b>output slicer</b> — <b>Bambu Studio</b>, "
-        "<b>OrcaSlicer</b> or <b>PrusaSlicer</b>.\n\n"
+        "<b>OrcaSlicer</b>, <b>PrusaSlicer</b>, <b>CrealityPrint</b> or "
+        "<b>ElegooSlicer</b>.\n\n"
         "This matters: <b>not all printers work with every slicer</b>. The printer "
         "catalog <b>adapts to the slicer you choose</b> — for example, <b>Prusa</b> "
         "models (XL, CORE One…) only appear when you pick <b>PrusaSlicer</b> or "
@@ -406,9 +412,9 @@ _STEPS_EN: list[_Step] = [
         "Once the configuration is generated, the <b>export button</b> activates.\n\n"
         "neoSlice generates a <b>.3MF</b> file with all settings "
         "optimized for your material and the part's geometry.\n\n"
-        "Pick your <b>output slicer</b> (Bambu Studio, OrcaSlicer or PrusaSlicer) "
-        "in settings — the whole app adapts: printer catalog, plates and export "
-        "button.\n\n"
+        "Pick your <b>output slicer</b> (Bambu Studio, OrcaSlicer, PrusaSlicer, "
+        "CrealityPrint or ElegooSlicer) in settings — the whole app adapts: printer "
+        "catalog, plates and export button.\n\n"
         "<b>Material alerts</b> may appear in the analysis panel: "
         "warping risk, drying recommended, multi-material incompatibility (AMS/MMU)…",
         pad=6,
@@ -529,13 +535,54 @@ def _pro_intro_step() -> _Step:
         pro=True)
 
 
+def _pro_upsell_step() -> _Step:
+    """Diapo unique qui REMPLACE les étapes Pro détaillées pour un utilisateur NON-Pro
+    (évite 4 diapos verrouillées d'affilée pointant le même bouton). target='pro' →
+    surligne le bouton « neoSlice Pro ». Corps auto-suffisant (pas de note ajoutée)."""
+    from core.i18n import lang
+    if lang() == "en":
+        return _Step(
+            "pro", "Unlock neoSlice Pro",
+            "neoSlice <b>Pro</b> adds tools for makers who sell:\n\n"
+            "— <b>AI Diagnostic</b>: fix a failed print from a photo\n"
+            "— <b>Pro workspace</b>: quotes, invoices, clients, spool stock, profitability\n"
+            "— <b>Oen</b>: your local AI assistant (settings, troubleshooting, workshop)\n"
+            "— <b>Multicolor export</b>: weight per color & automatic stock deduction\n\n"
+            "<b>Free trials included.</b> Click the highlighted <b>neoSlice Pro</b> "
+            "button to learn more.", pad=10, pro=True, no_auto_lock=True)
+    return _Step(
+        "pro", "Passez à neoSlice Pro",
+        "neoSlice <b>Pro</b> ajoute des outils pour les makers qui vendent :\n\n"
+        "— <b>Diagnostic IA</b> : corrige une impression ratée à partir d'une photo\n"
+        "— <b>Espace Pro</b> : devis, factures, clients, stock de bobines, rentabilité\n"
+        "— <b>Oen</b> : votre assistant IA local (réglages, dépannage, atelier)\n"
+        "— <b>Export multicouleur</b> : poids par couleur & décompte automatique du stock\n\n"
+        "<b>Essais gratuits inclus.</b> Cliquez sur le bouton <b>neoSlice Pro</b> en "
+        "surbrillance pour en savoir plus.", pad=10, pro=True, no_auto_lock=True)
+
+
 def _build_steps(mode: str) -> list[_Step]:
-    """Étapes selon le mode : 'full' = onboarding complet ; 'pro' = intro Pro + les
-    seules étapes Pro (tuto post-activation)."""
+    """Étapes selon le mode :
+      'pro'  = tuto post-activation : intro Pro + les seules étapes Pro (détaillées).
+      'full' = onboarding. Pour un utilisateur PRO : toutes les étapes (Pro détaillées).
+               Pour un NON-Pro : les étapes Pro sont condensées en UNE diapo d'upsell
+               (au lieu de 4 diapos verrouillées consécutives)."""
     steps = _get_steps()
     if mode == "pro":
         return [_pro_intro_step()] + [s for s in steps if s.pro]
-    return steps
+    if _is_pro():
+        return steps
+    # Non-Pro : remplacer la 1re série d'étapes Pro par une seule diapo d'upsell.
+    out: list[_Step] = []
+    inserted = False
+    for s in steps:
+        if s.pro:
+            if not inserted:
+                out.append(_pro_upsell_step())
+                inserted = True
+        else:
+            out.append(s)
+    return out
 
 
 # ── Layout constants ─────────────────────────────────────────────────────────
@@ -691,7 +738,7 @@ class TutorialOverlay(QDialog):
         # les boutons concernés sont masqués (remplacés par le bouton « neoSlice
         # Pro »). On ajoute donc un encart expliquant que c'est réservé au Pro et
         # qu'il faut cliquer sur le bouton mis en surbrillance pour débloquer.
-        if step.pro and not _is_pro():
+        if step.pro and not _is_pro() and not step.no_auto_lock:
             from core.i18n import lang as _lang
             if _lang() == "en":
                 body += ("\n\n🔒 <b>Available with neoSlice Pro.</b> Click the "
