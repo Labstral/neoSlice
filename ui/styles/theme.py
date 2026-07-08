@@ -343,7 +343,10 @@ def apply_title_bar_theme(widget, is_dark: bool | None = None) -> None:
     la barre de titre SANS recalcul de géométrie (donc sans corruption)."""
     if is_dark is None:
         is_dark = MANAGER.is_dark()
-    _sync_native_color_scheme(is_dark)
+    # NB : on ne synchronise PLUS le colorScheme global ici. C'était la source d'une
+    # boucle : setColorScheme ré-émet colorSchemeChanged -> écouteur -> re-apply ->
+    # setColorScheme... à ~80/s. Le colorScheme global est réglé UNE fois au switch()
+    # (et au démarrage via apply_tooltip_style). Ici : uniquement le DWM par fenêtre.
     if sys.platform != "win32" or widget is None:
         return
     try:

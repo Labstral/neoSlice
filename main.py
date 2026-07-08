@@ -270,22 +270,21 @@ def main():
                 _tb(w)
     _THEME_MGR.register(_retheme_titlebars)
 
-    # CORRECTIF DE FOND barre de titre : Qt 6.8+ SUIT le thème de l'OS et ré-aligne
-    # son colorScheme (donc la couleur de la barre de titre native) sur celui de l'OS
-    # DERRIÈRE notre dos — sur un changement de thème Windows, un réveil, parfois
-    # spontanément — SANS repasser par notre switch() ni par un Show. Résultat : en
-    # thème sombre (app) + OS clair, la barre de titre « revient » en clair. On écoute
-    # donc colorSchemeChanged pour RÉ-AFFIRMER le thème choisi par l'utilisateur (le
-    # thème de l'app prime sur celui de l'OS) et re-peindre toutes les barres de titre.
-    from PySide6.QtCore import Qt as _QtCS
-
+    # CORRECTIF DE FOND barre de titre : Qt 6.8+ SUIT le thème de l'OS et ré-aligne la
+    # couleur de la barre de titre native sur celui de l'OS — sur un changement de thème
+    # Windows, un réveil, etc. En thème sombre (app) + OS clair, la barre « revient » en
+    # clair. On écoute colorSchemeChanged pour RE-PEINDRE nos barres de titre (DWM) au
+    # thème de l'app. On NE re-touche PAS le colorScheme (éviterait une boucle).
     def _on_os_scheme_changed(*_a):
+        # Qt/OS vient de changer le colorScheme (souvent la barre de titre suit l'OS).
+        # On NE re-touche PAS le colorScheme (sinon boucle de ré-émission) : on se
+        # contente de re-peindre le DWM des barres de titre pour REVENIR à notre thème.
+        # Le DWM n'émet pas colorSchemeChanged -> pas de boucle. Un léger différé pour
+        # passer APRÈS le repaint de Qt.
         try:
-            want = _QtCS.ColorScheme.Dark if _THEME_MGR.is_dark() else _QtCS.ColorScheme.Light
-            hints = app.styleHints()
-            if hints is not None and hints.colorScheme() != want:
-                hints.setColorScheme(want)   # on garde NOTRE thème, pas celui de l'OS
             _retheme_titlebars()
+            from PySide6.QtCore import QTimer as _QT2
+            _QT2.singleShot(60, _retheme_titlebars)
         except Exception:
             pass
     try:
