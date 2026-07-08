@@ -25,7 +25,7 @@ from typing import Callable, Optional
 
 from core.assistant.engine import (
     ASSIST_DIR, OLLAMA_DIR, OLLAMA_EXE, MODELS_DIR, BASE, GGUF_PATH, EMBED_GGUF_PATH,
-    MODEL_NAME, EMBED_MODEL, INSTALL_MARKER, KB_INDEX_DIR, AssistantEngine,
+    MODEL_NAME, EMBED_MODEL, CHAT_BASE_MODEL, INSTALL_MARKER, KB_INDEX_DIR, AssistantEngine,
 )
 
 # ── Sources : TOUT passe par GitHub (un seul canal) ───────────────────────────
@@ -236,17 +236,21 @@ class AssistantInstaller:
             OLLAMA_EXE.chmod(m | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     def _install_models(self, base: float, span: float) -> None:
-        # 1) telecharger les GGUF depuis GitHub (avec parties si > 2 Go)
-        self._fetch_asset(CHAT_GGUF_ASSET, CHAT_GGUF_PARTS, GGUF_PATH,
-                          base, span * 0.80, "Téléchargement du modèle de discussion")
-        self._fetch_asset(EMBED_GGUF_ASSET, EMBED_GGUF_PARTS, EMBED_GGUF_PATH,
-                          base + span * 0.80, span * 0.15, "Téléchargement du moteur de recherche")
-        # 2) importer dans Ollama (creation des modeles depuis les GGUF locaux)
-        self._progress("Préparation des modèles", base + span * 0.96)
+        # Modeles tires du REGISTRE Ollama (option B) : RIEN a heberger de notre cote.
+        # Changer de modele plus tard = changer engine.CHAT_BASE_MODEL, sans re-uploader
+        # de GGUF. L'embedding bge-m3 vient aussi du registre (deja le repli existant).
         eng = AssistantEngine.instance()
         eng._ensure_server()
-        eng._ensure_model()          # cree l'alias neoslice-assistant FROM model.gguf
-        eng._ensure_embed_model()    # cree le modele d'embedding FROM embed.gguf
+        # 1) modele de discussion (~5 Go) puis moteur de recherche (~1,2 Go)
+        eng.pull_model(CHAT_BASE_MODEL, progress=lambda f: self._emit(
+            base, span * 0.70, f, "Téléchargement du modèle de discussion"))
+        self._check_cancel()
+        eng.pull_model(EMBED_MODEL, progress=lambda f: self._emit(
+            base + span * 0.70, span * 0.22, f, "Téléchargement du moteur de recherche"))
+        # 2) preparer les modeles (alias neoslice-assistant + embedding)
+        self._progress("Préparation des modèles", base + span * 0.94)
+        eng._ensure_model()          # cree l'alias neoslice-assistant FROM qwen3:8b
+        eng._ensure_embed_model()    # prepare l'embedding (deja pulle ci-dessus)
         self._emit(base, span, 1.0, "Modèles prêts")
 
     def _install_kb(self, base: float, span: float) -> None:

@@ -351,6 +351,37 @@ class AssistantEngine:
         except Exception:
             return None
 
+    def pull_model(self, name: str, progress=None) -> None:
+        """Telecharge un modele depuis le REGISTRE Ollama via /api/pull (streaming),
+        avec progression optionnelle progress(fraction 0..1). Bloquant. Sert a
+        recuperer le modele de discussion et l'embedding sans rien heberger de notre
+        cote (voir installer, option 'pull registre')."""
+        self._ensure_server()
+        payload = {"model": name, "stream": True}
+        req = urllib.request.Request(
+            BASE + "/api/pull", data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=None) as r:
+            for raw in r:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    o = json.loads(raw)
+                except Exception:
+                    continue
+                if o.get("error"):
+                    raise RuntimeError(f"Echec du telechargement de {name}: {o['error']}")
+                if progress:
+                    tot = o.get("total") or 0
+                    comp = o.get("completed") or 0
+                    if tot:
+                        progress(max(0.0, min(1.0, comp / tot)))
+                if o.get("status") == "success":
+                    if progress:
+                        progress(1.0)
+                    return
+
     def _ensure_model(self):
         """Cree/recree l'alias `neoslice-assistant` pour qu'il reflete CHAT_BASE_MODEL.
         Un marqueur (chat_model.txt) memorise le modele de base : si le modele a CHANGE
@@ -363,9 +394,16 @@ class AssistantEngine:
             self._model_ready = True
             return
         if marker is not None and marker != want:
-            origin = CHAT_BASE_MODEL              # changement de modele -> registre
+            origin, from_registry = CHAT_BASE_MODEL, True   # changement de modele
+        elif GGUF_PATH.exists() and marker is None:
+            origin, from_registry = f'"{GGUF_PATH.as_posix()}"', False  # install avec GGUF
         else:
-            origin = f'"{GGUF_PATH.as_posix()}"' if GGUF_PATH.exists() else CHAT_BASE_MODEL
+            origin, from_registry = CHAT_BASE_MODEL, True   # option B : pull registre
+        # `ollama create FROM <modele registre>` exige le modele present localement ->
+        # on le tire d'abord si besoin (l'installateur l'a normalement deja fait).
+        if from_registry and not self._model_tag_exists(CHAT_BASE_MODEL):
+            logger.info(f"[Assistant] telechargement du modele de base {CHAT_BASE_MODEL}...")
+            self.pull_model(CHAT_BASE_MODEL)
         modelfile = ASSIST_DIR / "Modelfile"
         modelfile.write_text(
             f'FROM {origin}\nPARAMETER num_ctx 8192\n', encoding="utf-8")
