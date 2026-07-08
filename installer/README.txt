@@ -1,6 +1,6 @@
 ==============================================================================
   neoSlice - AI-Powered 3D Print Optimizer
-  Guide d'installation et de démarrage - v0.1.6
+  Guide d'installation et de démarrage - v0.1.7
 ==============================================================================
   © 2026 Emmanuel Percheron - Tous droits réservés
 
@@ -15,7 +15,7 @@ SOMMAIRE
   5. Premier démarrage
   6. Désinstallation
   7. Questions fréquentes (FAQ)
-  8. Nouveautés v0.1.5
+  8. Nouveautés v0.1.7
   9. Contact et support
 
 
@@ -40,7 +40,7 @@ SOMMAIRE
 2. CONTENU DU PACKAGE
 ------------------------------------------------------------------------------
 
-  neoSlice_Setup_v0.1.6_Windows.exe  ->  Installateur Windows
+  neoSlice_Setup_v0.1.7_Windows.exe  ->  Installateur Windows
   README.txt                       ->  Ce guide
   LICENSE.txt                      ->  Accord de licence utilisateur final
 
@@ -58,7 +58,7 @@ SOMMAIRE
 
   ÉTAPE 2 - Lancer l'installateur
   ---------------------------------
-  Double-cliquez sur : neoSlice_Setup_v0.1.6_Windows.exe
+  Double-cliquez sur : neoSlice_Setup_v0.1.7_Windows.exe
 
   Si Windows affiche "Windows a protégé votre PC" :
     -> Cliquez sur "Informations complémentaires"
@@ -160,10 +160,10 @@ SOMMAIRE
   Un tutoriel pas à pas se lance automatiquement à la première utilisation.
   Il vous guide à travers les 4 étapes du workflow neoSlice :
 
-    1. Configuration  - Sélection de l'imprimante et du filament
+    1. Configuration  - Choix du slicer de sortie, de l'imprimante et du filament
     2. Import STL     - Glisser-déposer votre fichier 3D
     3. Mission        - Réglage des critères d'impression
-    4. Export         - Génération du fichier .3MF pour Bambu Studio
+    4. Export         - Génération du fichier .3MF pour votre slicer
 
   Vous pouvez relancer ce tutoriel à tout moment via le bouton "?"
   situé en haut à droite de la fenêtre principale.
@@ -207,18 +207,21 @@ SOMMAIRE
       pas encore supporté officiellement.
 
   Q : neoSlice est-il gratuit ?
-  R : Oui, neoSlice est entièrement gratuit dans sa version actuelle.
-      Si le logiciel vous est utile, vous pouvez soutenir son développement
-      via un don volontaire sur Buy Me a Coffee. Cela n'est pas obligatoire.
+  R : neoSlice est gratuit pour optimiser et exporter vos pièces - c'est le
+      cœur de l'application et cela le restera. Une version Pro (optionnelle)
+      débloque l'assistant IA Oen, l'export multicouleur avec décompte de stock,
+      le Diagnostic IA et la gestion d'atelier complète.
 
   Q : Le logiciel envoie-t-il mes données quelque part ?
   R : Non. neoSlice fonctionne 100% en local. Aucune donnée n'est
       transmise. Vos fichiers STL et configurations restent sur votre
       machine.
 
-  Q : neoSlice fonctionne-t-il avec toutes les imprimantes Bambu Lab ?
-  R : neoSlice est optimisé pour les imprimantes Bambu Lab (X1, P1, A1,
-      A2L et variantes). Les fichiers .3MF sont compatibles avec Bambu Studio.
+  Q : Quelles imprimantes et quels slicers neoSlice supporte-t-il ?
+  R : neoSlice couvre plus de 80 marques et 600 imprimantes (Bambu Lab,
+      Creality, Prusa, Anycubic, Elegoo, Sovol...). La sortie est compatible
+      avec 5 slicers : Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et
+      ElegooSlicer. Le catalogue d'imprimantes s'adapte au slicer choisi.
 
   Q : Puis-je utiliser neoSlice sans connexion internet ?
   R : Oui. neoSlice ne nécessite aucune connexion internet pour fonctionner.
@@ -241,47 +244,40 @@ SOMMAIRE
 
 
 ------------------------------------------------------------------------------
-8. NOUVEAUTÉS v0.1.5
+8. NOUVEAUTÉS v0.1.7
 ------------------------------------------------------------------------------
 
-  ⚙️ CORRECTIFS DE COMPATIBILITÉ v0.1.5.3
-  ----------------------------------------
-  * neoSlice démarre désormais sur davantage de configurations Windows.
-  * Diverses améliorations de compatibilité et de stabilité.
-
-  📂 IMPORT 3MF BAMBU STUDIO
-  ---------------------------
-  * Import natif des fichiers .3mf depuis Bambu Studio : toutes vos pièces
-    sont affichées, la disposition multi-plateau est respectée et le fichier
-    généré préserve intégralement la structure d'origine.
-
-  📊 BARRES DE FRAGILITÉ PAR LOT
-  -------------------------------
-  * Une barre de fragilité flottante s'affiche au-dessus de chaque groupe de
-    pièces, visible depuis n'importe quel angle de caméra.
-
-  🐛 CORRECTIONS
-  ---------------
-  * Imprimante H2C : bon modèle transmis à Bambu Studio.
-  * Style de support par défaut corrigé (les différents types restent dispo).
-  * Angle de support minimum corrigé à 30°.
-  * Hauteurs de couche cohérentes avec les préréglages Bambu.
-  * Avertissements Bambu Studio supprimés à l'ouverture du fichier généré.
-  * Détection des surplombs améliorée (filets de vis, petits détails).
-
-  🔧 CORRECTION v0.1.5.1
-  -----------------------
-  * Imprimante par défaut : l'imprimante précédemment validée (A1, A1 Mini,
-    H2C, etc.) est de nouveau correctement restaurée au démarrage et
-    transmise à Bambu Studio.
-
-  ⚠️ CORRECTION IMPORTANTE v0.1.5.2
+  🤖 OEN - ASSISTANT IA LOCAL (Pro)
   ----------------------------------
-  * Taille des pièces : certaines pièces (entre 5 et 50 mm) étaient agrandies
-    10× par erreur au chargement. La taille réelle du fichier est désormais
-    toujours respectée.
-  * Mises à jour plus fiables : le téléchargement est vérifié avant
-    installation (corrige l'erreur "application 16 bits").
+  * Un modèle Qwen3 tourne directement sur votre machine (hors ligne, privé),
+    nourri d'une base de connaissances imprimantes toutes marques.
+  * Activez le mode "Réflexion" pour des réponses raisonnées.
+  * La base de connaissances se met à jour depuis GitHub sans réinstaller
+    l'application.
+
+  🎨 EXPORT MULTICOULEUR (Pro)
+  -----------------------------
+  * Coloriez vos pièces après l'export 3MF et appliquez un filament par slot.
+  * Obtenez le grammage par couleur/bobine et le stock est déduit
+    automatiquement après impression.
+
+  🖨️ 5 SLICERS, 80+ MARQUES, 600+ IMPRIMANTES
+  ---------------------------------------------
+  * Sortie compatible Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et
+    ElegooSlicer - le catalogue d'imprimantes s'adapte au slicer choisi.
+  * Nouvelles machines : Flashforge Creator 5 / 5 Pro, Phrozen Arco et gamme
+    Anycubic Kobra étendue.
+
+  💎 VERSION PRO
+  ---------------
+  * Le Diagnostic IA et Oen deviennent des fonctionnalités Pro ; l'interface
+    standard reste entièrement gratuite pour optimiser et exporter ses pièces.
+
+  🔧 CORRECTIFS
+  --------------
+  * Barre de titre sombre native fiable sous Windows (plus de retour au
+    thème clair).
+  * Tutoriel enrichi (Oen + export multicouleur), adapté selon Pro/standard.
 
 
 ------------------------------------------------------------------------------
