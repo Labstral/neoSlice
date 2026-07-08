@@ -255,6 +255,19 @@ class Viewer3D(QWidget):
         self._strands_settling = False
         self._reposition_strands()
 
+    @staticmethod
+    def _assistant_enabled() -> bool:
+        """Oen est une fonctionnalité Pro : la sphère n'apparaît qu'en version Pro."""
+        try:
+            from core import licensing
+            return bool(licensing.est_pro())
+        except Exception:
+            return False
+
+    def refresh_assistant_visibility(self):
+        """À appeler quand l'état Pro change (activation) → montre/masque la sphère."""
+        self._reposition_strands()
+
     def _reposition_strands(self):
         """Cale l'overlay sphère sur le coin bas-gauche du viewer (coords écran)."""
         s = getattr(self, "_strands", None)
@@ -262,6 +275,10 @@ class Viewer3D(QWidget):
             return
         from PySide6.QtCore import QPoint
         win = self.window()
+        # Gating Pro : en version non-Pro, Oen est masqué (sphère cachée).
+        if not self._assistant_enabled():
+            s.hide()
+            return
         if (win is not None and win.isMinimized()) or not self.isVisible():
             s.hide()
             return

@@ -1872,13 +1872,21 @@ class MainWindow(QMainWindow):
         self._maybe_launch_pro_tutorial()
 
     def _on_pro_cta(self):
-        """Clic sur « neoSlice Pro ». En pré-lancement : message « bientôt ».
-        Sinon : ouvre le diagnostic (essais gratuits puis paywall)."""
+        """Clic sur « neoSlice Pro » → ouvre DIRECTEMENT la fenêtre d'activation Pro.
+        (Plus de diagnostic ni d'essais gratuits : le Diagnostic IA est réservé au Pro.)
+        En pré-lancement : message « bientôt »."""
         from core import licensing
         if getattr(licensing, "PRO_COMING_SOON", False):
             self._show_coming_soon()
-        else:
-            self._open_diagnostic()
+            return
+        if licensing.est_pro():
+            return
+        from ui.components.paywall_dialog import PaywallDialog
+        wall = PaywallDialog(self)
+        wall.exec()
+        if licensing.est_pro():
+            self._topbar.refresh_pro()
+        self._maybe_launch_pro_tutorial()
 
     def _show_coming_soon(self):
         """Annonce que neoSlice Pro arrive bientôt (aucun accès pour l'instant)."""
@@ -2206,6 +2214,11 @@ class MainWindow(QMainWindow):
         lance UNE SEULE FOIS le tuto post-activation : Diagnostic IA, Espace Pro, Oen
         et export multicouleur. Idempotent (pref `pro_tutorial_done`) → sans danger si
         appelé depuis plusieurs points de sortie Pro."""
+        # L'état Pro a pu changer → montre/masque la sphère Oen (gating Pro).
+        try:
+            self._viewer.refresh_assistant_visibility()
+        except Exception:
+            pass
         try:
             from core import licensing
             if not licensing.est_pro():

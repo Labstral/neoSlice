@@ -53,7 +53,8 @@ from core.i18n import _
 # Passer à False le jour du lancement public de neoSlice Pro.
 PRO_COMING_SOON = False   # LANCEMENT : neoSlice Pro accessible (diagnostic + devis + activation Gumroad)
 
-ESSAIS_GRATUITS = 5
+ESSAIS_GRATUITS = 0   # essais gratuits SUPPRIMES (2026-07-08) : le Diagnostic IA est
+#   désormais une fonctionnalité Pro pure (activation requise, plus de version d'essai).
 PRIX_AFFICHE = "$19.99"
 MAX_APPAREILS = 3        # nombre max d'activations (uses Gumroad)
 
@@ -367,8 +368,8 @@ def consommer_essai() -> None:
 
 
 def peut_analyser() -> bool:
-    """True si une analyse est autorisée (Pro, ou au moins un essai restant)."""
-    return est_pro() or essais_restants() > 0
+    """True si le Diagnostic IA est autorisé. Essais gratuits supprimés → Pro requis."""
+    return est_pro()
 
 
 def reset_for_test() -> None:

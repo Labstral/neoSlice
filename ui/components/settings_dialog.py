@@ -795,10 +795,7 @@ class SettingsDialog(QDialog):
                 QPushButton:hover {{ border-color: {pal['ERROR_RED']}; color: {pal['ERROR_RED']}; }}
             """)
         else:
-            restants = licensing.essais_restants()
-            self._pro_status_lbl.setText(
-                _("pro.settings_status_free", restants=restants, total=licensing.ESSAIS_GRATUITS)
-            )
+            self._pro_status_lbl.setText(_("pro.settings_status_locked"))
             self._pro_status_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
             self._pro_btn.setText(_("pro.settings_btn_upgrade"))
             # Mode achat = CTA principal plein → gras assumé.

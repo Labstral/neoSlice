@@ -906,9 +906,9 @@ class DefectDiagnosticDialog(QDialog):
     def _show_manual(self):
         """Affiche les corrections du défaut choisi à la main (mode manuel).
 
-        Même barrière que l'analyse photo : 3 essais gratuits puis paywall, et un
-        essai consommé à chaque consultation. On construit un DiagnosticResult
-        synthétique depuis les mêmes règles de remédiation, puis _show_result."""
+        Même barrière que l'analyse photo : fonctionnalité Pro (activation requise, plus
+        d'essais gratuits). On construit un DiagnosticResult synthétique depuis les mêmes
+        règles de remédiation, puis _show_result."""
         from core import licensing
         if not licensing.peut_analyser():
             from ui.components.paywall_dialog import PaywallDialog
@@ -947,26 +947,12 @@ class DefectDiagnosticDialog(QDialog):
         self._manual_mode = True
         self._result = result
         self._image_hash = ""          # pas de photo → rien à confirmer/envoyer
-        # Consomme un essai gratuit (équivalent d'un diagnostic abouti)
-        if not licensing.est_pro():
-            licensing.consommer_essai()
-        self.refresh_trial_label()
         self._show_result(result)
 
     def refresh_trial_label(self):
-        """Met à jour le compteur « Essais gratuits : X/3 » (masqué si Pro)."""
-        from core import licensing
-        from core.i18n import _
-        if licensing.est_pro():
-            self._trial_lbl.hide()
-            return
-        total = licensing.ESSAIS_GRATUITS
-        restants = licensing.essais_restants()
-        self._trial_lbl.setText(_("pro.trial_counter", restants=restants, total=total))
-        pal = _T.palette()
-        color = pal["AMBER"] if restants <= 0 else pal["TEXT_LABEL"]
-        self._trial_lbl.setStyleSheet(f"color: {color}; background: transparent;")
-        self._trial_lbl.show()
+        """Essais gratuits supprimés : le Diagnostic IA est une fonctionnalité Pro pure
+        → aucun compteur d'essais, le libellé reste masqué."""
+        self._trial_lbl.hide()
 
     def _start_analysis(self):
         if not self._image_path:
@@ -988,7 +974,7 @@ class DefectDiagnosticDialog(QDialog):
             if consent.exec() != QDialog.Accepted:
                 return   # refusé → pas d'analyse
 
-        # ── Barrière neoSlice Pro : 3 diagnostics gratuits, puis déblocage ──
+        # ── Barrière neoSlice Pro : activation requise (plus d'essais gratuits) ──
         from core import licensing
         if not licensing.peut_analyser():
             from ui.components.paywall_dialog import PaywallDialog
@@ -1039,12 +1025,6 @@ class DefectDiagnosticDialog(QDialog):
         self._analyze_btn.setEnabled(True)
         self._result    = result
         self._image_hash = image_hash
-        # Un vrai diagnostic abouti consomme un essai gratuit (pas le cas incertain)
-        if not getattr(result, "uncertain", False):
-            from core import licensing
-            if not licensing.est_pro():
-                licensing.consommer_essai()
-        self.refresh_trial_label()
         self._show_result(result)
 
     def _on_error(self, msg: str):

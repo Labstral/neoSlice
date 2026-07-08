@@ -258,7 +258,7 @@ _STEPS_FR: list[_Step] = [
         "artificielle identifie le défaut — <b>stringing, warping, sous-extrusion, "
         "décollement…</b> — et vous donne les <b>corrections concrètes</b> à "
         "appliquer.\n\n"
-        "<b>Fonctionnalité neoSlice Pro</b> (essais gratuits inclus).",
+        "<b>Fonctionnalité neoSlice Pro.</b>",
         pad=10,
         pro=True,
     ),
@@ -426,7 +426,7 @@ _STEPS_EN: list[_Step] = [
         "Take or load a <b>photo</b> of your part: the AI identifies the defect — "
         "<b>stringing, warping, under-extrusion, lifting…</b> — and gives you the "
         "<b>concrete fixes</b> to apply.\n\n"
-        "<b>neoSlice Pro feature</b> (free trials included).",
+        "<b>neoSlice Pro feature.</b>",
         pad=10,
         pro=True,
     ),
@@ -543,22 +543,24 @@ def _pro_upsell_step() -> _Step:
     if lang() == "en":
         return _Step(
             "pro", "Unlock neoSlice Pro",
-            "neoSlice <b>Pro</b> adds tools for makers who sell:\n\n"
+            "neoSlice <b>Pro</b> unlocks advanced tools — whether you troubleshoot, "
+            "print in color, use the AI assistant or run a business:\n\n"
             "— <b>AI Diagnostic</b>: fix a failed print from a photo\n"
-            "— <b>Pro workspace</b>: quotes, invoices, clients, spool stock, profitability\n"
             "— <b>Oen</b>: your local AI assistant (settings, troubleshooting, workshop)\n"
-            "— <b>Multicolor export</b>: weight per color & automatic stock deduction\n\n"
-            "<b>Free trials included.</b> Click the highlighted <b>neoSlice Pro</b> "
-            "button to learn more.", pad=10, pro=True, no_auto_lock=True)
+            "— <b>Multicolor export</b>: weight per color & automatic stock deduction\n"
+            "— <b>Pro workspace</b>: quotes, invoices, clients, spool stock, profitability\n\n"
+            "Click the highlighted <b>neoSlice Pro</b> button to learn more.",
+            pad=10, pro=True, no_auto_lock=True)
     return _Step(
         "pro", "Passez à neoSlice Pro",
-        "neoSlice <b>Pro</b> ajoute des outils pour les makers qui vendent :\n\n"
+        "neoSlice <b>Pro</b> débloque des outils avancés — que vous dépanniez, "
+        "imprimiez en couleur, utilisiez l'assistant IA ou gériez une activité :\n\n"
         "— <b>Diagnostic IA</b> : corrige une impression ratée à partir d'une photo\n"
-        "— <b>Espace Pro</b> : devis, factures, clients, stock de bobines, rentabilité\n"
         "— <b>Oen</b> : votre assistant IA local (réglages, dépannage, atelier)\n"
-        "— <b>Export multicouleur</b> : poids par couleur & décompte automatique du stock\n\n"
-        "<b>Essais gratuits inclus.</b> Cliquez sur le bouton <b>neoSlice Pro</b> en "
-        "surbrillance pour en savoir plus.", pad=10, pro=True, no_auto_lock=True)
+        "— <b>Export multicouleur</b> : poids par couleur & décompte automatique du stock\n"
+        "— <b>Espace Pro</b> : devis, factures, clients, stock de bobines, rentabilité\n\n"
+        "Cliquez sur le bouton <b>neoSlice Pro</b> en surbrillance pour en savoir plus.",
+        pad=10, pro=True, no_auto_lock=True)
 
 
 def _build_steps(mode: str) -> list[_Step]:
@@ -742,12 +744,10 @@ class TutorialOverlay(QDialog):
             from core.i18n import lang as _lang
             if _lang() == "en":
                 body += ("\n\n🔒 <b>Available with neoSlice Pro.</b> Click the "
-                         "highlighted <b>neoSlice Pro</b> button to unlock these "
-                         "features — free trials included.")
+                         "highlighted <b>neoSlice Pro</b> button to unlock it.")
             else:
                 body += ("\n\n🔒 <b>Réservé à neoSlice Pro.</b> Cliquez sur le "
-                         "bouton <b>neoSlice Pro</b> en surbrillance pour débloquer "
-                         "ces fonctionnalités — essais gratuits inclus.")
+                         "bouton <b>neoSlice Pro</b> en surbrillance pour le débloquer.")
         return (body
                 .replace("\n", "<br>")
                 .replace("#E8F4FF", icon_color)
