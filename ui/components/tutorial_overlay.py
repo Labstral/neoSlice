@@ -165,6 +165,7 @@ class _Step:
     title: str
     body: str
     pad: int = 16
+    pro: bool = False   # etape presentant une fonctionnalite Pro (gating + tuto Pro)
 
 
 _STEPS_FR: list[_Step] = [
@@ -255,6 +256,7 @@ _STEPS_FR: list[_Step] = [
         "appliquer.\n\n"
         "<b>Fonctionnalité neoSlice Pro</b> (essais gratuits inclus).",
         pad=10,
+        pro=True,
     ),
     _Step(
         "pro",
@@ -267,10 +269,40 @@ _STEPS_FR: list[_Step] = [
         "— <b>Clients</b> : historique devis + factures et CA payé / dû par client\n\n"
         "<b>Fonctionnalité neoSlice Pro.</b>",
         pad=10,
+        pro=True,
+    ),
+    _Step(
+        "oen",
+        "⑦ Oen — votre assistant IA local",
+        "La <b>sphère</b> en bas à gauche de la vue 3D ouvre <b>Oen</b>, votre "
+        "assistant IA <b>100 % local et hors ligne</b> (aucune donnée envoyée).\n\n"
+        "Oen vous aide sur :\n"
+        "— <b>Réglages & choix</b> : matériau, profil, paramètres d'impression\n"
+        "— <b>Dépannage & entretien</b> de votre machine (toutes marques)\n"
+        "— <b>Votre atelier</b> : stock de bobines, devis, coûts, rentabilité\n\n"
+        "Il connaît votre imprimante, vos paramètres et l'analyse de la pièce en "
+        "cours. Le bouton <b>Réflexion</b> le fait raisonner avant de répondre "
+        "(plus précis). Sa base de connaissances se met à jour depuis les réglages.\n\n"
+        "<b>Fonctionnalité neoSlice Pro</b> — installation optionnelle depuis les réglages.",
+        pad=14,
+        pro=True,
+    ),
+    _Step(
+        "color",
+        "⑧ Export multicouleur",
+        "Après l'export d'un fichier <b>multicouleur</b> (assemblage de couleurs ou "
+        "STL peint dans Bambu Studio), neoSlice calcule le <b>poids de filament par "
+        "couleur</b>, colore l'aperçu 3D en direct, vous laisse <b>associer vos "
+        "bobines</b> et <b>décompte le stock</b> de l'Espace Pro automatiquement.\n\n"
+        "Idéal pour chiffrer précisément une pièce multicolore et suivre votre "
+        "consommation réelle.\n\n"
+        "<b>Fonctionnalité neoSlice Pro.</b>",
+        pad=12,
+        pro=True,
     ),
     _Step(
         "topbar",
-        "⑦ Barre de titre",
+        "⑨ Barre de titre",
         "À droite de la barre, quatre raccourcis sont disponibles à tout moment :"
         "<br><br>"
         "<table cellspacing='0' cellpadding='0' width='100%'>"
@@ -390,6 +422,7 @@ _STEPS_EN: list[_Step] = [
         "<b>concrete fixes</b> to apply.\n\n"
         "<b>neoSlice Pro feature</b> (free trials included).",
         pad=10,
+        pro=True,
     ),
     _Step(
         "pro",
@@ -402,10 +435,39 @@ _STEPS_EN: list[_Step] = [
         "— <b>Clients</b>: quote + invoice history and paid / due revenue per client\n\n"
         "<b>neoSlice Pro feature.</b>",
         pad=10,
+        pro=True,
+    ),
+    _Step(
+        "oen",
+        "⑦ Oen — your local AI assistant",
+        "The <b>sphere</b> at the bottom-left of the 3D view opens <b>Oen</b>, your "
+        "<b>100% local, offline</b> AI assistant (no data sent).\n\n"
+        "Oen helps you with:\n"
+        "— <b>Settings & choices</b>: material, profile, print parameters\n"
+        "— <b>Troubleshooting & maintenance</b> of your machine (any brand)\n"
+        "— <b>Your workshop</b>: spool stock, quotes, costs, profitability\n\n"
+        "It knows your printer, your settings and the analysis of the current part. "
+        "The <b>Thinking</b> button makes it reason before answering (more accurate). "
+        "Its knowledge base updates from the settings.\n\n"
+        "<b>neoSlice Pro feature</b> — optional install from the settings.",
+        pad=14,
+        pro=True,
+    ),
+    _Step(
+        "color",
+        "⑧ Multicolor export",
+        "After exporting a <b>multicolor</b> file (color assembly or a part painted "
+        "in Bambu Studio), neoSlice computes the <b>filament weight per color</b>, "
+        "colors the 3D preview live, lets you <b>match your spools</b> and "
+        "<b>deducts stock</b> from the Pro workspace automatically.\n\n"
+        "Perfect to price a multicolor part precisely and track your real usage.\n\n"
+        "<b>neoSlice Pro feature.</b>",
+        pad=12,
+        pro=True,
     ),
     _Step(
         "topbar",
-        "⑦ Title bar",
+        "⑨ Title bar",
         "On the right of the bar, four shortcuts are available at any time:"
         "<br><br>"
         "<table cellspacing='0' cellpadding='0' width='100%'>"
@@ -448,6 +510,34 @@ def _get_steps() -> list[_Step]:
     return _STEPS_EN if lang() == "en" else _STEPS_FR
 
 
+def _pro_intro_step() -> _Step:
+    """Intro du tuto POST-ACTIVATION (uniquement les fonctionnalités Pro)."""
+    from core.i18n import lang
+    if lang() == "en":
+        return _Step(
+            None, "Welcome to neoSlice Pro",
+            "Pro is now active — thank you! Here is a quick tour of everything you "
+            "just unlocked: <b>AI Diagnosis</b>, the <b>Pro workspace</b> (quotes, "
+            "invoicing, spool stock), your local AI assistant <b>Oen</b>, and "
+            "<b>multicolor export</b>.\n\nClick <b>Next</b> to start.", pro=True)
+    return _Step(
+        None, "Bienvenue dans neoSlice Pro",
+        "La version Pro est activée — merci&nbsp;! Voici un tour rapide de tout ce "
+        "que vous venez de débloquer : le <b>Diagnostic IA</b>, l'<b>Espace Pro</b> "
+        "(devis, facturation, stock de bobines), votre assistant IA local <b>Oen</b>, "
+        "et l'<b>export multicouleur</b>.\n\nCliquez sur <b>Suivant</b> pour commencer.",
+        pro=True)
+
+
+def _build_steps(mode: str) -> list[_Step]:
+    """Étapes selon le mode : 'full' = onboarding complet ; 'pro' = intro Pro + les
+    seules étapes Pro (tuto post-activation)."""
+    steps = _get_steps()
+    if mode == "pro":
+        return [_pro_intro_step()] + [s for s in steps if s.pro]
+    return steps
+
+
 # ── Layout constants ─────────────────────────────────────────────────────────
 _CARD_W    = 380
 _MARGIN    = 28
@@ -468,7 +558,7 @@ class TutorialOverlay(QDialog):
 
     finished = Signal()
 
-    def __init__(self, parent: QWidget, targets: dict[str, QWidget]):
+    def __init__(self, parent: QWidget, targets: dict[str, QWidget], mode: str = "full"):
         # FramelessWindowHint : pas de barre de titre
         # WindowStaysOnTopHint : toujours devant la fenêtre principale
         super().__init__(parent, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -477,6 +567,11 @@ class TutorialOverlay(QDialog):
         self.setAttribute(Qt.WA_DeleteOnClose)
 
         self._targets = targets
+        # mode "full" = onboarding complet ; "pro" = tuto post-activation (uniquement
+        # les fonctionnalites Pro, avec une intro dediee). La liste est figee a la
+        # construction pour rester coherente pendant tout le parcours.
+        self._mode  = mode
+        self._steps = _build_steps(mode)
         self._idx     = 0
         self._hovered = _HOVER_NONE
 
@@ -531,7 +626,7 @@ class TutorialOverlay(QDialog):
             self._go_to(self._idx - 1)
 
     def _next(self):
-        if self._idx < len(_get_steps()) - 1:
+        if self._idx < len(self._steps) - 1:
             self._go_to(self._idx + 1)
         else:
             self._finish()
@@ -544,7 +639,7 @@ class TutorialOverlay(QDialog):
     # ── Spotlight ────────────────────────────────────────────────────────────
 
     def _spotlight(self) -> QRect | None:
-        step = _get_steps()[self._idx]
+        step = self._steps[self._idx]
         if step.target is None:
             return None
         w = self._targets.get(step.target)
@@ -557,9 +652,10 @@ class TutorialOverlay(QDialog):
         for widget in widgets:
             if widget is None or not widget.isVisible():
                 continue
-            # mapTo(parentWidget()) → position dans la fenêtre principale,
-            # qui coïncide avec ce dialog (même origine).
-            tl = widget.mapTo(self.parent(), QPoint(0, 0))
+            # Coordonnées GLOBALES → repère de l'overlay : marche pour un enfant de la
+            # fenêtre ET pour une fenêtre top-level (ex. la sphère Oen, qui est une
+            # mini-fenêtre translucide séparée). mapTo(parent) échouait pour celle-ci.
+            tl = self.mapFromGlobal(widget.mapToGlobal(QPoint(0, 0)))
             r = QRect(tl, widget.size())
             rect = r if rect is None else rect.united(r)
         if rect is None:
@@ -589,13 +685,13 @@ class TutorialOverlay(QDialog):
             coffee_tag = f"<img src='{_path.as_uri()}' width='{_dw}' height='16'>"
         else:
             coffee_tag = "&#x2615;"
-        step = _get_steps()[self._idx]
+        step = self._steps[self._idx]
         body = step.body
         # Étapes Pro (Diagnostic IA / Espace Pro) : pour un utilisateur SANS Pro,
         # les boutons concernés sont masqués (remplacés par le bouton « neoSlice
         # Pro »). On ajoute donc un encart expliquant que c'est réservé au Pro et
         # qu'il faut cliquer sur le bouton mis en surbrillance pour débloquer.
-        if step.target in ("diag", "pro") and not _is_pro():
+        if step.pro and not _is_pro():
             from core.i18n import lang as _lang
             if _lang() == "en":
                 body += ("\n\n🔒 <b>Available with neoSlice Pro.</b> Click the "
@@ -616,7 +712,7 @@ class TutorialOverlay(QDialog):
 
         td = QTextDocument()
         td.setDefaultFont(QFont(FONT_MAIN, 13, QFont.Bold))
-        td.setPlainText(_get_steps()[self._idx].title)
+        td.setPlainText(self._steps[self._idx].title)
         td.setTextWidth(text_w)
         h += int(td.size().height()) + 12 + 1 + 12  # title + sep
 
@@ -705,8 +801,8 @@ class TutorialOverlay(QDialog):
 
     def _paint_card(self, painter: QPainter):
         idx   = self._idx
-        step  = _get_steps()[idx]
-        total = len(_get_steps())
+        step  = self._steps[idx]
+        total = len(self._steps)
         cr    = QRectF(self._card_rect)
         cx    = float(self._card_rect.x())
         cy    = float(self._card_rect.y())
@@ -853,7 +949,7 @@ class TutorialOverlay(QDialog):
 
     def mouseMoveEvent(self, event):
         pos   = event.pos()
-        total = len(_get_steps())
+        total = len(self._steps)
         old   = self._hovered
 
         if self._btn_next.contains(pos):
@@ -879,7 +975,7 @@ class TutorialOverlay(QDialog):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             pos   = event.pos()
-            total = len(_get_steps())
+            total = len(self._steps)
             if self._btn_next.contains(pos):
                 self._next()
             elif self._idx > 0 and self._btn_prev.contains(pos):

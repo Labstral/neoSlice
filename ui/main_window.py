@@ -1821,6 +1821,8 @@ class MainWindow(QMainWindow):
         new_printer = _PREFS.get("printer_default", "")
         if new_printer and hasattr(self, '_filament_selector'):
             self._filament_selector.set_printer(new_printer)
+        # Pro peut avoir été activé dans les réglages → tuto Pro (une fois)
+        self._maybe_launch_pro_tutorial()
 
     def _open_diagnostic(self):
         from ui.components.defect_diagnostic import DefectDiagnosticDialog
@@ -1866,6 +1868,8 @@ class MainWindow(QMainWindow):
             y = max(geo.top() + 8, min(y, geo.bottom() - 8 - reserve))
         dlg.move(x, y)
         dlg.exec()
+        # Activation possible via le diagnostic (essais → paywall) → tuto Pro (une fois)
+        self._maybe_launch_pro_tutorial()
 
     def _on_pro_cta(self):
         """Clic sur « neoSlice Pro ». En pré-lancement : message « bientôt ».
@@ -1915,6 +1919,7 @@ class MainWindow(QMainWindow):
         apply_title_bar_theme(hub)
         # Le centrage sur l'écran est géré par ProHubDialog.showEvent (fiable).
         hub.exec()
+        self._maybe_launch_pro_tutorial()   # 1re activation → tuto Pro (une fois)
 
     def _devis_context(self) -> dict:
         """Contexte transmis au devis intégré (poids/durée/imprimante/pièce).
@@ -2141,7 +2146,7 @@ class MainWindow(QMainWindow):
 
     # ── Tutorial ───────────────────────────────────────────────────────────
 
-    def _show_tutorial(self):
+    def _show_tutorial(self, mode: str = "full"):
         if self._tutorial is not None:
             try:
                 self._tutorial.hide()
@@ -2162,6 +2167,15 @@ class MainWindow(QMainWindow):
             _is_pro = False
         _diag_anchor = self._topbar._diag_btn if _is_pro else self._topbar._pro_cta_btn
         _pro_anchor  = self._topbar._cost_btn if _is_pro else self._topbar._pro_cta_btn
+        # Oen : cible = la sphere de l'assistant (bas gauche du viewer, fenetre
+        # top-level) quand Pro ; sinon on pointe le bouton « neoSlice Pro » (upsell).
+        # La sphere peut ne pas exister encore (creee au showEvent du viewer) -> None
+        # -> l'etape s'affiche en encart centre (repli propre).
+        _oen_anchor = (getattr(self._viewer, "_strands", None) if _is_pro
+                       else self._topbar._pro_cta_btn)
+        # Export multicouleur : pas d'element d'UI permanent -> encart centre quand Pro
+        # (target None), et bouton Pro en surbrillance quand non-Pro (upsell).
+        _color_anchor = None if _is_pro else self._topbar._pro_cta_btn
         targets = {
             "settings":  self._topbar._settings_btn,
             "config":    [self._step_config, self._filament_selector],
@@ -2170,13 +2184,15 @@ class MainWindow(QMainWindow):
             "statusbar": self._statusbar._export_btn,
             "diag":      _diag_anchor,
             "pro":       _pro_anchor,
+            "oen":       _oen_anchor,
+            "color":     _color_anchor,
             # Les 4 boutons d'icones (pas le conteneur icon_group, qui est etire a
             # toute la hauteur de la barre -> cadre de surbrillance trop haut). L'union
             # de leurs rects = la hauteur reelle des icones (28 px), comme les autres.
             "topbar":    [self._topbar._settings_btn, self._topbar._feedback_btn,
                           self._topbar._help_btn, self._topbar._coffee_btn],
         }
-        self._tutorial = TutorialOverlay(self, targets)
+        self._tutorial = TutorialOverlay(self, targets, mode=mode)
         self._tutorial.finished.connect(self._on_tutorial_finished)
         self._tutorial.show()
         self._tutorial.raise_()
@@ -2184,6 +2200,26 @@ class MainWindow(QMainWindow):
 
     def _on_tutorial_finished(self):
         self._tutorial = None
+
+    def _maybe_launch_pro_tutorial(self):
+        """Après activation de neoSlice Pro (fermeture de la fenêtre de remerciement),
+        lance UNE SEULE FOIS le tuto post-activation : Diagnostic IA, Espace Pro, Oen
+        et export multicouleur. Idempotent (pref `pro_tutorial_done`) → sans danger si
+        appelé depuis plusieurs points de sortie Pro."""
+        try:
+            from core import licensing
+            if not licensing.est_pro():
+                return
+            from ui.components.welcome_dialog import _load_prefs, _save_prefs
+            prefs = _load_prefs()
+            if prefs.get("pro_tutorial_done"):
+                return
+            prefs["pro_tutorial_done"] = True
+            _save_prefs(prefs)
+        except Exception:
+            return
+        # Différé : laisse le(s) dialogue(s) Pro se fermer complètement avant l'overlay.
+        QTimer.singleShot(350, lambda: self._show_tutorial(mode="pro"))
 
     # ── Handlers ───────────────────────────────────────────────────────────
 
