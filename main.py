@@ -270,6 +270,29 @@ def main():
                 _tb(w)
     _THEME_MGR.register(_retheme_titlebars)
 
+    # CORRECTIF DE FOND barre de titre : Qt 6.8+ SUIT le thème de l'OS et ré-aligne
+    # son colorScheme (donc la couleur de la barre de titre native) sur celui de l'OS
+    # DERRIÈRE notre dos — sur un changement de thème Windows, un réveil, parfois
+    # spontanément — SANS repasser par notre switch() ni par un Show. Résultat : en
+    # thème sombre (app) + OS clair, la barre de titre « revient » en clair. On écoute
+    # donc colorSchemeChanged pour RÉ-AFFIRMER le thème choisi par l'utilisateur (le
+    # thème de l'app prime sur celui de l'OS) et re-peindre toutes les barres de titre.
+    from PySide6.QtCore import Qt as _QtCS
+
+    def _on_os_scheme_changed(*_a):
+        try:
+            want = _QtCS.ColorScheme.Dark if _THEME_MGR.is_dark() else _QtCS.ColorScheme.Light
+            hints = app.styleHints()
+            if hints is not None and hints.colorScheme() != want:
+                hints.setColorScheme(want)   # on garde NOTRE thème, pas celui de l'OS
+            _retheme_titlebars()
+        except Exception:
+            pass
+    try:
+        app.styleHints().colorSchemeChanged.connect(_on_os_scheme_changed)
+    except Exception:
+        pass
+
     # Icône sur QApplication avant tout affichage — garantit la barre des tâches
     _icon_path = _assets_dir() / "neoSlice.ico"
     if not _icon_path.exists():
