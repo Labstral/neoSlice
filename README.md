@@ -1,18 +1,21 @@
 # neoSlice — AI-Powered 3D Print Optimizer
 
-**neoSlice** est un assistant IA de slicing pour les imprimantes **Bambu Lab**. Il analyse vos fichiers 3D et génère automatiquement une configuration d'impression optimisée dans Bambu Studio.
+**neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **5 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et ElegooSlicer — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, Sovol…).
 
-> Version actuelle : **v0.1.6** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v0.1.7** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
 ## Fonctionnalités
 
-- **Import STL & 3MF** — chargez vos fichiers directement, y compris les 3MF multi-plateau Bambu Studio
+- **5 slicers, 80+ marques, 600+ imprimantes** — le catalogue s'adapte au slicer de sortie choisi
+- **Import STL & 3MF** — chargez vos fichiers directement, y compris les 3MF multi-plateau
 - **Analyse géométrique** — détection des surplombs, fragilité, stabilité par groupe de pièces
 - **Intent en langage naturel** — décrivez votre besoin ("solide", "rapide", "finition") et neoSlice règle tout
-- **Génération 3MF** — exporte un fichier prêt à ouvrir dans Bambu Studio avec tous les paramètres optimisés
-- **Barres de fragilité** — indicateur visuel flottant par lot de pièces dans le viewer 3D
+- **Génération 3MF** — export prêt à ouvrir dans votre slicer avec tous les paramètres optimisés
+- **Oen — assistant IA local** *(Pro)* — un modèle Qwen3 tourne sur votre machine (hors ligne, privé), nourri d'une base de connaissances imprimantes ; **mode Réflexion** activable pour des réponses raisonnées
+- **Export multicouleur** *(Pro)* — coloriez vos pièces après export 3MF, appliquez les filaments par slot, et le **stock est déduit automatiquement** après impression
+- **Espace Pro — gestion d'atelier** *(Pro)* — bobines, devis, factures internationales, clients, commandes et catalogue d'articles, tous connectés
 - **Mise à jour automatique** — vérification et installation directement depuis l'application
 
 ## Plateformes supportées
@@ -20,18 +23,18 @@
 | Plateforme | Format | Statut |
 |---|---|---|
 | Windows 10/11 | `.exe` (installateur) | ✅ Disponible |
-| macOS 12+ (arm64 / x86_64) | `.dmg` | ✅ Disponible |
+| macOS 12+ (arm64 / x86_64) | `.zip` | ✅ Disponible |
 
 ## Installation
 
 ### Windows
-1. Téléchargez `neoSlice_Setup_v0.1.6_Windows.exe` sur [neoslice-ai.com](https://neoslice-ai.com)
+1. Téléchargez `neoSlice_Setup_Windows.exe` sur [neoslice-ai.com](https://neoslice-ai.com)
 2. Lancez l'installateur — aucun droit administrateur requis
 3. Un raccourci est créé sur le bureau
 
 ### macOS
-1. Téléchargez `neoSlice-v0.1.6-macOS.dmg`
-2. Ouvrez le DMG et glissez `neoSlice.app` dans Applications
+1. Téléchargez `neoSlice_macOS.zip`
+2. Décompressez et glissez `neoSlice.app` dans Applications
 3. Au premier lancement, faites clic droit → Ouvrir (validation Gatekeeper)
 
 ### Mise à jour depuis l'application
@@ -40,6 +43,15 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v0.1.7
+- **Oen — assistant IA local** *(Pro)* : un modèle **Qwen3 8B** tourne directement sur votre machine (hors ligne, privé), avec une base de connaissances imprimantes toutes marques et une recherche sémantique (RAG). **Mode Réflexion** activable dans la fenêtre d'Oen pour des réponses raisonnées. Base de connaissances mise à jour depuis GitHub sans réinstaller l'application.
+- **Export multicouleur** *(Pro)* : coloriez vos pièces après export 3MF, appliquez un filament par slot, obtenez le grammage/bobine par couleur — et le **stock est déduit automatiquement** après impression.
+- **5 slicers** : sortie compatible Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et ElegooSlicer. Le catalogue d'imprimantes s'adapte au slicer choisi (80+ marques / 600+ imprimantes).
+- **Nouvelles imprimantes** : Flashforge Creator 5 / 5 Pro, Phrozen Arco, et gamme Anycubic Kobra étendue.
+- **Version Pro** : le Diagnostic IA et Oen deviennent des fonctionnalités Pro ; l'interface standard reste entièrement gratuite pour optimiser et exporter ses pièces.
+- **Tutoriel enrichi** : présentation d'Oen et de l'export multicouleur, adapté selon Pro/standard.
+- **Correctif** : barre de titre sombre native fiable sous Windows (plus de retour au thème clair).
 
 ### v0.1.6
 - **Espace Pro — gestion d'atelier complète** : bobines (stock multi-couleur, coût/kg, alertes de réappro, liste de courses), devis, factures, clients, commandes (file de production) et catalogue d'articles, tous connectés
@@ -94,6 +106,7 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 - **UI** : Python 3.12 + PySide6 6.11
 - **3D Viewer** : PyVista 0.48 + PyVistaQt 0.11
 - **Géométrie** : Trimesh 4.12, NumPy 2.4, SciPy 1.17, Shapely
+- **IA locale** : Ollama (Qwen3 8B + embeddings bge-m3), RAG
 - **Build** : PyInstaller 6.20
 
 ## Build local
@@ -108,10 +121,12 @@ python -m PyInstaller --clean -y neoslice_mac.spec
 
 ---
 
-## Soutenir le projet
+## Gratuit + Pro
 
-neoSlice est **entièrement gratuit** et le restera.  
-Si vous souhaitez soutenir son développement : [☕ Buy Me a Coffee](https://buymeacoffee.com/bambulabpourlesnuls)
+neoSlice est **gratuit** pour optimiser et exporter vos pièces — c'est le cœur de l'application et ça le restera.
+Pour aller plus loin, **neoSlice Pro** débloque l'assistant IA Oen, l'export multicouleur avec décompte de stock, le Diagnostic IA et la gestion d'atelier complète.
+
+Envie de soutenir le projet ? [☕ Buy Me a Coffee](https://buymeacoffee.com/bambulabpourlesnuls)
 
 ---
 
