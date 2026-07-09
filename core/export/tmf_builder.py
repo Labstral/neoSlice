@@ -101,11 +101,15 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
 
     overrides: dict = {}
 
-    # Couches
-    if "layer_height" in fields:
-        overrides["layer_height"] = s(config.layer_height)
-    if "first_layer_height" in fields:
-        overrides["initial_layer_print_height"] = s(config.first_layer_height)
+    # Couches — TOUJOURS écrites (paramètres cœur maîtrisés par neoSlice). Ne PAS
+    # conditionner à model_fields_set : les profils process Bambu héritent souvent
+    # layer_height d'un parent, or _load_json_flat NE résout PAS l'héritage → le 3MF
+    # sortirait SANS layer_height et Bambu Studio appliquerait SON défaut (ex. A1 →
+    # 0.16 Optimal alors que neoSlice affiche 0.20). Cf. bug A1 0.2→0.16.
+    overrides["layer_height"] = s(config.layer_height)
+    # first_layer >= layer (sinon Bambu Studio refuse le profil).
+    overrides["initial_layer_print_height"] = s(
+        max(config.first_layer_height, config.layer_height))
 
     # Structure
     if "wall_loops" in fields:

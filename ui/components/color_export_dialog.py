@@ -163,11 +163,20 @@ class ColorBreakdownWidget(QWidget):
         lay.setSpacing(8)
 
         # Avertissement : ne pas fermer avant slicing pour le grammage exact.
+        # Le padding est porte par un CONTENEUR, pas par le QLabel : un QLabel
+        # word-wrap + padding en stylesheet calcule mal sa hauteur (padding non
+        # deduit de la largeur de wrap) -> derniere ligne tronquee, surtout avec
+        # les metriques de police macOS. Ici le label wrappe a sa vraie largeur.
         warn = QLabel(_("color_export.warning"))
         warn.setWordWrap(True)
         warn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
-        warn.setStyleSheet(f"color: #000; background: {pal['AMBER']}; border-radius: 5px; padding: 8px 10px;")
-        lay.addWidget(warn)
+        warn.setStyleSheet("color: #000; background: transparent;")
+        warn_box = QFrame()
+        warn_box.setStyleSheet(f"background: {pal['AMBER']}; border-radius: 5px;")
+        _wl = QVBoxLayout(warn_box)
+        _wl.setContentsMargins(10, 8, 10, 8)
+        _wl.addWidget(warn)
+        lay.addWidget(warn_box)
 
         sub_key = {
             "multiobject": "color_export.detected_multi",
