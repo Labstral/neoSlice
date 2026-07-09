@@ -78,11 +78,16 @@ def _strip_filler(text: str) -> str:
 
 
 def _display_text(text: str) -> str:
-    """Texte a afficher pendant le streaming : masque le marqueur d'options meme
-    partiel (ex. '[[OPTION...' pas encore ferme)."""
-    idx = text.lower().find("[[option")
-    if idx != -1:
-        text = text[:idx].rstrip()
+    """Texte a afficher pendant le streaming : masque les marqueurs [[OPTIONS: …]]
+    et [[ACTION: …]] meme partiels (pas encore fermes)."""
+    low = text.lower()
+    cut = len(text)
+    for marker in ("[[option", "[[action"):
+        i = low.find(marker)
+        if i != -1:
+            cut = min(cut, i)
+    if cut < len(text):
+        text = text[:cut].rstrip()
     return _plain_text(text)
 
 
@@ -488,6 +493,13 @@ class GlassPanel(QWidget):
 
     def _on_done(self):
         clean, opts = _split_options(self._stream_text)
+        # Actions atelier ([[ACTION: …]]) : EXÉCUTE réellement contre le store et
+        # retire les marqueurs du texte affiché. Les confirmations viennent du store.
+        try:
+            from core.assistant import actions
+            clean, confirmations = actions.parse_and_execute(clean)
+        except Exception:
+            confirmations = []
         clean = _strip_filler(clean)     # retire les formules creuses de fin
         if clean.strip():
             if self._stream_bubble is not None:
@@ -498,6 +510,9 @@ class GlassPanel(QWidget):
                 self._add_option_chips(opts)      # boutons de reponse cliquables
         else:
             self._remove_typing()
+        # Confirmations RÉELLES (issues du store) affichées comme message à part.
+        for _c in confirmations:
+            self._add_message(_c, "assistant")
         self._stream_bubble = None
         self._think_bubble = None
         self.busy_changed.emit(False)
