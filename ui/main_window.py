@@ -671,8 +671,12 @@ class _TopBar(QWidget):
         layout.addWidget(self._pro_cta_btn)
         self.refresh_pro()   # état initial des boutons Pro (après leur création)
 
+        import sys as _sys
+        _mac = _sys.platform == "darwin"
         help_btn = QPushButton("?")
-        help_btn.setFont(QFont(FONT_MAIN, 11, QFont.Bold))
+        # macOS : glyphe texte plus petit dans son cadre que la police d'icônes
+        # Windows (Segoe MDL2) → on agrandit pour une taille visuelle comparable.
+        help_btn.setFont(QFont(FONT_MAIN, 15 if _mac else 11, QFont.Bold))
         help_btn.setFixedSize(28, 28)
         help_btn.setToolTip("Guide d'utilisation")
         help_btn.setCursor(Qt.PointingHandCursor)
@@ -711,7 +715,9 @@ class _TopBar(QWidget):
         import sys as _sys
         _ICON_FEEDBACK = "" if _sys.platform == "win32" else "✉"
         _ICON_SETTINGS = "" if _sys.platform == "win32" else "⚙"
-        _FONT_ICON     = QFont("Segoe MDL2 Assets", 11) if _sys.platform == "win32" else QFont(FONT_MAIN, 13)
+        # macOS : les symboles unicode ⚙/✉ se dessinent petits dans leur cadre → 17pt
+        # pour remplir la case 28×28 comme la police d'icônes Windows (Segoe MDL2).
+        _FONT_ICON     = QFont("Segoe MDL2 Assets", 11) if _sys.platform == "win32" else QFont(FONT_MAIN, 17)
 
         feedback_btn = QPushButton(_ICON_FEEDBACK)
         feedback_btn.setFont(_FONT_ICON)
