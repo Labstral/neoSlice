@@ -339,8 +339,13 @@ def _sanitize_strict(project_settings: dict) -> None:
       • index de filament (clés `*_filament`) 1-based → 0 devient 1 ;
       • `tree_support_wall_count` = -1 (« auto » Orca) → 0 (plage CrealityPrint [0,2]).
     Ces valeurs « 1 » et « 0 » sont aussi correctes pour Bambu/Orca → sûr partout."""
+    # support_filament / support_interface_filament : 0 n'est PAS un index mais la
+    # valeur spéciale « Défaut = même filament que l'objet ». La convertir en 1
+    # forcerait les supports sur le filament 1 → couleur différente de l'objet +
+    # tour d'amorçage + purge énorme sur les pièces mono-couleur. On les EXCLUT.
+    _FILAMENT_ZERO_MEANS_DEFAULT = {"support_filament", "support_interface_filament"}
     for k, v in list(project_settings.items()):
-        if k.endswith("_filament"):
+        if k.endswith("_filament") and k not in _FILAMENT_ZERO_MEANS_DEFAULT:
             val = v[0] if isinstance(v, list) and v else v
             if str(val).strip() in ("0", "0.0"):
                 project_settings[k] = ["1"] if isinstance(v, list) else "1"
