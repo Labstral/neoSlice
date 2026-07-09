@@ -395,6 +395,20 @@ def _kv_fallback(body: str) -> dict:
     return kv
 
 
+_PLACEHOLDER_RE = re.compile(r"^\s*<.+>\s*$")
+
+
+def _has_placeholder(obj) -> bool:
+    """True si une valeur ressemble a un placeholder de format « <nom> » non rempli."""
+    if isinstance(obj, str):
+        return bool(_PLACEHOLDER_RE.match(obj))
+    if isinstance(obj, dict):
+        return any(_has_placeholder(v) for v in obj.values())
+    if isinstance(obj, list):
+        return any(_has_placeholder(v) for v in obj)
+    return False
+
+
 def _parse_marker(body: str) -> tuple[str, dict]:
     m = _VERB_RE.match(body.strip())
     if not m:
@@ -421,6 +435,12 @@ def parse_and_execute(text: str) -> tuple[str, list[str]]:
         handler = _HANDLERS.get(verb)
         if not handler:
             return ""  # verbe inconnu → on retire juste le marqueur
+        # DEFENSE : le modele a parfois laisse des placeholders « <nom> », « <prix> »
+        # (format non rempli) -> on N'EXECUTE PAS et on signale l'info manquante.
+        if _has_placeholder(params):
+            confirmations.append("⚠ Action annulée : il manque des informations "
+                                 "(le champ n'a pas été renseigné).")
+            return ""
         try:
             confirmations.append(handler(params))
         except Exception as exc:  # jamais casser l'UI
