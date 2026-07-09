@@ -1221,10 +1221,17 @@ class Viewer3D(QWidget):
                         name=f"obj_{obj.object_id}",
                     )
                 else:
+                    # Mesh lourd (>600k faces) : on SAUTE compute_normals (coûteux sur
+                    # le main thread) MAIS on garde le rendu mat lumineux (mêmes
+                    # ambient/diffuse/specular que la voie PBR). Avant, ambient=0.12 /
+                    # diffuse=0.88 donnait des ombres dures très moches à l'export couleur.
                     self._plotter.add_mesh(
                         pv_obj, color=color, show_edges=False,
                         smooth_shading=True,
-                        pbr=False, ambient=0.12, diffuse=0.88,
+                        pbr=False,
+                        specular=rq["specular"],
+                        ambient=rq["ambient"],
+                        diffuse=rq["diffuse"],
                         name=f"obj_{obj.object_id}",
                     )
             except Exception as _e:
