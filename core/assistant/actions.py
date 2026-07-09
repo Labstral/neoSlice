@@ -97,10 +97,20 @@ def _norm_items(raw) -> list[dict]:
     return out
 
 
+# Valeurs "bidon" que le modele met parfois faute d'info -> a traiter comme VIDE.
+_PLACEHOLDERS = {"", "non renseigne", "non renseigné", "inconnu", "unknown", "n/a",
+                 "na", "aucun", "-", "?", "client", "nom", "tbd", "a definir", "à définir"}
+
+
+def _clean_ref(name) -> str:
+    s = str(name or "").strip()
+    return "" if s.lower() in _PLACEHOLDERS else s
+
+
 def _resolve_client(name: str):
     """Trouve un client par nom/société (exact puis contient). None si absent."""
     from core.business import store
-    q = (name or "").strip().lower()
+    q = _clean_ref(name).lower()
     if not q:
         return None
     clients = store.list_clients()
@@ -206,7 +216,9 @@ def _add_product(p: dict) -> str:
 def _add_order(p: dict) -> str:
     from core.business import store
     items = _norm_items(_first(p, "items", "lignes", "articles", default=[]))
-    cname = str(_first(p, "client", "client_name", "client_label", default="")).strip()
+    if not items:
+        return "⚠ Commande non créée : il faut au moins une ligne (désignation + prix)."
+    cname = _clean_ref(_first(p, "client", "client_name", "client_label", default=""))
     cid, clabel = "", cname
     if cname:
         c = _resolve_client(cname)
@@ -235,7 +247,7 @@ def _add_quote(p: dict) -> str:
     items = _norm_items(_first(p, "items", "lignes", "articles", default=[]))
     if not items:
         return "⚠ Devis non créé : il faut au moins une ligne (désignation + prix)."
-    cname = str(_first(p, "client", "client_name", default="")).strip()
+    cname = _clean_ref(_first(p, "client", "client_name", default=""))
     client_block, cid = {}, ""
     if cname:
         c = _resolve_client(cname)
@@ -249,6 +261,9 @@ def _add_quote(p: dict) -> str:
     vat = _num(_first(p, "vat_rate", "tva", default=None), invoicing.default_vat(country) if country else 0.0)
     disc = _num(_first(p, "discount_pct", "remise", default=0), 0)
     totals = invoicing.compute(items, vat, disc)
+    if totals["ttc"] <= 0:
+        return ("⚠ Devis non créé : indique au moins un article AVEC son prix "
+                "(le total est à 0).")
     store.add_quote({
         "client": client_block, "client_id": cid,
         "client_label": client_block.get("nom") or client_block.get("societe") or cname,

@@ -504,15 +504,28 @@ class GlassPanel(QWidget):
         if clean.strip():
             if self._stream_bubble is not None:
                 self._stream_bubble.setText(_plain_text(clean))
-            # On garde le texte SANS marqueur dans l'historique (conversation propre).
-            self._history.append({"role": "assistant", "content": clean})
             if opts:
                 self._add_option_chips(opts)      # boutons de reponse cliquables
         else:
+            # Rien a afficher (reponse = uniquement un marqueur [[ACTION/OPTIONS]]) :
+            # retirer la bulle de streaming VIDE, sinon elle reste affichee vide.
             self._remove_typing()
+            if self._stream_bubble is not None:
+                _wrap = self._stream_bubble.parentWidget()
+                if _wrap is not None:
+                    _wrap.setParent(None)
+                    _wrap.deleteLater()
         # Confirmations RÉELLES (issues du store) affichées comme message à part.
         for _c in confirmations:
             self._add_message(_c, "assistant")
+        # HISTORIQUE : on enregistre le tour d'Oen AVEC les confirmations d'action.
+        # CRUCIAL : sans les confirmations, un tour "marqueur seul" laissait un
+        # historique VIDE cote assistant -> Oen "oubliait" ce qu'il venait de faire
+        # et REJOUAIT toutes les actions au tour suivant. Le resultat reel de l'action
+        # est donc trace comme reponse assistant.
+        _hist = "\n".join(([clean] if clean.strip() else []) + confirmations).strip()
+        if _hist:
+            self._history.append({"role": "assistant", "content": _hist})
         self._stream_bubble = None
         self._think_bubble = None
         self.busy_changed.emit(False)
