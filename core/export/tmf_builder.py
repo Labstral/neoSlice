@@ -234,6 +234,48 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
     return overrides
 
 
+import re as _re
+_BBL_REF_RE = _re.compile(r"@BBL\s+[A-Za-z0-9]+")
+
+
+def _force_printer_identity(project_settings: dict, bbl_id: str,
+                            target_machine: str | None = None) -> None:
+    """PROCÉDURE FORCÉE : garantit que le profil neoSlice/cible PRIME, quel que soit
+    le profil d'origine enregistré dans le 3MF importé (ex. « 0.16mm Optimal @BBL P1P »).
+
+    Sans ça, un 3MF créé pour un AUTRE printer laisse des références (inherits_group,
+    filament/print_settings_id, compatible_printers…) qui font recharger SON preset par
+    Bambu Studio PAR-DESSUS nos réglages → couche/supports faux. Ici on :
+      1. supprime tout héritage de preset système (BS utiliserait ce preset) ;
+      2. retargete TOUTE référence de preset « @BBL <autre modèle> » vers le cible ;
+      3. force les clés d'identité machine (« Bambu Lab <modèle>… ») vers la machine cible.
+    Idempotent, sûr à appeler plusieurs fois. `target_machine` = ex. "Bambu Lab A1 0.4 nozzle"."""
+    # 1) Ne jamais hériter d'un preset système / delta système figé.
+    for _k in ("inherits", "inherits_group", "different_settings_to_system"):
+        project_settings.pop(_k, None)
+    # 2) Retargeter toute référence de preset « @BBL <modèle> » vers le printer cible.
+    repl = f"@BBL {bbl_id}"
+
+    def _fix(v):
+        if isinstance(v, str):
+            return _BBL_REF_RE.sub(repl, v)
+        if isinstance(v, list):
+            return [_fix(x) for x in v]
+        return v
+
+    for _k in list(project_settings.keys()):
+        project_settings[_k] = _fix(project_settings[_k])
+    # 3) Clés d'identité MACHINE (format « Bambu Lab <modèle> <buse> nozzle », sans @BBL) :
+    #    forcer explicitement vers la machine cible, sinon un « Bambu Lab P1P… » résiduel
+    #    rend le profil incompatible avec la machine cible → BS le remplace.
+    if target_machine:
+        if project_settings.get("printer_settings_id"):
+            project_settings["printer_settings_id"] = target_machine
+        for _k in ("print_compatible_printers", "compatible_printers"):
+            if project_settings.get(_k):
+                project_settings[_k] = [target_machine]
+
+
 def _bed_center(machine: dict) -> tuple[float, float]:
     """Centre du plateau (mm) depuis printable_area, repli 128×128."""
     try:
@@ -698,6 +740,12 @@ class ThreeMFBuilder:
             project_settings["print_compatible_printers"] = [_target_machine]
         if project_settings.get("compatible_printers"):
             project_settings["compatible_printers"] = [_target_machine]
+
+        # PROCÉDURE FORCÉE (bulletproof) : purge tout héritage/référence à l'imprimante
+        # d'origine du 3MF importé → le profil neoSlice/cible PRIME toujours, quel que
+        # soit le profil initial (ex. P1P 0.16mm). Filet de sécurité générique en plus
+        # des retargetages explicites ci-dessus.
+        _force_printer_identity(project_settings, bbl_id, _target_machine)
 
         # Imprimante non-Bambu (catalogue) → remplacer le bloc machine + identité
         _apply_non_bambu_machine(project_settings, printer_ui_name, _D)
