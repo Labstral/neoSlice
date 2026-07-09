@@ -98,6 +98,28 @@ def _pro_section() -> str:
         names = ", ".join(f"{c.get('materiau', '?')} {c.get('couleur_nom') or c.get('couleur_hex') or '?'}"
                           for c in low[:14])
         L.append(f"- ALERTE stock bas (a racheter) : {names}.")
+
+    # ── Listes pour RECHERCHE / reference par Oen (compactes, plafonnees) ──────
+    clients = _safe(store.list_clients, []) or []
+    if clients:
+        names = ", ".join((c.get("nom") or c.get("societe") or "?") for c in clients[:40])
+        L.append(f"- Clients ({len(clients)}) : {names}"
+                 + (" …" if len(clients) > 40 else "") + ".")
+    products = _safe(store.list_products, []) or []
+    if products:
+        pl = ", ".join(f"{p.get('nom', '?')} ({_money(p.get('prix', 0), cur)})" for p in products[:25])
+        L.append(f"- Articles au catalogue ({len(products)}) : {pl}.")
+    quotes = _safe(store.list_quotes, []) or []
+    if quotes:
+        ql = " ; ".join(f"{q.get('number', '?')} {q.get('client_label', '')} "
+                        f"{_money(q.get('total_ttc', 0), cur)} [{q.get('status', '')}]"
+                        for q in quotes[:12])
+        L.append(f"- Devis recents ({len(quotes)}) : {ql}.")
+    orders = _safe(lambda: store.list_orders(include_cancelled=False), []) or []
+    if orders:
+        ol = " ; ".join(f"{o.get('number', '?')} {o.get('client_label', '')} [{o.get('status', '')}]"
+                        for o in orders[:12])
+        L.append(f"- Commandes actives ({len(orders)}) : {ol}.")
     return "\n".join(L)
 
 
