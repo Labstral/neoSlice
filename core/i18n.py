@@ -27,7 +27,7 @@ _FR: dict[str, str] = {
 
     # ── StatusBar ─────────────────────────────────────────────────────────────
     "status.initial":           "SYSTÈME PRÊT — SÉLECTIONNER L'IMPRIMANTE CIBLE  ①",
-    "status.ready":             "PRÊT — GLISSER UN NOUVEAU FICHIER STL",
+    "status.ready":             "PRÊT — GLISSER UN NOUVEAU FICHIER STL / OBJ / 3MF",
     "status.loading":           "Modèle chargé — {name} — analyse en cours...",
     "status.analysis_ok":       "Analyse OK ({ms:.0f} ms){oh_tag} — Réglages suggérés · affinez votre intention ③",
     "status.analysis_err":      "Erreur analyse : {msg}",
@@ -68,7 +68,7 @@ _FR: dict[str, str] = {
     "drop.main_locked":     "VALIDEZ L'IMPRIMANTE",
     "drop.sub_locked":      "et le filament pour continuer",
     "drop.step_locked":     "Étape ①",
-    "drop.main":            "GLISSER FICHIER STL / 3MF",
+    "drop.main":            "GLISSER FICHIER STL / OBJ / 3MF",
     "drop.sub":             "ou cliquer pour parcourir",
     "drop.dialog_title":    "Ouvrir un fichier 3D",
     "drop.dialog_filter":   "Fichiers 3D (*.stl *.obj *.3mf);;Tous les fichiers (*)",
@@ -1231,7 +1231,7 @@ _EN: dict[str, str] = {
     # ── StatusBar ─────────────────────────────────────────────────────────────
     "status.initial":           "SYSTEM READY — SELECT TARGET PRINTER  ①",
     "status.initial":           "SYSTEM READY — SELECT TARGET PRINTER",
-    "status.ready":             "READY — DROP A NEW STL FILE",
+    "status.ready":             "READY — DROP A NEW STL / OBJ / 3MF FILE",
     "status.loading":           "Model loaded — {name} — analyzing...",
     "status.analysis_ok":       "Analysis OK ({ms:.0f} ms){oh_tag} — Settings suggested · refine your intent ③",
     "status.analysis_err":      "Analysis error: {msg}",
@@ -1272,7 +1272,7 @@ _EN: dict[str, str] = {
     "drop.main_locked":     "CONFIRM PRINTER",
     "drop.sub_locked":      "and filament to continue",
     "drop.step_locked":     "Step ①",
-    "drop.main":            "DROP STL / 3MF FILE",
+    "drop.main":            "DROP STL / OBJ / 3MF FILE",
     "drop.sub":             "or click to browse",
     "drop.dialog_title":    "Open a 3D file",
     "drop.dialog_filter":   "3D Files (*.stl *.obj *.3mf);;All files (*)",

@@ -1612,8 +1612,8 @@ class MainWindow(QMainWindow):
         sep0.setStyleSheet(f"background: {INACTIVE}; margin: 4px 0;")
         layout.addWidget(sep0)
 
-        # ── Étape ② — Import STL / 3MF ──
-        self._step_stl = _StepHeader("2", "Import STL / 3MF")
+        # ── Étape ② — Import STL / OBJ / 3MF ──
+        self._step_stl = _StepHeader("2", "Import STL / OBJ / 3MF")
         layout.addWidget(self._step_stl)
 
         self._drop_zone = DropZone()
