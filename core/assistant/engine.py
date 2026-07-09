@@ -513,6 +513,10 @@ class AssistantEngine:
             "messages": messages,
             "stream": True,
             "think": bool(think),
+            # Garde le modele resident 30 min : sans ca, Ollama le decharge apres
+            # 5 min et RECHARGE ~5,5 Go du disque avant CHAQUE question (plusieurs
+            # minutes sur Mac Apple Silicon a RAM limitee). Cf. lenteur signalee M3.
+            "keep_alive": "30m",
             "options": {"temperature": 0.25, "top_p": 0.9, "num_ctx": 12288},
         }
         data = json.dumps(payload).encode()
