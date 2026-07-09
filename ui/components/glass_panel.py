@@ -301,24 +301,13 @@ class GlassPanel(QWidget):
             "QLineEdit:focus { border-color: rgba(255,180,220,150); }")
         self._input.returnPressed.connect(self._on_send)
 
-        # Toggle « Réflexion » : Oen raisonne avant de repondre (Qwen3 thinking).
-        # Plus precis, plus lent. Etat persistant (prefs). Off par defaut.
-        from core.prefs import PREFS as _PREFS
-        self._think_btn = QPushButton("Réflexion")
-        self._think_btn.setCheckable(True)
-        self._think_btn.setChecked(bool(_PREFS.get("oen_thinking", False)))
-        self._think_btn.setCursor(Qt.PointingHandCursor)
-        self._think_btn.setFixedHeight(40)
-        self._think_btn.setToolTip(
-            "Réflexion : Oen raisonne avant de répondre (plus précis, plus lent).")
-        self._think_btn.toggled.connect(self._on_think_toggled)
-        self._apply_think_btn_style()
-
+        # Plus de bouton « Réflexion » : la reflexion (Qwen3 thinking) s'active
+        # AUTOMATIQUEMENT sur les questions difficiles (voir engine.should_auto_think),
+        # instantanee sinon. UI epuree, Oen decide seul quand raisonner.
         input_row = QHBoxLayout()
         input_row.setContentsMargins(0, 0, 0, 0)
         input_row.setSpacing(6)
         input_row.addWidget(self._input, 1)
-        input_row.addWidget(self._think_btn)
         lay.addLayout(input_row)
 
         self._greeted = False
@@ -329,26 +318,6 @@ class GlassPanel(QWidget):
         self._stream_text = ""
         self._option_wrap = None      # bloc de boutons de reponse cliquables
 
-    def _apply_think_btn_style(self):
-        on = self._think_btn.isChecked()
-        if on:
-            self._think_btn.setStyleSheet(
-                "QPushButton { color: #fff; background: rgba(255,140,175,150); "
-                "border: 1px solid rgba(255,180,210,160); border-radius: 20px; padding: 0 14px; }"
-                "QPushButton:hover { background: rgba(255,140,175,190); }")
-        else:
-            self._think_btn.setStyleSheet(
-                "QPushButton { color: rgba(255,255,255,170); background: rgba(255,255,255,22); "
-                "border: 1px solid rgba(255,255,255,45); border-radius: 20px; padding: 0 14px; }"
-                "QPushButton:hover { background: rgba(255,255,255,40); color: #fff; }")
-
-    def _on_think_toggled(self, on: bool):
-        try:
-            from core.prefs import PREFS as _PREFS
-            _PREFS.set("oen_thinking", bool(on))
-        except Exception:
-            pass
-        self._apply_think_btn_style()
 
     def _on_thinking(self, tok: str):
         """Affiche le raisonnement (mode Réflexion) dans une bulle grisee distincte,
@@ -466,15 +435,13 @@ class GlassPanel(QWidget):
         self._stream_bubble = None
         self._think_bubble = None
         self._think_text = ""
-        # Reflexion : toggle manuel OU auto-active sur les questions difficiles
-        # (diagnostics/how-to complexes) — reste OFF sur les commandes/lectures (rapide).
-        think = self._think_btn.isChecked()
-        if not think:
-            try:
-                from core.assistant.engine import should_auto_think
-                think = should_auto_think(t)
-            except Exception:
-                pass
+        # Reflexion AUTO : active sur les questions difficiles (diagnostics/how-to),
+        # OFF sur les commandes/lectures (reponse instantanee). Oen decide seul.
+        try:
+            from core.assistant.engine import should_auto_think
+            think = should_auto_think(t)
+        except Exception:
+            think = False
         self._worker = _ChatWorker(list(self._history), think=think)
         self._worker.token.connect(self._on_token)
         self._worker.thinking.connect(self._on_thinking)
