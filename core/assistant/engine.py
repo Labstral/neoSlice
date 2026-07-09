@@ -13,6 +13,7 @@ Fichiers (tous dans ~/.neoslice/assistant/) :
 """
 from __future__ import annotations
 import os
+import re
 import sys
 import json
 import time
@@ -238,6 +239,13 @@ _SYSTEM_PROMPT = (
     "[[ACTION: update_product {\"nom\": \"Figurine dragon\", \"prix\": 20}]] ; 'marque la "
     "commande CMD-2026-0001 comme terminee' -> [[ACTION: set_order_status {\"number\": "
     "\"CMD-2026-0001\", \"status\": \"termine\"}]].\n"
+    "- FACTURES : add_invoice (items* + client + notes ; TVA/total calcules automatiquement, "
+    "comme un devis) ; mark_invoice_paid (number* -> marque la facture payee) ; "
+    "relance_invoice (number* -> enregistre une relance) ; delete_invoice (number*). Le "
+    "numero de facture a le format AAAA-0001 (ex. 2026-0001). Ex. 'marque la facture "
+    "2026-0003 comme payee' -> [[ACTION: mark_invoice_paid {\"number\": \"2026-0003\"}]].\n"
+    "- FOURNITURES (cartons, emballages, non-filament) : add_supply (nom* + quantite, unite, "
+    "seuil de reappro, cout_unitaire, fournisseur).\n"
     "FORMAT (exemples de STRUCTURE uniquement — ne recopie JAMAIS ces valeurs, remplace "
     "par les VRAIES infos de l'utilisateur) : [[ACTION: add_client {\"nom\": \"<nom>\", "
     "\"ville\": \"<ville>\", \"email\": \"<email>\"}]] ; [[ACTION: add_quote {\"client\": "
@@ -396,6 +404,41 @@ _GUARD = (
     "- Si les CONNAISSANCES contiennent la reponse, suis-les ; ne les contredis pas avec ta "
     "memoire (ex. un extrait dit 'imprimer le PLA porte ouverte' -> tu appliques ca)."
 )
+
+
+# ── Auto-reflexion (thinking) : Qwen3 raisonne mieux sur les questions DIFFICILES ────
+# On active le mode reflexion tout seul pour les diagnostics/how-to complexes, et on le
+# laisse OFF sur les commandes atelier et lectures (rapides). Le toggle manuel prime.
+# Commande d'ACTION (verbe en tete) -> jamais de reflexion (reponse immediate).
+_CMD_RE = re.compile(
+    r"^\s*(ajoute|cree|cr[ée]e|cr[ée]er|enregistre|note|supprime|retire|efface|modifie|"
+    r"change|corrige|renomme|d[ée]duis|marque|passe|annule|vide|relance)\b", re.IGNORECASE)
+# Lecture / recherche simple -> rapide aussi.
+_READ_RE = re.compile(
+    r"^\s*(liste|montre|affiche|combien|quels?|quelles?|donne|c'est quoi mes|mes |mon |ma |ai-je|"
+    r"est-ce que j)", re.IGNORECASE)
+# Diagnostic / how-to complexe -> reflexion (PRIME, meme si commence par 'quel').
+_HARD_THINK_RE = re.compile(
+    r"pourquoi|comment|probl[eè]me|rat[ée]|d[ée]faut|marche pas|colle pas|accroche pas|"
+    r"d[ée]colle|fissur|cass[ée]|bouch|string|warp|sous.?extru|sur.?extru|calibr|orient|"
+    r"am[ée]lior|optimis|conseil|que faire|delamin|adh[ée]r|gauchi|ghosting|z.?offset|"
+    r"r[ée]glage|quelle temp|quelle vitesse|input shap|pressure adv|retract|surplomb|overhang|"
+    r"\bfils\b|fait des fils|bave|s'affaiss|penche|foire|blob|zit|couture|seam|elephant",
+    re.IGNORECASE)
+
+
+def should_auto_think(text: str) -> bool:
+    """True si la question merite le mode reflexion (diagnostic/how-to complexe)."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _CMD_RE.search(t) and len(t) < 90:        # commande d'action -> jamais de thinking
+        return False
+    if _HARD_THINK_RE.search(t):                 # diagnostic/how-to -> reflexion (prioritaire)
+        return True
+    if _READ_RE.search(t) and len(t) < 80:       # lecture simple -> rapide
+        return False
+    return len(t) > 160 and "?" in t             # question longue et ouverte
 
 
 class AssistantEngine:

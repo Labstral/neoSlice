@@ -501,6 +501,92 @@ def _set_order_status(p: dict) -> str:
     return f"✓ Commande {o.get('number', '')} → statut « {status} »"
 
 
+# ── Factures & fournitures ────────────────────────────────────────────────────
+def _add_invoice(p: dict) -> str:
+    from core.business import store, invoicing
+    items = _norm_items(_first(p, "items", "lignes", "articles", default=[]))
+    if not items:
+        return "⚠ Facture non créée : il faut au moins une ligne (désignation + prix)."
+    cname = _clean_ref(_first(p, "client", "client_name", default=""))
+    client_block, cid = {}, ""
+    if cname:
+        c = _resolve_client(cname)
+        if c:
+            cid = c.get("id", "")
+            client_block = {k: c.get(k, "") for k in
+                            ("nom", "societe", "adresse", "cp", "ville", "pays", "email", "tel", "id_fiscal")}
+        else:
+            client_block = {"nom": cname}
+    country = str(_first(p, "country", "pays", default="")).strip() or store.get_company().get("pays", "")
+    vat = _num(_first(p, "vat_rate", "tva", default=None), invoicing.default_vat(country) if country else 0.0)
+    disc = _num(_first(p, "discount_pct", "remise", default=0), 0)
+    totals = invoicing.compute(items, vat, disc)
+    if totals["ttc"] <= 0:
+        return "⚠ Facture non créée : indique au moins un article AVEC son prix."
+    inv = store.add_invoice({
+        "client": client_block, "client_id": cid,
+        "client_label": client_block.get("nom") or client_block.get("societe") or cname,
+        "country": country, "currency": invoicing.currency(country) if country else _currency(),
+        "vat_rate": vat, "discount_pct": disc, "items": items,
+        "notes": str(_first(p, "notes", default="")).strip(),
+    })
+    who = f" pour {inv.get('client_label')}" if inv.get("client_label") else ""
+    return f"✓ Facture {inv.get('number', '')} créée{who} · total {_money(totals['ttc'])} (dont TVA {_money(totals['tva'])})"
+
+
+def _find_invoice(p):
+    from core.business import store
+    ref = str(_first(p, "number", "numero", "ref", "facture", "id", default="")).strip().lower()
+    if not ref:
+        return None, "⚠ Précise le numéro de la facture (ex. 2026-0001)."
+    matches = [i for i in store.list_invoices() if ref in str(i.get("number", "")).lower() or ref == i.get("id")]
+    if not matches:
+        return None, f"⚠ Facture « {ref} » introuvable."
+    if len(matches) > 1:
+        return None, f"⚠ Plusieurs factures « {ref} ». Donne le numéro complet."
+    return matches[0], None
+
+
+def _mark_invoice_paid(p: dict) -> str:
+    from core.business import store
+    inv, err = _find_invoice(p)
+    if err:
+        return err
+    store.set_invoice_status(inv["id"], "paid")
+    return f"✓ Facture {inv.get('number', '')} marquée PAYÉE"
+
+
+def _relance_invoice(p: dict) -> str:
+    from core.business import store
+    inv, err = _find_invoice(p)
+    if err:
+        return err
+    store.mark_relance(inv["id"])
+    return f"✓ Relance enregistrée pour la facture {inv.get('number', '')}"
+
+
+def _delete_invoice(p: dict) -> str:
+    from core.business import store
+    return _delete_by_number(p, store.list_invoices, store.delete_invoice,
+                             "de la facture", "2026-0001", "Facture supprimée")
+
+
+def _add_supply(p: dict) -> str:
+    from core.business import store
+    nom = str(_first(p, "nom", "name", "designation", default="")).strip()
+    if not nom:
+        return "⚠ Fourniture non créée : il faut un nom."
+    store.add_supply({
+        "nom": nom,
+        "quantite": _num(_first(p, "quantite", "quantity", "qty", "nombre", default=0), 0),
+        "unite": str(_first(p, "unite", "unit", default="u")).strip() or "u",
+        "seuil": _num(_first(p, "seuil", "threshold", "reappro", default=0), 0),
+        "cout_unitaire": _num(_first(p, "cout_unitaire", "cout", "prix", "price", default=0), 0),
+        "fournisseur": str(_first(p, "fournisseur", "supplier", default="")).strip(),
+    })
+    return f"✓ Fourniture ajoutée : {nom}"
+
+
 # Verbe → handler.
 _HANDLERS = {
     "add_spool": _add_spool, "ajouter_bobine": _add_spool,
@@ -521,6 +607,13 @@ _HANDLERS = {
     "update_spool": _update_spool, "modifier_bobine": _update_spool,
     "set_order_status": _set_order_status, "update_order": _set_order_status,
     "statut_commande": _set_order_status, "order_status": _set_order_status,
+    # Factures & fournitures
+    "add_invoice": _add_invoice, "creer_facture": _add_invoice, "create_invoice": _add_invoice,
+    "mark_invoice_paid": _mark_invoice_paid, "facture_payee": _mark_invoice_paid,
+    "set_invoice_paid": _mark_invoice_paid, "marquer_payee": _mark_invoice_paid,
+    "relance_invoice": _relance_invoice, "relancer_facture": _relance_invoice,
+    "delete_invoice": _delete_invoice, "supprimer_facture": _delete_invoice,
+    "add_supply": _add_supply, "ajouter_fourniture": _add_supply, "add_fourniture": _add_supply,
 }
 
 

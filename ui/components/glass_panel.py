@@ -466,7 +466,15 @@ class GlassPanel(QWidget):
         self._stream_bubble = None
         self._think_bubble = None
         self._think_text = ""
+        # Reflexion : toggle manuel OU auto-active sur les questions difficiles
+        # (diagnostics/how-to complexes) — reste OFF sur les commandes/lectures (rapide).
         think = self._think_btn.isChecked()
+        if not think:
+            try:
+                from core.assistant.engine import should_auto_think
+                think = should_auto_think(t)
+            except Exception:
+                pass
         self._worker = _ChatWorker(list(self._history), think=think)
         self._worker.token.connect(self._on_token)
         self._worker.thinking.connect(self._on_thinking)

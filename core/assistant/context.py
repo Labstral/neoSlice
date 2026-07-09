@@ -120,6 +120,17 @@ def _pro_section() -> str:
         ol = " ; ".join(f"{o.get('number', '?')} {o.get('client_label', '')} [{o.get('status', '')}]"
                         for o in orders[:12])
         L.append(f"- Commandes actives ({len(orders)}) : {ol}.")
+    invoices = _safe(store.list_invoices, []) or []
+    if invoices:
+        il = " ; ".join(f"{i.get('number', '?')} {i.get('client_label', '')} "
+                        f"{_money(_safe(lambda inv=i: store.invoice_ttc(inv), 0), cur)} "
+                        f"[{i.get('status', '')}]" for i in invoices[:12])
+        L.append(f"- Factures ({len(invoices)}) : {il}.")
+    supplies = _safe(store.list_supplies, []) or []
+    if supplies:
+        sl = ", ".join(f"{s.get('nom', '?')} : {s.get('quantite', 0):g} {s.get('unite', 'u')}"
+                       for s in supplies[:15])
+        L.append(f"- Fournitures ({len(supplies)}) : {sl}.")
     return "\n".join(L)
 
 

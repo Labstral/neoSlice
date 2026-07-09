@@ -53,6 +53,28 @@ def test_unknown_verb_is_stripped_no_crash():
     assert confs == []       # verbe inconnu -> aucun effet, aucune confirmation
 
 
+def test_new_verbs_registered():
+    for v in ("add_invoice", "mark_invoice_paid", "relance_invoice", "delete_invoice",
+              "add_supply", "update_product", "update_client", "update_spool",
+              "set_order_status"):
+        assert v in A._HANDLERS, v
+
+
+def test_auto_think_heuristic():
+    from core.assistant.engine import should_auto_think as S
+    # diagnostic / how-to -> reflexion
+    assert S("pourquoi ma piece se decolle ?")
+    assert S("quel reglage pour reduire le stringing ?")
+    assert S("comment calibrer ma X1C ?")
+    assert S("mon PLA fait des fils")
+    # commandes / lectures -> rapide
+    assert not S("ajoute une bobine de PLA rouge")
+    assert not S("supprime le client Marie")
+    assert not S("combien de PLA noir me reste-t-il ?")
+    assert not S("marque la facture 2026-0001 payee")
+    assert not S("bonjour")
+
+
 def test_fake_success_detector():
     """Detecte une fausse confirmation (Oen dit avoir agi sans marqueur)."""
     assert A.claims_action_done("Le client Paul Durand a été créé avec succès.")
