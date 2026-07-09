@@ -537,7 +537,16 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
     # des supports fantomes. On marque donc l'assemblage pour que l'analyse
     # N'AJOUTE PAS de supports pour flottant (voir has_color_assembly). L'AFFICHAGE
     # garde bien les 4 parts (lisse), on ne touche pas combined.
-    _is_color_assembly = len({o.extruder for o in objects}) > 1 and len(objects) > 1
+    # UNIQUEMENT le vrai cas : un assemblage couleur imbriqué s'imprime à plat sur UN
+    # SEUL plateau. Un 3MF multi-couleurs réparti sur plusieurs plateaux (ex. casque
+    # découpé en pièces) est un modèle multi-pièces normal → il FAUT analyser surplombs
+    # et supports. Sans la garde plate_count, la détection multi-couleurs (extruder) tuait
+    # à tort la détection de supports (report.support_needed forcé à False).
+    _is_color_assembly = (
+        len({o.extruder for o in objects}) > 1
+        and len(objects) > 1
+        and plate_count <= 1
+    )
 
     logger.info(f"3MF multi-objets : {len(objects)} parties · {len({o.extruder for o in objects})} slot(s) · {plate_count} plateau(x) · {len(modifier_objects)} modificateur(s)")
     return ThreeMFData(
