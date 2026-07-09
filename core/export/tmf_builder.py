@@ -649,6 +649,56 @@ class ThreeMFBuilder:
             _lh_display = "0.20"
         project_settings["print_settings_id"] = f"neoSlice {_lh_display}mm @BBL {bbl_id}"
 
+        # Profil process par défaut adapté au printer CIBLE. Sinon un 3MF importé
+        # d'un AUTRE printer (ex. projet P1P retargeté A1) garde son
+        # default_print_profile "@BBL P1P" → BS le juge incompatible avec la machine
+        # A1 et recharge un preset système (0.16mm Optimal) PAR-DESSUS nos réglages
+        # (couche 0.16, supports off). Cf. bug Darth Vader A1/P1P.
+        project_settings["default_print_profile"] = f"0.20mm Standard @BBL {bbl_id}"
+
+        # Slot filament Generic PLA NEUTRE — retire toute référence filament héritée
+        # du fichier source (ex. "Generic PLA @BBL P1P"), qui ferait aussi recharger
+        # un preset lié à l'autre printer. Identique au build natif.
+        _filament_strip = [k for k in project_settings
+                           if k.startswith("filament_") or k.startswith("default_filament_")]
+        _filament_strip += [
+            "nozzle_temperature", "nozzle_temperature_initial_layer",
+            "nozzle_temperature_range_high", "nozzle_temperature_range_low",
+            "required_nozzle_HRC",
+        ]
+        for _k in _filament_strip:
+            project_settings.pop(_k, None)
+        project_settings.update({
+            "filament_settings_id":              ["Generic PLA"],
+            "filament_colour":                   ["#FFFFFF"],
+            "filament_type":                     ["PLA"],
+            "filament_diameter":                 ["1.75"],
+            "filament_density":                  ["1.24"],
+            "filament_flow_ratio":               ["0.98"],
+            "filament_is_support":               ["0"],
+            "filament_soluble":                  ["0"],
+            "nozzle_temperature":                ["220"],
+            "nozzle_temperature_initial_layer":  ["220"],
+            "nozzle_temperature_range_high":     ["240"],
+            "nozzle_temperature_range_low":      ["190"],
+            "required_nozzle_HRC":               ["3"],
+        })
+
+        # Ne PAS hériter d'un preset système hérité du fichier importé : inherits_group
+        # garde souvent "0.16mm Optimal @BBL P1P" → BS charge CE preset (0.16, supports
+        # off) par-dessus nos réglages. On le retire pour que BS utilise les valeurs à
+        # plat de project_settings.config (cohérent avec print_settings_id "neoSlice…").
+        project_settings.pop("inherits_group", None)
+
+        # La compatibilité doit viser le printer CIBLE : un print_compatible_printers
+        # resté sur "Bambu Lab P1P…" fait juger le profil incompatible avec la machine
+        # A1 → BS le remplace par son défaut. On aligne sur la machine cible.
+        _target_machine = _base_id.replace("0.4 nozzle", f"{_D} nozzle")
+        if "print_compatible_printers" in project_settings:
+            project_settings["print_compatible_printers"] = [_target_machine]
+        if project_settings.get("compatible_printers"):
+            project_settings["compatible_printers"] = [_target_machine]
+
         # Imprimante non-Bambu (catalogue) → remplacer le bloc machine + identité
         _apply_non_bambu_machine(project_settings, printer_ui_name, _D)
         _sanitize_strict(project_settings)   # valeurs refusées par CrealityPrint
