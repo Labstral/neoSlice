@@ -99,27 +99,28 @@ def test_language_switch_detected():
     assert not f("ajoute une bobine de PLA anglais rouge")
 
 
-def test_multiple_markers_execute_none():
-    """SÉCURITÉ : plusieurs actions d'un coup (ex. 'tout supprimer') -> AUCUNE exécutée."""
-    txt = ('[[ACTION: delete_spool {"material": "PLA", "color": "noir"}]] '
-           '[[ACTION: delete_spool {"material": "PETG", "color": "rouge"}]]')
-    clean, confs = A.parse_and_execute(txt)
-    assert "[[ACTION" not in clean
-    assert len(confs) == 1 and "sécurité" in confs[0].lower()
+def test_read_only_no_write():
+    """LECTURE SEULE : Oen ne modifie plus l'Espace Pro. Un marqueur VALIDE est retiré
+    du texte et n'exécute AUCUNE écriture (aucune confirmation)."""
+    assert A.WRITE_ENABLED is False
+    clean, confs = A.parse_and_execute('Voici. [[ACTION: add_client {"nom": "Jean Dupont"}]]')
+    assert "[[ACTION" not in clean and confs == []
+    # même une suppression ciblée valide : rien n'est exécuté
+    clean, confs = A.parse_and_execute('[[ACTION: delete_spool {"material": "PLA", "color": "noir"}]]',
+                                       "supprime la bobine PLA noir")
+    assert confs == []
 
 
-def test_bulk_intent_delete_refused():
-    """SÉCURITÉ : intention de masse dans le message utilisateur -> suppression refusée."""
-    mk = '[[ACTION: delete_spool {"material": "PLA", "color": "noir"}]]'
-    for u in ("supprime tout mon stock", "vide mon stock de filament",
-              "efface toutes mes bobines", "supprime tous mes clients"):
-        clean, confs = A.parse_and_execute(mk, u)
-        assert confs and "masse" in confs[0].lower(), u
-
-
-def test_placeholder_action_not_executed():
-    clean, confs = A.parse_and_execute('[[ACTION: add_client {"nom": "<nom>"}]]')
-    assert len(confs) == 1 and "manque" in confs[0].lower()
+def test_read_only_strips_all_markers():
+    """Plusieurs marqueurs / placeholders / intention de masse : tout est neutralisé
+    (aucune écriture, marqueurs retirés) puisque Oen est en lecture seule."""
+    for txt, user in (
+        ('[[ACTION: delete_spool {"material":"PLA"}]] [[ACTION: delete_spool {"material":"PETG"}]]', ""),
+        ('[[ACTION: add_client {"nom": "<nom>"}]]', ""),
+        ('[[ACTION: delete_spool {"material":"PLA","color":"noir"}]]', "supprime tout mon stock"),
+    ):
+        clean, confs = A.parse_and_execute(txt, user)
+        assert "[[ACTION" not in clean and confs == []
 
 
 def test_marker_removed_from_text():

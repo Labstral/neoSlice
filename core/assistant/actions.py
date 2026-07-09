@@ -21,6 +21,14 @@ from __future__ import annotations
 import json
 import re
 
+# ─────────────────────────────────────────────────────────────────────────────
+# LECTURE SEULE (decision produit, 2026-07-09) : Oen RENSEIGNE sur tout l'Espace
+# Pro mais ne MODIFIE plus rien. Les handlers d'ecriture ci-dessous restent en
+# dormance (re-activables en basculant ce flag) ; `parse_and_execute` n'execute
+# AUCUNE ecriture tant que WRITE_ENABLED est False. Motif : donnees d'atelier trop
+# sensibles pour les confier a un petit modele local (doublons, faux succes...).
+WRITE_ENABLED = False
+
 # Marqueur : [[ACTION: verbe {json}]] ou (rétro-compat) [[ACTION: verbe | k=v | k=v]]
 _ACTION_RE = re.compile(r"\[\[\s*ACTION\s*:\s*(.+?)\]\]", re.IGNORECASE | re.DOTALL)
 _VERB_RE = re.compile(r"^\s*([a-zA-Z_]+)\s*(.*)$", re.DOTALL)
@@ -689,9 +697,15 @@ def parse_and_execute(text: str, user_text: str = "") -> tuple[str, list[str]]:
     SÉCURITÉ : au plus UNE action par reponse ; si le modele en emet plusieurs d'un coup
     (typique de « tout supprimer / vider le stock »), on N'EN EXECUTE AUCUNE. De plus, si
     le MESSAGE de l'utilisateur exprime une suppression EN MASSE (tout/tous/vide…), on
-    refuse toute suppression meme sur un seul marqueur."""
-    matches = list(_ACTION_RE.finditer(text))
+    refuse toute suppression meme sur un seul marqueur.
+
+    LECTURE SEULE (WRITE_ENABLED=False) : Oen ne modifie PLUS l'Espace Pro. On retire les
+    marqueurs eventuels et on N'EXECUTE AUCUNE ecriture — la saisie reste a l'utilisateur
+    (decision produit : donnees d'atelier trop sensibles pour un modele local)."""
     clean = _ACTION_RE.sub("", text).strip()
+    if not WRITE_ENABLED:
+        return clean, []
+    matches = list(_ACTION_RE.finditer(text))
     if not matches:
         return clean, []
     if len(matches) > 1:

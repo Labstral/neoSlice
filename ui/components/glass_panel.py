@@ -508,19 +508,9 @@ class GlassPanel(QWidget):
                 if _wrap is not None:
                     _wrap.setParent(None)
                     _wrap.deleteLater()
-        # HONNÊTETÉ : si Oen AFFIRME avoir agi (« créé avec succès ») mais qu'AUCUNE
-        # action n'a réellement été exécutée (pas de marqueur), on corrige — le petit
-        # modèle « annonce » parfois un succès fantôme. L'utilisateur n'est jamais trompé.
-        if not confirmations and clean.strip():
-            try:
-                from core.assistant import actions as _act
-                if _act.claims_action_done(clean):
-                    self._add_message(
-                        "⚠ Rien n'a été réellement enregistré. Redis-moi ta demande "
-                        "(avec les détails) pour que je le fasse pour de vrai.", "assistant")
-            except Exception:
-                pass
-        # Confirmations RÉELLES (issues du store) affichées comme message à part.
+        # Oen est en LECTURE SEULE (voir actions.WRITE_ENABLED) : il n'exécute aucune
+        # action, donc `confirmations` est toujours vide. On garde la boucle par sûreté
+        # (compat) mais plus d'alerte « rien n'a été enregistré » — Oen guide vers l'onglet.
         for _c in confirmations:
             self._add_message(_c, "assistant")
         # HISTORIQUE : on enregistre le tour d'Oen AVEC les confirmations d'action.
