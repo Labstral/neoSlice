@@ -77,7 +77,7 @@ def is_installed() -> bool:
 def uninstall() -> None:
     """Desinstalle l'assistant : arrete le serveur Ollama, libere les fichiers
     verrouilles, puis supprime tout le dossier ~/.neoslice/assistant (runtime,
-    modeles, GGUF, marqueur). Reclame l'espace disque (~3 a 5 Go)."""
+    modeles, GGUF, marqueur). Reclame l'espace disque (~8 Go)."""
     import sys as _sys
     import time
     import shutil
