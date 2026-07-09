@@ -45,7 +45,7 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ## Changelog
 
 ### v0.1.7
-- **Oen — assistant IA local** *(Pro)* : un modèle **Qwen3 8B** tourne directement sur votre machine (hors ligne, privé), avec une base de connaissances imprimantes toutes marques et une recherche sémantique (RAG). **Mode Réflexion** activable dans la fenêtre d'Oen pour des réponses raisonnées. Base de connaissances mise à jour depuis GitHub sans réinstaller l'application.
+- **Oen — assistant IA local** *(Pro)* : un modèle **Qwen3 8B** tourne directement sur votre machine (hors ligne, privé), expert de l'impression 3D toutes marques avec base de connaissances et recherche sémantique (RAG). Il **réfléchit automatiquement** sur les questions difficiles (indicateur « Oen réfléchit… »), répond **toujours en français**, et peut **consulter votre Espace Pro** (stock, bobines, clients, devis, commandes, factures) pour vous renseigner en direct. Base de connaissances mise à jour depuis GitHub sans réinstaller l'application.
 - **Export multicouleur** *(Pro)* : coloriez vos pièces après export 3MF, appliquez un filament par slot, obtenez le grammage/bobine par couleur — et le **stock est déduit automatiquement** après impression.
 - **5 slicers** : sortie compatible Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et ElegooSlicer. Le catalogue d'imprimantes s'adapte au slicer choisi (80+ marques / 600+ imprimantes).
 - **Nouvelles imprimantes** : Flashforge Creator 5 / 5 Pro, Phrozen Arco, et gamme Anycubic Kobra étendue.
