@@ -74,6 +74,15 @@ def test_multiple_markers_execute_none():
     assert len(confs) == 1 and "sécurité" in confs[0].lower()
 
 
+def test_bulk_intent_delete_refused():
+    """SÉCURITÉ : intention de masse dans le message utilisateur -> suppression refusée."""
+    mk = '[[ACTION: delete_spool {"material": "PLA", "color": "noir"}]]'
+    for u in ("supprime tout mon stock", "vide mon stock de filament",
+              "efface toutes mes bobines", "supprime tous mes clients"):
+        clean, confs = A.parse_and_execute(mk, u)
+        assert confs and "masse" in confs[0].lower(), u
+
+
 def test_placeholder_action_not_executed():
     clean, confs = A.parse_and_execute('[[ACTION: add_client {"nom": "<nom>"}]]')
     assert len(confs) == 1 and "manque" in confs[0].lower()

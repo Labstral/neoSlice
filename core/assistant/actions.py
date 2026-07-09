@@ -582,12 +582,21 @@ def claims_action_done(text: str) -> bool:
     return bool(_CLAIM_RE.search(text or ""))
 
 
-def parse_and_execute(text: str) -> tuple[str, list[str]]:
+# Intention de suppression EN MASSE dans le message utilisateur (garde-fou independant
+# du modele : meme si Oen n'emet qu'UN marqueur delete quand il y a peu d'elements).
+_BULK_RE = re.compile(
+    r"\b(tout|tous|toutes|l'ensemble|int[eé]gralit[eé]|tous mes|toutes mes)\b"
+    r"|\bvide[rz]?\b|\befface[rz]?\s+tout", re.IGNORECASE)
+
+
+def parse_and_execute(text: str, user_text: str = "") -> tuple[str, list[str]]:
     """Extrait et EXÉCUTE le [[ACTION: …]] du texte. Renvoie
     (texte sans les marqueurs, liste de confirmations/erreurs à afficher).
 
-    SÉCURITÉ : au plus UNE action par reponse. Si le modele en emet plusieurs d'un coup
-    (typique d'une commande « tout supprimer / vider le stock »), on N'EN EXECUTE AUCUNE."""
+    SÉCURITÉ : au plus UNE action par reponse ; si le modele en emet plusieurs d'un coup
+    (typique de « tout supprimer / vider le stock »), on N'EN EXECUTE AUCUNE. De plus, si
+    le MESSAGE de l'utilisateur exprime une suppression EN MASSE (tout/tous/vide…), on
+    refuse toute suppression meme sur un seul marqueur."""
     matches = list(_ACTION_RE.finditer(text))
     clean = _ACTION_RE.sub("", text).strip()
     if not matches:
@@ -599,6 +608,10 @@ def parse_and_execute(text: str) -> tuple[str, list[str]]:
     handler = _HANDLERS.get(verb)
     if not handler:
         return clean, []  # verbe inconnu → marqueur retiré, aucun effet
+    # Suppression EN MASSE demandee par l'utilisateur -> refus (donnees sensibles).
+    if verb.startswith("delete_") and _BULK_RE.search(user_text or ""):
+        return clean, ["⚠ Suppression en masse refusée par sécurité. Supprime un élément "
+                       "précis à la fois (ou fais-le dans l'Espace Pro)."]
     # Placeholders « <nom> » non remplis -> on n'execute pas.
     if _has_placeholder(params):
         return clean, ["⚠ Action annulée : il manque des informations "

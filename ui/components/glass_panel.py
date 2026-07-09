@@ -497,7 +497,9 @@ class GlassPanel(QWidget):
         # retire les marqueurs du texte affiché. Les confirmations viennent du store.
         try:
             from core.assistant import actions
-            clean, confirmations = actions.parse_and_execute(clean)
+            _utxt = (self._history[-1]["content"]
+                     if self._history and self._history[-1].get("role") == "user" else "")
+            clean, confirmations = actions.parse_and_execute(clean, _utxt)
         except Exception:
             confirmations = []
         clean = _strip_filler(clean)     # retire les formules creuses de fin

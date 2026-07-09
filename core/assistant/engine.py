@@ -636,7 +636,10 @@ class AssistantEngine:
             # 5 min et RECHARGE ~5,5 Go du disque avant CHAQUE question (plusieurs
             # minutes sur Mac Apple Silicon a RAM limitee). Cf. lenteur signalee M3.
             "keep_alive": "30m",
-            "options": {"temperature": 0.25, "top_p": 0.9, "num_ctx": 12288},
+            # num_ctx 16384 : le savoir expert + le prompt + le RAG + l'historique
+            # depassent 12288 -> on agrandit la fenetre pour eviter tout debordement
+            # (le savoir est un prefixe STABLE, mis en cache par Ollama).
+            "options": {"temperature": 0.25, "top_p": 0.9, "num_ctx": 16384},
         }
         data = json.dumps(payload).encode()
         for i in range(attempts):
@@ -656,6 +659,13 @@ class AssistantEngine:
         complet = system + UI + contexte live + faits imprimante + RAG + historique +
         guard. repli = idem sans le bloc RAG (le plus lourd/variable)."""
         sys_msgs = [{"role": "system", "content": _SYSTEM_PROMPT}]
+        # Savoir EXPERT (methode de raisonnement + maitrise 3D/neoSlice). Place tot =
+        # prefixe STABLE -> KV-cache Ollama reutilise, quasi zero surcout de latence.
+        try:
+            from core.assistant.expertise import EXPERT_KNOWLEDGE
+            sys_msgs.append({"role": "system", "content": EXPERT_KNOWLEDGE})
+        except Exception:
+            pass
         # Plan exact de l'interface (noms/emplacements des boutons) -> pas d'invention.
         try:
             from core.assistant.ui_map import UI_GUIDE
