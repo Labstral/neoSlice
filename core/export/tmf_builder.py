@@ -250,9 +250,19 @@ def _force_printer_identity(project_settings: dict, bbl_id: str,
       2. retargete TOUTE référence de preset « @BBL <autre modèle> » vers le cible ;
       3. force les clés d'identité machine (« Bambu Lab <modèle>… ») vers la machine cible.
     Idempotent, sûr à appeler plusieurs fois. `target_machine` = ex. "Bambu Lab A1 0.4 nozzle"."""
-    # 1) Ne jamais hériter d'un preset système / delta système figé.
-    for _k in ("inherits", "inherits_group", "different_settings_to_system"):
-        project_settings.pop(_k, None)
+    # 1) Ne jamais hériter d'un preset système. ATTENTION : NE PAS SUPPRIMER
+    #    inherits_group — Bambu Studio EXIGE que la clé existe, sinon il rejette tout
+    #    le 3MF (« configuration invalide / le fichier ne contient pas de données
+    #    géométriques », scène vide). Régression vécue le 2026-07-09. On la VIDE :
+    #    aucun héritage → BS utilise les valeurs À PLAT (pas de rechargement du preset
+    #    système hérité du fichier source), tout en gardant la structure valide.
+    _ig = project_settings.get("inherits_group")
+    if isinstance(_ig, list):
+        project_settings["inherits_group"] = [""] * len(_ig)
+    elif _ig is not None:
+        project_settings["inherits_group"] = ""
+    project_settings["inherits"] = ""
+    project_settings.pop("different_settings_to_system", None)
     # 2) Retargeter toute référence de preset « @BBL <modèle> » vers le printer cible.
     repl = f"@BBL {bbl_id}"
 
@@ -710,11 +720,10 @@ class ThreeMFBuilder:
         # données géométriques ». _force_printer_identity ci-dessous retargete uniquement les
         # noms « @BBL <autre printer> » vers la cible, sans toucher aux longueurs.
 
-        # Ne PAS hériter d'un preset système hérité du fichier importé : inherits_group
-        # garde souvent "0.16mm Optimal @BBL P1P" → BS charge CE preset (0.16, supports
-        # off) par-dessus nos réglages. On le retire pour que BS utilise les valeurs à
-        # plat de project_settings.config (cohérent avec print_settings_id "neoSlice…").
-        project_settings.pop("inherits_group", None)
+        # NB : l'héritage de preset (inherits_group « 0.16mm Optimal @BBL P1P » → BS
+        # rechargerait ce preset 0.16/supports-off) est neutralisé par
+        # _force_printer_identity ci-dessous, qui VIDE inherits_group sans le supprimer
+        # (le supprimer casse le parsing BS). Ne PAS le pop ici.
 
         # La compatibilité doit viser le printer CIBLE : un print_compatible_printers
         # resté sur "Bambu Lab P1P…" fait juger le profil incompatible avec la machine
