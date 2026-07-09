@@ -276,7 +276,98 @@ def _add_quote(p: dict) -> str:
     return f"✓ Devis créé{who} · {len(items)} ligne(s) · total {_money(totals['ttc'])} (dont TVA {_money(totals['tva'])})"
 
 
-# Verbe → handler. Extensible (futur : update_*, delete_*, add_invoice…).
+# ── Suppressions (destructif → resolution stricte, refus si ambigu) ───────────
+def _delete_spool(p: dict) -> str:
+    from core.business import store
+    material = str(_first(p, "material", "materiau", default="")).upper()
+    color = _clean_ref(_first(p, "color", "couleur", "couleur_nom", default="")).lower()
+    cands = store.list_spools()
+    if material:
+        cands = [s for s in cands if str(s.get("materiau", "")).upper() == material]
+    if color:
+        cands = [s for s in cands if color in str(s.get("couleur_nom", "")).lower()
+                 or color == str(s.get("couleur_hex", "")).lower()]
+    if not cands:
+        quoi = " ".join(x for x in [material, color] if x) or "correspondante"
+        return f"⚠ Aucune bobine {quoi} à supprimer."
+    if len(cands) > 1:
+        # Cas courant : supprimer la bobine VIDE (0 g) laissée après usage.
+        empties = [s for s in cands if float(s.get("poids_restant_g") or 0) <= 0]
+        if len(empties) == 1:
+            cands = empties
+        else:
+            cols = ", ".join(sorted({str(s.get("couleur_nom") or s.get("couleur_hex")) for s in cands}))
+            return f"⚠ Plusieurs bobines {material} en stock ({cols}). Précise laquelle supprimer."
+    s = cands[0]
+    store.delete_spool(s["id"])
+    lbl = f"{s.get('materiau', '')} {s.get('couleur_nom') or s.get('couleur_hex') or ''}".strip()
+    return f"✓ Bobine supprimée : {lbl}"
+
+
+def _delete_client(p: dict) -> str:
+    from core.business import store
+    name = _clean_ref(_first(p, "name", "nom", "client", "societe", default=""))
+    if not name:
+        return "⚠ Précise le nom du client à supprimer."
+    ql = name.lower()
+    clients = store.list_clients()
+    exact = [c for c in clients if ql in (str(c.get("nom", "")).lower(), str(c.get("societe", "")).lower())]
+    matches = exact or [c for c in clients
+                        if ql in (str(c.get("nom", "")) + " " + str(c.get("societe", ""))).lower()]
+    if not matches:
+        return f"⚠ Client « {name} » introuvable."
+    if len(matches) > 1:
+        return f"⚠ Plusieurs clients correspondent à « {name} ». Précise le nom complet."
+    c = matches[0]
+    store.delete_client(c["id"])
+    return f"✓ Client supprimé : {store.client_label(c)}"
+
+
+def _delete_product(p: dict) -> str:
+    from core.business import store
+    name = _clean_ref(_first(p, "name", "nom", "designation", default=""))
+    if not name:
+        return "⚠ Précise le nom de l'article à supprimer."
+    ql = name.lower()
+    prods = store.list_products()
+    exact = [p2 for p2 in prods if ql == str(p2.get("nom", "")).lower()]
+    matches = exact or [p2 for p2 in prods if ql in str(p2.get("nom", "")).lower()]
+    if not matches:
+        return f"⚠ Article « {name} » introuvable."
+    if len(matches) > 1:
+        return f"⚠ Plusieurs articles correspondent à « {name} ». Précise le nom exact."
+    pr = matches[0]
+    store.delete_product(pr["id"])
+    return f"✓ Article supprimé : {pr.get('nom', '')}"
+
+
+def _delete_by_number(p: dict, lister, deleter, kind: str, example: str, done: str) -> str:
+    ref = str(_first(p, "number", "numero", "ref", "id", default="")).strip().lower()
+    if not ref:
+        return f"⚠ Précise le numéro {kind} à supprimer (ex. {example})."
+    matches = [x for x in lister() if ref in str(x.get("number", "")).lower() or ref == x.get("id")]
+    if not matches:
+        return f"⚠ {kind.capitalize()} « {ref} » introuvable."
+    if len(matches) > 1:
+        return f"⚠ Plusieurs correspondent à « {ref} ». Donne le numéro complet ({example})."
+    x = matches[0]
+    deleter(x["id"])
+    return f"✓ {done} : {x.get('number', '')}"
+
+
+def _delete_quote(p: dict) -> str:
+    from core.business import store
+    return _delete_by_number(p, store.list_quotes, store.delete_quote,
+                             "du devis", "D-2026-0001", "Devis supprimé")
+
+
+def _delete_order(p: dict) -> str:
+    from core.business import store
+    return _delete_by_number(p, store.list_orders, store.delete_order,
+                             "de la commande", "CMD-2026-0001", "Commande supprimée")
+
+
+# Verbe → handler. Extensible (futur : update_*, add_invoice…).
 _HANDLERS = {
     "add_spool": _add_spool, "ajouter_bobine": _add_spool,
     "consume_spool": _consume_spool, "deduct_stock": _consume_spool, "deduire_stock": _consume_spool,
@@ -284,6 +375,12 @@ _HANDLERS = {
     "add_product": _add_product, "add_article": _add_product, "ajouter_article": _add_product,
     "add_order": _add_order, "ajouter_commande": _add_order,
     "add_quote": _add_quote, "ajouter_devis": _add_quote, "create_quote": _add_quote,
+    # Suppressions
+    "delete_spool": _delete_spool, "supprimer_bobine": _delete_spool, "remove_spool": _delete_spool,
+    "delete_client": _delete_client, "supprimer_client": _delete_client, "remove_client": _delete_client,
+    "delete_product": _delete_product, "delete_article": _delete_product, "supprimer_article": _delete_product,
+    "delete_quote": _delete_quote, "supprimer_devis": _delete_quote, "remove_quote": _delete_quote,
+    "delete_order": _delete_order, "supprimer_commande": _delete_order, "remove_order": _delete_order,
 }
 
 
