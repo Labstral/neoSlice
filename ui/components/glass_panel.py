@@ -22,12 +22,15 @@ def _plain_text(text: str) -> str:
     simple). Sûr en streaming (idempotent, marche sur du texte partiel)."""
     text = text.replace("**", "").replace("__", "")      # gras
     text = re.sub(r"`{1,3}", "", text)                    # code
-    # Liens Markdown vers une URL -> on garde le libellé, on retire l'URL. Oen est
-    # hors-ligne et un 7B fabrique parfois des URLs : ne jamais afficher de lien.
-    text = re.sub(r"\[([^\]]+)\]\((?:https?://|www\.)[^)]*\)", r"\1", text)
+    # Liens Markdown -> on garde le libellé, on retire la cible, QUELLE QU'ELLE SOIT
+    # (http, www, ancre, ou chemin RELATIF type /fr/a1-mini/... qu'Oen fabrique). Oen
+    # est hors-ligne : il ne doit JAMAIS afficher de lien ni de chemin de doc invente.
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
     # URL brute : Oen est HORS-LIGNE et ne doit JAMAIS afficher d'adresse web
     # (un LLM en fabrique) -> on la retire, on garde le reste de la phrase.
     text = re.sub(r"\(?(?:https?://|www\.)\S+\)?", "", text)
+    # Chemin de doc relatif entre parentheses (ex. '(/fr/a1-mini/maintenance)') : idem.
+    text = re.sub(r"\(\s*/[^)]*\)", "", text)
     text = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", text)     # titres #
     text = re.sub(r"(?m)^(\s*)[\*\-]\s+", r"\1• ", text)  # puces -> •
     return text
