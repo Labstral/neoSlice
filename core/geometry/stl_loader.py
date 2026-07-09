@@ -73,8 +73,18 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
                 }
                 for obj in root.findall("object"):
                     obj_id = obj.get("id", "")
-                    # Extruder au niveau objet (fallback)
+                    # Extruder au niveau objet (fallback). Bambu le stocke en
+                    # ENFANT <metadata key="extruder" value="N"/>, PAS en attribut de
+                    # <object> → lire les deux (priorité au metadata). Sans ça, tous les
+                    # objets retombaient sur l'extruder 1 → une seule couleur détectée
+                    # sur un 3MF multi-couleurs (bug détection slots).
                     obj_extruder = int(obj.get("extruder", 1))
+                    for meta in obj.findall("metadata"):
+                        if meta.get("key") == "extruder":
+                            try:
+                                obj_extruder = int(meta.get("value", obj_extruder))
+                            except (TypeError, ValueError):
+                                pass
                     for part in obj.findall("part"):
                         # Ignorer les pièces non-imprimables (bloqueurs de support, etc.)
                         subtype = part.get("subtype", "normal_part")
