@@ -703,45 +703,12 @@ class ThreeMFBuilder:
         # (couche 0.16, supports off). Cf. bug Darth Vader A1/P1P.
         project_settings["default_print_profile"] = f"0.20mm Standard @BBL {bbl_id}"
 
-        # Filament — multi-couleurs : on reconstruit N slots « Generic PLA » PROPRES
-        # (valeurs génériques, AUCUN G-code personnalisé), en PRÉSERVANT le nombre de
-        # slots ET les couleurs d'origine. Deux pièges évités :
-        #   • forcer 1 seul slot rendait le projet incohérent (objets sur extruder 2
-        #     sans filament 2) → BS supprimait les couleurs + réinitialisait le process ;
-        #   • préserver le filament source (ex. "Generic PLA @BBL X1C" avec G-code custom)
-        #     déclenchait l'alerte BS « préréglage personnalisé — G-codes modifiés ».
-        _src_col = _original_ps.get("filament_colour")
-        if isinstance(_src_col, list) and _src_col:
-            _colours = [str(c) for c in _src_col]
-        else:
-            _fid = _original_ps.get("filament_settings_id")
-            _n0 = len(_fid) if isinstance(_fid, list) and _fid else 1
-            _colours = ["#FFFFFF"] * _n0
-        _n = max(1, len(_colours))
-        _filament_strip = [k for k in project_settings
-                           if k.startswith("filament_") or k.startswith("default_filament_")]
-        _filament_strip += [
-            "nozzle_temperature", "nozzle_temperature_initial_layer",
-            "nozzle_temperature_range_high", "nozzle_temperature_range_low",
-            "required_nozzle_HRC",
-        ]
-        for _k in _filament_strip:
-            project_settings.pop(_k, None)
-        project_settings.update({
-            "filament_settings_id":              ["Generic PLA"] * _n,
-            "filament_colour":                   _colours,
-            "filament_type":                     ["PLA"] * _n,
-            "filament_diameter":                 ["1.75"] * _n,
-            "filament_density":                  ["1.24"] * _n,
-            "filament_flow_ratio":               ["0.98"] * _n,
-            "filament_is_support":               ["0"] * _n,
-            "filament_soluble":                  ["0"] * _n,
-            "nozzle_temperature":                ["220"] * _n,
-            "nozzle_temperature_initial_layer":  ["220"] * _n,
-            "nozzle_temperature_range_high":     ["240"] * _n,
-            "nozzle_temperature_range_low":      ["190"] * _n,
-            "required_nozzle_HRC":               ["3"] * _n,
-        })
+        # Filament multi-couleurs : on PRÉSERVE les tableaux filament d'origine (nombre
+        # de slots, couleurs, ET surtout les longueurs de tableaux cohérentes que Bambu
+        # Studio valide). Les reconstruire nous-mêmes (13 clés à longueur N) désynchronisait
+        # les nombreux tableaux par-filament → BS refusait « configuration invalide / pas de
+        # données géométriques ». _force_printer_identity ci-dessous retargete uniquement les
+        # noms « @BBL <autre printer> » vers la cible, sans toucher aux longueurs.
 
         # Ne PAS hériter d'un preset système hérité du fichier importé : inherits_group
         # garde souvent "0.16mm Optimal @BBL P1P" → BS charge CE preset (0.16, supports
