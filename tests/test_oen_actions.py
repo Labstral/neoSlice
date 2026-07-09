@@ -87,6 +87,18 @@ def test_fake_success_detector():
     assert not A.claims_action_done("Quel matériau et quel poids ?")
 
 
+def test_language_switch_detected():
+    """Oen doit rester en francais : on detecte une demande de changement de langue."""
+    from core.assistant.engine import is_language_switch_request as f
+    assert f("reponds-moi en anglais stp")
+    assert f("answer me in english please")
+    assert f("parle-moi en espagnol")
+    assert f("tu peux repondre en anglais ?")
+    # Pas de faux positif
+    assert not f("comment niveler mon plateau ?")
+    assert not f("ajoute une bobine de PLA anglais rouge")
+
+
 def test_multiple_markers_execute_none():
     """SÉCURITÉ : plusieurs actions d'un coup (ex. 'tout supprimer') -> AUCUNE exécutée."""
     txt = ('[[ACTION: delete_spool {"material": "PLA", "color": "noir"}]] '

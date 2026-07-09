@@ -25,6 +25,9 @@ def _plain_text(text: str) -> str:
     # Liens Markdown vers une URL -> on garde le libellé, on retire l'URL. Oen est
     # hors-ligne et un 7B fabrique parfois des URLs : ne jamais afficher de lien.
     text = re.sub(r"\[([^\]]+)\]\((?:https?://|www\.)[^)]*\)", r"\1", text)
+    # URL brute : Oen est HORS-LIGNE et ne doit JAMAIS afficher d'adresse web
+    # (un LLM en fabrique) -> on la retire, on garde le reste de la phrase.
+    text = re.sub(r"\(?(?:https?://|www\.)\S+\)?", "", text)
     text = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", text)     # titres #
     text = re.sub(r"(?m)^(\s*)[\*\-]\s+", r"\1• ", text)  # puces -> •
     return text
@@ -53,7 +56,7 @@ _FILLER_RE = re.compile(
     r"|si (?:tu|vous) (?:as|avez|en as|en avez)"          # si tu as (des questions/besoin)
     r"|si (?:tu|vous) (?:rencontr|souhait|veu|voul)\w*"   # si tu rencontres/souhaites/veux
     r"|j['’]esp[èe]re que"                                # j'espère que ça aide
-    r"|je (?:peux|reste) (?:t['’]|vous |là )"             # je peux t'aider / je reste là
+    r"|je (?:peux|reste|suis) (?:t['’]|vous |l[àa])"       # je peux/suis là / t'aider
     r"|dis[- ]moi si|fais[- ]moi savoir|tiens[- ]moi"     # dis-moi si / fais-moi savoir
     r"|envoie[- ]?(?:moi)?\b|n['’]?h[ée]site"             # envoie(-moi) une photo
     r"|pour (?:toute|plus|d['’]autres) (?:question|info|aide|d[ée]tail)"
@@ -420,6 +423,19 @@ class GlassPanel(QWidget):
         self._clear_options()          # retire d'eventuels boutons de reponse restants
         self._add_message(t, "user")
         self._history.append({"role": "user", "content": t})
+
+        # Demande de changer de langue -> Oen reste en francais (le modele obeit mal a
+        # cette regle) : reponse canned deterministe, sans appeler le modele.
+        try:
+            from core.assistant.engine import is_language_switch_request
+            if is_language_switch_request(t):
+                _fr = ("Je réponds toujours en français 🙂 — mais je suis là pour tout ce "
+                       "qui touche l'impression 3D et ton atelier. Que veux-tu savoir ?")
+                self._add_message(_fr, "assistant")
+                self._history.append({"role": "assistant", "content": _fr})
+                return
+        except Exception:
+            pass
 
         from core.assistant.engine import AssistantEngine
         if not AssistantEngine.available():
