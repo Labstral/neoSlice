@@ -698,33 +698,14 @@ class ThreeMFBuilder:
         # (couche 0.16, supports off). Cf. bug Darth Vader A1/P1P.
         project_settings["default_print_profile"] = f"0.20mm Standard @BBL {bbl_id}"
 
-        # Slot filament Generic PLA NEUTRE — retire toute référence filament héritée
-        # du fichier source (ex. "Generic PLA @BBL P1P"), qui ferait aussi recharger
-        # un preset lié à l'autre printer. Identique au build natif.
-        _filament_strip = [k for k in project_settings
-                           if k.startswith("filament_") or k.startswith("default_filament_")]
-        _filament_strip += [
-            "nozzle_temperature", "nozzle_temperature_initial_layer",
-            "nozzle_temperature_range_high", "nozzle_temperature_range_low",
-            "required_nozzle_HRC",
-        ]
-        for _k in _filament_strip:
-            project_settings.pop(_k, None)
-        project_settings.update({
-            "filament_settings_id":              ["Generic PLA"],
-            "filament_colour":                   ["#FFFFFF"],
-            "filament_type":                     ["PLA"],
-            "filament_diameter":                 ["1.75"],
-            "filament_density":                  ["1.24"],
-            "filament_flow_ratio":               ["0.98"],
-            "filament_is_support":               ["0"],
-            "filament_soluble":                  ["0"],
-            "nozzle_temperature":                ["220"],
-            "nozzle_temperature_initial_layer":  ["220"],
-            "nozzle_temperature_range_high":     ["240"],
-            "nozzle_temperature_range_low":      ["190"],
-            "required_nozzle_HRC":               ["3"],
-        })
+        # IMPORTANT — multi-couleurs : NE PAS écraser le bloc filament par un slot
+        # unique. Un 3MF multi-objets définit N filaments (N couleurs) et des objets
+        # affectés à l'extruder 2, 3… Forcer un seul "Generic PLA" rendait le projet
+        # INCOHÉRENT (objets → extruder 2 sans filament 2) → Bambu Studio supprimait
+        # les couleurs ET réinitialisait le process (supports off). On PRÉSERVE donc
+        # les tableaux filament d'origine (couleurs, types, slots) ; _force_printer_identity
+        # ci-dessous retargete seulement les noms "@BBL <autre printer>" vers la cible,
+        # sans toucher au nombre de slots ni aux couleurs.
 
         # Ne PAS hériter d'un preset système hérité du fichier importé : inherits_group
         # garde souvent "0.16mm Optimal @BBL P1P" → BS charge CE preset (0.16, supports
