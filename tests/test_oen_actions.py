@@ -53,6 +53,18 @@ def test_unknown_verb_is_stripped_no_crash():
     assert confs == []       # verbe inconnu -> aucun effet, aucune confirmation
 
 
+def test_fake_success_detector():
+    """Detecte une fausse confirmation (Oen dit avoir agi sans marqueur)."""
+    assert A.claims_action_done("Le client Paul Durand a été créé avec succès.")
+    assert A.claims_action_done("La commande a été supprimée.")
+    assert A.claims_action_done("Le prix a été mis à jour.")
+    assert A.claims_action_done("J'ai ajouté la bobine.")
+    # Pas de faux positif sur une LECTURE
+    assert not A.claims_action_done("Tu as 3 clients enregistrés : Marie, Paul.")
+    assert not A.claims_action_done("Tu as 640 g de PLA noir en stock.")
+    assert not A.claims_action_done("Quel matériau et quel poids ?")
+
+
 def test_multiple_markers_execute_none():
     """SÉCURITÉ : plusieurs actions d'un coup (ex. 'tout supprimer') -> AUCUNE exécutée."""
     txt = ('[[ACTION: delete_spool {"material": "PLA", "color": "noir"}]] '

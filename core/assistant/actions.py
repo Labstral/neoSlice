@@ -565,6 +565,23 @@ def _parse_marker(body: str) -> tuple[str, dict]:
     return verb, _kv_fallback(body)
 
 
+# Detecteur de FAUSSE confirmation : le modele affirme parfois avoir cree/supprime/
+# modifie un element SANS emettre de marqueur (donc rien n'a ete fait). On le detecte
+# pour ne pas laisser l'utilisateur croire qu'une action a eu lieu.
+_CLAIM_RE = re.compile(
+    r"(avec succ[eè]s"
+    r"|a\s+[eé]t[eé]\s+(cr[eé]{2}|ajout|supprim|enregistr|modifi|effac|mis[e]?\s+[aà]\s+jour)"
+    r"|ont\s+[eé]t[eé]\s+(cr[eé]{2}|ajout|supprim|enregistr|modifi|effac)"
+    r"|j['e ]\s*(?:ai|viens de)\s+(bien\s+)?(cr[eé]{2}|ajout|supprim|enregistr|modifi|effac|mis))",
+    re.IGNORECASE,
+)
+
+
+def claims_action_done(text: str) -> bool:
+    """True si le texte AFFIRME avoir realise une action (create/delete/update)."""
+    return bool(_CLAIM_RE.search(text or ""))
+
+
 def parse_and_execute(text: str) -> tuple[str, list[str]]:
     """Extrait et EXÉCUTE le [[ACTION: …]] du texte. Renvoie
     (texte sans les marqueurs, liste de confirmations/erreurs à afficher).
