@@ -323,20 +323,44 @@ class GlassPanel(QWidget):
 
 
     def _on_thinking(self, tok: str):
-        """Affiche le raisonnement (mode Réflexion) dans une bulle grisee distincte,
-        au-dessus de la reponse."""
+        """Oen raisonne (Qwen3 thinking) : on NE montre PAS le texte de reflexion,
+        seulement un indicateur anime « Oen reflechit… ». Le raisonnement reste interne."""
         if getattr(self, "_think_bubble", None) is None:
             self._remove_typing()
-            self._think_text = ""
-            self._think_bubble = self._add_message("", "assistant")
+            self._think_dots = 0
+            self._think_bubble = self._add_message("Oen réfléchit", "assistant")
             self._think_bubble.setFont(QFont("Segoe UI", 9))
             self._think_bubble.setStyleSheet(
                 "color: rgba(255,255,255,150); background: rgba(255,255,255,14); "
                 "border: 1px solid rgba(255,255,255,26); border-radius: 12px; "
                 "padding: 8px 12px; font-style: italic;")
-        self._think_text += tok
-        self._think_bubble.setText("Réflexion — " + self._think_text)
-        self._scroll_bottom()
+            self._think_timer = QTimer(self)
+            self._think_timer.setInterval(420)
+            self._think_timer.timeout.connect(self._tick_think)
+            self._think_timer.start()
+            self._scroll_bottom()
+        # les tokens de reflexion sont ignores volontairement (contenu masque)
+
+    def _tick_think(self):
+        """Anime les points de l'indicateur « Oen réfléchit… »."""
+        if getattr(self, "_think_bubble", None) is None:
+            return
+        self._think_dots = (self._think_dots + 1) % 4
+        self._think_bubble.setText("Oen réfléchit" + "." * self._think_dots)
+
+    def _remove_think_bubble(self):
+        """Retire l'indicateur de reflexion (des que la reponse arrive ou a la fin)."""
+        t = getattr(self, "_think_timer", None)
+        if t is not None:
+            t.stop()
+            self._think_timer = None
+        b = getattr(self, "_think_bubble", None)
+        if b is not None:
+            _wrap = b.parentWidget()
+            if _wrap is not None:
+                _wrap.setParent(None)
+                _wrap.deleteLater()
+            self._think_bubble = None
 
     def _add_message(self, text: str, role: str = "assistant"):
         bubble = QLabel(text)
@@ -449,8 +473,7 @@ class GlassPanel(QWidget):
         self.busy_changed.emit(True)
         self._stream_text = ""
         self._stream_bubble = None
-        self._think_bubble = None
-        self._think_text = ""
+        self._remove_think_bubble()   # stoppe timer + retire un indicateur résiduel
         # Reflexion AUTO : active sur les questions difficiles (diagnostics/how-to),
         # OFF sur les commandes/lectures (reponse instantanee). Oen decide seul.
         try:
@@ -476,6 +499,7 @@ class GlassPanel(QWidget):
     def _on_token(self, tok: str):
         if self._stream_bubble is None:
             self._remove_typing()
+            self._remove_think_bubble()   # la reflexion est finie : on masque l'indicateur
             self._stream_bubble = self._add_message("", "assistant")
         self._stream_text += tok
         # Masque le marqueur d'options tant que la reponse arrive.
@@ -483,6 +507,7 @@ class GlassPanel(QWidget):
         self._scroll_bottom()
 
     def _on_done(self):
+        self._remove_think_bubble()   # sécurité : plus d'indicateur de réflexion à la fin
         clean, opts = _split_options(self._stream_text)
         # Actions atelier ([[ACTION: …]]) : EXÉCUTE réellement contre le store et
         # retire les marqueurs du texte affiché. Les confirmations viennent du store.
