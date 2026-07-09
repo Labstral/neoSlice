@@ -720,6 +720,17 @@ class ThreeMFBuilder:
         # données géométriques ». _force_printer_identity ci-dessous retargete uniquement les
         # noms « @BBL <autre printer> » vers la cible, sans toucher aux longueurs.
 
+        # Neutraliser SEULEMENT les NOMS de préréglage filament vers « Generic PLA »
+        # (préréglage système reconnu) + retirer le G-code filament custom → supprime
+        # l'alerte BS « préréglage personnalisé — G-codes modifiés » quand la source
+        # utilisait des filaments custom (PLA-CR-Black, eSUN PLA+…). On garde le NOMBRE
+        # de slots, les couleurs et toutes les longueurs de tableaux (donc 3MF valide).
+        _fid = project_settings.get("filament_settings_id")
+        if isinstance(_fid, list) and _fid:
+            project_settings["filament_settings_id"] = ["Generic PLA"] * len(_fid)
+        for _gk in ("filament_start_gcode", "filament_end_gcode"):
+            project_settings.pop(_gk, None)
+
         # NB : l'héritage de preset (inherits_group « 0.16mm Optimal @BBL P1P » → BS
         # rechargerait ce preset 0.16/supports-off) est neutralisé par
         # _force_printer_identity ci-dessous, qui VIDE inherits_group sans le supprimer
