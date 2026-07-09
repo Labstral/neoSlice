@@ -235,7 +235,7 @@ class SettingsDialog(QDialog):
 
         # Animation de la barre de scan (en-tête) — figée si décochée
         self._scan_lbl, self._scan_cb = self._make_checkbox_row(
-            _("settings.scanbar_anim"), bool(PREFS.get("scanbar_anim", True)))
+            _("settings.scanbar_anim"), bool(PREFS.get("scanbar_anim", False)))
         self._scan_cb.toggled.connect(self._on_scanbar_toggled)
         scan_row = QHBoxLayout()
         scan_row.setContentsMargins(0, 0, 0, 0)

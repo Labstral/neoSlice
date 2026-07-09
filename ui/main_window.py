@@ -552,7 +552,7 @@ class _TopBar(QWidget):
         self._scanline_y = 0
         # Animation de la scan-line activable/désactivable (réglages). Désactivée =
         # scan-line FIGÉE juste sous le sous-titre (soulignement), grille en pause.
-        self._anim_enabled = bool(PREFS.get("scanbar_anim", True))
+        self._anim_enabled = bool(PREFS.get("scanbar_anim", False))
         self._radar_last = None
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
