@@ -24,11 +24,14 @@ def _p1p_project_settings() -> dict:
     }
 
 
-def test_force_identity_strips_inheritance():
+def test_force_identity_neutralizes_inheritance():
     ps = _p1p_project_settings()
     _force_printer_identity(ps, "A1", "Bambu Lab A1 0.4 nozzle")
-    assert "inherits" not in ps
-    assert "inherits_group" not in ps
+    # inherits_group DOIT rester présent (sinon BS rejette le 3MF) mais VIDE
+    assert "inherits_group" in ps
+    assert all(x == "" for x in ps["inherits_group"])
+    assert ps.get("inherits") == ""
+    # different_settings_to_system peut être retiré (toléré par BS)
     assert "different_settings_to_system" not in ps
 
 
@@ -85,6 +88,7 @@ def test_force_identity_generic_any_source(src_model, target_bbl, target_machine
     import json
     blob = json.dumps(ps)
     assert src_model not in blob, f"référence source {src_model} résiduelle : {blob}"
-    assert "inherits_group" not in ps
+    # inherits_group présent mais vidé (structure valide, aucun héritage)
+    assert "inherits_group" in ps and all(x == "" for x in ps["inherits_group"])
     assert ps["default_print_profile"] == f"0.20mm Standard @BBL {target_bbl}"
     assert ps["print_compatible_printers"] == [target_machine]
