@@ -367,7 +367,141 @@ def _delete_order(p: dict) -> str:
                              "de la commande", "CMD-2026-0001", "Commande supprimée")
 
 
-# Verbe → handler. Extensible (futur : update_*, add_invoice…).
+# ── Modifications (update) ────────────────────────────────────────────────────
+def _update_product(p: dict) -> str:
+    from core.business import store
+    name = _clean_ref(_first(p, "nom", "name", "designation", "target", "article", default=""))
+    if not name:
+        return "⚠ Précise quel article modifier."
+    ql = name.lower()
+    prods = store.list_products()
+    matches = [x for x in prods if ql == str(x.get("nom", "")).lower()] \
+        or [x for x in prods if ql in str(x.get("nom", "")).lower()]
+    if not matches:
+        return f"⚠ Article « {name} » introuvable."
+    if len(matches) > 1:
+        return f"⚠ Plusieurs articles « {name} ». Précise le nom exact."
+    pr = matches[0]
+    changes = {}
+    if _first(p, "prix", "price", "new_price") not in (None, ""):
+        changes["prix"] = _num(_first(p, "prix", "price", "new_price"))
+    if _first(p, "grams", "poids_g", "poids") not in (None, ""):
+        changes["grams"] = _num(_first(p, "grams", "poids_g", "poids"))
+    if _first(p, "duree_h", "duree", "hours") not in (None, ""):
+        changes["duree_h"] = _num(_first(p, "duree_h", "duree", "hours"))
+    if _first(p, "notes", "note") not in (None, ""):
+        changes["notes"] = str(_first(p, "notes", "note"))
+    nn = _clean_ref(_first(p, "new_name", "nouveau_nom", default=""))
+    if nn:
+        changes["nom"] = nn
+    if not changes:
+        return "⚠ Rien à modifier : précise ce qui change (prix, poids…)."
+    store.update_product(pr["id"], changes)
+    what = ", ".join(f"{k}={v}" for k, v in changes.items())
+    return f"✓ Article « {pr.get('nom')} » modifié ({what})"
+
+
+def _update_client(p: dict) -> str:
+    from core.business import store
+    c = _resolve_client(_first(p, "nom", "name", "client", "target", "societe", default=""))
+    if c is None:
+        return f"⚠ Client introuvable. Précise le nom exact."
+    _FIELDS = {"email": ("email", "mail"), "tel": ("tel", "telephone", "phone"),
+               "adresse": ("adresse", "address"), "cp": ("cp", "code_postal", "zip"),
+               "ville": ("ville", "city"), "pays": ("pays", "country"),
+               "societe": ("societe", "company"), "id_fiscal": ("id_fiscal", "tva", "vat"),
+               "notes": ("notes", "note")}
+    changes = {}
+    for field, aliases in _FIELDS.items():
+        v = _first(p, *aliases)
+        if v not in (None, ""):
+            changes[field] = str(v).strip()
+    nn = _clean_ref(_first(p, "new_name", "nouveau_nom", default=""))
+    if nn:
+        changes["nom"] = nn
+    if not changes:
+        return "⚠ Rien à modifier : précise ce qui change (email, téléphone…)."
+    store.update_client(c["id"], changes)
+    return f"✓ Client « {store.client_label(c)} » modifié ({', '.join(changes)})"
+
+
+def _find_one_spool(p, action="modifier"):
+    """Resout UNE bobine par materiau+couleur. Renvoie (spool, None) ou (None, message)."""
+    from core.business import store
+    material = str(_first(p, "material", "materiau", default="")).upper()
+    color = _clean_ref(_first(p, "color", "couleur", "couleur_nom", default="")).lower()
+    cands = store.list_spools()
+    if material:
+        cands = [s for s in cands if str(s.get("materiau", "")).upper() == material]
+    if color:
+        cands = [s for s in cands if color in str(s.get("couleur_nom", "")).lower()
+                 or color == str(s.get("couleur_hex", "")).lower()]
+    if not cands:
+        quoi = " ".join(x for x in [material, color] if x) or "correspondante"
+        return None, f"⚠ Aucune bobine {quoi} à {action}."
+    if len(cands) > 1:
+        cols = ", ".join(sorted({str(s.get("couleur_nom") or s.get("couleur_hex")) for s in cands}))
+        return None, f"⚠ Plusieurs bobines {material} ({cols}). Précise laquelle {action}."
+    return cands[0], None
+
+
+def _update_spool(p: dict) -> str:
+    from core.business import store
+    s, err = _find_one_spool(p, "modifier")
+    if err:
+        return err
+    changes = {}
+    rem = _first(p, "remaining_g", "poids_restant_g", "reste_g", "weight_g", "grams")
+    if rem not in (None, ""):
+        changes["poids_restant_g"] = _num(rem)
+    if _first(p, "price", "prix", "cout_total") not in (None, ""):
+        changes["cout_total"] = _num(_first(p, "price", "prix", "cout_total"))
+    if _first(p, "brand", "marque") not in (None, ""):
+        changes["marque"] = str(_first(p, "brand", "marque")).strip()
+    nc = _clean_ref(_first(p, "new_color", "nouvelle_couleur", default=""))
+    if nc:
+        changes["couleur_nom"] = nc
+        changes["couleur_hex"] = _hex_for(nc, None)
+    if not changes:
+        return "⚠ Rien à modifier : précise ce qui change (restant, prix, marque…)."
+    store.update_spool(s["id"], changes)
+    lbl = f"{s.get('materiau', '')} {s.get('couleur_nom') or s.get('couleur_hex') or ''}".strip()
+    return f"✓ Bobine {lbl} modifiée ({', '.join(changes)})"
+
+
+_STATUS_MAP = {
+    "todo": "todo", "a faire": "todo", "à faire": "todo", "en attente": "todo",
+    "printing": "printing", "en impression": "printing", "en cours": "printing", "impression": "printing",
+    "done": "done", "termine": "done", "terminé": "done", "terminee": "done", "terminée": "done",
+    "fini": "done", "finie": "done", "fait": "done", "prete": "done", "prête": "done",
+    "delivered": "delivered", "livre": "delivered", "livré": "delivered", "livree": "delivered",
+    "livrée": "delivered", "facture": "delivered", "facturé": "delivered",
+    "cancelled": "cancelled", "annule": "cancelled", "annulé": "cancelled", "annulee": "cancelled",
+    "annulée": "cancelled",
+}
+
+
+def _set_order_status(p: dict) -> str:
+    from core.business import store
+    ref = str(_first(p, "number", "numero", "ref", "id", default="")).strip().lower()
+    if not ref:
+        return "⚠ Précise le numéro de la commande (ex. CMD-2026-0001)."
+    matches = [o for o in store.list_orders() if ref in str(o.get("number", "")).lower() or ref == o.get("id")]
+    if not matches:
+        return f"⚠ Commande « {ref} » introuvable."
+    if len(matches) > 1:
+        return f"⚠ Plusieurs commandes correspondent à « {ref} ». Donne le numéro complet."
+    o = matches[0]
+    raw = str(_first(p, "status", "statut", "state", default="")).strip().lower()
+    status = _STATUS_MAP.get(raw)
+    if not status:
+        return ("⚠ Statut inconnu. Valeurs possibles : à faire, en impression, terminé, "
+                "livré, annulé.")
+    store.set_order_status(o["id"], status)
+    return f"✓ Commande {o.get('number', '')} → statut « {status} »"
+
+
+# Verbe → handler.
 _HANDLERS = {
     "add_spool": _add_spool, "ajouter_bobine": _add_spool,
     "consume_spool": _consume_spool, "deduct_stock": _consume_spool, "deduire_stock": _consume_spool,
@@ -381,6 +515,12 @@ _HANDLERS = {
     "delete_product": _delete_product, "delete_article": _delete_product, "supprimer_article": _delete_product,
     "delete_quote": _delete_quote, "supprimer_devis": _delete_quote, "remove_quote": _delete_quote,
     "delete_order": _delete_order, "supprimer_commande": _delete_order, "remove_order": _delete_order,
+    # Modifications
+    "update_product": _update_product, "modifier_article": _update_product, "update_article": _update_product,
+    "update_client": _update_client, "modifier_client": _update_client,
+    "update_spool": _update_spool, "modifier_bobine": _update_spool,
+    "set_order_status": _set_order_status, "update_order": _set_order_status,
+    "statut_commande": _set_order_status, "order_status": _set_order_status,
 }
 
 
@@ -426,26 +566,27 @@ def _parse_marker(body: str) -> tuple[str, dict]:
 
 
 def parse_and_execute(text: str) -> tuple[str, list[str]]:
-    """Extrait et EXÉCUTE les [[ACTION: …]] du texte. Renvoie
-    (texte sans les marqueurs, liste de confirmations/erreurs à afficher)."""
-    confirmations: list[str] = []
+    """Extrait et EXÉCUTE le [[ACTION: …]] du texte. Renvoie
+    (texte sans les marqueurs, liste de confirmations/erreurs à afficher).
 
-    def _run(m: "re.Match") -> str:
-        verb, params = _parse_marker(m.group(1))
-        handler = _HANDLERS.get(verb)
-        if not handler:
-            return ""  # verbe inconnu → on retire juste le marqueur
-        # DEFENSE : le modele a parfois laisse des placeholders « <nom> », « <prix> »
-        # (format non rempli) -> on N'EXECUTE PAS et on signale l'info manquante.
-        if _has_placeholder(params):
-            confirmations.append("⚠ Action annulée : il manque des informations "
-                                 "(le champ n'a pas été renseigné).")
-            return ""
-        try:
-            confirmations.append(handler(params))
-        except Exception as exc:  # jamais casser l'UI
-            confirmations.append(f"⚠ Action « {verb} » impossible : {exc}")
-        return ""
-
-    clean = _ACTION_RE.sub(_run, text).strip()
-    return clean, confirmations
+    SÉCURITÉ : au plus UNE action par reponse. Si le modele en emet plusieurs d'un coup
+    (typique d'une commande « tout supprimer / vider le stock »), on N'EN EXECUTE AUCUNE."""
+    matches = list(_ACTION_RE.finditer(text))
+    clean = _ACTION_RE.sub("", text).strip()
+    if not matches:
+        return clean, []
+    if len(matches) > 1:
+        return clean, ["⚠ Plusieurs actions demandées d'un coup : par sécurité je n'en "
+                       "exécute AUCUNE. Demande-les une par une, précisément."]
+    verb, params = _parse_marker(matches[0].group(1))
+    handler = _HANDLERS.get(verb)
+    if not handler:
+        return clean, []  # verbe inconnu → marqueur retiré, aucun effet
+    # Placeholders « <nom> » non remplis -> on n'execute pas.
+    if _has_placeholder(params):
+        return clean, ["⚠ Action annulée : il manque des informations "
+                       "(un champ n'a pas été renseigné)."]
+    try:
+        return clean, [handler(params)]
+    except Exception as exc:  # jamais casser l'UI
+        return clean, [f"⚠ Action « {verb} » impossible : {exc}"]

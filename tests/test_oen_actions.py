@@ -53,6 +53,20 @@ def test_unknown_verb_is_stripped_no_crash():
     assert confs == []       # verbe inconnu -> aucun effet, aucune confirmation
 
 
+def test_multiple_markers_execute_none():
+    """SÉCURITÉ : plusieurs actions d'un coup (ex. 'tout supprimer') -> AUCUNE exécutée."""
+    txt = ('[[ACTION: delete_spool {"material": "PLA", "color": "noir"}]] '
+           '[[ACTION: delete_spool {"material": "PETG", "color": "rouge"}]]')
+    clean, confs = A.parse_and_execute(txt)
+    assert "[[ACTION" not in clean
+    assert len(confs) == 1 and "sécurité" in confs[0].lower()
+
+
+def test_placeholder_action_not_executed():
+    clean, confs = A.parse_and_execute('[[ACTION: add_client {"nom": "<nom>"}]]')
+    assert len(confs) == 1 and "manque" in confs[0].lower()
+
+
 def test_marker_removed_from_text():
     # verbe connu mais on ne verifie que le strip du texte (le handler ecrit le store,
     # donc on utilise un verbe inconnu pour ne rien ecrire tout en testant le strip).
