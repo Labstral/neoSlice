@@ -33,7 +33,7 @@ _FR: dict[str, str] = {
     "status.analysis_err":      "Erreur analyse : {msg}",
     "status.analysis_timeout":  "Analyse interrompue (timeout 60 s) — relancez l'application si le problème persiste",
     "status.printer_confirmed": "Imprimante confirmée — sélectionner le filament  ②",
-    "status.filament_confirmed":"Filament confirmé — charger un fichier STL  ③",
+    "status.filament_confirmed":"Filament confirmé — charger un fichier STL / OBJ / 3MF  ③",
     "status.orient_applying":   "Application de l'orientation...",
     "status.orient_done":       "Orientation appliquée — mise à jour de l'analyse...",
     "status.orient_reset":      "Orientation réinitialisée — ré-analyse en cours...",
@@ -221,7 +221,7 @@ _FR: dict[str, str] = {
     "intent.sup_none_desc":     "Force l'absence de supports même si la pièce en a besoin",
 
     # UI
-    "intent.lock_msg":          "CHARGEZ UN FICHIER STL",
+    "intent.lock_msg":          "CHARGEZ UN FICHIER STL / OBJ / 3MF",
     "intent.lock_sub":          "pour accéder aux réglages",
     "intent.lock_step":         "Étape ②",
     "intent.presets_header":    "★  MES PRÉSETS",
@@ -281,7 +281,7 @@ _FR: dict[str, str] = {
     # ── ParamsPreview ────────────────────────────────────────────────────────
     "preview.empty_title":  "AUCUN PARAMÈTRE GÉNÉRÉ",
     "preview.empty_desc":   (
-        "Importez un fichier STL\npuis décrivez votre intention\n"
+        "Importez un fichier 3D\npuis décrivez votre intention\n"
         "pour générer la configuration."
     ),
     "preview.summary_title":        "EN RÉSUMÉ",
@@ -457,7 +457,7 @@ _FR: dict[str, str] = {
 
     "tuto.0.title": "Bienvenue dans neoSlice",
     "tuto.0.body":  (
-        "neoSlice analyse votre fichier STL et génère automatiquement les paramètres "
+        "neoSlice analyse votre fichier 3D et génère automatiquement les paramètres "
         "d'impression optimaux pour votre imprimante — Bambu Lab, Creality, Prusa, "
         "Anycubic et bien d'autres.\n\n"
         "Ce guide vous présente les étapes du workflow.\n"
@@ -1237,7 +1237,7 @@ _EN: dict[str, str] = {
     "status.analysis_err":      "Analysis error: {msg}",
     "status.analysis_timeout":  "Analysis timed out (60 s) — restart the app if the issue persists",
     "status.printer_confirmed": "Printer confirmed — select filament  ②",
-    "status.filament_confirmed":"Filament confirmed — load an STL file  ③",
+    "status.filament_confirmed":"Filament confirmed — load an STL / OBJ / 3MF file  ③",
     "status.orient_applying":   "Applying orientation...",
     "status.orient_done":       "Orientation applied — updating analysis...",
     "status.orient_reset":      "Orientation reset — re-analyzing...",
@@ -1417,7 +1417,7 @@ _EN: dict[str, str] = {
     "intent.sup_none":          "No support",
     "intent.sup_none_desc":     "Forces no supports even if geometry requires them",
 
-    "intent.lock_msg":          "LOAD AN STL FILE",
+    "intent.lock_msg":          "LOAD AN STL / OBJ / 3MF FILE",
     "intent.lock_sub":          "to access the settings",
     "intent.lock_step":         "Step ②",
     "intent.presets_header":    "★  MY PRESETS",
@@ -1476,7 +1476,7 @@ _EN: dict[str, str] = {
     # ── ParamsPreview ────────────────────────────────────────────────────────
     "preview.empty_title":  "NO PARAMETERS GENERATED",
     "preview.empty_desc":   (
-        "Import an STL file\nthen describe your intent\n"
+        "Import a 3D file\nthen describe your intent\n"
         "to generate the configuration."
     ),
     "preview.summary_title":        "SUMMARY",
@@ -1646,7 +1646,7 @@ _EN: dict[str, str] = {
 
     "tuto.0.title": "Welcome to neoSlice",
     "tuto.0.body":  (
-        "neoSlice analyzes your STL file and automatically generates optimal print "
+        "neoSlice analyzes your 3D file and automatically generates optimal print "
         "parameters for your printer — Bambu Lab, Creality, Prusa, Anycubic and many more.\n\n"
         "This guide walks you through the workflow.\n"
         "Adjust the <b>performance mode</b> in settings "
