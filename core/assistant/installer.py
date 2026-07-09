@@ -48,7 +48,7 @@ OLLAMA_RUNTIME: dict[str, tuple[str, str]] = {
 #    Qwen2.5 7B — sinon l'alias serait cree depuis le mauvais modele. Alternative plus
 #    simple : supprimer ces assets et laisser _ensure_model faire `ollama pull qwen3:8b`
 #    depuis le registre (l'installateur a deja besoin d'Internet). Decision distribution
-#    a trancher par Emmanuel.
+#    a trancher.
 CHAT_GGUF_ASSET = "model.gguf"
 CHAT_GGUF_PARTS: tuple[str, ...] = ("model.gguf.00", "model.gguf.01", "model.gguf.02")
 
