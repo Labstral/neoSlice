@@ -108,7 +108,15 @@ class PrintConfig(BaseModel):
             # Parois ∝ surface (~0.20 mm équivalent par paroi sur la surface totale,
             # calibré) ; peaux haut/bas ∝ volume (forfait par couche solide, plafonné).
             wall_vol = surface_area_cm2 * self.wall_loops * 0.020
-            skin_vol = vol * min(0.30, skins * 0.02)
+            # Peaux (couches solides haut/bas) : phénomène de SURFACE, pas de volume.
+            # On BORNE le forfait volumique par une estimation basée surface
+            # (~moitié de la surface × épaisseur cumulée des peaux) → évite de
+            # surcompter massivement les modèles CREUX (casques, vases) dont le
+            # volume englobé est énorme vs la matière réelle. Sur les pièces pleines
+            # la borne surface est plus grande → aucun effet. Cf. bug Darth Vader.
+            _skin_thick_cm = skins * (self.layer_height / 10.0)
+            skin_vol = min(vol * min(0.30, skins * 0.02),
+                           surface_area_cm2 * 0.5 * _skin_thick_cm)
             shell_vol = min(vol, wall_vol + skin_vol)
             material_vol = shell_vol + infill * max(0.0, vol - shell_vol)
             material_vol = min(material_vol, vol * 0.92)   # un "plein" réel ≈ 92 % du géométrique
