@@ -1187,7 +1187,11 @@ class Viewer3D(QWidget):
 
         rq = self._render_quality()
         _total_faces = sum(len(m.faces) for m in final_meshes)
-        _use_pbr = _total_faces < 600_000  # PBR sur main thread — skip si trop lourd
+        # compute_normals (rendu lisse haute qualité, = rendu de base) sur le main
+        # thread. Seuil relevé 600k→3M : sans lui, un modèle multi-couleurs lourd
+        # (ex. Darth Vader 959k faces) restait FACETTÉ à l'export couleur alors que la
+        # vue de base est impeccable. 3M reste une soupape pour les meshes extrêmes.
+        _use_pbr = _total_faces < 3_000_000
 
         for m_final, obj in zip(final_meshes, _display_objects):
             try:
