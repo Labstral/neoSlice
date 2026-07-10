@@ -311,9 +311,12 @@ COOKBOOK = [
      "# UNE seule revolution : bec vertical puis cone evase (paroi 1.6 mm)\n"
      "piece = revolution([(6,0),(6,25),(40,70),(42,70),(42,69),(40.6,68),(7.6,26),(7.6,0),(6,0)])"),
     ("support L equerre angle fixation", "un support en L de 5 cm avec trous de vis",
-     "aile1 = boite_3d(50, 20, 4)\naile2 = deplacer(tourner(boite_3d(50, 20, 4), 'y', -90), 2, 0, 0)\n"
-     "L = fusionner(aile1, aile2)\nvis = cylindre(4, 60)\n"
-     "piece = percer(L, fusionner(deplacer(vis, 30, 0, -5), deplacer(tourner(vis,'y',90), -5, 0, 30)))"),
+     "# aile a plat + aile verticale COLLEE au bord gauche (pas au centre !)\n"
+     "a1 = boite_3d(50, 20, 4)\n"
+     "a2 = deplacer(poser_au_sol(tourner(boite_3d(50, 20, 4), 'y', 90)), -23, 0, 0)\n"
+     "L = fusionner(a1, a2)\nvis = cylindre(4, 70)\n"
+     "trous = fusionner(deplacer(vis, 15, 0, -5), deplacer(tourner(vis, 'y', 90), -10, 0, 30))\n"
+     "piece = percer(L, trous)"),
     ("gobelet verre tasse pot crayon", "un gobelet de 7 cm, 9 cm de haut",
      "piece = creuser(cylindre(70, 90), 2.4)"),
     ("vase", "un vase de 15 cm",
@@ -392,9 +395,9 @@ COOKBOOK = [
     ("porte oeuf coquetier", "un coquetier",
      "piece = revolution([(14,0),(16,2),(9,14),(7,26),(16,34),(20,42),(18.4,42),(14.5,35),(5.4,27)])"),
     ("fleche direction panneau", "une fleche de 10 cm",
-     "corps = boite_3d(60, 20, 5)\n"
-     "pointe = extrusion(tourner(etoile(3, 40), 'z', 90), 5)\n"
-     "piece = fusionner(corps, deplacer(pointe, 40, 0, 0))"),
+     "corps = boite_3d(60, 18, 5)\n"
+     "pointe = deplacer(tourner(prisme(3, 42, 5), 'z', 180), 38, 0, 0)\n"
+     "piece = fusionner(corps, pointe)"),
     ("support livre serre-livres", "un serre-livres",
      "base = boite_3d(100, 80, 4)\ndos = deplacer(boite_3d(6, 80, 120), -47, 0, 0)\n"
      "piece = fusionner(base, dos)"),
