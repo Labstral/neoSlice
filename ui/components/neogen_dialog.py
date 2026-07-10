@@ -32,15 +32,17 @@ class _GenWorker(QThread):
     fini = Signal(object, str)      # (Path de la pièce, résumé lisible)
     erreur = Signal(str)
 
-    def __init__(self, phrase: str, image: Path | None):
+    def __init__(self, phrase: str, image: Path | None, historique: list):
         super().__init__()
         self._phrase = phrase
         self._image = image
+        self._historique = historique   # échanges précédents (même demande)
 
     def run(self):
         try:
             from core.neogen import pilote
-            objet, params, q = pilote.interpreter(self._phrase, image=self._image)
+            objet, params, q = pilote.interpreter(
+                self._phrase, image=self._image, historique=self._historique)
             if q:
                 self.question.emit(q)
                 return
@@ -66,6 +68,9 @@ class NeoGenDialog(QDialog):
         self.setMinimumWidth(560)
         self._image: Path | None = None
         self._worker: _GenWorker | None = None
+        # Historique de la demande EN COURS (question d'Oen + réponses) :
+        # sans lui, Oen perd le fil et repose la même question en boucle.
+        self._historique: list[dict] = []
         pal = _THEME.palette()
 
         lay = QVBoxLayout(self)
@@ -130,7 +135,7 @@ class NeoGenDialog(QDialog):
                 }}
                 QPushButton:hover {{ color: {PRO_CYAN}; border-color: {PRO_CYAN}; }}
             """)
-            b.clicked.connect(lambda _c=False, t=txt: self._input.setText(t))
+            b.clicked.connect(lambda _c=False, t=txt: self._choisir_exemple(t))
             chips.addWidget(b)
         chips.addStretch()
         lay.addLayout(chips)
@@ -162,6 +167,12 @@ class NeoGenDialog(QDialog):
         lay.addWidget(self._statut)
 
     # ── Interactions ─────────────────────────────────────────────────────────
+    def _choisir_exemple(self, txt: str):
+        """Un exemple cliqué = NOUVELLE demande : on repart de zéro."""
+        self._historique.clear()
+        self._input.setText(txt)
+        self._input.setFocus()
+
     def _choisir_logo(self):
         chemin, _f = QFileDialog.getOpenFileName(
             self, _("neogen.attach_logo"), "",
@@ -182,18 +193,29 @@ class NeoGenDialog(QDialog):
             return
         self._btn_go.setEnabled(False)
         self._statut.setText("🧠 " + _("neogen.thinking"))
-        self._worker = _GenWorker(phrase, self._image)
+        self._worker = _GenWorker(phrase, self._image, list(self._historique))
         self._worker.question.connect(self._sur_question)
         self._worker.fini.connect(self._sur_fini)
         self._worker.erreur.connect(self._sur_erreur)
         self._worker.start()
+        # La demande rejoint l'historique ; le champ se vide pour la réponse.
+        self._historique.append({"role": "user", "content": phrase})
+        self._input.clear()
 
     def _sur_question(self, q: str):
+        import json as _json
+        # Mémorise la question d'Oen (au format JSON qu'il produit) : au tour
+        # suivant il COMBINE demande + question + réponse au lieu de reboucler.
+        self._historique.append({
+            "role": "assistant",
+            "content": _json.dumps({"question": q}, ensure_ascii=False)})
         self._btn_go.setEnabled(True)
         self._statut.setText(f"💬 {q}")
+        self._input.setPlaceholderText(q)
         self._input.setFocus()
 
     def _sur_fini(self, chemin, resume: str):
+        self._historique.clear()   # demande aboutie -> prochaine repart de zéro
         self._btn_go.setEnabled(True)
         self._statut.setText(f"✓ {resume} — {_('neogen.loading_viewer')}")
         self.piece_ready.emit(Path(chemin))

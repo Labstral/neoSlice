@@ -44,6 +44,7 @@ REGLES :
 3. texte est OBLIGATOIRE pour porte_cle/badge/sousverre/plaque/magnet : s'il manque, ou si la demande est ambigue/hors catalogue, reponds {"question": "..."} avec UNE question courte en francais.
 4. "qui ferme bien/serre" -> jeu 0.15 ; "couvercle facile/lache" -> jeu 0.3.
 5. N'invente JAMAIS un texte, une taille ou un parametre non demande.
+6. Si la conversation contient deja ta question et la reponse de l'utilisateur, COMBINE toutes les infos des messages precedents pour produire le JSON COMPLET. Ne repose JAMAIS une question a laquelle il a deja repondu. Ex : s'il a dit "fais-moi un badge" puis, apres ta question, "Lea" -> {"objet":"badge","texte":"Lea"}.
 
 EXEMPLES :
 "un porte-cle avec ecrit Lea, 5 cm" -> {"objet":"porte_cle","texte":"Lea","longueur":50}
@@ -85,14 +86,20 @@ def _preparer_moteur() -> None:
         eng._ensure_model()
 
 
-def demander_oen(phrase: str, image_jointe: bool = False) -> dict:
-    """Appelle le modèle local (prompt dédié court, num_ctx réduit = rapide)."""
+def demander_oen(phrase: str, image_jointe: bool = False,
+                 historique: list[dict] | None = None) -> dict:
+    """Appelle le modèle local (prompt dédié court, num_ctx réduit = rapide).
+
+    `historique` : échanges précédents de la MÊME demande (question d'Oen +
+    réponses de l'utilisateur) — indispensable pour qu'Oen COMBINE les infos
+    au lieu de reposer la même question en boucle."""
     _preparer_moteur()
     contenu = phrase + (" (image jointe)" if image_jointe else "")
     corps = json.dumps({
         "model": MODEL_NAME,
-        "messages": [{"role": "system", "content": _SYSTEME},
-                     {"role": "user", "content": contenu}],
+        "messages": ([{"role": "system", "content": _SYSTEME}]
+                     + list(historique or [])
+                     + [{"role": "user", "content": contenu}]),
         "stream": False,
         "think": False,
         "options": {"num_ctx": 2048, "temperature": 0.1},
@@ -145,9 +152,11 @@ def valider(d: dict, image: Path | None = None) -> tuple[str | None, dict, str |
     return objet, params, None
 
 
-def interpreter(phrase: str, image: Path | None = None) -> tuple[str | None, dict, str | None]:
+def interpreter(phrase: str, image: Path | None = None,
+                historique: list[dict] | None = None) -> tuple[str | None, dict, str | None]:
     """Phrase française -> (objet, params, question). Point d'entrée principal."""
-    return valider(demander_oen(phrase, image_jointe=image is not None), image=image)
+    return valider(demander_oen(phrase, image_jointe=image is not None,
+                                historique=historique), image=image)
 
 
 def _slug(s: str) -> str:
