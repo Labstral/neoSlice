@@ -148,6 +148,9 @@ def test_installation_marker(tmp_path, monkeypatch):
     from core.neogen import installation as I
     monkeypatch.setattr(I, "NEOGEN_DIR", tmp_path)
     monkeypatch.setattr(I, "MARKER", tmp_path / "installed.json")
+    # CRUCIAL : nom factice, sinon desinstaller() supprimerait le VRAI modele
+    # 14b du serveur Ollama local (vecu : pytest a efface 9 Go...).
+    monkeypatch.setattr(I, "MODELE", "test-modele-inexistant")
     assert not I.est_installe()
     (tmp_path / "installed.json").write_text("{}")
     assert I.est_installe()
