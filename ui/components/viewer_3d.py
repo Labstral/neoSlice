@@ -1517,6 +1517,13 @@ class Viewer3D(QWidget):
                     cell_normals=False,
                     point_normals=True,
                     feature_angle=rq["feature_angle"],
+                    # split_vertices : indispensable sur un mesh SOUDÉ (STL CAO,
+                    # unions booléennes) — sans lui les normales sont moyennées à
+                    # travers les arêtes vives -> relief « fondu », tout blanc.
+                    # (Aligné sur le chemin multi-objets qui l'avait déjà.)
+                    split_vertices=True,
+                    flip_normals=False,
+                    consistent_normals=True,
                 )
                 self._apply_pbr_mesh(pv_mesh, rq)
             except Exception as exc:
