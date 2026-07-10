@@ -71,18 +71,26 @@ def sphere(diametre: float) -> trimesh.Trimesh:
 
 
 def demi_sphere(diametre: float, creuse: float = 0.0) -> trimesh.Trimesh:
-    """Dôme posé à plat ; `creuse` = épaisseur de paroi si bol (0 = plein)."""
+    """creuse=0 : DÔME plein posé à plat. creuse>0 : BOL OUVERT vers le haut
+    (paroi = creuse), avec un petit fond plat pour l'impression."""
     n = 48
     r = diametre / 2
-    prof = [(float(r * np.cos(a)), float(r * np.sin(a)))
-            for a in np.linspace(0, np.pi / 2, n)]
-    if creuse and creuse > 0:
-        ri = max(r - creuse, 1.0)
-        interieur = [(float(ri * np.cos(a)), float(max(ri * np.sin(a), creuse)))
-                     for a in np.linspace(np.pi / 2, 0, n)]
-        pts = [(0.0, 0.0)] + prof + interieur + [(0.0, float(creuse)), (0.0, 0.0)]
-    else:
+    if not creuse or creuse <= 0:
+        prof = [(float(r * np.cos(a)), float(r * np.sin(a)))
+                for a in np.linspace(0, np.pi / 2, n)]
         pts = [(0.0, 0.0)] + prof + [(0.0, 0.0)]
+        return trimesh.creation.revolve(np.array(pts), sections=96)
+    # BOL : fond plat (35 % du rayon) puis arc extérieur jusqu'au bord (z = r),
+    # bord plat, arc intérieur redescendant jusqu'au fond intérieur (z = creuse).
+    a0 = np.arcsin(0.35)
+    z0 = r * (1 - np.cos(a0))
+    ext = [(float(r * np.sin(a)), float(r * (1 - np.cos(a)) - z0))
+           for a in np.linspace(a0, np.pi / 2, n)]
+    ri = max(r - creuse, 2.0)
+    intr = [(float(ri * np.sin(a)), float(creuse + ri * (np.cos(a0) - np.cos(a))))
+            for a in np.linspace(np.pi / 2, a0, n)]
+    pts = ([(0.0, 0.0), (float(r * np.sin(a0)), 0.0)] + ext
+           + intr + [(0.0, float(creuse)), (0.0, 0.0)])
     return trimesh.creation.revolve(np.array(pts), sections=96)
 
 
@@ -154,12 +162,15 @@ def extrusion(forme_2d, hauteur: float, z: float = 0.0) -> trimesh.Trimesh:
 
 def revolution(points_rz: list, sections: int = 96) -> trimesh.Trimesh:
     pts = [(float(r), float(z)) for r, z in points_rz]
-    if pts[0][0] != 0:
-        pts = [(0.0, pts[0][1])] + pts
-    if pts[-1][0] != 0:
-        pts = pts + [(0.0, pts[-1][1])]
-    if pts[0] != pts[-1]:
-        pts = pts + [pts[0]]
+    if pts[0] == pts[-1] and len(pts) > 3:
+        pass          # profil DÉJÀ fermé (anneau, coque) : ne pas toucher
+    else:             # profil ouvert : on le referme par l'axe (solide plein)
+        if pts[0][0] != 0:
+            pts = [(0.0, pts[0][1])] + pts
+        if pts[-1][0] != 0:
+            pts = pts + [(0.0, pts[-1][1])]
+        if pts[0] != pts[-1]:
+            pts = pts + [pts[0]]
     m = trimesh.creation.revolve(np.array(pts), sections=sections)
     m.apply_translation([0, 0, -float(m.bounds[0][2])])
     return m
@@ -297,11 +308,8 @@ COOKBOOK = [
      "trou = cylindre(6, 60)\ntrous = fusionner(deplacer(trou,-25,0,-10), deplacer(trou,0,0,-10), deplacer(trou,25,0,-10))\n"
      "piece = percer(bac, trous)"),
     ("entonnoir", "un entonnoir de 8 cm vers 12 mm",
-     "# tronc de cone creux + bec ; grande ouverture EN HAUT\n"
-     "corps = cone(16, 55, 80)\nbec = tube(16, 12, 25)\n"
-     "exterieur = fusionner(bec, deplacer(corps, 0, 0, 25))\n"
-     "vide = fusionner(cylindre(12, 30), deplacer(cone(12.8, 56, 76.8), 0, 0, 24))\n"
-     "piece = percer(exterieur, deplacer(vide, 0, 0, -2))"),
+     "# UNE seule revolution : bec vertical puis cone evase (paroi 1.6 mm)\n"
+     "piece = revolution([(6,0),(6,25),(40,70),(42,70),(42,69),(40.6,68),(7.6,26),(7.6,0),(6,0)])"),
     ("support L equerre angle fixation", "un support en L de 5 cm avec trous de vis",
      "aile1 = boite_3d(50, 20, 4)\naile2 = deplacer(tourner(boite_3d(50, 20, 4), 'y', -90), 2, 0, 0)\n"
      "L = fusionner(aile1, aile2)\nvis = cylindre(4, 60)\n"
@@ -354,6 +362,71 @@ COOKBOOK = [
     ("des de des a jouer", "un de de 16 mm",
      "# arretes arrondies impossibles ici : cube simple + creux coniques\n"
      "piece = boite_3d(16, 16, 16)"),
+    ("sapin noel arbre", "un sapin de noel de 9 cm",
+     "# silhouette tournee, dessous des etages a ~53 deg (imprimable sans support)\n"
+     "piece = revolution([(0,0),(7,0),(32,14),(11,42),(26,46),(10,68),(18,72),(0.5,92),(0,92)])"),
+    ("bonhomme neige", "un bonhomme de neige de 8 cm",
+     "c1 = sphere(42)\nc2 = deplacer(sphere(30), 0, 0, 36)\nc3 = deplacer(sphere(20), 0, 0, 60)\n"
+     "piece = fusionner(c1, c2, c3)"),
+    ("maison maisonnette", "une petite maison de 5 cm",
+     "murs = boite_3d(50, 40, 30)\ntoit = deplacer(pyramide(54, 22), 0, 0, 30)\n"
+     "piece = fusionner(murs, toit)"),
+    ("quille bowling", "une quille de 10 cm",
+     "piece = revolution([(14,0),(15,8),(8,45),(11,62),(10,74),(4,90),(6,96),(0,100)])"),
+    ("oeuf paques", "un oeuf de 6 cm",
+     "piece = revolution([(0.1,0),(14,4),(21,18),(22,28),(18,42),(10,52),(0.1,60)])"),
+    ("couronne roi princesse", "une couronne de 7 cm",
+     "bandeau = tube(70, 64, 22)\npointe = cone(14, 16)\n"
+     "pointes = repeter_cercle(deplacer(pointe, 0, 0, 22), 8, 33.5)\n"
+     "piece = fusionner(bandeau, pointes)"),
+    ("cendrier", "un cendrier de 9 cm",
+     "corps = creuser(cylindre(90, 25), 3)\nencoche = deplacer(tourner(cylindre(8, 100), 'y', 90), 0, 0, 25)\n"
+     "piece = percer(corps, fusionner(encoche, tourner(encoche, 'z', 90)))"),
+    ("bague anneau doigt", "une bague taille 52",
+     "piece = tube(20.5, 16.5, 6)"),
+    ("bracelet", "un bracelet de 65 mm",
+     "piece = tube(73, 65, 12)"),
+    ("cuillere doseuse", "une cuillere doseuse",
+     "bol = demi_sphere(36, creuse=2)\nmanche = deplacer(boite_3d(50, 10, 3), 38, 0, 0)\n"
+     "piece = fusionner(bol, manche)"),
+    ("porte oeuf coquetier", "un coquetier",
+     "piece = revolution([(14,0),(16,2),(9,14),(7,26),(16,34),(20,42),(18.4,42),(14.5,35),(5.4,27)])"),
+    ("fleche direction panneau", "une fleche de 10 cm",
+     "corps = boite_3d(60, 20, 5)\n"
+     "pointe = extrusion(tourner(etoile(3, 40), 'z', 90), 5)\n"
+     "piece = fusionner(corps, deplacer(pointe, 40, 0, 0))"),
+    ("support livre serre-livres", "un serre-livres",
+     "base = boite_3d(100, 80, 4)\ndos = deplacer(boite_3d(6, 80, 120), -47, 0, 0)\n"
+     "piece = fusionner(base, dos)"),
+    ("pied telephone chevalet", "un chevalet",
+     "base = boite_3d(70, 50, 6)\ndos = deplacer(tourner(boite_3d(70, 6, 80), 'x', -20), 0, 18, 0)\n"
+     "butee = deplacer(boite_3d(70, 6, 14), 0, -18, 6)\n"
+     "piece = poser_au_sol(fusionner(base, dos, butee))"),
+    ("pot soucoupe plante cache-pot", "un cache-pot de 12 cm",
+     "piece = creuser(cone(100, 110, 120), 3)"),
+    ("bol chien chat gamelle", "une gamelle de 14 cm",
+     "corps = creuser(cone(150, 45, 130), 3)\npiece = corps"),
+    ("verser liquide transvaser", "un entonnoir de cuisine",
+     "piece = revolution([(6,0),(6,28),(48,80),(50,80),(50,79),(48.6,78),(7.6,29),(7.6,0),(6,0)])"),
+    ("roue voiture jouet", "une roue de 4 cm",
+     "roue = cylindre(40, 12)\nmoyeu = cylindre(6, 20)\npiece = percer(roue, moyeu)"),
+    ("toit pyramide egypte", "une pyramide",
+     "piece = pyramide(60, 45)"),
+    ("balle sphere boule", "une boule de 5 cm",
+     "# une sphere posee ne s'imprime pas sans support : on coupe une base plate\n"
+     "boule = sphere(50)\npiece = percer(boule, deplacer(boite_3d(60, 60, 6), 0, 0, -3))"),
+    ("clochette cloche", "une cloche de 6 cm",
+     "corps = revolution([(6,58),(14,50),(22,28),(26,10),(28,4),(28,0),(24,0),(22,6),(18,24),(10,44),(4,52)])\n"
+     "piece = poser_au_sol(corps)"),
+    ("aimant support smartphone anneau", "un anneau support",
+     "piece = fusionner(cylindre(45, 3), tube(40, 32, 10))"),
+    ("boucle ceinture", "une boucle de ceinture",
+     "cadre = extrusion(percer(rectangle_arrondi(50, 36, 6), rectangle_arrondi(38, 24, 4)), 5)\n"
+     "barre = deplacer(boite_3d(4, 24, 5), 0, 0, 0)\npiece = fusionner(cadre, barre)"),
+    ("dome serre cloche jardin", "un dome de jardin",
+     "piece = demi_sphere(120, creuse=2.4)"),
+    ("moule savon rond", "un moule rond",
+     "piece = creuser(cylindre(80, 30), 2.4)"),
 ]
 
 _MOTS = re.compile(r"[a-zà-ÿ0-9]+")
@@ -418,6 +491,20 @@ def verifier(piece: trimesh.Trimesh) -> str | None:
         return f"dimensions aberrantes : {d[0]:.0f}x{d[1]:.0f}x{d[2]:.0f} mm"
     if piece.bounds[0][2] > 0.5:
         return "la piece ne touche pas le plateau (utilise poser_au_sol)"
+    # IMPRIMABILITÉ : le vrai analyseur de neoSlice juge la pièce. Une pièce
+    # trop en surplomb est REFUSÉE -> le modèle repense sa construction.
+    try:
+        from core.geometry.overhang_detector import analyze_overhangs
+        res = analyze_overhangs(piece, smooth=False, check_floating=True)
+        if res.has_floating_regions:
+            return ("une partie de la piece FLOTTE sans soutien : chaque element "
+                    "doit toucher le plateau ou reposer sur un autre")
+        if res.severity >= 0.75 and res.overhang_ratio > 0.18:
+            return ("trop de surplombs (> 45 deg) : repense la construction "
+                    "(pentes <= 45 deg, cones plutot que spheres creuses, "
+                    "ou une orientation posee a plat)")
+    except Exception:
+        pass   # l'analyse ne doit jamais bloquer la génération
     return None
 
 
