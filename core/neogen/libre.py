@@ -94,6 +94,34 @@ def demi_sphere(diametre: float, creuse: float = 0.0) -> trimesh.Trimesh:
     return trimesh.creation.revolve(np.array(pts), sections=96)
 
 
+def tore(d_anneau: float, d_tube: float) -> trimesh.Trimesh:
+    """Donut / anneau à section ronde, posé à plat (d_anneau = ø extérieur)."""
+    rt = d_tube / 2
+    rc = d_anneau / 2 - rt
+    a = np.linspace(0, 2 * np.pi, 48)
+    pts = [(float(rc + rt * np.cos(t)), float(rt + rt * np.sin(t))) for t in a]
+    pts.append(pts[0])
+    return trimesh.creation.revolve(np.array(pts), sections=96)
+
+
+def arche(portee: float, hauteur: float, section: float) -> trimesh.Trimesh:
+    """Anse / pont demi-circulaire debout, pieds posés au sol (pour paniers,
+    poignées de panier, arches déco). portee = distance entre les pieds."""
+    r_int = portee / 2
+    r_ext = r_int + section
+    ext = Point(0, 0).buffer(r_ext, resolution=96)
+    ring = ext.difference(Point(0, 0).buffer(r_int, resolution=96))
+    demi = ring.intersection(shp_box(-r_ext - 1, 0, r_ext + 1, r_ext + 1))
+    m = extrusion(demi, section)
+    m.apply_transform(trimesh.transformations.rotation_matrix(np.radians(90), [1, 0, 0]))
+    if abs(hauteur - r_ext) > 0.5:                  # étire à la hauteur voulue
+        t = np.eye(4)
+        t[2, 2] = max(0.2, hauteur / r_ext)
+        m.apply_transform(t)
+    m.apply_translation([0, 0, -float(m.bounds[0][2])])
+    return m
+
+
 def pyramide(cote: float, hauteur: float) -> trimesh.Trimesh:
     base = [(-cote / 2, -cote / 2, 0), (cote / 2, -cote / 2, 0),
             (cote / 2, cote / 2, 0), (-cote / 2, cote / 2, 0)]
@@ -264,6 +292,7 @@ def poser_au_sol(objet):
 API = {
     "boite_3d": boite_3d, "cylindre": cylindre, "cone": cone, "sphere": sphere,
     "demi_sphere": demi_sphere, "pyramide": pyramide, "tube": tube, "prisme": prisme,
+    "tore": tore, "arche": arche,
     "rectangle_arrondi": rectangle_arrondi, "disque": disque, "etoile": etoile,
     "coeur": coeur, "texte_2d": texte_2d, "extrusion": extrusion,
     "revolution": revolution, "deplacer": deplacer, "tourner": tourner,
@@ -274,7 +303,7 @@ API = {
 }
 
 _DOC_API = """FONCTIONS DISPONIBLES (les SEULES autorisees, unites mm ; primitives POSEES sur le plateau z=0, centrees en 0,0) :
-VOLUMES : boite_3d(x,y,z) ; cylindre(diametre,hauteur) ; cone(d_bas,hauteur,d_haut=0) ; sphere(d) ; demi_sphere(d, creuse=0) [creuse=paroi -> BOL] ; pyramide(cote,hauteur) ; tube(d_ext,d_int,hauteur) ; prisme(cotes,diametre,hauteur)
+VOLUMES : boite_3d(x,y,z) ; cylindre(diametre,hauteur) ; cone(d_bas,hauteur,d_haut=0) ; sphere(d) ; demi_sphere(d, creuse=0) [creuse=paroi -> BOL] ; pyramide(cote,hauteur) ; tube(d_ext,d_int,hauteur) ; prisme(cotes,diametre,hauteur) ; tore(d_anneau,d_tube) [donut] ; arche(portee,hauteur,section) [anse/pont debout]
 FORMES 2D : rectangle_arrondi(x,y,rayon) ; disque(d) ; etoile(branches,d) ; coeur(taille) ; texte_2d(texte,hauteur_lettres)
 CONSTRUIRE : extrusion(forme2D,hauteur,z=0) -> volume ; revolution([(rayon,z),...]) -> volume tourne
 OPERATIONS : deplacer(obj,dx,dy,dz) ; tourner(obj,'x'|'y'|'z',degres) ; fusionner(a,b,...) ; percer(piece,outil) ; creuser(piece,paroi) [evide par le dessus] ; repeter_cercle(obj,n,rayon) ; poser_au_sol(obj)"""
@@ -430,6 +459,40 @@ COOKBOOK = [
      "piece = demi_sphere(120, creuse=2.4)"),
     ("moule savon rond", "un moule rond",
      "piece = creuser(cylindre(80, 30), 2.4)"),
+    ("donut tore anneau beigne", "un donut de 8 cm",
+     "piece = tore(80, 26)"),
+    ("panier anse corbeille", "un panier avec une anse",
+     "corps = creuser(cylindre(90, 45), 2.4)\nanse = arche(86, 55, 6)\n"
+     "piece = fusionner(corps, deplacer(anse, 0, 0, 43))"),
+    ("tabouret chaise poupee", "un tabouret de poupee",
+     "# astuce impression : construit A L'ENVERS (assise au sol, pieds en l'air)\n"
+     "assise = cylindre(56, 6)\n"
+     "pieds = repeter_cercle(deplacer(cylindre(8, 35), 0, 0, 5.8), 4, 20)\n"
+     "piece = fusionner(assise, pieds)"),
+    ("fusee espace navette", "une fusee jouet de 10 cm",
+     "corps = cylindre(26, 60)\nogive = deplacer(cone(26, 28), 0, 0, 59.8)\n"
+     "aileron = deplacer(boite_3d(16, 3, 22), 17, 0, 0)\n"
+     "ailerons = repeter_cercle(deplacer(boite_3d(14, 3, 20), 16, 0, 0), 3, 0)\n"
+     "piece = fusionner(corps, ogive, ailerons)"),
+    ("plot signalisation cone route chantier", "un plot de signalisation",
+     "base = boite_3d(46, 46, 4)\ncorps = cone(34, 62)\npiece = fusionner(base, corps)"),
+    ("assiette plate plat", "une assiette plate de 15 cm",
+     "# assiette BASSE a fond PLEIN (pas de cavite sous le bord -> imprimable)\n"
+     "piece = revolution([(0,0),(74,0),(75,2),(75,10),(72,11),(45,3.2),(0,3.2)])"),
+    ("rangement piles support batterie", "un rangement pour 8 piles AA debout",
+     "bloc = boite_3d(70, 36, 30)\ntrou = cylindre(14.6, 40)\n"
+     "r1 = fusionner(deplacer(trou,-25,-9,8), deplacer(trou,-8,-9,8), deplacer(trou,9,-9,8), deplacer(trou,26,-9,8))\n"
+     "r2 = fusionner(deplacer(trou,-25,9,8), deplacer(trou,-8,9,8), deplacer(trou,9,9,8), deplacer(trou,26,9,8))\n"
+     "piece = percer(bloc, fusionner(r1, r2))"),
+    ("poubelle corbeille bureau", "une mini poubelle de bureau",
+     "corps = creuser(cone(80, 100, 95), 2.4)\npiece = corps"),
+    ("igloo esquimau", "un igloo avec une entree",
+     "dome = demi_sphere(80)\nentree = deplacer(tourner(arche(30, 20, 12), 'z', 90), 34, 0, 0)\n"
+     "tunnel = percer(entree, deplacer(tourner(arche(22, 15, 14), 'z', 90), 34, 0, 0))\n"
+     "piece = fusionner(dome, entree)"),
+    ("tour chateau creneaux donjon", "une tour de chateau avec creneaux",
+     "mur = tube(50, 42, 88)\nmerlons = repeter_cercle(deplacer(boite_3d(10, 8, 12), 23, 0, 87.8), 8, 0)\n"
+     "piece = fusionner(mur, merlons)"),
 ]
 
 _MOTS = re.compile(r"[a-zà-ÿ0-9]+")
