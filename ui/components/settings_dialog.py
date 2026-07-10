@@ -111,6 +111,36 @@ class _UninstallWorker(QThread):
             self.failed.emit(str(e))
 
 
+class _NeoGenInstallWorker(QThread):
+    """Installe neoGen : telecharge son modele dedie (qwen3:14b, ~9 Go),
+    independant du 8B de l'assistant Oen."""
+    progress = Signal(int, str)     # (pourcentage, statut)
+    done = Signal()
+    failed = Signal(str)
+
+    def run(self):
+        try:
+            from core.neogen.installation import installer
+            installer(progress_cb=lambda p, s: self.progress.emit(p, s))
+            self.done.emit()
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
+class _NeoGenUninstallWorker(QThread):
+    """Desinstalle neoGen (supprime le modele 14b, libere ~9 Go)."""
+    done = Signal()
+    failed = Signal(str)
+
+    def run(self):
+        try:
+            from core.neogen.installation import desinstaller
+            desinstaller()
+            self.done.emit()
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class _KBCheckWorker(QThread):
     """Verifie (en arriere-plan, appel reseau) si une nouvelle base d'Oen existe."""
     result = Signal(object)   # dict d'info, ou None
@@ -523,6 +553,47 @@ class SettingsDialog(QDialog):
         self._refresh_assistant_status()
         _pflay.addSpacing(4)
 
+        # ── Section NEOGEN (génération d'objets 3D — modèle dédié, indépendant) ──
+        _pflay.addSpacing(10)
+        self._sep_neogen = self._make_sep()
+        _pflay.addWidget(self._sep_neogen)
+        _pflay.addSpacing(14)
+
+        self._lbl_neogen = self._make_section_label(_("neogen.section"))
+        _pflay.addWidget(self._lbl_neogen)
+        _pflay.addSpacing(10)
+
+        self._neogen_status_lbl = QLabel()
+        self._neogen_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
+        self._neogen_status_lbl.setWordWrap(True)
+        _pflay.addWidget(self._neogen_status_lbl)
+        _pflay.addSpacing(6)
+
+        self._neogen_progress = QProgressBar()
+        self._neogen_progress.setRange(0, 100)
+        self._neogen_progress.setValue(0)
+        self._neogen_progress.setTextVisible(True)
+        self._neogen_progress.setFixedHeight(16)
+        self._neogen_progress.hide()
+        _pflay.addWidget(self._neogen_progress)
+        _pflay.addSpacing(6)
+
+        neogen_btn_row = QHBoxLayout()
+        neogen_btn_row.setContentsMargins(0, 0, 0, 0)
+        self._neogen_btn = QPushButton()
+        self._neogen_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        self._neogen_btn.setFixedHeight(28)
+        self._neogen_btn.setCursor(Qt.PointingHandCursor)
+        self._neogen_btn.clicked.connect(self._on_neogen_btn)
+        neogen_btn_row.addStretch()
+        neogen_btn_row.addWidget(self._neogen_btn)
+        _pflay.addLayout(neogen_btn_row)
+
+        self._neogen_worker = None
+        self._neogen_un_worker = None
+        self._refresh_neogen_status()
+        _pflay.addSpacing(4)
+
         lay.addWidget(self._pro_features_section)
 
         # ── Section NEOSLICE PRO ──────────────────────────────────────────────
@@ -643,6 +714,102 @@ class SettingsDialog(QDialog):
         """)
         self._assist_btn.setEnabled(True)
         self._assist_btn.show()
+
+    # ── neoGen : statut + installer/désinstaller (modèle 14b dédié) ──────────
+    def _refresh_neogen_status(self):
+        from core.neogen import installation
+        from core import licensing
+        pal = _T.palette()
+        if installation.est_installe():
+            self._neogen_status_lbl.setText(_("neogen.ready"))
+            self._neogen_status_lbl.setStyleSheet(
+                f"color: {pal['TELE_GREEN']}; background: transparent;")
+            self._neogen_btn.setText(_("neogen.uninstall"))
+            self._neogen_btn.setFont(QFont(FONT_MAIN, 8))
+            self._neogen_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent; color: {pal['TEXT_SECONDARY']};
+                    border: 1px solid {pal['INACTIVE']}; border-radius: 4px; padding: 4px 12px;
+                }}
+                QPushButton:hover {{ border-color: {pal['ERROR_RED']}; color: {pal['ERROR_RED']}; }}
+            """)
+            self._neogen_btn.setEnabled(True)
+            self._neogen_btn.show()
+            return
+        if not licensing.est_pro():
+            self._neogen_status_lbl.setText(_("neogen.pro_only"))
+            self._neogen_status_lbl.setStyleSheet(
+                f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+            self._neogen_btn.hide()
+            return
+        if not installation.runtime_present():
+            self._neogen_status_lbl.setText(_("neogen.need_runtime"))
+            self._neogen_status_lbl.setStyleSheet(
+                f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+            self._neogen_btn.hide()
+            return
+        self._neogen_status_lbl.setText(_("neogen.install_pitch"))
+        self._neogen_status_lbl.setStyleSheet(
+            f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        self._neogen_btn.setText(_("neogen.install"))
+        self._neogen_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        self._neogen_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {pal['ACCENT']}; color: #ffffff; border: none;
+                border-radius: 4px; padding: 4px 14px;
+            }}
+            QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
+            QPushButton:disabled {{ background: {pal['INACTIVE']}; color: {pal['BG_PANEL']}; }}
+        """)
+        self._neogen_btn.setEnabled(True)
+        self._neogen_btn.show()
+
+    def _on_neogen_btn(self):
+        from core.neogen import installation
+        if installation.est_installe():
+            rep = QMessageBox.question(
+                self, _("neogen.uninstall_title"), _("neogen.uninstall_confirm"),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if rep != QMessageBox.Yes:
+                return
+            self._neogen_btn.setEnabled(False)
+            self._neogen_un_worker = _NeoGenUninstallWorker(self)
+            self._neogen_un_worker.done.connect(self._on_neogen_un_done)
+            self._neogen_un_worker.failed.connect(self._on_neogen_failed)
+            self._neogen_un_worker.start()
+            return
+        if self._neogen_worker is not None:
+            return
+        self._neogen_btn.setEnabled(False)
+        self._neogen_btn.setText(_("neogen.installing"))
+        self._neogen_progress.setValue(0)
+        self._neogen_progress.show()
+        self._neogen_worker = _NeoGenInstallWorker(self)
+        self._neogen_worker.progress.connect(
+            lambda p, s: self._neogen_progress.setValue(int(p)))
+        self._neogen_worker.done.connect(self._on_neogen_done)
+        self._neogen_worker.failed.connect(self._on_neogen_failed)
+        self._neogen_worker.start()
+
+    def _on_neogen_done(self):
+        self._neogen_worker = None
+        self._neogen_progress.hide()
+        self._refresh_neogen_status()
+
+    def _on_neogen_un_done(self):
+        self._neogen_un_worker = None
+        self._refresh_neogen_status()
+
+    def _on_neogen_failed(self, msg: str):
+        self._neogen_worker = None
+        self._neogen_un_worker = None
+        self._neogen_progress.hide()
+        pal = _T.palette()
+        self._neogen_status_lbl.setText("⚠ " + msg)
+        self._neogen_status_lbl.setStyleSheet(
+            f"color: {pal['ERROR_RED']}; background: transparent;")
+        self._neogen_btn.setEnabled(True)
+        self._neogen_btn.setText(_("neogen.install"))
 
     def _on_assist_btn(self):
         """Le bouton sert selon l'etat : installer si absent, desinstaller si present."""

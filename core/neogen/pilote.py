@@ -19,7 +19,10 @@ import unicodedata
 import urllib.request
 from pathlib import Path
 
-from core.assistant.engine import HOST, MODEL_NAME
+from core.assistant.engine import HOST
+
+# neoGen a SON modèle (qwen3:14b, installé indépendamment d'Oen 8B — réglages).
+NEOGEN_MODEL = "qwen3:14b"
 
 DOSSIER_SORTIES = Path.home() / ".neoslice" / "neogen"
 
@@ -37,6 +40,10 @@ CATALOGUE (champ "objet" + parametres autorises, unites en mm sauf indication) :
 - boite : forme (ronde ou carree, defaut ronde), diametre (si ronde, defaut 50), cote (si carree), hauteur (defaut 30), jeu (ajustement couvercle en mm : 0.2 normal, 0.15 serre, 0.3 lache)
 - support : largeur (defaut 70) — support de telephone
 - de : taille (arete du de, defaut 16)
+- entonnoir : d_haut (defaut 80), d_bas (defaut 12), hauteur (defaut 70)
+- pot_crayons : diametre (defaut 80), hauteur (defaut 100), texte (optionnel)
+- pot_fleur : diametre (defaut 110), hauteur (defaut 100)
+- lettre_3d : texte* (1-3 caracteres), hauteur (defaut 100), ep (epaisseur, defaut 15)
 
 REGLES :
 1. Convertis les cm en mm (6 cm -> 60).
@@ -72,8 +79,14 @@ _BORNES = {
                   "hauteur": (12, 120, 30), "jeu": (0.1, 0.5, 0.2)},
     "support":   {"largeur": (40, 140, 70)},
     "de":        {"taille": (8, 40, 16)},
+    "entonnoir": {"d_haut": (40, 140, 80), "d_bas": (6, 30, 12), "hauteur": (40, 140, 70)},
+    "pot_crayons": {"diametre": (55, 120, 80), "hauteur": (60, 140, 100)},
+    "pot_fleur": {"diametre": (60, 200, 110), "hauteur": (50, 200, 100)},
+    "lettre_3d": {"hauteur": (40, 250, 100), "ep": (6, 40, 15)},
 }
-_TEXTE_REQUIS = {"porte_cle", "badge", "sousverre", "plaque", "magnet"}
+_TEXTE_REQUIS = {"porte_cle", "badge", "sousverre", "plaque", "magnet", "lettre_3d"}
+# ids routés directement vers le CATALOGUE (générateurs de la bibliothèque)
+_VIA_CATALOGUE = {"entonnoir", "pot_crayons", "pot_fleur", "lettre_3d"}
 _ALIAS = {"sous_verre": "sousverre", "portecle": "porte_cle", "porte_cles": "porte_cle",
           "des": "de", "dice": "de", "telephone": "support", "support_telephone": "support"}
 
@@ -98,7 +111,7 @@ def demander_oen(phrase: str, image_jointe: bool = False,
     _preparer_moteur()
     contenu = phrase + (" (image jointe)" if image_jointe else "")
     corps = json.dumps({
-        "model": MODEL_NAME,
+        "model": NEOGEN_MODEL,
         "messages": ([{"role": "system", "content": _SYSTEME}]
                      + list(historique or [])
                      + [{"role": "user", "content": contenu}]),
@@ -175,6 +188,9 @@ def generer(objet: str, p: dict) -> Path:
     (3MF de préférence — multi-corps pour les logos — sinon STL)."""
     import trimesh
     DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
+    if objet in _VIA_CATALOGUE:
+        from core.neogen.catalogue import generer_fichier
+        return generer_fichier(objet, p)
     scene = None
     if objet == "porte_cle":
         from core.neogen.texte import construire_porte_cle

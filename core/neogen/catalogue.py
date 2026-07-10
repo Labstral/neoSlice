@@ -402,3 +402,21 @@ def construire(entree_id: str, params: dict):
         if not p["image"]:
             raise ValueError("image requise")
     return e["construire"](p)
+
+
+def generer_fichier(entree_id: str, params: dict):
+    """Construit et exporte vers ~/.neoslice/neogen/. Renvoie le Path a charger."""
+    import trimesh
+    from core.neogen.pilote import DOSSIER_SORTIES, _slug
+    piece = construire(entree_id, params)
+    DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
+    suffixe = _slug(str(params.get("texte", "")))[:20]
+    base = DOSSIER_SORTIES / (entree_id + ("_" + suffixe if suffixe and suffixe != "piece" else ""))
+    fusion = (trimesh.util.concatenate(list(piece.geometry.values()))
+              if isinstance(piece, trimesh.Scene) else piece)
+    fusion.export(base.with_suffix(".stl"))
+    try:
+        piece.export(base.with_suffix(".3mf"))
+        return base.with_suffix(".3mf")
+    except Exception:
+        return base.with_suffix(".stl")
