@@ -156,3 +156,23 @@ def test_installation_marker(tmp_path, monkeypatch):
     assert I.est_installe()
     I.desinstaller()
     assert not I.est_installe()
+
+
+def test_entonnoir_canal_traversant():
+    """REGRESSION : l'entonnoir doit etre OUVERT de bout en bout (le profil
+    referme sur l'axe le BOUCHAIT — 5/12 points de l'axe dans la matiere)."""
+    import numpy as np
+    from core.neogen.formes import entonnoir
+    p = entonnoir(80, 12, 70)
+    zs = np.linspace(1, p.bounds[1][2] - 1, 12)
+    assert int(p.contains([[0, 0, z] for z in zs]).sum()) == 0
+    assert p.is_watertight
+
+
+def test_cookbook_recettes_toutes_valides():
+    """Les 50 recettes du cookbook DOIVENT s'executer et passer le verificateur
+    (ce sont les exemples montres au modele : zero tolerance)."""
+    from core.neogen import libre as L
+    for _cles, demande, code in L.COOKBOOK:
+        p = L.poser_au_sol(L.executer_sandbox(code))
+        assert L.verifier(p) is None, demande

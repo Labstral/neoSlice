@@ -212,20 +212,23 @@ def gobelet(diametre: float = 70, hauteur: float = 90, texte: str = "",
 
 def entonnoir(d_haut: float = 80, d_bas: float = 12, hauteur: float = 70,
               bec: float = 25) -> trimesh.Trimesh:
-    """Entonnoir : cône creux + bec cylindrique (parois 1.6 mm). Imprimé
-    pointe en bas ? Non : grande ouverture vers le HAUT, bec au sol — pente
-    du cône ≥ 45° garantie en bornant la hauteur de cône."""
+    """Entonnoir : cône creux + bec cylindrique (paroi 1.6 mm), canal
+    TRAVERSANT (profil ANNEAU fermé — surtout pas refermé sur l'axe, sinon
+    l'entonnoir est bouché !). Grande ouverture vers le haut, pente ≥ 45°."""
     p = 1.6
-    r1, r0 = d_haut / 2, max(d_bas / 2, 3)
-    h_cone = max(hauteur - bec, (r1 - r0))          # pente >= 45 deg
-    profil = [
-        (r0 - p if r0 - p > 1 else 1, 0),
-        (r0, 0), (r0, bec),
-        (r1, bec + h_cone), (r1 + 2, bec + h_cone),        # petit rebord
-        (r1 - p + 2, bec + h_cone), (r1 - p, bec + h_cone - 2),
-        (r0 - p if r0 - p > 1 else 1, bec + 2),
-    ]
-    return _revolution_fermee(profil)
+    r0 = max(d_bas / 2, 3)          # rayon du CANAL (intérieur du bec)
+    r1 = d_haut / 2
+    hc = max(hauteur - bec, (r1 - r0))              # pente >= 45 deg
+    profil = np.array([
+        (r0, 0), (r0, bec),                          # canal du bec
+        (r1, bec + hc), (r1 + 2, bec + hc),          # cône int. + rebord
+        (r1 + 2, bec + hc - 1), (r1 + 0.6, bec + hc - 2),
+        (r0 + p, bec + 1), (r0 + p, 0),              # cône ext. + bec ext.
+        (r0, 0),
+    ], dtype=float)
+    piece = trimesh.creation.revolve(profil, sections=96)
+    piece.apply_translation([0, 0, -float(piece.bounds[0][2])])
+    return piece
 
 
 # ═════════════════════════════ RANGEMENT / MAISON ═══════════════════════════
