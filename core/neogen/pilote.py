@@ -92,13 +92,11 @@ _ALIAS = {"sous_verre": "sousverre", "portecle": "porte_cle", "porte_cles": "por
 
 
 def _preparer_moteur() -> None:
-    """Démarre le serveur Ollama et l'alias modèle via l'infrastructure d'Oen
-    (no-op quasi instantané si déjà en marche)."""
+    """Démarre le serveur Ollama via l'infrastructure partagée (no-op si déjà
+    en marche). NE touche PAS au modèle d'Oen : neoGen a le sien (14b) et les
+    deux s'installent indépendamment."""
     from core.assistant.engine import AssistantEngine
-    eng = AssistantEngine.instance()
-    eng._ensure_server()
-    if hasattr(eng, "_ensure_model"):
-        eng._ensure_model()
+    AssistantEngine.instance()._ensure_server()
 
 
 def demander_oen(phrase: str, image_jointe: bool = False,

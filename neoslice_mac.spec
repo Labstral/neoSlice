@@ -177,7 +177,8 @@ a = Analysis(
         # neoGen (génération de pièces par texte) — imports paresseux forcés
         'core.neogen', 'core.neogen.pilote', 'core.neogen.geo_utils',
         'core.neogen.texte', 'core.neogen.goodies', 'core.neogen.logo',
-        'core.neogen.objets',
+        'core.neogen.objets', 'core.neogen.formes', 'core.neogen.formes2',
+        'core.neogen.catalogue', 'core.neogen.libre', 'core.neogen.installation',
         'mapbox_earcut', 'manifold3d', 'svgelements', 'cv2',
         'matplotlib.textpath', 'matplotlib.font_manager',
     ],
