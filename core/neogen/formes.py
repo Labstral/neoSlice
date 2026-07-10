@@ -393,13 +393,29 @@ def porte_savon(longueur: float = 105, largeur: float = 75,
 
 def pot_fleur(diametre: float = 110, hauteur: float = 100, drainage: bool = True,
               soucoupe: bool = False) -> trimesh.Trimesh:
-    """Pot de fleurs évasé (8°), trous de drainage. Option : génère la
-    SOUCOUPE assortie à la place du pot."""
+    """Pot de fleurs évasé (8°) en RÉVOLUTION lisse (pas de tranches en
+    escalier), trous de drainage percés. Option : génère la SOUCOUPE assortie."""
     if soucoupe:
         d = diametre * 1.15
         return _recipient(_empreinte("rond", d), 14, 2.4, 3.0)
-    return _recipient(_empreinte("rond", diametre), hauteur, 2.4, 3.5,
-                      drainage=5 if drainage else 0, d_drain=8, conicite=8)
+    p, fond = 2.4, 3.5
+    r_haut = diametre / 2
+    r_bas = max(r_haut - hauteur * np.tan(np.radians(8)), r_haut * 0.55)
+    profil = [(r_bas, 0), (r_haut, hauteur), (r_haut - p, hauteur),
+              (r_bas - p * 0.5, fond), (0, fond)]
+    piece = _revolution_fermee(profil, sections=128)
+    if drainage:
+        trous = []
+        for i in range(5):
+            a = 2 * np.pi * i / 5
+            c = trimesh.creation.cylinder(radius=4, height=fond * 4, sections=32)
+            c.apply_translation([np.cos(a) * r_bas * 0.5,
+                                 np.sin(a) * r_bas * 0.5, fond / 2])
+            trous.append(c)
+        piece = trimesh.boolean.difference(
+            [piece, union_solides(trous)], engine="manifold")
+    piece.apply_translation(-piece.bounds[0] * [0, 0, 1])
+    return piece
 
 
 def etiquette_plante(longueur: float = 120, largeur: float = 22,
