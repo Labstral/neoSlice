@@ -34,7 +34,7 @@ CATALOGUE (champ "objet" + parametres autorises, unites en mm sauf indication) :
 - magnet : texte*, diametre (defaut 35), aimant_d (diametre logement, defaut 10.2), aimant_p (profondeur, defaut 2)
 - logo : forme (badge/plaque/silhouette, defaut badge), largeur (taille du logo, defaut 40), diametre (si badge), couleurs (2-4, defaut 3) — UNIQUEMENT si une image est jointe
 - vase : hauteur (defaut 100), diametre (defaut 60), ondulations (defaut 5)
-- boite : diametre (defaut 50), hauteur (defaut 30), jeu (ajustement couvercle en mm : 0.2 normal, 0.15 serre, 0.3 lache)
+- boite : forme (ronde ou carree, defaut ronde), diametre (si ronde, defaut 50), cote (si carree), hauteur (defaut 30), jeu (ajustement couvercle en mm : 0.2 normal, 0.15 serre, 0.3 lache)
 - support : largeur (defaut 70) — support de telephone
 - de : taille (arete du de, defaut 16)
 
@@ -52,6 +52,7 @@ EXEMPLES :
 "une plaque Bienvenue chez Lea avec des vis" -> {"objet":"plaque","texte":"Bienvenue|chez Lea","vis":true}
 "un vase de 12 cm de haut bien ondule" -> {"objet":"vase","hauteur":120,"ondulations":7}
 "une boite ronde de 6 cm qui ferme bien" -> {"objet":"boite","diametre":60,"jeu":0.15}
+"une boite carree de 6 cm avec couvercle" -> {"objet":"boite","forme":"carree","cote":60}
 "un de a jouer de 2 cm" -> {"objet":"de","taille":20}
 "mon logo en badge de 5 cm" (image jointe) -> {"objet":"logo","forme":"badge","diametre":50}
 "fais-moi un truc sympa" -> {"question":"Quel objet veux-tu ? (porte-cle, badge, plaque, magnet, sous-verre, logo, vase, boite, support telephone, de...)"}
@@ -67,7 +68,8 @@ _BORNES = {
     "magnet":    {"diametre": (20, 80, 35), "aimant_d": (4, 25, 10.2), "aimant_p": (1, 5, 2.0)},
     "logo":      {"largeur": (15, 150, 40), "diametre": (0, 160, 0), "couleurs": (2, 4, 3)},
     "vase":      {"hauteur": (30, 250, 100), "diametre": (30, 150, 60), "ondulations": (0, 12, 5)},
-    "boite":     {"diametre": (25, 150, 50), "hauteur": (12, 120, 30), "jeu": (0.1, 0.5, 0.2)},
+    "boite":     {"diametre": (25, 150, 50), "cote": (25, 150, 50),
+                  "hauteur": (12, 120, 30), "jeu": (0.1, 0.5, 0.2)},
     "support":   {"largeur": (40, 140, 70)},
     "de":        {"taille": (8, 40, 16)},
 }
@@ -149,6 +151,10 @@ def valider(d: dict, image: Path | None = None) -> tuple[str | None, dict, str |
         params["image"] = str(image)
         f = str(d.get("forme", "badge")).strip().lower()
         params["forme"] = f if f in ("badge", "plaque", "silhouette") else "badge"
+    if objet == "boite":
+        f = str(d.get("forme", "ronde")).strip().lower()
+        f = {"carre": "carree", "carrée": "carree", "square": "carree"}.get(f, f)
+        params["forme"] = f if f in ("ronde", "carree") else "ronde"
     return objet, params, None
 
 
@@ -212,9 +218,11 @@ def generer(objet: str, p: dict) -> Path:
             nom = f"vase_{int(p.get('hauteur', 100))}mm"
         elif objet == "boite":
             scene = objets.boite(p.get("diametre", 50), p.get("hauteur", 30),
-                                 jeu=p.get("jeu", 0.2))
+                                 jeu=p.get("jeu", 0.2),
+                                 forme=p.get("forme", "ronde"), cote=p.get("cote"))
             piece = trimesh.util.concatenate(list(scene.geometry.values()))
-            nom = f"boite_{int(p.get('diametre', 50))}mm"
+            taille = int(p.get("cote") or p.get("diametre", 50))
+            nom = f"boite_{p.get('forme', 'ronde')}_{taille}mm"
         elif objet == "support":
             piece = objets.support_tel(p.get("largeur", 70))
             nom = "support_telephone"

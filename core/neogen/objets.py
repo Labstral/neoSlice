@@ -73,28 +73,36 @@ def vase(hauteur: float = 100, diametre: float = 60, paroi: float = 2.4,
 
 # ── BOÎTE + COUVERCLE emboîtant (jeu d'ajustement) ───────────────────────────
 def boite(diametre: float = 50, hauteur: float = 30, paroi: float = 2.0,
-          fond: float = 2.0, jeu: float = 0.2) -> trimesh.Scene:
-    """Boîte ronde + couvercle à lèvre. La lèvre du couvercle entre DANS la
-    boîte avec `jeu` mm par côté (ajustement doux). 3MF 2 corps côte à côte."""
-    r = diametre / 2.0
-    # corps : fond plein + murs (anneau) — CHEVAUCHEMENT vertical puis union
-    disque = Point(0, 0).buffer(r, resolution=96)
-    anneau = disque.difference(Point(0, 0).buffer(r - paroi, resolution=96))
+          fond: float = 2.0, jeu: float = 0.2, forme: str = "ronde",
+          cote: float | None = None) -> trimesh.Scene:
+    """Boîte + couvercle à lèvre, RONDE ou CARRÉE (coins arrondis). La lèvre du
+    couvercle entre DANS la boîte avec `jeu` mm par côté (ajustement doux).
+    3MF 2 corps côte à côte. Les décalages intérieurs se font par buffer
+    NÉGATIF de l'empreinte -> la même mécanique marche pour toute forme."""
+    if forme == "carree":
+        c = float(cote or diametre)
+        rc = min(4.0, c * 0.12)                       # coins arrondis
+        emp = box(-(c / 2 - rc), -(c / 2 - rc),
+                  c / 2 - rc, c / 2 - rc).buffer(rc, join_style=1)
+    else:
+        emp = Point(0, 0).buffer(diametre / 2.0, resolution=96)
+
+    # corps : fond plein + murs (anneau = empreinte moins son retrait de paroi)
+    anneau = emp.difference(emp.buffer(-paroi, join_style=1))
     corps = union_solides(
-        _extruder(disque, fond) +
+        _extruder(emp, fond) +
         _extruder(anneau, hauteur - fond + CHEV, fond - CHEV))
     corps.apply_translation(-corps.bounds[0])
 
-    # couvercle : chapeau plein + lèvre qui rentre dans la boîte (rayon réduit du jeu)
-    r_levre_ext = r - paroi - jeu
-    chapeau = Point(0, 0).buffer(r, resolution=96)
-    levre = Point(0, 0).buffer(r_levre_ext, resolution=96).difference(
-        Point(0, 0).buffer(max(1.0, r_levre_ext - paroi), resolution=96))
+    # couvercle : chapeau plein + lèvre en retrait de (paroi + jeu)
+    levre_ext = emp.buffer(-(paroi + jeu), join_style=1)
+    levre = levre_ext.difference(levre_ext.buffer(-paroi, join_style=1))
     couvercle = union_solides(
-        _extruder(chapeau, fond) +
+        _extruder(emp, fond) +
         _extruder(levre, 6.0 + CHEV, fond - CHEV))   # lèvre de 6 mm
     couvercle.apply_translation(-couvercle.bounds[0])
-    couvercle.apply_translation([diametre + 8, 0, 0])   # posé à côté sur le plateau
+    larg = float(emp.bounds[2] - emp.bounds[0])
+    couvercle.apply_translation([larg + 8, 0, 0])    # posé à côté sur le plateau
 
     scene = trimesh.Scene()
     scene.add_geometry(corps, node_name="boite_corps", geom_name="boite_corps")
