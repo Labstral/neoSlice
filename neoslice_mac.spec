@@ -174,6 +174,12 @@ a = Analysis(
         'scipy.sparse', 'scipy.sparse.csgraph', 'scipy.ndimage',
         'rtree', 'loguru', 'yaml', 'numpy', 'pydantic',
         'networkx', 'lxml', 'lxml.etree', 'certifi', 'onnxruntime', 'version',
+        # neoGen (génération de pièces par texte) — imports paresseux forcés
+        'core.neogen', 'core.neogen.pilote', 'core.neogen.geo_utils',
+        'core.neogen.texte', 'core.neogen.goodies', 'core.neogen.logo',
+        'core.neogen.objets',
+        'mapbox_earcut', 'manifold3d', 'svgelements', 'cv2',
+        'matplotlib.textpath', 'matplotlib.font_manager',
     ],
     hookspath=[],
     hooksconfig={},

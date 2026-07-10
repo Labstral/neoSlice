@@ -1,0 +1,194 @@
+# -*- coding: utf-8 -*-
+"""neoGen — PROTOTYPE ISOLÉ (hors neoSlice) : objets 3D avancés.
+
+Au-delà de l'extrusion plate : révolution, ajustements 2 pièces, profils
+inclinés, booléens 3D purs.
+
+  vase     surface de RÉVOLUTION ondulée (pente < 45° garantie)
+  boite    boîte ronde + couvercle EMBOÎTANT (jeu 0.2 mm) — 3MF 2 corps
+  support  support de téléphone (profil incliné, imprimable sans support)
+  de       dé à jouer — cube arrondi moins 21 creux CONIQUES (45°, sans support)
+
+Exemples :
+  python objets.py --objet vase --hauteur 100 --diametre 60
+  python objets.py --objet boite --diametre 50 --hauteur 30
+  python objets.py --objet support
+  python objets.py --objet de --taille 16
+
+CE FICHIER NE DOIT JAMAIS ÊTRE INTÉGRÉ À neoSlice (projet à part, cf. LISEZMOI).
+"""
+from __future__ import annotations
+
+
+import argparse
+import sys
+
+import numpy as np
+import trimesh
+from shapely.geometry import Point, Polygon, MultiPolygon, box
+from pathlib import Path
+
+from core.neogen.geo_utils import union_solides
+
+CHEV = 0.3   # chevauchement de fusion entre tranches (mm)
+
+
+def _extruder(geom, h, z=0.0):
+    geoms = geom.geoms if isinstance(geom, MultiPolygon) else [geom]
+    out = []
+    for g in geoms:
+        if g.is_empty or g.area < 1e-6:
+            continue
+        m = trimesh.creation.extrude_polygon(g, h)
+        if z:
+            m.apply_translation([0, 0, z])
+        out.append(m)
+    return out
+
+
+# ── VASE : surface de révolution ondulée ─────────────────────────────────────
+def vase(hauteur: float = 100, diametre: float = 60, paroi: float = 2.4,
+         fond: float = 2.4, ondulations: int = 5, amplitude: float = 3.0) -> trimesh.Trimesh:
+    """Profil sinusoïdal tourné autour de Z. La pente radiale est bornée à 40°
+    (< 45°) pour imprimer SANS support ; amplitude réduite si nécessaire."""
+    r0 = diametre / 2.0
+    # pente max = amplitude * (2*pi*ondulations / hauteur) ; on borne a tan(40°)
+    k = 2 * np.pi * ondulations / hauteur
+    amp_max = np.tan(np.radians(40)) / k
+    amp = min(amplitude, amp_max)
+
+    def r_ext(z):
+        return r0 + amp * np.sin(k * z)
+
+    n = 160
+    zs = np.linspace(0, hauteur, n)
+    # profil FERMÉ : paroi extérieure (bas -> haut), retour intérieur, fond, axe
+    ext = [(float(r_ext(z)), float(z)) for z in zs]
+    intr = [(max(0.6, float(r_ext(z)) - paroi), float(z)) for z in zs[::-1] if z >= fond]
+    profil = [(0.0, 0.0)] + ext + intr + [(0.0, float(fond)), (0.0, 0.0)]
+    piece = trimesh.creation.revolve(np.array(profil), sections=128)
+    piece.apply_translation(-piece.bounds[0] * [1, 1, 1] * [0, 0, 1])  # z=0 au sol
+    return piece
+
+
+# ── BOÎTE + COUVERCLE emboîtant (jeu d'ajustement) ───────────────────────────
+def boite(diametre: float = 50, hauteur: float = 30, paroi: float = 2.0,
+          fond: float = 2.0, jeu: float = 0.2) -> trimesh.Scene:
+    """Boîte ronde + couvercle à lèvre. La lèvre du couvercle entre DANS la
+    boîte avec `jeu` mm par côté (ajustement doux). 3MF 2 corps côte à côte."""
+    r = diametre / 2.0
+    # corps : fond plein + murs (anneau) — CHEVAUCHEMENT vertical puis union
+    disque = Point(0, 0).buffer(r, resolution=96)
+    anneau = disque.difference(Point(0, 0).buffer(r - paroi, resolution=96))
+    corps = union_solides(
+        _extruder(disque, fond) +
+        _extruder(anneau, hauteur - fond + CHEV, fond - CHEV))
+    corps.apply_translation(-corps.bounds[0])
+
+    # couvercle : chapeau plein + lèvre qui rentre dans la boîte (rayon réduit du jeu)
+    r_levre_ext = r - paroi - jeu
+    chapeau = Point(0, 0).buffer(r, resolution=96)
+    levre = Point(0, 0).buffer(r_levre_ext, resolution=96).difference(
+        Point(0, 0).buffer(max(1.0, r_levre_ext - paroi), resolution=96))
+    couvercle = union_solides(
+        _extruder(chapeau, fond) +
+        _extruder(levre, 6.0 + CHEV, fond - CHEV))   # lèvre de 6 mm
+    couvercle.apply_translation(-couvercle.bounds[0])
+    couvercle.apply_translation([diametre + 8, 0, 0])   # posé à côté sur le plateau
+
+    scene = trimesh.Scene()
+    scene.add_geometry(corps, node_name="boite_corps", geom_name="boite_corps")
+    scene.add_geometry(couvercle, node_name="boite_couvercle", geom_name="boite_couvercle")
+    return scene
+
+
+# ── SUPPORT DE TÉLÉPHONE : profil incliné extrudé ────────────────────────────
+def support_tel(largeur: float = 70, angle_deg: float = 62, ep: float = 8) -> trimesh.Trimesh:
+    """Profil en coupe (dossier incliné + assise + butée) extrudé sur la largeur.
+    Angle du dossier 62° depuis l'horizontale -> aucune face < 45°, zéro support.
+    Imprimé À PLAT sur sa face arrière ? Non : posé sur sa BASE (profil stable)."""
+    a = np.radians(angle_deg)
+    prof = 78.0          # profondeur au sol
+    h_dos = 92.0         # hauteur du dossier
+    dx = h_dos / np.tan(a)          # recul horizontal du dossier
+    butee_h, butee_l = 14.0, 12.0   # lèvre avant qui retient le téléphone
+    # polygone du profil (X = profondeur, Y = hauteur) — sens horaire
+    pts = [
+        (0, 0), (prof, 0),                          # base au sol
+        (prof, ep),                                  # arrière bas
+        (butee_l + ep + dx * (ep / h_dos) + 8, ep),  # dessus de l'assise
+        (butee_l + ep + 8 - 0, butee_h + ep),        # butée avant (extérieur)
+        (butee_l + ep - 4, butee_h + ep),            # sommet butée
+        (butee_l + ep - 4, ep + 2),                  # creux entre butée et dossier
+        (butee_l, ep + 2),
+        (butee_l + dx * ((h_dos - ep) / h_dos), h_dos),        # sommet dossier (incliné)
+        (butee_l + dx * ((h_dos - ep) / h_dos) - ep / np.sin(a), h_dos),  # épaisseur dossier
+        (0, ep * 1.2),
+    ]
+    poly = Polygon(pts).buffer(0)
+    if isinstance(poly, MultiPolygon):
+        poly = max(poly.geoms, key=lambda g: g.area)
+    poly = poly.buffer(1.5, join_style=1).buffer(-1.5, join_style=1)  # angles adoucis
+    piece = trimesh.util.concatenate(_extruder(poly, largeur))
+    # profil construit en XY, extrudé en Z -> on le COUCHE : rotation -90° sur X
+    piece.apply_transform(trimesh.transformations.rotation_matrix(np.radians(90), [1, 0, 0]))
+    piece.apply_translation(-piece.bounds[0])
+    return piece
+
+
+# ── DÉ À JOUER : booléens 3D purs (creux coniques imprimables) ───────────────
+_PIPS = {   # positions (u, v) par valeur, grille -1/0/+1
+    1: [(0, 0)],
+    2: [(-1, -1), (1, 1)],
+    3: [(-1, -1), (0, 0), (1, 1)],
+    4: [(-1, -1), (-1, 1), (1, -1), (1, 1)],
+    5: [(-1, -1), (-1, 1), (0, 0), (1, -1), (1, 1)],
+    6: [(-1, -1), (-1, 0), (-1, 1), (1, -1), (1, 0), (1, 1)],
+}
+# faces du dé : (valeur, normale, axes u/v) — 1 opposé à 6, 2-5, 3-4 (somme 7)
+_FACES = [
+    (1, [0, 0, 1]), (6, [0, 0, -1]),
+    (2, [1, 0, 0]), (5, [-1, 0, 0]),
+    (3, [0, 1, 0]), (4, [0, -1, 0]),
+]
+
+
+def de_a_jouer(taille: float = 16.0) -> trimesh.Trimesh:
+    """VRAI dé : arêtes et coins arrondis PARTOUT (enveloppe convexe de 8
+    sphères aux coins = cube adouci exact), MOINS creux coniques (parois ~48°
+    -> imprimable sans support, contrairement à des creux sphériques)."""
+    r_coin = taille * 0.12
+    d = taille / 2 - r_coin
+    spheres = []
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            for sz in (-1, 1):
+                s = trimesh.creation.icosphere(subdivisions=3, radius=r_coin)
+                s.apply_translation([sx * d, sy * d, sz * d])
+                spheres.append(s)
+    cube = trimesh.util.concatenate(spheres).convex_hull   # cube arrondi exact
+
+    r_pip, h_pip = taille * 0.11, taille * 0.13   # cône ~50° (imprimable)
+    ecart = taille * 0.26
+    cones = []
+    for val, normale in _FACES:
+        n = np.array(normale, float)
+        # base orthonormée (u, v) de la face
+        u = np.array([0, 0, 1.0]) if abs(n[2]) < 0.5 else np.array([1.0, 0, 0])
+        u = np.cross(n, u); u /= np.linalg.norm(u)
+        v = np.cross(n, u)
+        centre_face = n * (taille / 2)
+        for (gu, gv) in _PIPS[val]:
+            c = trimesh.creation.cone(radius=r_pip, height=h_pip, sections=48)
+            # cone : base en z=0, pointe en z=h -> on le retourne pour pointer DANS le dé
+            c.apply_transform(trimesh.transformations.rotation_matrix(np.pi, [1, 0, 0]))
+            c.apply_translation([0, 0, 0.05])     # base légèrement HORS de la face
+            # aligne +z du cone sur -n (pointe vers l'intérieur)
+            align = trimesh.geometry.align_vectors([0, 0, -1], -n)
+            c.apply_transform(align)
+            c.apply_translation(centre_face + u * (gu * ecart) + v * (gv * ecart))
+            cones.append(c)
+    creux = union_solides(cones)
+    piece = trimesh.boolean.difference([cube, creux], engine="manifold")
+    piece.apply_translation(-piece.bounds[0])
+    return piece

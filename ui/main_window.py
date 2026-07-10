@@ -514,13 +514,23 @@ _PRO_GRADIENT_BTN = f"""
     }}
 """
 
-# DIAGNOSTIC + DEVIS restent DEUX boutons séparés, mais le dégradé cyan→violet
-# se poursuit de l'un à l'autre : le gauche va de cyan au milieu, le droit du
-# milieu au violet. Coins arrondis complets sur chacun (boutons distincts).
+# NEOGEN + DIAGNOSTIC + ESPACE PRO : TROIS boutons séparés, mais UN dégradé
+# cyan→violet continu qui s'étend sur les trois (tiers interpolés linéairement
+# entre PRO_CYAN #22D3EE et PRO_VIOLET #A855F7 ; PRO_MID reste le milieu exact).
+PRO_TIER1 = "#4FA9F1"   # couleur à 1/3 du dégradé
+PRO_TIER2 = "#7B7FF4"   # couleur à 2/3 du dégradé
 _PRO_BTN_LEFT = f"""
     QPushButton {{
         background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-            stop:0 {PRO_CYAN}, stop:1 {PRO_MID});
+            stop:0 {PRO_CYAN}, stop:1 {PRO_TIER1});
+        color: #ffffff; border: none; border-radius: 3px;
+        padding: 0 10px; font-weight: bold;
+    }}
+"""
+_PRO_BTN_MID = f"""
+    QPushButton {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 {PRO_TIER1}, stop:1 {PRO_TIER2});
         color: #ffffff; border: none; border-radius: 3px;
         padding: 0 10px; font-weight: bold;
     }}
@@ -528,7 +538,7 @@ _PRO_BTN_LEFT = f"""
 _PRO_BTN_RIGHT = f"""
     QPushButton {{
         background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-            stop:0 {PRO_MID}, stop:1 {PRO_VIOLET});
+            stop:0 {PRO_TIER2}, stop:1 {PRO_VIOLET});
         color: #ffffff; border: none; border-radius: 3px;
         padding: 0 10px; font-weight: bold;
     }}
@@ -544,6 +554,7 @@ class _TopBar(QWidget):
     settings_clicked  = Signal()
     diag_clicked      = Signal()
     cost_clicked      = Signal()
+    neogen_clicked    = Signal()      # bouton neoGen (génération de pièces par texte)
     pro_clicked       = Signal()      # bouton « neoSlice Pro » (ouvre le paywall)
 
     def __init__(self, parent=None):
@@ -590,6 +601,14 @@ class _TopBar(QWidget):
         layout.addWidget(self._sub)
 
         layout.addStretch()
+
+        # Bouton NEOGEN (génération de pièces 3D par texte, via Oen) — Pro
+        self._neogen_btn = QPushButton(_("app.btn_neogen"))
+        self._neogen_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
+        self._neogen_btn.setFixedHeight(26)
+        self._neogen_btn.setCursor(Qt.PointingHandCursor)
+        self._neogen_btn.setToolTip(_("neogen.tooltip"))
+        self._neogen_btn.clicked.connect(self.neogen_clicked)
 
         self._diag_btn = QPushButton(_("app.btn_diag"))
         self._diag_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
@@ -664,8 +683,9 @@ class _TopBar(QWidget):
         """)
         self._new_btn.clicked.connect(self.new_piece_clicked)
         layout.addWidget(self._new_btn)
-        # DIAGNOSTIC + DEVIS : deux boutons séparés, mais dégradé continu de l'un
-        # à l'autre (gauche cyan→milieu, droite milieu→violet).
+        # NEOGEN + DIAGNOSTIC + ESPACE PRO : trois boutons séparés, mais UN seul
+        # dégradé cyan→violet continu qui s'étend sur les trois.
+        layout.addWidget(self._neogen_btn)
         layout.addWidget(self._diag_btn)
         layout.addWidget(self._cost_btn)
         layout.addWidget(self._pro_cta_btn)
@@ -779,12 +799,14 @@ class _TopBar(QWidget):
         from core import licensing as _lic
         coming = getattr(_lic, "PRO_COMING_SOON", False)
         self._pro_badge.setVisible(is_pro)
+        self._neogen_btn.setVisible(is_pro)
         self._diag_btn.setVisible(is_pro)
         self._cost_btn.setVisible(is_pro)
         self._pro_cta_btn.setVisible(not is_pro)
         if is_pro:
-            # Deux boutons distincts ; le dégradé se poursuit de l'un à l'autre
-            self._diag_btn.setStyleSheet(_PRO_BTN_LEFT)
+            # Trois boutons distincts ; UN dégradé cyan→violet continu sur les trois
+            self._neogen_btn.setStyleSheet(_PRO_BTN_LEFT)
+            self._diag_btn.setStyleSheet(_PRO_BTN_MID)
             self._cost_btn.setStyleSheet(_PRO_BTN_RIGHT)
         else:
             self._pro_cta_btn.setText("neoSlice Pro")
@@ -1538,6 +1560,7 @@ class MainWindow(QMainWindow):
         self._topbar.new_piece_clicked.connect(self._on_new_piece)
         self._topbar.diag_clicked.connect(self._open_diagnostic)
         self._topbar.cost_clicked.connect(self._open_pro_hub)
+        self._topbar.neogen_clicked.connect(self._open_neogen)
         # Bouton CTA « neoSlice Pro » : « bientôt disponible » en pré-lancement,
         # sinon ouvre le diagnostic (essais gratuits → paywall).
         self._topbar.pro_clicked.connect(self._on_pro_cta)
@@ -1829,6 +1852,15 @@ class MainWindow(QMainWindow):
             self._filament_selector.set_printer(new_printer)
         # Pro peut avoir été activé dans les réglages → tuto Pro (une fois)
         self._maybe_launch_pro_tutorial()
+
+    def _open_neogen(self):
+        """Ouvre neoGen : l'utilisateur décrit une pièce, Oen l'interprète, le
+        générateur la produit, et elle est chargée dans le viewer via le même
+        pipeline qu'un fichier déposé."""
+        from ui.components.neogen_dialog import NeoGenDialog
+        dlg = NeoGenDialog(self)
+        dlg.piece_ready.connect(self._on_stl_dropped)
+        dlg.exec()
 
     def _open_diagnostic(self):
         from ui.components.defect_diagnostic import DefectDiagnosticDialog

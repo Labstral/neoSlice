@@ -194,6 +194,14 @@ a = Analysis(
         'numpy',
         'networkx',
         'lxml',
+        # neoGen (génération de pièces par texte) — imports paresseux dans
+        # core/neogen/* : on les force pour que l'analyse ne les rate JAMAIS
+        # (cf. bug "No module named networkx" v0.1.5.4).
+        'core.neogen', 'core.neogen.pilote', 'core.neogen.geo_utils',
+        'core.neogen.texte', 'core.neogen.goodies', 'core.neogen.logo',
+        'core.neogen.objets',
+        'mapbox_earcut', 'manifold3d', 'svgelements', 'cv2',
+        'matplotlib.textpath', 'matplotlib.font_manager',
         'lxml.etree',
         'shapely',
         'shapely.geometry',

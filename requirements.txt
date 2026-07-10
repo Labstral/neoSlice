@@ -13,6 +13,14 @@ lxml>=5.0              # requis par trimesh (chargement XML des fichiers 3MF)
 # Diagnostic IA (Pro) — inférence ONNX locale
 onnxruntime>=1.18.0
 
+# neoGen (Pro) — génération de pièces 3D par texte (NE JAMAIS retirer :
+# sans ces libs, "No module named ..." au runtime comme networkx en v0.1.5.4)
+matplotlib>=3.10           # contours vectoriels des polices (TextPath)
+mapbox_earcut>=1.0         # triangulation des polygones (trimesh extrude)
+manifold3d>=3.0            # unions/différences booléennes étanches
+svgelements>=1.9           # import de logos SVG
+opencv-python-headless>=4.10   # vectorisation de logos PNG (contours)
+
 # Certificats SSL (HTTPS fiable en app gelée, surtout macOS)
 certifi>=2024.0.0
 

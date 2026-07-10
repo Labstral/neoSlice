@@ -1,0 +1,225 @@
+# -*- coding: utf-8 -*-
+"""neoGen — PROTOTYPE ISOLÉ (hors neoSlice) : catalogue de goodies personnalisés.
+
+Formes disponibles (--forme) :
+  badge      pastille ronde, texte relief/gravé, trou d'accroche optionnel
+  sousverre  sous-verre ø90 avec rebord surélevé, texte gravé au centre
+  plaque     plaque rectangulaire arrondie, texte MULTI-LIGNES (| = saut de
+             ligne), trous de vis optionnels (--vis)
+  magnet     pastille avec LOGEMENT D'AIMANT creusé au dos (--aimant D P)
+
+Exemples :
+  python goodies.py --forme badge --texte "Léa" --diametre 40 --trou
+  python goodies.py --forme sousverre --texte "neoSlice"
+  python goodies.py --forme plaque --texte "Bienvenue|chez Léa" --vis
+  python goodies.py --forme magnet --texte "Léa" --aimant 10.2 2
+
+Même technique déterministe que porte_cle.py (contours police -> shapely ->
+extrusions trimesh, gravures/logements faits en 2D avant extrusion, pas de
+booléens 3D). Sorties STL + 3MF dans sorties\\ -> à glisser dans neoSlice.
+
+CE FICHIER NE DOIT JAMAIS ÊTRE INTÉGRÉ À neoSlice (projet à part, cf. LISEZMOI).
+"""
+from __future__ import annotations
+
+
+import argparse
+import re
+import sys
+import unicodedata
+from functools import reduce
+from pathlib import Path
+
+import numpy as np
+import trimesh
+from matplotlib.font_manager import FontProperties
+from matplotlib.textpath import TextPath
+from shapely.geometry import Point, Polygon, MultiPolygon, box
+from shapely.ops import unary_union
+from shapely.affinity import translate, scale as shp_scale
+
+POLICES = ["Arial Rounded MT Bold", "Arial Black", "Segoe UI Black", "Arial"]
+
+CHEVAUCHEMENT = 0.2   # fusion des volumes au slicing (mm)
+
+
+# ── Texte -> polygones (identique à porte_cle.py, éprouvé) ───────────────────
+def _rings_vers_polygones(rings: list[np.ndarray]) -> MultiPolygon:
+    polys = []
+    for r in rings:
+        if len(r) >= 3:
+            p = Polygon(r)
+            if p.is_valid and p.area > 1e-6:
+                polys.append(p)
+    if not polys:
+        return MultiPolygon([])
+    merged = reduce(lambda a, b: a.symmetric_difference(b), polys)
+    merged = merged.buffer(0)
+    if isinstance(merged, Polygon):
+        merged = MultiPolygon([merged])
+    return merged
+
+
+def _ligne_texte(texte: str, hauteur_mm: float) -> MultiPolygon:
+    """Une ligne de texte, hauteur donnée, coin bas-gauche en (0,0)."""
+    derniere_err = None
+    for police in POLICES:
+        try:
+            prop = FontProperties(family=police, weight="bold")
+            tp = TextPath((0, 0), texte, size=100, prop=prop)
+            mp = _rings_vers_polygones([np.asarray(p) for p in tp.to_polygons()])
+            if mp.is_empty:
+                continue
+            minx, miny, maxx, maxy = mp.bounds
+            f = hauteur_mm / (maxy - miny)
+            mp = shp_scale(mp, xfact=f, yfact=f, origin=(minx, miny))
+            minx, miny, _, _ = mp.bounds
+            return translate(mp, xoff=-minx, yoff=-miny)
+        except Exception as exc:
+            derniere_err = exc
+    raise RuntimeError(f"Impossible de vectoriser « {texte} » : {derniere_err}")
+
+
+def texte_multilignes(texte: str, hauteur_ligne: float = 10.0) -> MultiPolygon:
+    """Texte multi-lignes (séparateur « | »), lignes centrées, centre en (0,0)."""
+    lignes = [l.strip() for l in texte.split("|") if l.strip()]
+    if not lignes:
+        raise ValueError("Texte vide.")
+    interligne = hauteur_ligne * 1.45
+    blocs = []
+    for i, l in enumerate(lignes):
+        mp = _ligne_texte(l, hauteur_ligne)
+        minx, miny, maxx, maxy = mp.bounds
+        # centre la ligne en X, empile en Y (1re ligne en haut)
+        y = -(i * interligne)
+        blocs.append(translate(mp, xoff=-(maxx - minx) / 2.0, yoff=y))
+    tout = unary_union([g for b in blocs for g in b.geoms])
+    if isinstance(tout, Polygon):
+        tout = MultiPolygon([tout])
+    minx, miny, maxx, maxy = tout.bounds
+    return translate(tout, xoff=-(minx + maxx) / 2.0, yoff=-(miny + maxy) / 2.0)
+
+
+def ajuster_dans(mp: MultiPolygon, larg_max: float, haut_max: float) -> MultiPolygon:
+    """Met le bloc texte à l'échelle pour tenir dans larg_max × haut_max (centré)."""
+    minx, miny, maxx, maxy = mp.bounds
+    f = min(larg_max / (maxx - minx), haut_max / (maxy - miny))
+    return shp_scale(mp, xfact=f, yfact=f, origin=(0, 0))
+
+
+# ── Briques d'extrusion (relief / gravure / logement) ────────────────────────
+def _extruder(geom, h: float, z: float = 0.0) -> list[trimesh.Trimesh]:
+    geoms = geom.geoms if isinstance(geom, MultiPolygon) else [geom]
+    out = []
+    for g in geoms:
+        if g.is_empty or g.area < 1e-6:
+            continue
+        m = trimesh.creation.extrude_polygon(g, h)
+        if z:
+            m.apply_translation([0, 0, z])
+        out.append(m)
+    return out
+
+
+def socle_avec_texte(socle_2d, texte_2d, ep_socle: float, ep_texte: float,
+                     grave: bool, poche_2d=None, prof_poche: float = 0.0,
+                     recentrer: bool = True) -> trimesh.Trimesh:
+    """Assemble : socle (avec éventuelle POCHE creusée au DOS) + texte relief/gravé.
+    Tout en tranches 2D extrudées -> pas de booléens 3D, toujours étanche."""
+    solides = []
+    z0 = 0.0
+    if poche_2d is not None and prof_poche > 0:
+        # tranche du bas percée de la poche (ouverte vers le dessous)
+        bas = socle_2d.difference(poche_2d)
+        solides += _extruder(bas, prof_poche + CHEVAUCHEMENT, 0)
+        z0 = prof_poche
+    if grave:
+        ep_grav = min(ep_texte, ep_socle - z0 - 0.8)
+        solides += _extruder(socle_2d, ep_socle - z0 - ep_grav, z0)          # cœur plein
+        haut = socle_2d.difference(texte_2d)
+        solides += _extruder(haut, ep_grav + CHEVAUCHEMENT,
+                             ep_socle - ep_grav - CHEVAUCHEMENT)             # surface gravée
+    else:
+        solides += _extruder(socle_2d, ep_socle - z0, z0)                    # socle plein
+        solides += _extruder(texte_2d, ep_texte + CHEVAUCHEMENT,
+                             ep_socle - CHEVAUCHEMENT)                       # relief
+    from core.neogen.geo_utils import union_solides
+    piece = union_solides(solides)   # union RÉELLE : zéro face interne (faux surplombs)
+    if recentrer:
+        piece.apply_translation(-piece.bounds[0])
+    return piece
+
+
+# ── Formes ────────────────────────────────────────────────────────────────────
+def badge(texte: str, diametre: float = 40, ep: float = 3, ep_texte: float = 1.2,
+          grave: bool = False, trou: float = 0.0) -> trimesh.Trimesh:
+    """Pastille ronde, texte centré ; trou d'accroche en haut si demandé."""
+    disque = Point(0, 0).buffer(diametre / 2, resolution=96)
+    if trou > 0:
+        c = Point(0, diametre / 2 - trou / 2 - 2.0)
+        disque = disque.difference(c.buffer(trou / 2, resolution=48))
+        haut_max = diametre * 0.42
+        dec_y = -diametre * 0.06
+    else:
+        haut_max = diametre * 0.52
+        dec_y = 0.0
+    txt = ajuster_dans(texte_multilignes(texte), diametre * 0.74, haut_max)
+    txt = translate(txt, yoff=dec_y)
+    return socle_avec_texte(disque, unary_union(list(txt.geoms)), ep, ep_texte, grave)
+
+
+def sous_verre(texte: str, diametre: float = 90, ep: float = 3.6,
+               rebord: float = 1.2, ep_texte: float = 0.8) -> trimesh.Trimesh:
+    """Sous-verre : disque + rebord périphérique surélevé, texte GRAVÉ au centre
+    (surface plate = pose du verre, gravure = pas d'accroc)."""
+    disque = Point(0, 0).buffer(diametre / 2, resolution=128)
+    txt = ajuster_dans(texte_multilignes(texte), diametre * 0.62, diametre * 0.5)
+    # recentrer=False : on garde le repère centré en (0,0) pour que le rebord
+    # (lui aussi centré) s'aligne, puis on recentre le TOUT à la fin.
+    piece = socle_avec_texte(disque, unary_union(list(txt.geoms)), ep, ep_texte,
+                             grave=True, recentrer=False)
+    if rebord > 0:  # anneau surélevé (extrusion séparée posée dessus)
+        ext = Point(0, 0).buffer(diametre / 2, resolution=128)
+        intr = Point(0, 0).buffer(diametre / 2 - 3.0, resolution=128)
+        anneau = ext.difference(intr)
+        from core.neogen.geo_utils import union_solides
+        piece = union_solides([piece] + _extruder(anneau, rebord + CHEVAUCHEMENT,
+                                                  ep - CHEVAUCHEMENT))
+    piece.apply_translation(-piece.bounds[0])
+    return piece
+
+
+def plaque(texte: str, largeur: float = 0, hauteur: float = 0, ep: float = 3,
+           ep_texte: float = 1.5, grave: bool = False, vis: bool = False) -> trimesh.Trimesh:
+    """Plaque rectangulaire arrondie, texte multi-lignes ; trous de vis optionnels."""
+    txt = texte_multilignes(texte)
+    minx, miny, maxx, maxy = txt.bounds
+    marge = 8.0 if vis else 5.0
+    if largeur <= 0:
+        largeur = (maxx - minx) + 2 * marge + (12 if vis else 0)
+    if hauteur <= 0:
+        hauteur = (maxy - miny) + 2 * marge
+    r = min(4.0, hauteur / 4)
+    base = box(-(largeur / 2 - r), -(hauteur / 2 - r),
+               largeur / 2 - r, hauteur / 2 - r).buffer(r, join_style=1)
+    zone_l = largeur - 2 * marge - (12 if vis else 0)
+    txt = ajuster_dans(txt, zone_l, hauteur - 2 * marge)
+    if vis:  # 4 trous ø4 dans les coins
+        d, inset = 4.0, 6.0
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                c = Point(sx * (largeur / 2 - inset), sy * (hauteur / 2 - inset))
+                base = base.difference(c.buffer(d / 2, resolution=36))
+    return socle_avec_texte(base, unary_union(list(txt.geoms)), ep, ep_texte, grave)
+
+
+def magnet(texte: str, diametre: float = 35, ep: float = 4, ep_texte: float = 1.2,
+           grave: bool = False, d_aimant: float = 10.2, prof_aimant: float = 2.0) -> trimesh.Trimesh:
+    """Pastille avec LOGEMENT d'aimant creusé au dos (aimant collé/inséré)."""
+    if prof_aimant >= ep - 1.0:
+        raise ValueError("Logement trop profond pour l'épaisseur (min 1 mm de paroi).")
+    disque = Point(0, 0).buffer(diametre / 2, resolution=96)
+    poche = Point(0, 0).buffer(d_aimant / 2, resolution=64)
+    txt = ajuster_dans(texte_multilignes(texte), diametre * 0.74, diametre * 0.52)
+    return socle_avec_texte(disque, unary_union(list(txt.geoms)), ep, ep_texte,
+                            grave, poche_2d=poche, prof_poche=prof_aimant)
