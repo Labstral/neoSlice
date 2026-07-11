@@ -236,6 +236,8 @@ _FR: dict[str, str] = {
     "intent.s_strong_desc":     "Parois + infill augmentés (cubic)",
     "intent.s_ultra":           "Ultra Solide",
     "intent.s_ultra_desc":      "Résistance maximale — gyroid 80%",
+    "intent.prereq_tip": ("Validez d'abord l'imprimante, le filament et le "
+                          "plateau (étape ①)."),
     "intent.s_litho":           "Lithophanie",
     "intent.s_litho_desc":      "Remplissage 100% imposé — réglé par neoSlice",
     "litho.banner": ("◈ PROFIL LITHOPHANIE — remplissage 100%, 4 parois, parois "
@@ -1505,6 +1507,8 @@ _EN: dict[str, str] = {
     "intent.s_strong_desc":     "More walls + infill (cubic)",
     "intent.s_ultra":           "Ultra Strong",
     "intent.s_ultra_desc":      "Maximum strength — gyroid 80%",
+    "intent.prereq_tip": ("First validate the printer, filament and plate "
+                          "(step ①)."),
     "intent.s_litho":           "Lithophane",
     "intent.s_litho_desc":      "100% infill enforced — set by neoSlice",
     "litho.banner": ("◈ LITHOPHANE PROFILE — 100% infill, 4 walls, slow walls and "

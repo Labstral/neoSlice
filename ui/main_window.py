@@ -1640,6 +1640,10 @@ class MainWindow(QMainWindow):
         self._filament_selector.selection_changed.connect(self._on_filament_printer_changed)
         self._filament_selector.printer_confirmed.connect(self._on_printer_confirmed)
         self._filament_selector.filament_confirmed.connect(self._on_filament_confirmed)
+        # Étape ① validée -> déverrouille « Générer configuration » (les pièces
+        # neoGen chargent sans passer par le glisser-déposer qui imposait ça)
+        self._filament_selector.printer_confirmed.connect(self._maj_prerequis_generation)
+        self._filament_selector.filament_confirmed.connect(self._maj_prerequis_generation)
         layout.addWidget(self._filament_selector)
 
         sep0 = QFrame()
@@ -2709,6 +2713,14 @@ class MainWindow(QMainWindow):
         self._statusbar.clear_diagnostic_result()
         self._statusbar.set_message(_("status.ready"), TELE_GREEN)
 
+    def _maj_prerequis_generation(self):
+        """« Générer configuration » n'est actif que si l'étape ① (imprimante,
+        filament, plateau) est validée — voir set_prerequis."""
+        try:
+            self._intent_selector.set_prerequis(self._filament_selector.est_valide())
+        except Exception:
+            pass
+
     def _on_stl_dropped(self, path: Path):
         """Démarre le chargement STL en thread — feedback immédiat, zéro freeze UI."""
         logger.info(f"STL reçu : {path}")
@@ -2722,6 +2734,7 @@ class MainWindow(QMainWindow):
         try:
             self._intent_selector.set_lithophanie(self._est_lithophanie)
             self._analysis_panel.show_litho_banner(self._est_lithophanie)
+            self._maj_prerequis_generation()
         except Exception:
             pass
 
@@ -3188,12 +3201,10 @@ class MainWindow(QMainWindow):
             # actionnable à nouveau.
             self._refresh_diag_button()
             self._analysis_panel.set_generation_active()
-            _warns = _compute_material_warnings(filament, printer, analysis)
-            if getattr(self, "_est_lithophanie", False):
-                _warns.insert(0, "Profil LITHOPHANIE appliqué : remplissage "
-                                 "100 %, 4 parois, couche fine, parois lentes, "
-                                 "brim — filament BLANC recommandé")
-            self._analysis_panel.show_material_warnings(_warns)
+            # (l'info lithophanie n'est PAS répétée ici : la bannière cyan
+            # au-dessus du viewer récapitule déjà tout le profil)
+            self._analysis_panel.show_material_warnings(
+                _compute_material_warnings(filament, printer, analysis))
             self._statusbar.set_message(
                 f"Configuration générée — profil : {config.neoslice_profile_name}",
                 TELE_GREEN,

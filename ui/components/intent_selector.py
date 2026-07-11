@@ -796,7 +796,8 @@ class IntentSelector(QWidget):
                 g.mark_conflict(False)
 
         has_error = any(c[0] == "error" for c in conflicts)
-        self._btn.setEnabled(bool(selected_ids) and not has_error)
+        self._btn.setEnabled(bool(selected_ids) and not has_error
+                             and getattr(self, "_prerequis_ok", True))
         self._save_btn.setEnabled(bool(selected_ids))
         _bp = _T.palette()
         if has_error:
@@ -1080,11 +1081,21 @@ class IntentSelector(QWidget):
         else:
             self._on_selection_changed()
 
+    def set_prerequis(self, ok: bool) -> None:
+        """Verrouille « Générer configuration » tant que l'étape ① (imprimante,
+        filament, plateau) n'est pas VALIDÉE. Les pièces neoGen arrivent dans
+        le viewer sans passer par le glisser-déposer qui imposait cette étape —
+        sans ce verrou, on pouvait générer/exporter sans imprimante choisie."""
+        self._prerequis_ok = ok
+        self._btn.setToolTip("" if ok else _("intent.prereq_tip"))
+        self._on_selection_changed()          # ré-évalue l'état du bouton
+
     def enable_generate(self, enabled: bool):
         ids = self._get_selected_ids()
         conflicts = _check_conflicts(ids)
         has_error = any(c[0] == "error" for c in conflicts)
-        self._btn.setEnabled(enabled and bool(ids) and not has_error)
+        self._btn.setEnabled(enabled and bool(ids) and not has_error
+                             and getattr(self, "_prerequis_ok", True))
 
     def set_lithophanie(self, actif: bool) -> None:
         """Mode LITHOPHANIE : la résistance est imposée par le code (remplissage

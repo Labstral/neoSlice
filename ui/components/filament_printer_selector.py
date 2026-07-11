@@ -563,6 +563,12 @@ class FilamentPrinterSelector(QWidget):
             return
         self._printer_combo.set_current_key(name, emit=False)
 
+    def est_valide(self) -> bool:
+        """Étape ① complète : imprimante ET filament validés (✓) — le plateau
+        reçoit alors sa valeur par défaut. Sert à verrouiller la génération
+        pour les pièces qui arrivent SANS glisser-déposer (neoGen)."""
+        return bool(self._printer_done and self._filament_done)
+
     def current_printer(self) -> str:
         return self._printer_combo.current_key()
 
