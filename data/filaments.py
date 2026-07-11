@@ -530,3 +530,105 @@ def filament_density(name: str | None) -> float:
     if fil and "densite" in fil:
         return float(fil["densite"])
     return _DENSITES.get(name, 1.24)
+
+
+# ═══════════════ Bibliothèque de MARQUES (produits fabricants) ═══════════════
+# Un PRODUIT (« Sunlu Easy PA ») = un matériau de BASE (« Nylon ») + les
+# surcharges de la fiche technique fabricant. Il HÉRITE de toutes les
+# protections de sa base (ventilation, vitesses, warnings) — le code borne
+# chaque valeur : une fiche aberrante est simplement écartée.
+# Sources : data/filament_brands.json (embarqué) puis
+# ~/.neoslice/filaments/brands.json (mise à jour distante, sans rebuild —
+# voir core/filaments_maj.py) si sa version est plus récente.
+MARQUES_VERSION: str = ""
+
+_BORNES_PRODUIT: dict[str, tuple[float, float]] = {
+    "buse_1ere": (170, 320), "buse_autres": (170, 320),
+    "plateau": (0, 120), "volumetrique_max": (2, 40),
+    "rapport_debit": (0.85, 1.15), "densite": (0.8, 2.0),
+    "ventilateur_max": (0, 100), "ventilateur_seuil_mini": (0, 100),
+}
+_CHAMPS_PRODUIT = set(_BORNES_PRODUIT) | {
+    "sechage", "enceinte_requise", "notes", "warnings", "bs_preset",
+}
+
+
+def base_materiau(nom: str) -> str:
+    """Matériau GÉNÉRIQUE d'un nom de filament : un produit de marque renvoie
+    sa base (« Sunlu Easy PA » -> « Nylon »), un générique se renvoie lui-même.
+    Sert aux tables de sécurité du moteur et aux presets des slicers."""
+    e = FILAMENTS.get(nom)
+    if not e:
+        return nom
+    return e.get("base", nom)
+
+
+def _charger_marques() -> None:
+    global MARQUES_VERSION
+    import json as _json
+    from pathlib import Path as _Path
+    sources = (_Path(__file__).parent / "filament_brands.json",
+               _Path.home() / ".neoslice" / "filaments" / "brands.json")
+    data = None
+    for src in sources:            # la version la plus récente gagne
+        try:
+            d = _json.loads(src.read_text(encoding="utf-8"))
+            if isinstance(d.get("marques"), dict) and (
+                    data is None
+                    or str(d.get("version", "")) > str(data.get("version", ""))):
+                data = d
+        except Exception:
+            continue
+    if not data:
+        return
+    MARQUES_VERSION = str(data.get("version", ""))
+    for marque, produits in data["marques"].items():
+        if not isinstance(produits, dict):
+            continue
+        for produit, spec in produits.items():
+            base = FILAMENTS.get(spec.get("base", "")) if isinstance(spec, dict) else None
+            if not base:
+                continue                      # base inconnue -> produit écarté
+            entree = dict(base)
+            entree["warnings"] = list(base.get("warnings", []))
+            valide = True
+            for k, v in spec.items():
+                if k in ("base", "source", "label") or k not in _CHAMPS_PRODUIT:
+                    continue
+                if k in _BORNES_PRODUIT:
+                    try:
+                        v = float(v)
+                    except (TypeError, ValueError):
+                        valide = False
+                        break
+                    lo, hi = _BORNES_PRODUIT[k]
+                    if not (lo <= v <= hi):
+                        valide = False
+                        break
+                    if k not in ("rapport_debit", "densite"):
+                        v = int(v)
+                if k == "warnings":
+                    entree["warnings"] += [str(w) for w in v]
+                else:
+                    entree[k] = v
+            if not valide:
+                continue
+            entree["base"] = str(spec["base"])
+            entree["marque"] = str(marque)
+            entree["famille"] = str(marque)   # groupe d'affichage = la marque
+            entree["label"] = spec.get("label", f"{marque} {produit}")
+            FILAMENTS[f"{marque} {produit}"] = entree
+            if marque not in FAMILLES_ORDRE:
+                FAMILLES_ORDRE.append(str(marque))
+
+
+def recharger_marques() -> None:
+    """Recharge la bibliothèque après une mise à jour distante : retire les
+    anciens produits (entrées avec `marque`) puis recharge les sources."""
+    for cle in [k for k, v in FILAMENTS.items() if v.get("marque")]:
+        del FILAMENTS[cle]
+    del FAMILLES_ORDRE[6:]                    # les 6 familles génériques restent
+    _charger_marques()
+
+
+_charger_marques()

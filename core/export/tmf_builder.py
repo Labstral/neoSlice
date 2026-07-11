@@ -879,11 +879,23 @@ class ThreeMFBuilder:
             "Nylon": "PA", "TPE": "TPU",
             "PLA Bois": "PLA", "PLA Métallique": "PLA",
         }
-        from data.filaments import FILAMENTS as _FILS, filament_density as _dens
+        from data.filaments import (FILAMENTS as _FILS, base_materiau as _base_mat,
+                                    filament_density as _dens)
         _fil = _FILS.get(filament_ui_name, {})
+        _base = _base_mat(filament_ui_name)   # produit de marque -> matériau de base
         _b1 = int(_fil.get("buse_1ere", 220))
         _bn = int(_fil.get("buse_autres", _b1))
         _bed = int(_fil.get("plateau", 60))
+        # Id du slot : preset RÉEL pour un filament Bambu (BS recharge le sien),
+        # id INCONNU de BS pour un produit tiers (« neoSlice Sunlu Easy PA » ->
+        # BS garde NOS valeurs fiche fabricant, comme pour print_settings_id),
+        # preset générique du matériau sinon.
+        if _fil.get("bs_preset"):
+            _fil_id = str(_fil["bs_preset"])
+        elif _fil.get("marque"):
+            _fil_id = f"neoSlice {filament_ui_name}"
+        else:
+            _fil_id = _FILAMENT_BBL_NAMES.get(filament_ui_name, "Generic PLA")
         _filament_strip = [k for k in project_settings
                            if k.startswith("filament_") or k.startswith("default_filament_")]
         _filament_strip += [
@@ -894,10 +906,9 @@ class ThreeMFBuilder:
         for _k in _filament_strip:
             project_settings.pop(_k, None)
         project_settings.update({
-            "filament_settings_id": [_FILAMENT_BBL_NAMES.get(filament_ui_name, "Generic PLA")],
+            "filament_settings_id":              [_fil_id],
             "filament_colour":                   ["#FFFFFF"],
-            "filament_type": [_BS_FIL_TYPE.get(filament_ui_name,
-                                               filament_ui_name if _fil else "PLA")],
+            "filament_type": [_BS_FIL_TYPE.get(_base, _base if _fil else "PLA")],
             "filament_diameter":                 ["1.75"],
             "filament_density":                  [f"{_dens(filament_ui_name):.2f}"],
             "filament_flow_ratio":               [str(_fil.get("rapport_debit", 0.98))],
@@ -907,7 +918,7 @@ class ThreeMFBuilder:
             "nozzle_temperature_initial_layer":  [str(_b1)],
             "nozzle_temperature_range_high":     [str(max(_b1, _bn) + 20)],
             "nozzle_temperature_range_low":      [str(min(_b1, _bn) - 30)],
-            "required_nozzle_HRC": ["40" if filament_ui_name.endswith("-CF") else "3"],
+            "required_nozzle_HRC": ["40" if _base.endswith("-CF") else "3"],
         })
         # Ventilation + températures de plateau : valeurs du matériau, posées
         # UNIQUEMENT sur les clés déjà présentes dans le template (noms garantis

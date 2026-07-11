@@ -1,0 +1,76 @@
+{
+  "version": "2026-07-12",
+  "notes": "Base initiale neoSlice — valeurs médianes des fiches techniques fabricants. Un produit hérite de TOUTES les protections de son matériau de base (ventilation, vitesses, warnings) et ne surcharge que ce que le fabricant spécifie.",
+  "marques": {
+    "Sunlu": {
+      "PLA+": {
+        "base": "PLA",
+        "buse_1ere": 220, "buse_autres": 215, "plateau": 60,
+        "source": "Fiche technique Sunlu PLA+ (210-230°C)"
+      },
+      "PETG": {
+        "base": "PETG",
+        "buse_1ere": 240, "buse_autres": 235, "plateau": 75,
+        "source": "Fiche technique Sunlu PETG (220-250°C)"
+      },
+      "Easy PA": {
+        "base": "Nylon",
+        "buse_1ere": 265, "buse_autres": 260, "plateau": 70,
+        "enceinte_requise": false,
+        "sechage": "70°C / 8h recommandé avant impression",
+        "notes": "PA « facile » basse déformation — imprimable sur machine ouverte, sans enceinte.",
+        "source": "Fiche technique Sunlu Easy PA (250-270°C)"
+      }
+    },
+    "eSUN": {
+      "PLA+": {
+        "base": "PLA",
+        "buse_1ere": 215, "buse_autres": 210, "plateau": 60,
+        "source": "Fiche technique eSUN PLA+ (205-225°C)"
+      },
+      "PETG": {
+        "base": "PETG",
+        "buse_1ere": 240, "buse_autres": 235, "plateau": 75,
+        "source": "Fiche technique eSUN PETG (230-250°C)"
+      }
+    },
+    "Polymaker": {
+      "PolyLite PLA": {
+        "base": "PLA",
+        "buse_1ere": 215, "buse_autres": 210, "plateau": 55,
+        "source": "Fiche technique Polymaker PolyLite PLA (190-230°C)"
+      },
+      "PolyLite PETG": {
+        "base": "PETG",
+        "buse_1ere": 235, "buse_autres": 230, "plateau": 70,
+        "source": "Fiche technique Polymaker PolyLite PETG (230-240°C)"
+      }
+    },
+    "Prusament": {
+      "PLA": {
+        "base": "PLA",
+        "buse_1ere": 215, "buse_autres": 210, "plateau": 60,
+        "source": "Fiche technique Prusament PLA (200-220°C)"
+      },
+      "PETG": {
+        "base": "PETG",
+        "buse_1ere": 250, "buse_autres": 245, "plateau": 80,
+        "source": "Fiche technique Prusament PETG (240-260°C)"
+      }
+    },
+    "Bambu Lab": {
+      "PLA Basic": {
+        "base": "PLA",
+        "buse_1ere": 220, "buse_autres": 220, "plateau": 55,
+        "bs_preset": "Bambu PLA Basic",
+        "source": "Profil système Bambu Studio"
+      },
+      "PETG Basic": {
+        "base": "PETG",
+        "buse_1ere": 250, "buse_autres": 245, "plateau": 70,
+        "bs_preset": "Bambu PETG Basic",
+        "source": "Profil système Bambu Studio"
+      }
+    }
+  }
+}

@@ -367,8 +367,12 @@ class ParameterEngine:
     ) -> PrintConfig:
         """Applique les contraintes physiques du matériau. Priorité maximale."""
         try:
-            from data.filaments import FILAMENTS
+            from data.filaments import FILAMENTS, base_materiau
             fil = FILAMENTS.get(filament_name, {})
+            # produit de MARQUE (« Sunlu Easy PA ») : les valeurs viennent de
+            # SA fiche (fil), mais les tables de sécurité ci-dessous jugent son
+            # matériau de BASE (« Nylon » -> haute temp, warping, brim...)
+            filament_name = base_materiau(filament_name)
         except Exception:
             fil = {}
 

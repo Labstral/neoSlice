@@ -53,7 +53,7 @@ def _compute_material_warnings(
     analysis: "AnalysisReport",
 ) -> list[str]:
     """Génère des alertes contextuelles filament + géométrie."""
-    from data.filaments import FILAMENTS
+    from data.filaments import FILAMENTS, base_materiau
     from data.printers import PRINTERS
 
     warns: list[str] = []
@@ -62,6 +62,9 @@ def _compute_material_warnings(
 
     if not fil:
         return warns
+    # produit de marque : les valeurs viennent de SA fiche (fil), les tests
+    # par nom ci-dessous jugent son matériau de BASE (Sunlu Easy PA -> Nylon)
+    filament = base_materiau(filament)
 
     # Enceinte requise mais imprimante ouverte
     if fil.get("enceinte_requise") and not prt.get("enceinte"):
@@ -1435,6 +1438,7 @@ class MainWindow(QMainWindow):
     _update_ready = Signal(str, str, str)  # version, url, notes
     # Signal thread-safe : une MAJ de la base de connaissances d'Oen est disponible
     _kb_update_ready = Signal(str)         # kb_version
+    _brands_update_ready = Signal(str)     # version bibliothèque filaments
 
     def __init__(self):
         super().__init__()
@@ -1478,6 +1482,8 @@ class MainWindow(QMainWindow):
         # Oen installe seulement). Non bloquant, hors-ligne-safe.
         self._kb_update_ready.connect(self._on_kb_update_available)
         QTimer.singleShot(6000, self._check_kb_update)
+        self._brands_update_ready.connect(self._on_brands_updated)
+        QTimer.singleShot(9000, self._check_brands_update)
 
         # L'assistant IA lit l'etat courant de l'appli (params + analyse viewer)
         try:
@@ -2354,6 +2360,36 @@ class MainWindow(QMainWindow):
                 pass
 
         threading.Thread(target=_work, daemon=True).start()
+
+    def _check_brands_update(self):
+        """Bibliothèque de filaments par marque : vérifie et APPLIQUE en
+        arrière-plan (contrairement à la KB d'Oen, pas de confirmation — la
+        base est petite, bornée au chargement, et sans effet sur une config
+        déjà générée). 100 % hors-ligne-safe."""
+        import threading
+
+        def _work():
+            try:
+                from core.filaments_maj import verifier_et_appliquer
+                version = verifier_et_appliquer()
+                if version:
+                    self._brands_update_ready.emit(version)
+            except Exception:
+                pass
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _on_brands_updated(self, version: str):
+        """Nouvelle bibliothèque installée : rafraîchit la liste de filaments
+        si l'utilisateur n'a pas encore validé son choix (sinon elle sera à
+        jour au prochain passage — on ne change pas une sélection en cours)."""
+        try:
+            if not getattr(self._filament_selector, "_filament_done", True):
+                self._filament_selector._populate_filaments()
+            self._statusbar.set_message(
+                f"Bibliothèque de filaments mise à jour ({version})", TELE_GREEN)
+        except Exception:
+            pass
 
     def _on_kb_update_available(self, version: str):
         """MAJ de la base d'Oen dispo : toast discret, clic -> gestionnaire de

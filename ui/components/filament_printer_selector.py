@@ -465,7 +465,8 @@ class FilamentPrinterSelector(QWidget):
         if not self._filament_done:
             return
         plate = self.current_plate_type()
-        filament = self.current_filament()
+        from data.filaments import base_materiau
+        filament = base_materiau(self.current_filament())   # marque -> base
         warn = _PLATE_WARNINGS.get(plate, {}).get(filament, "")
         if warn:
             self._plate_warn_lbl.setText(warn)
@@ -761,17 +762,26 @@ def check_compatibility(printer_name: str, filament_name: str) -> tuple[str, str
     filament = FILAMENTS.get(filament_name, {})
     if not printer or not filament:
         return "ok", TELE_GREEN, ""
+    from data.filaments import base_materiau
+    base = base_materiau(filament_name)     # marque -> matériau de base
 
     incompatibles = printer.get("filaments_incompatibles", [])
-    if filament_name in incompatibles:
-        return "error", ERROR_RED, f"✕  {filament_name} incompatible avec {printer_name}"
-
     warnings = []
+    if base in incompatibles:
+        # Une fiche FABRICANT qui annonce « sans enceinte » (ex. Sunlu Easy PA,
+        # PA basse déformation) lève le blocage générique de sa base — on
+        # avertit au lieu d'interdire.
+        if filament.get("marque") and filament.get("enceinte_requise") is False:
+            warnings.append(f"{base} générique déconseillé sur {printer_name} — "
+                            "cette fiche fabricant (basse déformation) permet "
+                            "l'impression ouverte, surveillez l'adhérence")
+        else:
+            return "error", ERROR_RED, f"✕  {filament_name} incompatible avec {printer_name}"
 
     if filament.get("enceinte_requise") and not printer.get("enceinte"):
         warnings.append(f"Enceinte requise — {printer_name} est ouvert")
 
-    if filament_name in ("TPU", "TPE") and printer.get("ams"):
+    if base in ("TPU", "TPE") and printer.get("ams"):
         warnings.append("AMS incompatible — chargement direct requis")
 
     plateau_req = filament.get("plateau", 0)
