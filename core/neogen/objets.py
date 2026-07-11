@@ -111,32 +111,31 @@ def boite(diametre: float = 50, hauteur: float = 30, paroi: float = 2.0,
 
 
 # ── SUPPORT DE TÉLÉPHONE : profil incliné extrudé ────────────────────────────
-def support_tel(largeur: float = 70, angle_deg: float = 62, ep: float = 8) -> trimesh.Trimesh:
-    """Support téléphone « coin » : dossier massif incliné + VRAIE FENTE
-    d'insertion de 13 mm (téléphone avec coque) parallèle au dossier, lèvre
-    avant de retenue. Le téléphone se GLISSE dans la fente le long de la
-    pente — l'ancien « creux » de 4 mm ne laissait rien entrer. Aucune face
-    en surplomb : la fente est ouverte vers le haut."""
-    from shapely.geometry import LineString
-    from shapely.ops import unary_union
+def support_tel(largeur: float = 70, angle_deg: float = 65, ep: float = 8) -> trimesh.Trimesh:
+    """Support téléphone SIMPLE : dossier en coin dont la face avant est une
+    RAMPE DROITE sur toute sa longueur (le téléphone s'y appuie), petite lèvre
+    de retenue à l'avant et cuvette où repose le bas du téléphone. Aucune fente,
+    aucune collerette : un seul profil convexe, imprimable posé sur sa base."""
     a = np.radians(angle_deg)
-    cot = 1.0 / np.tan(a)
-    h = 90.0
-    base = h * cot + 34.0                     # profondeur totale au sol
-    tri = Polygon([(0, 0), (base, 0), (0, h)])          # coin plein
-    talon = box(base - 26.0, 0, base + 4.0, 26.0)        # lèvre avant rehaussée
-    corps = unary_union([tri, talon])
-    # fente : bande de 13 mm le long de la direction du dossier, fond à y=7
-    p0 = np.array([base - 19.0, 0.0])
-    d = np.array([-cot, 1.0]); d /= np.linalg.norm(d)
-    fente = LineString([tuple(p0), tuple(p0 + d * h * 1.4)]).buffer(6.5, cap_style=2)
-    fente = fente.intersection(box(-10, 7.0, base + 20, h * 1.5))
-    poly = corps.difference(fente)
-    if isinstance(poly, MultiPolygon):
-        poly = max(poly.geoms, key=lambda g: g.area)
-    poly = poly.buffer(1.5, join_style=1).buffer(-1.5, join_style=1)  # angles adoucis
-    piece = trimesh.util.concatenate(_extruder(poly, largeur))
-    # profil construit en XY, extrudé en Z -> on le COUCHE : rotation -90° sur X
+    cot = 1.0 / np.tan(a)                      # recul horizontal par mm de hauteur
+    h = 92.0                                   # hauteur du dossier
+    y_cuv = 6.0                                # fond de la cuvette d'appui
+    x_lip0, x_lip1 = 0.0, 8.0                  # lèvre de retenue (avant)
+    h_lip = 15.0
+    x_ramp = 20.0                              # départ de la rampe droite
+    x_apex = x_ramp + h * cot                  # sommet du dossier
+    x_back = x_apex + 22.0                     # pied arrière au sol
+    # profil (X = profondeur, Y = hauteur), sens antihoraire — UNE rampe droite
+    # unique de (x_ramp, y_cuv) à (x_apex, h) : aucune cassure.
+    prof = Polygon([
+        (x_lip0, 0.0), (x_lip0, h_lip), (x_lip1, h_lip), (x_lip1, y_cuv),
+        (x_ramp, y_cuv), (x_apex, h), (x_back, h * 0.34), (x_back, 0.0),
+    ])
+    prof = prof.buffer(1.5, join_style=1).buffer(-1.5, join_style=1)   # angles doux
+    if isinstance(prof, MultiPolygon):
+        prof = max(prof.geoms, key=lambda g: g.area)
+    piece = trimesh.util.concatenate(_extruder(prof, largeur))
+    # profil en XY -> on le dresse : la hauteur (Y) devient verticale (Z)
     piece.apply_transform(trimesh.transformations.rotation_matrix(np.radians(90), [1, 0, 0]))
     piece.apply_translation(-piece.bounds[0])
     return piece

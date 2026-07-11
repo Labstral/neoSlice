@@ -206,8 +206,8 @@ class NeoGenPanel(QWidget):
         # exemples : chacun correspond à un objet de la bibliothèque
         grille = QGridLayout()
         grille.setSpacing(5)
-        exemples = ["neogen.ex1", "neogen.ex2", "neogen.ex3",
-                    "neogen.ex_free1", "neogen.ex_free2"]
+        # 4 exemples (grille 2×2), chacun tombe sur un objet réel de la biblio
+        exemples = ["neogen.ex1", "neogen.ex2", "neogen.ex3", "neogen.ex_free1"]
         for i, cle in enumerate(exemples):
             txt = _(cle)
             b = QPushButton(txt)
