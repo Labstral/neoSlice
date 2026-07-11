@@ -28,6 +28,9 @@ DOMAINES = [
     ("deco",    "Décoration", "Decoration"),
     ("jeux",    "Jeux & loisirs", "Games & hobbies"),
     ("atelier", "Atelier & fixation", "Workshop & fixing"),
+    ("resto",   "Restauration", "Restaurant"),
+    ("mariage", "Mariage & événementiel", "Wedding & events"),
+    ("commerce", "Boutique & bureau pro", "Shop & pro office"),
 ]
 
 
@@ -414,6 +417,35 @@ CATALOGUE = [
        choix=[("taille", "Taille", "Size",
                [("M6", "M6", "M6"), ("M8", "M8", "M8"),
                 ("M10", "M10", "M10"), ("M12", "M12", "M12")], "M8")]),
+
+    # ── Restauration ──
+    _e("numero_table", "Numéro de table", "Table number", "resto",
+       _f("pro_resto", "numero_table"), texte="requis",
+       params=[_P("hauteur", "Hauteur chiffres", "Digit height", 40, 140, 80, 5),
+               _P("ep", "Épaisseur", "Thickness", 6, 16, 10, 1)]),
+    _e("chevalet", "Chevalet « Réservé »", "“Reserved” sign", "resto",
+       _f("pro_resto", "chevalet"), texte="optionnel",
+       params=[_P("largeur", "Largeur", "Width", 60, 140, 95, 5),
+               _P("hauteur", "Hauteur", "Height", 35, 90, 55, 5)],
+       flags=[("grave", "Texte gravé", "Engraved text", False)]),
+    _e("porte_menu", "Porte-menu (fente)", "Menu holder (slot)", "resto",
+       _f("pro_resto", "porte_menu"),
+       params=[_P("largeur", "Largeur", "Width", 70, 160, 100, 5),
+               _P("hauteur", "Hauteur", "Height", 30, 70, 45, 5)]),
+    _e("porte_addition", "Porte-addition", "Bill presenter", "resto",
+       _f("pro_resto", "porte_addition"),
+       params=[_P("largeur", "Largeur", "Width", 70, 130, 95, 5),
+               _P("hauteur", "Hauteur", "Height", 45, 90, 60, 5)]),
+    _e("marque_place", "Marque-place", "Place card", "resto",
+       _f("pro_resto", "marque_place"), texte="optionnel",
+       params=[_P("largeur", "Largeur", "Width", 50, 100, 70, 5),
+               _P("hauteur", "Hauteur", "Height", 18, 45, 26, 2)],
+       flags=[("grave", "Texte gravé", "Engraved text", False)]),
+    _e("porte_couverts", "Bac à couverts", "Cutlery caddy", "resto",
+       _f("pro_resto", "porte_couverts"),
+       params=[_P("longueur", "Longueur", "Length", 120, 250, 180, 10),
+               _P("largeur", "Largeur", "Width", 40, 90, 55, 5),
+               _P("hauteur", "Hauteur", "Height", 30, 70, 45, 5)]),
 ]
 
 # Réglage « relief / gravure » (hauteur du texte en relief OU profondeur de
@@ -475,6 +507,13 @@ _SYNONYMES: dict[str, str] = {
     "rond_serviette": "rond serviette table anneau",
     "repose_cuillere": "repose cuillere cuisine louche",
     "range_cable": "range cable bobine enrouleur",
+    # restauration
+    "numero_table": "numero table restaurant chiffre pied",
+    "chevalet": "chevalet reserve reserved tente pancarte panneau menu jour ardoise",
+    "porte_menu": "porte menu carte support fente restaurant",
+    "porte_addition": "porte addition note ticket presentoir cheque paiement restaurant",
+    "marque_place": "marque place nom invite convive table nominatif",
+    "porte_couverts": "bac couverts serviettes caisson compartiment restaurant table",
 }
 # index normalisé id -> ensemble de mots-clés (nom FR + EN + synonymes)
 _INDEX_RECHERCHE: dict[str, set] = {}
