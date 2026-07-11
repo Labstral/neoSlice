@@ -166,6 +166,20 @@ def main():
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
 
+    # VTK (moteur du viewer 3D) écrit ses avertissements OpenGL sur la console
+    # (ex. « deprecated pixel format used… ») — bruit inutile pour l'utilisateur.
+    # On les REDIRIGE vers un fichier log (sans les masquer : consultables au
+    # besoin), plutôt que de tout couper via GlobalWarningDisplayOff.
+    try:
+        import tempfile
+        import vtkmodules.vtkCommonCore as _vtkcc
+        _vtk_log = str(Path(tempfile.gettempdir()) / "neoSlice_vtk.log")
+        _ow = _vtkcc.vtkFileOutputWindow()
+        _ow.SetFileName(_vtk_log)
+        _vtkcc.vtkOutputWindow.SetInstance(_ow)
+    except Exception:
+        pass
+
     # Mode compatibilité : rendu OpenGL LOGICIEL (Mesa, livré par PySide6). Pour les
     # machines dont la carte graphique ne gère pas l'affichage 3D. Le viewer VTK passe
     # par un QOpenGLWidget, donc forcer Qt en logiciel force aussi le rendu 3D en
