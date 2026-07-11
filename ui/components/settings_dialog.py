@@ -491,11 +491,11 @@ class SettingsDialog(QDialog):
         pal = _T.palette()
         try:
             from ui.components.modules_dialog import resume_etat
-            self._modules_status_lbl.setText(resume_etat())
+            self._modules_status_lbl.setTextFormat(Qt.RichText)
+            self._modules_status_lbl.setText(resume_etat())   # noms en vert si installés
         except Exception:
             self._modules_status_lbl.setText("")
-        self._modules_status_lbl.setStyleSheet(
-            f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        self._modules_status_lbl.setStyleSheet("background: transparent;")
         self._modules_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {pal['ACCENT']}; color: #ffffff; border: none;

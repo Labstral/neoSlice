@@ -131,16 +131,24 @@ class _KBUpdateWorker(QThread):
 
 
 # ═══════════════════════════ État (résumé réglages) ═════════════════════════
-def resume_etat() -> str:
-    """Résumé compact pour la fenêtre Paramètres : « Oen ✓ · neoGen ✗ »."""
+def etat_modules() -> list[tuple[str, bool]]:
+    """[(nom, installé), ...] — pour le résumé coloré des Paramètres."""
     from core.assistant.engine import AssistantEngine
     from core.assistant.installer import is_installed
     from core.neogen import installation
-    oen = is_installed() or AssistantEngine.available()
-    ngen = installation.est_installe()
-    def mark(ok):
-        return "✓" if ok else "—"
-    return f"Oen {mark(oen)}   ·   neoGen {mark(ngen)}"
+    return [("Oen", is_installed() or AssistantEngine.available()),
+            ("neoGen", installation.est_installe())]
+
+
+def resume_etat() -> str:
+    """Résumé compact en texte riche : modules installés en VERT."""
+    pal = _T.palette()
+    morceaux = []
+    for nom, ok in etat_modules():
+        coul = pal["TELE_GREEN"] if ok else pal["TEXT_SECONDARY"]
+        marque = "✓" if ok else "—"
+        morceaux.append(f"<span style='color:{coul};'>{nom} {marque}</span>")
+    return "&nbsp;&nbsp;·&nbsp;&nbsp;".join(morceaux)
 
 
 # ═══════════════════════════════ Dialogue ════════════════════════════════════
@@ -194,9 +202,9 @@ class ModulesDialog(QDialog):
         v.setSpacing(6)
         return f, v
 
-    def _titre_carte(self, emoji: str, nom: str, pitch: str) -> QLabel:
+    def _titre_carte(self, nom: str, pitch: str) -> QLabel:
         pal = _T.palette()
-        w = QLabel(f"{emoji}  <b>{nom}</b>  <span style='color:{pal['TEXT_LABEL']};'>— {pitch}</span>")
+        w = QLabel(f"<b>{nom}</b>  <span style='color:{pal['TEXT_LABEL']};'>— {pitch}</span>")
         w.setFont(QFont(FONT_MAIN, 10))
         w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
         w.setTextFormat(Qt.RichText)
@@ -205,7 +213,7 @@ class ModulesDialog(QDialog):
     # ── Carte OEN ─────────────────────────────────────────────────────────────
     def _carte_oen(self) -> QFrame:
         f, v = self._cadre()
-        v.addWidget(self._titre_carte("🤖", "Oen", _("modules.oen_pitch")))
+        v.addWidget(self._titre_carte("Oen", _("modules.oen_pitch")))
         self._assist_status_lbl = QLabel()
         self._assist_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         self._assist_status_lbl.setWordWrap(True)
@@ -238,7 +246,7 @@ class ModulesDialog(QDialog):
     # ── Carte NEOGEN ─────────────────────────────────────────────────────────
     def _carte_neogen(self) -> QFrame:
         f, v = self._cadre()
-        v.addWidget(self._titre_carte("🛠", "neoGen", _("modules.neogen_pitch")))
+        v.addWidget(self._titre_carte("neoGen", _("modules.neogen_pitch")))
         self._neogen_status_lbl = QLabel()
         self._neogen_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         self._neogen_status_lbl.setWordWrap(True)
