@@ -2714,8 +2714,16 @@ class MainWindow(QMainWindow):
         logger.info(f"STL reçu : {path}")
         self._stl_path = path
         # Lithophanie neoGen : reconnue au NOM du fichier -> son profil
-        # d'impression sera appliqué automatiquement à la génération.
+        # d'impression sera appliqué automatiquement à la génération. L'UI le
+        # MONTRE : choix « Lithophanie » sélectionné + groupe Résistance grisé
+        # (volontaire) + bannière récap au-dessus du viewer. Tout revient à la
+        # normale au chargement d'un autre fichier.
         self._est_lithophanie = path.stem.lower().startswith("lithophanie")
+        try:
+            self._intent_selector.set_lithophanie(self._est_lithophanie)
+            self._analysis_panel.show_litho_banner(self._est_lithophanie)
+        except Exception:
+            pass
 
         # ── Feedback instantané (< 1 ms) ────────────────────────────────────
         self._step_stl.set_active()

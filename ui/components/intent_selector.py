@@ -87,6 +87,10 @@ def _make_groups() -> list[tuple[str, list[_Preset]]]:
                     intent={"strength": 0.75}),
             _Preset("strength_ultra", _("intent.s_ultra"),    _("intent.s_ultra_desc"),
                     intent={"strength": 1.0}),
+            # Visible et sélectionné UNIQUEMENT quand une lithophanie est
+            # chargée (set_lithophanie) : le profil est IMPOSÉ par le code.
+            _Preset("strength_litho", _("intent.s_litho"),    _("intent.s_litho_desc"),
+                    intent={}),
         ]),
         (_("intent.group_speed"), [
             _Preset("speed_std",   _("intent.sp_standard"), _("intent.sp_standard_desc"),
@@ -411,6 +415,25 @@ class _Group(QWidget):
             return  # Déjà sélectionné → ne pas toggler
         self._on_choice(preset_id)
 
+    def set_preset_visible(self, preset_id: str, visible: bool) -> None:
+        if preset_id in self._buttons:
+            self._buttons[preset_id].setVisible(visible)
+
+    def set_grise(self, grise: bool) -> None:
+        """Grise et VERROUILLE le groupe (mode lithophanie : les réglages sont
+        imposés par le code, l'utilisateur voit que c'est volontaire)."""
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        self._content.setEnabled(not grise)
+        self._header.setEnabled(not grise)
+        if grise:
+            eff = QGraphicsOpacityEffect(self)
+            eff.setOpacity(0.45)
+            self.setGraphicsEffect(eff)
+            if not self._open:
+                self._toggle()            # groupe OUVERT : le choix imposé se voit
+        else:
+            self.setGraphicsEffect(None)
+
     def get_selected_id(self) -> str | None:
         return self._selected_id
 
@@ -673,6 +696,8 @@ class IntentSelector(QWidget):
 
         # ── Groupes accordéons ─────────────────────────────────────────────
         self._support_group_idx = -1
+        self._strength_group_idx = -1
+        self._litho_actif = False
         for i, (title, presets) in enumerate(_GROUPS):
             g = _Group(title, presets)
             g.selection_changed.connect(self._on_selection_changed)
@@ -681,6 +706,9 @@ class IntentSelector(QWidget):
             # Mémoriser l'index du groupe Supports
             if any(p.id == "support_auto" for p in presets):
                 self._support_group_idx = i
+            if any(p.id == "strength_litho" for p in presets):
+                self._strength_group_idx = i
+                g.set_preset_visible("strength_litho", False)   # litho seulement
 
         # Bannière de conflit — doit exister avant tout select_preset
         self._conflict_banner = _ConflictBanner()
@@ -1058,6 +1086,25 @@ class IntentSelector(QWidget):
         has_error = any(c[0] == "error" for c in conflicts)
         self._btn.setEnabled(enabled and bool(ids) and not has_error)
 
+    def set_lithophanie(self, actif: bool) -> None:
+        """Mode LITHOPHANIE : la résistance est imposée par le code (remplissage
+        100 %, parois lentes...). Le groupe Résistance montre le choix spécial
+        « Lithophanie », GRISÉ et verrouillé — c'est volontaire et visible.
+        Tout revient à la normale au chargement d'un autre fichier."""
+        if self._strength_group_idx < 0 or actif == self._litho_actif:
+            return
+        self._litho_actif = actif
+        g = self._groups[self._strength_group_idx]
+        if actif:
+            g.set_preset_visible("strength_litho", True)
+            g.select_preset("strength_litho")
+            g.set_grise(True)
+        else:
+            g.set_grise(False)
+            if g.get_selected_id() == "strength_litho":
+                g.select_preset("strength_std")
+            g.set_preset_visible("strength_litho", False)
+
     def auto_select_from_analysis(self, report) -> None:
         """Pré-sélectionne les presets selon l'analyse géométrique."""
         overhang  = getattr(report, "overhang_severity", 0.0)
@@ -1068,7 +1115,9 @@ class IntentSelector(QWidget):
 
         self._groups[0].select_preset("quality_std")
 
-        if fragile or overhang > 0.5:
+        if getattr(self, "_litho_actif", False):
+            pass                        # résistance IMPOSÉE par la lithophanie
+        elif fragile or overhang > 0.5:
             self._groups[1].select_preset("strength_high")
         else:
             self._groups[1].select_preset("strength_std")

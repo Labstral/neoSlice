@@ -299,6 +299,13 @@ class AnalysisPanel(QWidget):
         self._status_block.setStyleSheet("background: transparent;")
         root.addWidget(self._status_block)
 
+        # ── Bannière LITHOPHANIE (profil imposé — visible et assumé) ───────
+        self._litho_banner = QLabel()
+        self._litho_banner.setFont(QFont(FONT_MONO, 8))
+        self._litho_banner.setWordWrap(True)
+        self._litho_banner.hide()
+        root.addWidget(self._litho_banner)
+
         # ── Alertes matériau ───────────────────────────────────────────────
         self._material_warn = QLabel()
         # même police/taille que le bloc de statut au-dessus (7 pt dénotait)
@@ -491,6 +498,22 @@ class AnalysisPanel(QWidget):
             color = _T.palette()['TELE_GREEN'] if active else _T.palette()['INACTIVE']
             self._geo[key].setText(value)
             self._geo[key].setStyleSheet(f"color: {color}; background: transparent;")
+
+    def show_litho_banner(self, visible: bool) -> None:
+        """Bande d'information du mode LITHOPHANIE : récapitule le profil
+        imposé et pourquoi la Résistance est verrouillée."""
+        if not visible:
+            self._litho_banner.hide()
+            return
+        pal = _T.palette()
+        cyan = "#22D3EE" if _T.is_dark() else "#0E7490"
+        r, g, b = (int(cyan[i:i + 2], 16) for i in (1, 3, 5))
+        self._litho_banner.setText(_("litho.banner"))
+        self._litho_banner.setStyleSheet(
+            f"color: {cyan}; background: rgba({r},{g},{b},0.10); "
+            f"border-left: 2px solid {cyan}; border-radius: 2px; "
+            f"padding: 4px 8px;")
+        self._litho_banner.show()
 
     def show_material_warnings(self, warnings: list[str]) -> None:
         """Affiche les alertes matériau×géométrie après génération de la config."""
