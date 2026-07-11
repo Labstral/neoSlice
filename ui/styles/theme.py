@@ -374,6 +374,68 @@ def apply_title_bar_theme(widget, is_dark: bool | None = None) -> None:
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
+_ARROW_CACHE: dict[tuple[str, str], str] = {}
+
+
+def arrow_icon(direction: str, couleur: str | None = None) -> str:
+    """Chemin d'une petite flèche (« up »/« down ») PLEINE, teintée `couleur`
+    (défaut = texte du thème), pour QSS `image: url(...)`. Le triangle CSS
+    (border) N'EST PAS rendu par le moteur QSS de Qt : sans image, les flèches
+    de spinbox sont invisibles. Fichiers PNG mis en cache (temp)."""
+    import tempfile
+    from pathlib import Path as _P
+    if couleur is None:
+        couleur = MANAGER.palette()["TEXT_PRIMARY"]
+    cle = (direction, couleur)
+    cached = _ARROW_CACHE.get(cle)
+    if cached and _P(cached).exists():
+        return cached
+    from PySide6.QtGui import QPixmap, QPainter, QPolygon, QColor as _QC2, QBrush
+    from PySide6.QtCore import QPoint, Qt as _Qt2
+    w, h = 14, 9
+    pm = QPixmap(w, h)
+    pm.fill(_Qt2.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(_Qt2.PenStyle.NoPen)
+    p.setBrush(QBrush(_QC2(couleur)))
+    m = 3
+    if direction == "up":
+        tri = QPolygon([QPoint(m, h - m), QPoint(w - m, h - m), QPoint(w // 2, m)])
+    else:
+        tri = QPolygon([QPoint(m, m), QPoint(w - m, m), QPoint(w // 2, h - m)])
+    p.drawPolygon(tri)
+    p.end()
+    chemin = str(_P(tempfile.gettempdir()) /
+                 f"neoslice_arrow_{direction}_{couleur.lstrip('#')}.png")
+    pm.save(chemin, "PNG")
+    _ARROW_CACHE[cle] = chemin
+    return chemin
+
+
+def spinbox_qss(pal: dict, accent: str) -> str:
+    """QSS complet pour QDoubleSpinBox avec flèches VISIBLES (icônes teintées),
+    utilisable dans tout formulaire. `accent` = couleur de survol."""
+    up = arrow_icon("up", pal["TEXT_PRIMARY"]).replace("\\", "/")
+    dn = arrow_icon("down", pal["TEXT_PRIMARY"]).replace("\\", "/")
+    return f"""
+        QDoubleSpinBox::up-button {{ subcontrol-origin: border;
+            subcontrol-position: top right; width: 18px;
+            background: {pal['BG_ELEVATED']};
+            border-left: 1px solid {pal['INACTIVE']};
+            border-top-right-radius: 4px; }}
+        QDoubleSpinBox::down-button {{ subcontrol-origin: border;
+            subcontrol-position: bottom right; width: 18px;
+            background: {pal['BG_ELEVATED']};
+            border-left: 1px solid {pal['INACTIVE']};
+            border-bottom-right-radius: 4px; }}
+        QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
+            background: {accent}; }}
+        QDoubleSpinBox::up-arrow {{ image: url("{up}"); width: 9px; height: 6px; }}
+        QDoubleSpinBox::down-arrow {{ image: url("{dn}"); width: 9px; height: 6px; }}
+    """
+
+
 def score_color(score: float) -> str:
     """Retourne une couleur dynamique selon le score 0→1."""
     pal = MANAGER.palette()

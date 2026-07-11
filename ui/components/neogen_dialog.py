@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.i18n import _, lang
-from ui.styles.theme import MANAGER as _THEME
+from ui.styles.theme import MANAGER as _THEME, spinbox_qss as _spinbox_qss
 
 PRO_CYAN, PRO_VIOLET = "#22D3EE", "#A855F7"
 
@@ -389,16 +389,11 @@ class NeoGenPanel(QWidget):
                 background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
                 border: 1px solid {pal['INACTIVE']}; border-radius: 4px;
                 padding: 3px 6px; min-width: 90px; }}
-            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
-                width: 18px; background: {pal['BG_ELEVATED']};
-                border-left: 1px solid {pal['INACTIVE']}; }}
-            QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
-                background: rgba(34,211,238,0.25); }}
             QComboBox QAbstractItemView {{
                 background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
                 selection-background-color: rgba(34,211,238,0.25);
                 selection-color: {pal['TEXT_PRIMARY']}; }}
-        """
+        """ + _spinbox_qss(pal, "rgba(34,211,238,0.35)")
 
         def _lbl(txt: str) -> QLabel:
             """Label de formulaire à couleur EXPLICITE (l'implicite héritait du
