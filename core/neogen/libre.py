@@ -382,10 +382,6 @@ COOKBOOK = [
      "piece = percer(fusionner(roue, dents), cylindre(8, 20))"),
     ("boite rangement couvercle", "une boite carree",
      "corps = creuser(boite_3d(60, 60, 30), 2)\npiece = corps"),
-    ("tirelire cochon fente piece economies", "une tirelire simple",
-     "corps = cylindre(80, 70)\n"
-     "corps = percer(corps, deplacer(cylindre(75, 65), 0, 0, 2.5))\n"
-     "piece = percer(corps, deplacer(boite_3d(3.5, 40, 30), 0, 0, 60))"),
     ("presse papier", "un presse-papier",
      "piece = fusionner(boite_3d(70, 50, 8), deplacer(demi_sphere(40), 0, 0, 7.8))"),
     ("support bague bijou cone", "un porte-bagues",
