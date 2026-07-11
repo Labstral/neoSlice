@@ -1854,19 +1854,33 @@ class MainWindow(QMainWindow):
         self._maybe_launch_pro_tutorial()
 
     def _open_neogen(self):
-        """Ouvre neoGen (NON-modal : la fenêtre reste ouverte pendant que la
-        pièce se charge au viewer -> l'utilisateur itère « plus grand », « trou
-        de 8 mm »... en voyant le résultat). Instance réutilisée : le contexte
-        de modification survit à une fermeture/réouverture."""
-        from ui.components.neogen_dialog import NeoGenDialog
-        dlg = getattr(self, "_neogen_dlg", None)
-        if dlg is None:
-            dlg = NeoGenDialog(self)
-            dlg.piece_ready.connect(self._on_stl_dropped)
-            self._neogen_dlg = dlg
-        dlg.show()
-        dlg.raise_()
-        dlg.activateWindow()
+        """Bascule la COLONNE DE DROITE entre les paramètres générés et le
+        panneau neoGen : le viewer reste visible en entier pendant qu'on crée
+        et qu'on itère sur une pièce. Instance réutilisée -> le contexte de
+        modification (pièce en cours) survit aux allers-retours."""
+        from ui.components.neogen_dialog import NeoGenPanel
+        panel = getattr(self, "_neogen_panel", None)
+        if panel is None:
+            panel = NeoGenPanel()
+            panel.piece_ready.connect(self._on_stl_dropped)
+            panel.close_requested.connect(self._show_params_panel)
+            self._neogen_panel = panel
+        if self._right_scroll.widget() is panel:
+            self._show_params_panel()          # 2e clic sur NEOGEN = referme
+            return
+        self._right_scroll.takeWidget()        # détache SANS détruire
+        self._right_scroll.setWidget(panel)
+        self._right_scroll.setFixedWidth(400)  # un peu plus large pour le confort
+
+    def _show_params_panel(self):
+        """Rend la colonne de droite aux paramètres générés (état normal)."""
+        if not hasattr(self, "_right_scroll"):
+            return
+        if self._right_scroll.widget() is self._params_preview:
+            return
+        self._right_scroll.takeWidget()
+        self._right_scroll.setWidget(self._params_preview)
+        self._right_scroll.setFixedWidth(320)
 
     def _open_diagnostic(self):
         from ui.components.defect_diagnostic import DefectDiagnosticDialog
@@ -3067,6 +3081,7 @@ class MainWindow(QMainWindow):
             return
 
         logger.info(f"Instructions : {result.human_summary!r}")
+        self._show_params_panel()   # neoGen ouvert ? -> rend la colonne aux paramètres
         self._params_preview.set_loading(True)
         self._analysis_panel.set_generation_busy()
 
