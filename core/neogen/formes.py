@@ -123,6 +123,9 @@ def _texte_sur(piece: trimesh.Trimesh, emp: Polygon, texte: str, z_haut: float,
     centre — sans elle, toute zone décalée de l'origine décalait le texte)."""
     if not texte or not texte.strip():
         return piece
+    from core.neogen import goodies as _g
+    if _g.RELIEF_ACTIF is not None:              # réglage utilisateur « de session »
+        hauteur_relief = max(0.3, float(_g.RELIEF_ACTIF))
     minx, miny, maxx, maxy = emp.bounds
     txt = ajuster_dans(texte_multilignes(texte, police=police),
                        (maxx - minx) * marge_ratio, (maxy - miny) * marge_ratio)
@@ -130,7 +133,7 @@ def _texte_sur(piece: trimesh.Trimesh, emp: Polygon, texte: str, z_haut: float,
     txt_u = unary_union(list(txt.geoms))
     if grave:
         # gravure = on retire une fine tranche sup et on repose la tranche évidée
-        prof = min(hauteur_relief, 1.0)
+        prof = min(hauteur_relief, z_haut - 0.6)   # jamais traversant
         outil = union_solides(_extruder(txt_u, prof + 1.0, z_haut - prof))
         return trimesh.boolean.difference([piece, outil], engine="manifold")
     relief = union_solides(_extruder(txt_u, hauteur_relief + CHEV, z_haut - CHEV))

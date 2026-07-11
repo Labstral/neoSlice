@@ -416,6 +416,15 @@ CATALOGUE = [
                 ("M10", "M10", "M10"), ("M12", "M12", "M12")], "M8")]),
 ]
 
+# Réglage « relief / gravure » (hauteur du texte en relief OU profondeur de
+# gravure) AUTO-injecté dans toute entrée à texte qui n'a pas déjà un tel
+# paramètre — l'utilisateur peut ainsi ajuster le texte sur TOUS les objets.
+for _e_txt in CATALOGUE:
+    if _e_txt["texte"] != "aucun" and not any(
+            pp[0] in ("relief", "ep_texte") for pp in _e_txt["params"]):
+        _e_txt["params"].append(
+            _P("relief", "Relief / gravure", "Relief / engraving", 0.3, 4.0, 1.2, 0.1))
+
 # Index rapide par id
 PAR_ID = {e["id"]: e for e in CATALOGUE}
 
@@ -448,18 +457,27 @@ def construire(entree_id: str, params: dict):
             p["police"] = str(params["police"])
         if "grave" in params and not any(f[0] == "grave" for f in e["flags"]):
             p["grave"] = bool(params.get("grave"))
+        # relief/gravure : le paramètre est nommé « relief » dans les schémas
+        if params.get("relief") is not None:
+            try:
+                p["relief"] = min(4.0, max(0.3, float(params["relief"])))
+            except (TypeError, ValueError):
+                pass
     if e["image"]:
         p["image"] = params.get("image")
         if not p["image"]:
             raise ValueError("image requise")
-    # Police "de session" : atteint TOUS les générateurs à texte (même ceux
-    # sans paramètre `police` dans leur signature — coquetier, trophée...).
+    # « De session » : atteignent TOUS les générateurs à texte (même ceux sans
+    # paramètre dans leur signature — coquetier, trophée...). Police + hauteur
+    # de relief / profondeur de gravure.
     from core.neogen import goodies as _g
     _g.POLICE_ACTIVE = p.get("police")
+    _g.RELIEF_ACTIF = p.get("relief") if e["texte"] != "aucun" else None
     try:
         return e["construire"](p)
     finally:
         _g.POLICE_ACTIVE = None
+        _g.RELIEF_ACTIF = None
 
 
 def generer_fichier(entree_id: str, params: dict):

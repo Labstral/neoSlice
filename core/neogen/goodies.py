@@ -135,11 +135,19 @@ def _extruder(geom, h: float, z: float = 0.0) -> list[trimesh.Trimesh]:
     return out
 
 
+# Hauteur de relief / profondeur de gravure « de session » : posée par
+# catalogue.construire() (comme POLICE_ACTIVE) pour que le réglage atteigne
+# TOUS les objets à texte sans threader un paramètre dans chaque signature.
+RELIEF_ACTIF: float | None = None
+
+
 def socle_avec_texte(socle_2d, texte_2d, ep_socle: float, ep_texte: float,
                      grave: bool, poche_2d=None, prof_poche: float = 0.0,
                      recentrer: bool = True) -> trimesh.Trimesh:
     """Assemble : socle (avec éventuelle POCHE creusée au DOS) + texte relief/gravé.
     Tout en tranches 2D extrudées -> pas de booléens 3D, toujours étanche."""
+    if RELIEF_ACTIF is not None:
+        ep_texte = max(0.3, float(RELIEF_ACTIF))       # réglage utilisateur
     solides = []
     z0 = 0.0
     if poche_2d is not None and prof_poche > 0:
