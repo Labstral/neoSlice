@@ -407,6 +407,19 @@ class NeoGenPanel(QWidget):
             l.setStyleSheet(
                 f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
             return l
+
+        # cases à cocher avec un INDICATEUR dessiné : sans lui, on ne voyait
+        # que la coche — impossible de deviner que c'était cliquable/décochable
+        style_check = f"""
+            QCheckBox {{ color: {pal['TEXT_PRIMARY']}; background: transparent;
+                         spacing: 7px; }}
+            QCheckBox::indicator {{ width: 15px; height: 15px;
+                border: 1px solid {pal['INACTIVE']}; border-radius: 3px;
+                background: {pal['BG_SURFACE']}; }}
+            QCheckBox::indicator:hover {{ border-color: {PRO_CYAN}; }}
+            QCheckBox::indicator:checked {{ background: {PRO_CYAN};
+                border-color: {PRO_CYAN}; }}
+        """
         for (pid, pfr, pen, mini, maxi, defaut, pas) in e["params"]:
             sp = QDoubleSpinBox()
             sp.setRange(mini, maxi)
@@ -430,7 +443,8 @@ class NeoGenPanel(QWidget):
         for (fid, ffr, fen, defaut) in e["flags"]:
             ch = QCheckBox(_fr_en(ffr, fen))
             ch.setChecked(defaut)
-            ch.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+            ch.setCursor(Qt.PointingHandCursor)
+            ch.setStyleSheet(style_check)
             form.addRow("", ch)
             champs[fid] = ch
         if e["texte"] != "aucun":
@@ -453,8 +467,8 @@ class NeoGenPanel(QWidget):
             champs["police"] = cb_pol
             if not any(f[0] == "grave" for f in e["flags"]):
                 ch = QCheckBox(_("neogen.engraved"))
-                ch.setStyleSheet(
-                    f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+                ch.setCursor(Qt.PointingHandCursor)
+                ch.setStyleSheet(style_check)
                 form.addRow("", ch)
                 champs["grave"] = ch
         if e["image"]:
