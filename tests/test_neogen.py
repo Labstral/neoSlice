@@ -172,6 +172,30 @@ def test_installation_marker(tmp_path, monkeypatch):
     assert not I.est_installe()
 
 
+def test_carte_visite_multicouleur():
+    """Carte de visite : socle + un corps par couleur d'élément, tous étanches,
+    et la liste ordonnée des couleurs (couleur de base en tête) pour les slots
+    de filament à l'export."""
+    from core.neogen.carte_visite import CarteSpec, ElementTexte, construire
+    spec = CarteSpec(couleur_base="#1B3A5C", elements=[
+        ElementTexte("Léa Martin", hauteur=6, align_h="gauche", align_v="haut",
+                     couleur="#FFD24A"),
+        ElementTexte("06 12 34 56 78", hauteur=3, align_h="gauche",
+                     align_v="bas", couleur="#FFFFFF"),
+        ElementTexte("contact", hauteur=3, align_h="droite", align_v="bas",
+                     couleur="#FFD24A"),                       # même couleur -> fusion
+    ])
+    scene, couleurs = construire(spec)
+    assert len(scene.geometry) == 3          # socle + 2 couleurs (jaune fusionné)
+    assert couleurs[0] == "#1B3A5C"          # couleur de base en tête
+    assert set(couleurs) == {"#1B3A5C", "#FFD24A", "#FFFFFF"}
+    for g in scene.geometry.values():
+        assert g.is_watertight
+    # carte vide (aucun élément) : juste le socle
+    scene2, couleurs2 = construire(CarteSpec())
+    assert len(scene2.geometry) == 1 and couleurs2 == ["#FFFFFF"]
+
+
 def test_recherche_langage_naturel():
     """La barre « Rechercher » (remplace la création libre par code) : une
     demande en langage naturel tombe sur l'OBJET de bibliothèque le plus proche
