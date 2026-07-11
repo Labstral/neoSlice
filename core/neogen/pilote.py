@@ -37,6 +37,7 @@ CATALOGUE (champ "objet" + parametres autorises, unites en mm sauf indication) :
 - plaque : texte (optionnel, | = saut de ligne), largeur (0=auto), vis (true si trous de vis), grave
 - magnet : texte (optionnel), diametre (defaut 35), aimant_d (diametre logement, defaut 10.2), aimant_p (profondeur, defaut 2)
 - logo : forme (badge/plaque/silhouette, defaut badge), largeur (taille du logo, defaut 40), diametre (si badge), couleurs (2-4, defaut 3) — UNIQUEMENT si une image est jointe
+- photo_relief : largeur (defaut 100), mode (lithophanie ou relief, defaut lithophanie) — photo transformee en plaque relief/lithophanie, UNIQUEMENT si une image est jointe
 - vase : hauteur (defaut 100), diametre (defaut 60), ondulations (defaut 5)
 - boite : forme (ronde ou carree, defaut ronde), diametre (si ronde, defaut 50), cote (si carree), hauteur (defaut 30), jeu (ajustement couvercle en mm : 0.2 normal, 0.15 serre, 0.3 lache)
 - support : largeur (defaut 70) — support de telephone
@@ -83,6 +84,8 @@ _BORNES = {
     "plaque":    {"largeur": (0, 300, 0)},
     "magnet":    {"diametre": (20, 80, 35), "aimant_d": (4, 25, 10.2), "aimant_p": (1, 5, 2.0)},
     "logo":      {"largeur": (15, 150, 40), "diametre": (0, 160, 0), "couleurs": (2, 4, 3)},
+    "photo_relief": {"largeur": (40, 200, 100), "ep_min": (0.4, 2, 0.8),
+                     "ep_max": (1.6, 6, 3.2)},
     "vase":      {"hauteur": (30, 250, 100), "diametre": (30, 150, 60), "ondulations": (0, 12, 5)},
     "boite":     {"diametre": (25, 150, 50), "cote": (25, 150, 50),
                   "hauteur": (12, 120, 30), "jeu": (0.1, 0.5, 0.2)},
@@ -101,7 +104,8 @@ _BORNES = {
 _TEXTE_REQUIS = {"lettre_3d"}   # seul cas où le texte EST l'objet
 # ids routés directement vers le CATALOGUE (générateurs de la bibliothèque)
 _VIA_CATALOGUE = {"entonnoir", "pot_crayons", "pot_fleur", "lettre_3d",
-                  "cuillere", "fourchette", "couteau", "vis", "ecrou"}
+                  "cuillere", "fourchette", "couteau", "vis", "ecrou",
+                  "photo_relief"}
 _ALIAS = {"sous_verre": "sousverre", "portecle": "porte_cle", "porte_cles": "porte_cle",
           "des": "de", "dice": "de", "telephone": "support", "support_telephone": "support"}
 
@@ -163,8 +167,8 @@ def valider(d: dict, image: Path | None = None) -> tuple[str | None, dict, str |
                           "sous-verre, logo, vase, boîte, support téléphone, dé)")
     if objet in _TEXTE_REQUIS and not str(d.get("texte", "")).strip():
         return None, {}, "Quel texte faut-il mettre sur la pièce ?"
-    if objet == "logo" and image is None:
-        return None, {}, "Joins d'abord l'image du logo (bouton « Joindre un logo »)."
+    if objet in ("logo", "photo_relief") and image is None:
+        return None, {}, "Joins d'abord l'image (bouton « Joindre un logo »)."
     params: dict = {}
     if objet in _TEXTE_REQUIS:
         params["texte"] = str(d["texte"]).strip()[:40]
@@ -183,6 +187,10 @@ def valider(d: dict, image: Path | None = None) -> tuple[str | None, dict, str |
         params["image"] = str(image)
         f = str(d.get("forme", "badge")).strip().lower()
         params["forme"] = f if f in ("badge", "plaque", "silhouette") else "badge"
+    if objet == "photo_relief":
+        params["image"] = str(image)
+        m = str(d.get("mode", "lithophanie")).strip().lower()
+        params["mode"] = m if m in ("lithophanie", "relief") else "lithophanie"
     if objet in ("vis", "ecrou"):
         t = str(d.get("taille", "M8")).upper().replace(" ", "")
         params["taille"] = t if t in ("M6", "M8", "M10", "M12") else "M8"

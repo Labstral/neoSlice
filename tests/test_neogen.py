@@ -172,6 +172,28 @@ def test_installation_marker(tmp_path, monkeypatch):
     assert not I.est_installe()
 
 
+def test_photo_relief_lithophanie(tmp_path):
+    """Photo -> plaque lithophanie ÉTANCHE : sombre = épais, clair = fin,
+    cadre rigide, debout par défaut (qualité d'impression)."""
+    import numpy as np
+    from PIL import Image
+    img = tmp_path / "grad.png"
+    Image.fromarray(np.tile(np.linspace(0, 255, 64, dtype=np.uint8), (48, 1)),
+                    "L").save(img)
+    from core.neogen import catalogue as C
+    p = C.construire("photo_relief", {"image": str(img), "largeur": 80})
+    assert p.is_watertight
+    d = p.bounds[1] - p.bounds[0]
+    assert abs(d[0] - 80) < 1
+    assert 3.0 < d[1] < 6.5, "debout : l'épaisseur (cadre inclus) est en Y"
+    # mode relief à plat : socle plein + amplitude
+    p2 = C.construire("photo_relief", {"image": str(img), "largeur": 80,
+                                       "mode": "relief", "debout": False,
+                                       "cadre": False})
+    assert p2.is_watertight
+    assert p2.bounds[1][2] - p2.bounds[0][2] > 3.0
+
+
 def test_maj_cookbook_valide_en_sandbox(tmp_path, monkeypatch):
     """La base d'objets distante : chaque recette est EXECUTEE en sandbox et
     verifiee avant installation — du code dangereux ou casse est ecarte."""
