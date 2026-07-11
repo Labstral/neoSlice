@@ -2000,19 +2000,27 @@ class MainWindow(QMainWindow):
         """Ouvre l'Espace Pro (bobines, devis, clients…). Pro pur → paywall si non débloqué.
         `initial_tab` : clé d'onglet à ouvrir directement (ex. "spools")."""
         from core import licensing
-        if not licensing.est_pro():
-            from ui.components.paywall_dialog import PaywallDialog
-            wall = PaywallDialog(self)
-            wall.exec()
+        # Masquer la sphère Oen (fenêtre OpenGL au premier plan) pendant TOUT le
+        # temps où un modal est ouvert : la laisser flotter au-dessus fait
+        # planter Windows sous charge (crash « Espace Pro pendant l'install »).
+        self._viewer.masquer_sphere_pour_modal(True)
+        try:
             if not licensing.est_pro():
-                return
-            self._topbar.refresh_pro()
+                from ui.components.paywall_dialog import PaywallDialog
+                wall = PaywallDialog(self)
+                wall.exec()
+                if not licensing.est_pro():
+                    return
+                self._topbar.refresh_pro()
 
-        from ui.components.pro_hub import ProHubDialog
-        hub = ProHubDialog(self, devis_context=self._devis_context(), initial_tab=initial_tab)
-        apply_title_bar_theme(hub)
-        # Le centrage sur l'écran est géré par ProHubDialog.showEvent (fiable).
-        hub.exec()
+            from ui.components.pro_hub import ProHubDialog
+            hub = ProHubDialog(self, devis_context=self._devis_context(),
+                               initial_tab=initial_tab)
+            apply_title_bar_theme(hub)
+            # Le centrage sur l'écran est géré par ProHubDialog.showEvent (fiable).
+            hub.exec()
+        finally:
+            self._viewer.masquer_sphere_pour_modal(False)
         self._maybe_launch_pro_tutorial()   # 1re activation → tuto Pro (une fois)
 
     def _devis_context(self) -> dict:

@@ -384,16 +384,23 @@ def should_auto_think(text: str) -> bool:
 
 class AssistantEngine:
     _instance: "AssistantEngine | None" = None
+    _instance_lock = threading.Lock()
 
     def __init__(self):
-        self._lock = threading.Lock()
+        # RLock (réentrant) : stream()/generer tiennent déjà le verrou puis
+        # appellent _ensure_server() qui le reprend -> un Lock simple bloquerait.
+        self._lock = threading.RLock()
         self._server_proc = None
         self._model_ready = False
 
     @classmethod
     def instance(cls) -> "AssistantEngine":
+        # thread-safe : le worker d'installation ET le thread UI peuvent
+        # demander l'instance en même temps (crash « Espace Pro pendant install »)
         if cls._instance is None:
-            cls._instance = cls()
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
 
     @staticmethod
@@ -422,20 +429,24 @@ class AssistantEngine:
         return env
 
     def _ensure_server(self):
-        if self._api_up():
-            return
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        logger.info("[Assistant] demarrage du serveur Ollama local...")
-        self._server_proc = subprocess.Popen(
-            [str(OLLAMA_EXE), "serve"], env=self._ollama_env(),
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            creationflags=_NO_WINDOW)
-        for _ in range(60):
+        # sérialisé : sans le verrou, le worker d'installation et le thread UI
+        # peuvent lancer DEUX `ollama serve` concurrents (course fatale sous
+        # Windows). Double-check du serveur DANS le verrou.
+        with self._lock:
             if self._api_up():
-                logger.info("[Assistant] serveur Ollama pret.")
                 return
-            time.sleep(0.5)
-        raise RuntimeError("Le serveur Ollama ne repond pas.")
+            MODELS_DIR.mkdir(parents=True, exist_ok=True)
+            logger.info("[Assistant] demarrage du serveur Ollama local...")
+            self._server_proc = subprocess.Popen(
+                [str(OLLAMA_EXE), "serve"], env=self._ollama_env(),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=_NO_WINDOW)
+            for _ in range(60):
+                if self._api_up():
+                    logger.info("[Assistant] serveur Ollama pret.")
+                    return
+                time.sleep(0.5)
+            raise RuntimeError("Le serveur Ollama ne repond pas.")
 
     # ── Modele (import du GGUF une seule fois) ────────────────────────────────
     def _model_exists(self) -> bool:

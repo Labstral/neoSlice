@@ -268,6 +268,23 @@ class Viewer3D(QWidget):
         """À appeler quand l'état Pro change (activation) → montre/masque la sphère."""
         self._reposition_strands()
 
+    def masquer_sphere_pour_modal(self, masquer: bool) -> None:
+        """Masque la sphère Oen pendant qu'un DIALOGUE MODAL est ouvert. La
+        sphère est une fenêtre OpenGL top-level TOUJOURS au premier plan
+        (raise_) : la laisser flotter au-dessus d'un modal fait planter Windows
+        quand le système est sous charge (ex. installation d'Oen qui sature le
+        GPU/compositeur) — crash « Espace Pro pendant l'install » signalé.
+        Réentrant : un compteur autorise des modaux imbriqués (paywall→ProHub)."""
+        self._modal_depth = getattr(self, "_modal_depth", 0) + (1 if masquer else -1)
+        self._modal_depth = max(0, self._modal_depth)
+        s = getattr(self, "_strands", None)
+        if s is None:
+            return
+        if self._modal_depth > 0:
+            s.hide()
+        else:
+            self._reposition_strands()
+
     def _reposition_strands(self):
         """Cale l'overlay sphère sur le coin bas-gauche du viewer (coords écran)."""
         s = getattr(self, "_strands", None)
@@ -277,6 +294,11 @@ class Viewer3D(QWidget):
         win = self.window()
         # Gating Pro : en version non-Pro, Oen est masqué (sphère cachée).
         if not self._assistant_enabled():
+            s.hide()
+            return
+        # Un modal est ouvert : la sphère OpenGL ne doit PAS repasser au premier
+        # plan par-dessus lui (crash Windows sous charge — voir masquer_sphere).
+        if getattr(self, "_modal_depth", 0) > 0:
             s.hide()
             return
         if (win is not None and win.isMinimized()) or not self.isVisible():
