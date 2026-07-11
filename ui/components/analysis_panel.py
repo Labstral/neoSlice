@@ -301,7 +301,8 @@ class AnalysisPanel(QWidget):
 
         # ── Alertes matériau ───────────────────────────────────────────────
         self._material_warn = QLabel()
-        self._material_warn.setFont(QFont(FONT_MONO, 7))
+        # même police/taille que le bloc de statut au-dessus (7 pt dénotait)
+        self._material_warn.setFont(QFont(FONT_MONO, 8))
         self._material_warn.setWordWrap(True)
         self._material_warn.setContentsMargins(0, 0, 0, 0)
         self._material_warn.setStyleSheet("background: transparent;")
@@ -496,9 +497,13 @@ class AnalysisPanel(QWidget):
         if warnings:
             lines = ["⚠ " + (w[:78] + "…" if len(w) > 80 else w) for w in warnings]
             self._material_warn.setText("\n".join(lines))
+            # AMBER de la PALETTE ACTIVE : la constante module (palette sombre,
+            # #FFB800) restait jaune vif sur fond clair -> illisible.
+            _am = _T.palette()["AMBER"]
+            _r, _g, _b = (int(_am[i:i + 2], 16) for i in (1, 3, 5))
             self._material_warn.setStyleSheet(
-                f"color: {AMBER}; background: rgba(255,184,0,0.07); "
-                f"border-left: 2px solid {AMBER}; border-radius: 2px; padding: 3px 6px;"
+                f"color: {_am}; background: rgba({_r},{_g},{_b},0.10); "
+                f"border-left: 2px solid {_am}; border-radius: 2px; padding: 3px 6px;"
             )
         else:
             self._material_warn.setText("")

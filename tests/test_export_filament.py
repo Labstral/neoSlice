@@ -68,6 +68,34 @@ def test_bambu_filament_inconnu_retombe_pla(tmp_path):
     assert ps["nozzle_temperature"] == ["220"]
 
 
+def test_inject_3mf_nu_identite_machine(tmp_path):
+    """RÉGRESSION (cadre photo neoGen) : un 3MF SANS réglages internes (écrit
+    par trimesh) injecté vers X1C doit déclarer la X1C. Avant : la sortie
+    n'avait AUCUN project_settings (la boucle ne faisait que REMPLACER) et
+    Bambu Studio retombait sur sa dernière imprimante (A1 chez l'utilisateur,
+    X1C sélectionnée dans neoSlice)."""
+    import json as _json
+    import zipfile as _zip
+    from core.export.tmf_builder import ThreeMFBuilder, _find_bambu_template
+    if not _find_bambu_template():
+        pytest.skip("Bambu Studio non installé (pas de template)")
+    src = tmp_path / "piece_neogen.3mf"
+    sc = trimesh.Scene()
+    sc.add_geometry(trimesh.creation.box((20, 20, 10)), geom_name="cadre")
+    sc.add_geometry(trimesh.creation.box((15, 15, 2)).apply_translation((30, 0, 0)),
+                    geom_name="fond")
+    sc.export(src)
+    out = tmp_path / "out.3mf"
+    ThreeMFBuilder().inject_settings_into_3mf(
+        src, PrintConfig(), out,
+        printer_ui_name="X1 Carbon", filament_ui_name="Nylon")
+    ps = _json.loads(_zip.ZipFile(out).read("Metadata/project_settings.config"))
+    assert ps["printer_model"] == "Bambu Lab X1 Carbon"
+    assert ps["printer_settings_id"].startswith("Bambu Lab X1 Carbon")
+    assert ps["filament_settings_id"] == ["Generic PA"]     # matériau suivi aussi
+    assert len(ps) > 300, "base = template complet, pas un fichier quasi vide"
+
+
 def test_prusa_ventilation_suit_le_materiau():
     from core.export.prusa_3mf_builder import _config_to_prusa
     o = _config_to_prusa(PrintConfig(), {}, 0.4, filament_name="Nylon")
