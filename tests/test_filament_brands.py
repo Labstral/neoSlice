@@ -68,6 +68,19 @@ def test_export_3mf_produit_marque(tmp_path):
     assert ps2["filament_type"] == ["PLA"]
 
 
+def test_couverture_bibliotheque():
+    """La bibliothèque doit rester LARGE : toutes marques, tous matériaux
+    (retour utilisateur : « pas seulement du PLA et du PETG »)."""
+    produits = {k: v for k, v in F.FILAMENTS.items() if v.get("marque")}
+    assert len(produits) >= 80
+    assert len({v["marque"] for v in produits.values()}) >= 18
+    bases = {v["base"] for v in produits.values()}
+    for m in ("PLA", "PETG", "ABS", "ASA", "TPU", "Nylon", "PC", "PA-CF"):
+        assert m in bases, f"matériau {m} absent de la bibliothèque"
+    for k, v in produits.items():
+        assert v["buse_autres"] <= v["buse_1ere"], k
+
+
 def test_compat_easy_pa_imprimante_ouverte():
     """Le Nylon générique est BLOQUÉ sur une imprimante ouverte, mais une fiche
     fabricant « sans enceinte » (Easy PA basse déformation) passe en simple

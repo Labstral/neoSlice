@@ -1,76 +1,240 @@
 {
-  "version": "2026-07-12",
-  "notes": "Base initiale neoSlice — valeurs médianes des fiches techniques fabricants. Un produit hérite de TOUTES les protections de son matériau de base (ventilation, vitesses, warnings) et ne surcharge que ce que le fabricant spécifie.",
+  "version": "2026-07-13",
+  "notes": "Base neoSlice — valeurs médianes des fiches techniques fabricants (recherches juillet 2026). Un produit hérite de TOUTES les protections de son matériau de base et ne surcharge que ce que le fabricant spécifie. Les exotiques sont volontairement prudents.",
   "marques": {
     "Sunlu": {
-      "PLA+": {
-        "base": "PLA",
-        "buse_1ere": 220, "buse_autres": 215, "plateau": 60,
-        "source": "Fiche technique Sunlu PLA+ (210-230°C)"
-      },
-      "PETG": {
-        "base": "PETG",
-        "buse_1ere": 240, "buse_autres": 235, "plateau": 75,
-        "source": "Fiche technique Sunlu PETG (220-250°C)"
-      },
-      "Easy PA": {
-        "base": "Nylon",
-        "buse_1ere": 265, "buse_autres": 260, "plateau": 70,
-        "enceinte_requise": false,
-        "sechage": "70°C / 8h recommandé avant impression",
-        "notes": "PA « facile » basse déformation — imprimable sur machine ouverte, sans enceinte.",
-        "source": "Fiche technique Sunlu Easy PA (250-270°C)"
-      }
+      "PLA+": {"base": "PLA", "buse_1ere": 220, "buse_autres": 215, "plateau": 60,
+               "source": "Fiche Sunlu PLA+ (210-230°C)"},
+      "PLA Silk": {"base": "PLA", "buse_1ere": 215, "buse_autres": 210, "plateau": 60,
+                   "notes": "Brillance soie : ralentir un peu pour un fini uniforme.",
+                   "source": "Fiche Sunlu Silk (200-230°C)"},
+      "Wood PLA": {"base": "PLA Bois", "buse_1ere": 205, "buse_autres": 200, "plateau": 60,
+                   "source": "Fiche Sunlu Wood (190-220°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 240, "buse_autres": 235, "plateau": 75,
+               "source": "Fiche Sunlu PETG (220-250°C)"},
+      "ABS": {"base": "ABS", "buse_1ere": 240, "buse_autres": 235, "plateau": 95,
+              "source": "Fiche Sunlu ABS (230-250°C)"},
+      "TPU 95A": {"base": "TPU", "buse_1ere": 215, "buse_autres": 210, "plateau": 50,
+                  "source": "Fiche Sunlu TPU (200-230°C)"},
+      "Easy PA": {"base": "Nylon", "buse_1ere": 265, "buse_autres": 260, "plateau": 70,
+                  "enceinte_requise": false,
+                  "sechage": "70°C / 8h recommandé avant impression",
+                  "notes": "PA « facile » basse déformation — imprimable sur machine ouverte.",
+                  "source": "Fiche Sunlu Easy PA (250-270°C)"}
     },
     "eSUN": {
-      "PLA+": {
-        "base": "PLA",
-        "buse_1ere": 215, "buse_autres": 210, "plateau": 60,
-        "source": "Fiche technique eSUN PLA+ (205-225°C)"
-      },
-      "PETG": {
-        "base": "PETG",
-        "buse_1ere": 240, "buse_autres": 235, "plateau": 75,
-        "source": "Fiche technique eSUN PETG (230-250°C)"
-      }
+      "PLA+": {"base": "PLA", "buse_1ere": 215, "buse_autres": 210, "plateau": 60,
+               "source": "Fiche eSUN PLA+ (205-225°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 240, "buse_autres": 235, "plateau": 75,
+               "source": "Fiche eSUN PETG (230-250°C)"},
+      "ABS+": {"base": "ABS", "buse_1ere": 245, "buse_autres": 240, "plateau": 95,
+               "notes": "ABS+ basse odeur, warping réduit par rapport à un ABS classique.",
+               "source": "Fiche eSUN ABS+ (220-260°C)"},
+      "eASA": {"base": "ASA", "buse_1ere": 250, "buse_autres": 245, "plateau": 95,
+               "source": "Fiche eSUN eASA (240-260°C)"},
+      "eTPU-95A": {"base": "TPU", "buse_1ere": 220, "buse_autres": 215, "plateau": 45,
+                   "source": "TDS eSUN eTPU-95A (220°C / 45°C)"},
+      "ePA": {"base": "Nylon", "buse_1ere": 250, "buse_autres": 245, "plateau": 75,
+              "source": "TDS eSUN ePA"},
+      "ePC": {"base": "PC", "buse_1ere": 255, "buse_autres": 250, "plateau": 100,
+              "notes": "PC modifié, plus tolérant qu'un polycarbonate pur.",
+              "source": "TDS eSUN ePC (240-260°C)"},
+      "HIPS": {"base": "HIPS", "buse_1ere": 240, "buse_autres": 235, "plateau": 95,
+               "source": "Fiche eSUN HIPS (230-250°C)"}
+    },
+    "Creality": {
+      "Hyper PLA": {"base": "PLA", "buse_1ere": 220, "buse_autres": 215, "plateau": 60,
+                    "notes": "Formulé haute vitesse (jusqu'à 600 mm/s sur machines rapides).",
+                    "source": "Fiche Creality Hyper PLA (190-230°C)"},
+      "Hyper PETG": {"base": "PETG", "buse_1ere": 240, "buse_autres": 235, "plateau": 75,
+                     "notes": "Formulé haute vitesse.",
+                     "source": "Fiche Creality Hyper PETG"},
+      "Ender PLA": {"base": "PLA", "buse_1ere": 205, "buse_autres": 200, "plateau": 60,
+                    "source": "Fiche Creality Ender PLA (195-215°C)"},
+      "CR-PETG": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 75,
+                  "source": "Fiche Creality CR-PETG (230-250°C)"},
+      "Hyper ABS": {"base": "ABS", "buse_1ere": 250, "buse_autres": 245, "plateau": 95,
+                    "source": "Fiche Creality Hyper ABS (240-270°C)"}
+    },
+    "Elegoo": {
+      "PLA": {"base": "PLA", "buse_1ere": 205, "buse_autres": 200, "plateau": 60,
+              "source": "Fiche Elegoo PLA (195-220°C)"},
+      "Rapid PLA+": {"base": "PLA", "buse_1ere": 215, "buse_autres": 210, "plateau": 60,
+                     "notes": "Formulé haute vitesse (< 280 mm/s).",
+                     "source": "Fiche Elegoo Rapid PLA+ (200-230°C)"},
+      "Rapid PETG": {"base": "PETG", "buse_1ere": 245, "buse_autres": 240, "plateau": 80,
+                     "source": "Fiche Elegoo Rapid PETG"},
+      "TPU 95A": {"base": "TPU", "buse_1ere": 215, "buse_autres": 210, "plateau": 50,
+                  "source": "Fiche Elegoo TPU (210-230°C)"}
+    },
+    "Anycubic": {
+      "PLA": {"base": "PLA", "buse_1ere": 205, "buse_autres": 200, "plateau": 60,
+              "source": "Fiche Anycubic PLA (190-220°C)"},
+      "High Speed PLA": {"base": "PLA", "buse_1ere": 220, "buse_autres": 215, "plateau": 60,
+                         "notes": "Monter vers 230-260°C au-delà de 300 mm/s (fiche fabricant).",
+                         "source": "Fiche Anycubic High Speed PLA"},
+      "PETG": {"base": "PETG", "buse_1ere": 240, "buse_autres": 235, "plateau": 75,
+               "source": "Fiche Anycubic PETG (230-250°C)"}
     },
     "Polymaker": {
-      "PolyLite PLA": {
-        "base": "PLA",
-        "buse_1ere": 215, "buse_autres": 210, "plateau": 55,
-        "source": "Fiche technique Polymaker PolyLite PLA (190-230°C)"
-      },
-      "PolyLite PETG": {
-        "base": "PETG",
-        "buse_1ere": 235, "buse_autres": 230, "plateau": 70,
-        "source": "Fiche technique Polymaker PolyLite PETG (230-240°C)"
-      }
+      "PolyTerra PLA": {"base": "PLA", "buse_1ere": 210, "buse_autres": 205, "plateau": 55,
+                        "notes": "PLA mat, bobine carton (démarche écologique).",
+                        "source": "Wiki Polymaker (190-230°C / 45-60°C)"},
+      "PolyLite PLA": {"base": "PLA", "buse_1ere": 215, "buse_autres": 210, "plateau": 55,
+                       "source": "Wiki Polymaker (190-230°C)"},
+      "PolyMax PLA": {"base": "PLA", "buse_1ere": 215, "buse_autres": 210, "plateau": 55,
+                      "notes": "PLA renforcé (ténacité proche ABS).",
+                      "source": "Wiki Polymaker"},
+      "PolyLite PETG": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 70,
+                        "source": "Wiki Polymaker (230-240°C)"},
+      "PolyMax PETG": {"base": "PETG", "buse_1ere": 250, "buse_autres": 245, "plateau": 70,
+                       "source": "Fiche PolyMax PETG (240-260°C / 60-70°C)"},
+      "PolyLite ABS": {"base": "ABS", "buse_1ere": 250, "buse_autres": 245, "plateau": 95,
+                       "source": "Wiki Polymaker (230-260°C)"},
+      "PolyLite ASA": {"base": "ASA", "buse_1ere": 250, "buse_autres": 245, "plateau": 95,
+                       "source": "Wiki Polymaker (240-260°C)"},
+      "PolyLite PC": {"base": "PC", "buse_1ere": 265, "buse_autres": 260, "plateau": 100,
+                      "source": "Wiki Polymaker (250-270°C)"},
+      "PolyFlex TPU95": {"base": "TPU", "buse_1ere": 220, "buse_autres": 215, "plateau": 45,
+                         "source": "Wiki Polymaker (210-230°C / 40-60°C)"},
+      "PolyMide CoPA": {"base": "Nylon", "buse_1ere": 275, "buse_autres": 270, "plateau": 50,
+                        "enceinte_requise": false,
+                        "sechage": "80°C / 8h recommandé avant impression",
+                        "notes": "Nylon « warp-free » (technologie Fiber Adhesion) — imprimable machine ouverte, plateau 25-50°C.",
+                        "source": "Fiche PolyMide CoPA (250-300°C)"}
     },
     "Prusament": {
-      "PLA": {
-        "base": "PLA",
-        "buse_1ere": 215, "buse_autres": 210, "plateau": 60,
-        "source": "Fiche technique Prusament PLA (200-220°C)"
-      },
-      "PETG": {
-        "base": "PETG",
-        "buse_1ere": 250, "buse_autres": 245, "plateau": 80,
-        "source": "Fiche technique Prusament PETG (240-260°C)"
-      }
+      "PLA": {"base": "PLA", "buse_1ere": 215, "buse_autres": 210, "plateau": 60,
+              "source": "Fiche Prusament PLA (200-220°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 250, "buse_autres": 245, "plateau": 80,
+               "source": "Fiche Prusament PETG (240-260°C / 70-90°C)"},
+      "ASA": {"base": "ASA", "buse_1ere": 260, "buse_autres": 255, "plateau": 100,
+              "source": "Fiche Prusament ASA (250-270°C)"},
+      "PC Blend": {"base": "PC", "buse_1ere": 275, "buse_autres": 270, "plateau": 110,
+                   "source": "Fiche Prusament PC Blend (270-290°C)"}
     },
     "Bambu Lab": {
-      "PLA Basic": {
-        "base": "PLA",
-        "buse_1ere": 220, "buse_autres": 220, "plateau": 55,
-        "bs_preset": "Bambu PLA Basic",
-        "source": "Profil système Bambu Studio"
-      },
-      "PETG Basic": {
-        "base": "PETG",
-        "buse_1ere": 250, "buse_autres": 245, "plateau": 70,
-        "bs_preset": "Bambu PETG Basic",
-        "source": "Profil système Bambu Studio"
-      }
+      "PLA Basic": {"base": "PLA", "buse_1ere": 220, "buse_autres": 220, "plateau": 55,
+                    "bs_preset": "Bambu PLA Basic", "source": "Profil système Bambu Studio"},
+      "PLA Matte": {"base": "PLA", "buse_1ere": 220, "buse_autres": 220, "plateau": 55,
+                    "bs_preset": "Bambu PLA Matte", "source": "Profil système Bambu Studio"},
+      "PETG HF": {"base": "PETG", "buse_1ere": 255, "buse_autres": 250, "plateau": 70,
+                  "bs_preset": "Bambu PETG HF",
+                  "source": "Guide filament Bambu (230-260°C)"},
+      "PETG Basic": {"base": "PETG", "buse_1ere": 250, "buse_autres": 245, "plateau": 70,
+                     "bs_preset": "Bambu PETG Basic", "source": "Profil système Bambu Studio"},
+      "ABS": {"base": "ABS", "buse_1ere": 270, "buse_autres": 265, "plateau": 95,
+              "bs_preset": "Bambu ABS", "source": "Profil système Bambu Studio"},
+      "ASA": {"base": "ASA", "buse_1ere": 270, "buse_autres": 265, "plateau": 100,
+              "bs_preset": "Bambu ASA", "source": "Profil système Bambu Studio"},
+      "TPU 95A": {"base": "TPU", "buse_1ere": 230, "buse_autres": 225, "plateau": 35,
+                  "bs_preset": "Bambu TPU 95A",
+                  "source": "Guide filament Bambu (220-240°C)"},
+      "PLA-CF": {"base": "PLA-CF", "buse_1ere": 230, "buse_autres": 225, "plateau": 55,
+                 "bs_preset": "Bambu PLA-CF", "source": "Profil système Bambu Studio"},
+      "PAHT-CF": {"base": "PA-CF", "buse_1ere": 290, "buse_autres": 285, "plateau": 100,
+                  "bs_preset": "Bambu PAHT-CF",
+                  "source": "Guide filament Bambu (280°C)"},
+      "PC": {"base": "PC", "buse_1ere": 270, "buse_autres": 265, "plateau": 110,
+             "bs_preset": "Bambu PC", "source": "Profil système Bambu Studio"}
+    },
+    "Overture": {
+      "PLA": {"base": "PLA", "buse_1ere": 210, "buse_autres": 205, "plateau": 55,
+              "source": "Fiche Overture PLA (bed 50-60°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 240, "buse_autres": 235, "plateau": 85,
+               "source": "Fiche Overture PETG (230-250°C / 80-90°C)"},
+      "TPU": {"base": "TPU", "buse_1ere": 225, "buse_autres": 220, "plateau": 45,
+              "source": "Fiche Overture TPU (210-240°C, départ 225°C)"},
+      "ABS": {"base": "ABS", "buse_1ere": 245, "buse_autres": 240, "plateau": 95,
+              "source": "Fiche Overture ABS (235-255°C)"}
+    },
+    "Francofil": {
+      "PLA": {"base": "PLA", "buse_1ere": 205, "buse_autres": 200, "plateau": 55,
+              "notes": "Fabriqué en Normandie.",
+              "source": "Fiche Francofil PLA (départ 200°C / 50-60°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 75,
+               "source": "Fiche Francofil PETG"}
+    },
+    "Nanovia": {
+      "PLA": {"base": "PLA", "buse_1ere": 210, "buse_autres": 205, "plateau": 55,
+              "notes": "Fabriqué en Bretagne.", "source": "Fiche Nanovia PLA"},
+      "PETG": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 85,
+               "source": "Fiche Nanovia PETG (225-240°C / 85°C)"},
+      "ABS": {"base": "ABS", "buse_1ere": 245, "buse_autres": 240, "plateau": 100,
+              "source": "Fiche Nanovia ABS"}
+    },
+    "Kimya": {
+      "PLA-HI": {"base": "PLA", "buse_1ere": 210, "buse_autres": 205, "plateau": 55,
+                 "notes": "PLA haute résistance aux chocs (ARMOR, Nantes).",
+                 "source": "TDS Kimya PLA-HI (195-220°C)"},
+      "PETG-S": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 80,
+                 "source": "TDS Kimya PETG-S (220-250°C)"},
+      "ABS Kimya": {"base": "ABS", "buse_1ere": 245, "buse_autres": 240, "plateau": 100,
+                    "source": "TDS Kimya ABS (230-260°C)"}
+    },
+    "Fiberlogy": {
+      "Easy PLA": {"base": "PLA", "buse_1ere": 215, "buse_autres": 210, "plateau": 60,
+                   "source": "Fiche Fiberlogy Easy PLA (200-230°C / 50-70°C)"},
+      "Easy PET-G": {"base": "PETG", "buse_1ere": 245, "buse_autres": 240, "plateau": 85,
+                     "source": "Fiche Fiberlogy Easy PET-G (230-260°C / 80-90°C)"},
+      "ASA": {"base": "ASA", "buse_1ere": 255, "buse_autres": 250, "plateau": 100,
+              "source": "Fiche Fiberlogy ASA (240-270°C)"},
+      "Nylon PA12": {"base": "Nylon", "buse_1ere": 265, "buse_autres": 260, "plateau": 100,
+                     "sechage": "80°C / 8h OBLIGATOIRE avant impression",
+                     "notes": "PA12 : enceinte fermée nécessaire (fiche fabricant).",
+                     "source": "Fiche Fiberlogy PA12 (255-270°C / 90-110°C)"}
+    },
+    "Spectrum": {
+      "PLA Premium": {"base": "PLA", "buse_1ere": 210, "buse_autres": 205, "plateau": 60,
+                      "source": "Fiche Spectrum PLA Premium (195-225°C)"},
+      "PETG Premium": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 80,
+                       "source": "Fiche Spectrum PETG (220-250°C)"},
+      "ASA 275": {"base": "ASA", "buse_1ere": 250, "buse_autres": 245, "plateau": 100,
+                  "source": "Fiche Spectrum ASA 275 (240-260°C)"}
+    },
+    "Extrudr": {
+      "PLA NX2": {"base": "PLA", "buse_1ere": 210, "buse_autres": 205, "plateau": 60,
+                  "source": "Fiche Extrudr PLA NX2 (200-220°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 230, "buse_autres": 225, "plateau": 75,
+               "source": "Fiche Extrudr PETG (220-240°C)"},
+      "GreenTEC Pro": {"base": "PLA", "buse_1ere": 220, "buse_autres": 215, "plateau": 60,
+                       "notes": "Biopolymère technique (tenue thermique ~115°C), imprimable comme un PLA.",
+                       "source": "Fiche Extrudr GreenTEC Pro (200-230°C)"}
+    },
+    "AzureFilm": {
+      "PLA": {"base": "PLA", "buse_1ere": 210, "buse_autres": 205, "plateau": 60,
+              "source": "Fiche AzureFilm PLA (195-225°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 80,
+               "source": "Fiche AzureFilm PETG (220-250°C)"}
+    },
+    "Eryone": {
+      "PLA": {"base": "PLA", "buse_1ere": 205, "buse_autres": 200, "plateau": 60,
+              "source": "Fiche Eryone PLA (190-220°C)"},
+      "Silk PLA": {"base": "PLA", "buse_1ere": 215, "buse_autres": 210, "plateau": 60,
+                   "notes": "Brillance soie : ralentir un peu pour un fini uniforme.",
+                   "source": "Fiche Eryone Silk (200-230°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 75,
+               "source": "Fiche Eryone PETG (220-250°C)"},
+      "TPU": {"base": "TPU", "buse_1ere": 215, "buse_autres": 210, "plateau": 50,
+              "source": "Fiche Eryone TPU (200-230°C)"}
+    },
+    "Geeetech": {
+      "PLA": {"base": "PLA", "buse_1ere": 205, "buse_autres": 200, "plateau": 60,
+              "source": "Fiche Geeetech PLA (190-220°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 75,
+               "source": "Fiche Geeetech PETG (230-250°C)"}
+    },
+    "Kingroon": {
+      "PLA": {"base": "PLA", "buse_1ere": 205, "buse_autres": 200, "plateau": 60,
+              "source": "Fiche Kingroon PLA (190-220°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 70,
+               "source": "Fiche Kingroon PETG (220-250°C)"}
+    },
+    "Amazon Basics": {
+      "PLA": {"base": "PLA", "buse_1ere": 205, "buse_autres": 200, "plateau": 60,
+              "source": "Fiche Amazon Basics PLA (190-220°C)"},
+      "PETG": {"base": "PETG", "buse_1ere": 235, "buse_autres": 230, "plateau": 70,
+               "source": "Fiche Amazon Basics PETG (230-250°C)"}
     }
   }
 }
