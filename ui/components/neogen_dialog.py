@@ -136,7 +136,7 @@ class NeoGenPanel(QWidget):
         btn_close.setStyleSheet(f"""
             QPushButton {{ background: transparent; color: {self._pal['TEXT_LABEL']};
                 border: none; border-radius: 12px; font-size: 12px; }}
-            QPushButton:hover {{ background: rgba(255,255,255,0.10);
+            QPushButton:hover {{ background: {self._pal['BG_ELEVATED']};
                 color: {self._pal['TEXT_PRIMARY']}; }}
         """)
         btn_close.clicked.connect(self.close_requested)
@@ -514,3 +514,29 @@ class NeoGenPanel(QWidget):
         if hasattr(self, "_btn_go"):
             self._btn_go.setEnabled(True)
         self._statut.setText(f"⚠ {msg}")
+
+    # ── Thème : le panneau capture sa palette à la construction. Au changement
+    # de thème, main_window le RECONSTRUIT et transplante cet état (la pièce en
+    # cours de modification et la conversation survivent au changement).
+    def exporter_etat(self) -> dict:
+        return {
+            "historique": list(self._historique),
+            "dernier_code": self._dernier_code,
+            "image": self._image,
+            "statut": self._statut.text() if hasattr(self, "_statut") else "",
+            "onglet": self._tabs.currentIndex() if hasattr(self, "_tabs") else 0,
+        }
+
+    def importer_etat(self, etat: dict) -> None:
+        self._historique = list(etat.get("historique") or [])
+        self._dernier_code = etat.get("dernier_code")
+        self._image = etat.get("image")
+        if hasattr(self, "_statut") and etat.get("statut"):
+            self._statut.setText(etat["statut"])
+        if hasattr(self, "_tabs"):
+            self._tabs.setCurrentIndex(int(etat.get("onglet", 0)))
+        if self._image and hasattr(self, "_lbl_logo"):
+            self._lbl_logo.setText(Path(self._image).name)
+        if self._dernier_code and hasattr(self, "_btn_reset"):
+            self._btn_reset.show()
+            self._input.setPlaceholderText(_("neogen.modify_placeholder"))
