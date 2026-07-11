@@ -31,9 +31,14 @@ def test_hors_catalogue_route_vers_libre():
     """Un objet nommé HORS catalogue (cuillère, 'libre'...) doit router vers la
     création sur mesure — signal EXPLICITE __libre__, jamais une question
     (régression : Gemma reformulait la question -> l'utilisateur restait bloqué)."""
-    for nom in ("libre", "cuillere", "casque", "fusee"):
+    for nom in ("libre", "sifflet", "casque", "fusee"):
         objet, _p, q = P.valider({"objet": nom})
         assert objet == "__libre__" and q is None, nom
+    # cuillere/fourchette/vis sont désormais DES OBJETS DU CATALOGUE
+    objet, _p, q = P.valider({"objet": "cuillere"})
+    assert objet == "cuillere" and q is None
+    objet, params, q = P.valider({"objet": "vis", "taille": "m8", "ecrou": True})
+    assert objet == "vis" and params["taille"] == "M8" and params.get("ecrou") is True
     # une vraie question (texte manquant, demande floue) passe toujours
     objet, _p, q = P.valider({"question": "Quel texte ?"})
     assert objet is None and q == "Quel texte ?"

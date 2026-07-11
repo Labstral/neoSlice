@@ -94,6 +94,14 @@ def _b_logo(p):
     return scene
 
 
+def _b_vis(p):
+    from core.neogen import formes3
+    taille = str(p.get("taille", "M6")).upper()
+    if p.get("ecrou"):
+        return formes3.boulon(taille, p.get("longueur", 30))
+    return formes3.vis_hex(taille, p.get("longueur", 30))
+
+
 def _f(mod, nom):
     """Renvoie un constructeur paresseux appelant formes/formes2.nom(**params)."""
     def _build(p):
@@ -246,6 +254,15 @@ CATALOGUE = [
     _e("oeuf_pied", "Présentoir sur pied", "Pedestal stand", "cuisine",
        _f("formes2", "oeuf_pied"),
        params=[_P("hauteur", "Hauteur", "Height", 40, 90, 55, 1)]),
+    _e("cuillere", "Cuillère", "Spoon", "cuisine", _f("formes3", "cuillere"),
+       params=[_P("longueur", "Longueur", "Length", 120, 250, 180, 5),
+               _P("largeur", "Largeur cuvette", "Bowl width", 30, 60, 42, 1)]),
+    _e("fourchette", "Fourchette", "Fork", "cuisine", _f("formes3", "fourchette"),
+       params=[_P("longueur", "Longueur", "Length", 120, 250, 185, 5),
+               _P("largeur_tete", "Largeur tête", "Head width", 20, 36, 27, 1)]),
+    _e("couteau", "Couteau de table", "Table knife", "cuisine",
+       _f("formes3", "couteau"),
+       params=[_P("longueur", "Longueur", "Length", 120, 250, 190, 5)]),
 
     # ── Bureau & tech ──
     _e("pot_crayons", "Pot à crayons", "Pencil holder", "bureau",
@@ -364,6 +381,19 @@ CATALOGUE = [
        _f("formes", "organiseur_forets"),
        params=[_P("rangees", "Rangées", "Rows", 2, 5, 3, 1),
                _P("colonnes", "Colonnes", "Columns", 4, 14, 8, 1)]),
+    # Visserie : filetage ISO généré en maillage (M6+ uniquement — en dessous,
+    # le filetage FDM buse 0.4 n'est pas fiable : on ne le propose pas).
+    _e("vis", "Vis à tête hex (M6–M12)", "Hex bolt (M6–M12)", "atelier", _b_vis,
+       params=[_P("longueur", "Longueur filetée", "Thread length", 12, 80, 30, 2)],
+       flags=[("ecrou", "Avec son écrou (à côté)", "With its nut (beside)", True)],
+       choix=[("taille", "Taille", "Size",
+               [("M6", "M6", "M6"), ("M8", "M8", "M8"),
+                ("M10", "M10", "M10"), ("M12", "M12", "M12")], "M8")]),
+    _e("ecrou", "Écrou hex (M6–M12)", "Hex nut (M6–M12)", "atelier",
+       _f("formes3", "ecrou_hex"),
+       choix=[("taille", "Taille", "Size",
+               [("M6", "M6", "M6"), ("M8", "M8", "M8"),
+                ("M10", "M10", "M10"), ("M12", "M12", "M12")], "M8")]),
 ]
 
 # Index rapide par id

@@ -45,12 +45,15 @@ CATALOGUE (champ "objet" + parametres autorises, unites en mm sauf indication) :
 - pot_crayons : diametre (defaut 80), hauteur (defaut 100), texte (optionnel)
 - pot_fleur : diametre (defaut 110), hauteur (defaut 100)
 - lettre_3d : texte* (1-3 caracteres), hauteur (defaut 100), ep (epaisseur, defaut 15)
+- cuillere : longueur (defaut 180) ; fourchette : longueur (defaut 185) ; couteau : longueur (defaut 190)
+- vis : taille (M6/M8/M10/M12 UNIQUEMENT), longueur (defaut 30), ecrou (true si ecrou demande) — M1 a M5 N'EXISTENT PAS (trop petits pour l'impression : propose M6 minimum)
+- ecrou : taille (M6/M8/M10/M12)
 
 REGLES :
 1. Convertis les cm en mm (6 cm -> 60).
 2. N'inclus QUE les parametres que l'utilisateur precise (les defauts sont geres ailleurs).
 3. texte est OBLIGATOIRE pour porte_cle/badge/sousverre/plaque/magnet : s'il manque, reponds {"question": "..."} avec UNE question courte en francais.
-3bis. Si la demande designe un OBJET IMPRIMABLE qui n'est PAS dans le catalogue (cuillere, casque, jouet, support special... n'importe quoi d'autre), reponds {"objet":"libre"} — NE pose PAS de question, la creation sur mesure s'en charge. Ne pose une question que si la demande n'est pas un objet du tout.
+3bis. Si la demande designe un OBJET IMPRIMABLE qui n'est PAS dans le catalogue (casque, jouet, support special, piece mecanique... n'importe quoi d'autre), reponds {"objet":"libre"} — NE pose PAS de question, la creation sur mesure s'en charge. Ne pose une question que si la demande n'est pas un objet du tout.
 4. "qui ferme bien/serre" -> jeu 0.15 ; "couvercle facile/lache" -> jeu 0.3.
 5. N'invente JAMAIS un texte, une taille ou un parametre non demande.
 6. Si la conversation contient deja ta question et la reponse de l'utilisateur, COMBINE toutes les infos des messages precedents pour produire le JSON COMPLET. Ne repose JAMAIS une question a laquelle il a deja repondu. Ex : s'il a dit "fais-moi un badge" puis, apres ta question, "Lea" -> {"objet":"badge","texte":"Lea"}.
@@ -63,7 +66,9 @@ EXEMPLES :
 "une boite ronde de 6 cm qui ferme bien" -> {"objet":"boite","diametre":60,"jeu":0.15}
 "une boite carree de 6 cm avec couvercle" -> {"objet":"boite","forme":"carree","cote":60}
 "un de a jouer de 2 cm" -> {"objet":"de","taille":20}
-"une cuillere de service" -> {"objet":"libre"}
+"une cuillere" -> {"objet":"cuillere"}
+"une vis M8 de 40 mm avec son ecrou" -> {"objet":"vis","taille":"M8","longueur":40,"ecrou":true}
+"une vis M3" -> {"question":"Les filetages M1 a M5 sont trop fins pour l'impression 3D — je peux te faire du M6, M8, M10 ou M12. Quelle taille ?"}
 "un casque de chevalier pour figurine" -> {"objet":"libre"}
 "mon logo en badge de 5 cm" (image jointe) -> {"objet":"logo","forme":"badge","diametre":50}
 "fais-moi un truc sympa" -> {"question":"Quel objet veux-tu ? (porte-cle, badge, plaque, magnet, sous-verre, logo, vase, boite, support telephone, de...)"}
@@ -87,10 +92,16 @@ _BORNES = {
     "pot_crayons": {"diametre": (55, 120, 80), "hauteur": (60, 140, 100)},
     "pot_fleur": {"diametre": (60, 200, 110), "hauteur": (50, 200, 100)},
     "lettre_3d": {"hauteur": (40, 250, 100), "ep": (6, 40, 15)},
+    "cuillere": {"longueur": (120, 250, 180)},
+    "fourchette": {"longueur": (120, 250, 185)},
+    "couteau": {"longueur": (120, 250, 190)},
+    "vis": {"longueur": (12, 80, 30)},
+    "ecrou": {},
 }
 _TEXTE_REQUIS = {"porte_cle", "badge", "sousverre", "plaque", "magnet", "lettre_3d"}
 # ids routés directement vers le CATALOGUE (générateurs de la bibliothèque)
-_VIA_CATALOGUE = {"entonnoir", "pot_crayons", "pot_fleur", "lettre_3d"}
+_VIA_CATALOGUE = {"entonnoir", "pot_crayons", "pot_fleur", "lettre_3d",
+                  "cuillere", "fourchette", "couteau", "vis", "ecrou"}
 _ALIAS = {"sous_verre": "sousverre", "portecle": "porte_cle", "porte_cles": "porte_cle",
           "des": "de", "dice": "de", "telephone": "support", "support_telephone": "support"}
 
@@ -172,6 +183,11 @@ def valider(d: dict, image: Path | None = None) -> tuple[str | None, dict, str |
         params["image"] = str(image)
         f = str(d.get("forme", "badge")).strip().lower()
         params["forme"] = f if f in ("badge", "plaque", "silhouette") else "badge"
+    if objet in ("vis", "ecrou"):
+        t = str(d.get("taille", "M8")).upper().replace(" ", "")
+        params["taille"] = t if t in ("M6", "M8", "M10", "M12") else "M8"
+        if objet == "vis" and d.get("ecrou") not in (None, False, "false"):
+            params["ecrou"] = True
     if objet == "boite":
         f = str(d.get("forme", "ronde")).strip().lower()
         f = {"carre": "carree", "carrée": "carree", "square": "carree"}.get(f, f)

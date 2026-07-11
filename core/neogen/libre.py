@@ -419,7 +419,8 @@ COOKBOOK = [
     ("bracelet", "un bracelet de 65 mm",
      "piece = tube(73, 65, 12)"),
     ("cuillere doseuse", "une cuillere doseuse",
-     "bol = demi_sphere(36, creuse=2)\nmanche = deplacer(boite_3d(50, 10, 3), 38, 0, 0)\n"
+     "# le manche doit CHEVAUCHER la paroi du bol (pas etre pose a cote !)\n"
+     "bol = demi_sphere(40, creuse=2)\nmanche = deplacer(boite_3d(60, 11, 3), 36, 0, 0)\n"
      "piece = fusionner(bol, manche)"),
     ("porte oeuf coquetier", "un coquetier",
      "piece = revolution([(14,0),(16,2),(9,14),(7,26),(16,34),(20,42),(18.4,42),(14.5,35),(5.4,27)])"),
@@ -557,6 +558,16 @@ def verifier(piece: trimesh.Trimesh) -> str | None:
         return f"dimensions aberrantes : {d[0]:.0f}x{d[1]:.0f}x{d[2]:.0f} mm"
     if piece.bounds[0][2] > 0.5:
         return "la piece ne touche pas le plateau (utilise poser_au_sol)"
+    # UN SEUL TENANT : une piece en morceaux separes (vecu : un bol et son
+    # manche poses COTE A COTE...) n'est pas un objet — les elements doivent
+    # se chevaucher pour ne former qu'un solide.
+    try:
+        if len(piece.split(only_watertight=False)) > 1:
+            return ("la piece est en PLUSIEURS morceaux disjoints : "
+                    "fusionner() ne colle pas a distance — repositionne les "
+                    "elements avec deplacer() pour qu'ils se CHEVAUCHENT")
+    except Exception:
+        pass
     # IMPRIMABILITÉ : le vrai analyseur de neoSlice juge la pièce. Une pièce
     # trop en surplomb est REFUSÉE -> le modèle repense sa construction.
     try:
