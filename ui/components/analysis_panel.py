@@ -301,7 +301,7 @@ class AnalysisPanel(QWidget):
 
         # ── Bannière LITHOPHANIE (profil imposé — visible et assumé) ───────
         self._litho_banner = QLabel()
-        self._litho_banner.setFont(QFont(FONT_MONO, 8))
+        self._litho_banner.setFont(QFont(FONT_MONO, 8, QFont.Bold))
         self._litho_banner.setWordWrap(True)
         self._litho_banner.hide()
         root.addWidget(self._litho_banner)
@@ -506,12 +506,14 @@ class AnalysisPanel(QWidget):
             self._litho_banner.hide()
             return
         pal = _T.palette()
-        # thème clair : teal FONCÉ (le cyan vif était illisible sur fond clair)
-        cyan = "#22D3EE" if _T.is_dark() else "#0B5568"
+        # sombre : cyan CLAIR sur fond teinté plus marqué ; clair : teal FONCÉ
+        # (chaque thème a sa nuance — l'autre y est illisible, vécu 2x)
+        cyan = "#5CE6FF" if _T.is_dark() else "#0B5568"
         r, g, b = (int(cyan[i:i + 2], 16) for i in (1, 3, 5))
+        alpha = 0.16 if _T.is_dark() else 0.10
         self._litho_banner.setText(_("litho.banner"))
         self._litho_banner.setStyleSheet(
-            f"color: {cyan}; background: rgba({r},{g},{b},0.10); "
+            f"color: {cyan}; background: rgba({r},{g},{b},{alpha}); "
             f"border-left: 2px solid {cyan}; border-radius: 2px; "
             f"padding: 4px 8px;")
         self._litho_banner.show()
