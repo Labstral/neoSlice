@@ -72,111 +72,6 @@ class _BenchmarkWorker(QThread):
         self.result_ready.emit(tier, elapsed_ms, ram_gb)
 
 
-class _InstallWorker(QThread):
-    """Installe l'assistant IA (Ollama + modeles + base) en arriere-plan."""
-    progress = Signal(str, float)   # (etape, fraction 0..1)
-    log = Signal(str)
-    done = Signal()
-    failed = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        from core.assistant.installer import AssistantInstaller
-        self._inst = AssistantInstaller(
-            progress=lambda s, f: self.progress.emit(s, f),
-            log=lambda m: self.log.emit(m))
-
-    def cancel(self):
-        self._inst.cancel()
-
-    def run(self):
-        try:
-            self._inst.install()
-            self.done.emit()
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
-class _UninstallWorker(QThread):
-    """Desinstalle l'assistant IA en arriere-plan (suppression des fichiers)."""
-    done = Signal()
-    failed = Signal(str)
-
-    def run(self):
-        try:
-            from core.assistant.installer import uninstall
-            uninstall()
-            self.done.emit()
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
-class _NeoGenInstallWorker(QThread):
-    """Installe neoGen : telecharge son modele dedie (qwen3:14b, ~9 Go),
-    independant du 8B de l'assistant Oen."""
-    progress = Signal(int, str)     # (pourcentage, statut)
-    done = Signal()
-    failed = Signal(str)
-
-    def run(self):
-        try:
-            from core.neogen.installation import installer
-            installer(progress_cb=lambda p, s: self.progress.emit(p, s))
-            self.done.emit()
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
-class _NeoGenUninstallWorker(QThread):
-    """Desinstalle neoGen (supprime le modele 14b, libere ~9 Go)."""
-    done = Signal()
-    failed = Signal(str)
-
-    def run(self):
-        try:
-            from core.neogen.installation import desinstaller
-            desinstaller()
-            self.done.emit()
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
-class _KBCheckWorker(QThread):
-    """Verifie (en arriere-plan, appel reseau) si une nouvelle base d'Oen existe."""
-    result = Signal(object)   # dict d'info, ou None
-
-    def run(self):
-        try:
-            from core.assistant.kb_update import KBUpdater
-            self.result.emit(KBUpdater().check())
-        except Exception:
-            self.result.emit(None)
-
-
-class _KBUpdateWorker(QThread):
-    """Telecharge et applique la mise a jour de la base d'Oen (integrite + swap
-    atomique + rollback geres par KBUpdater). L'index actuel reste intact si echec."""
-    progress = Signal(str, float)
-    done = Signal(str)        # version installee
-    failed = Signal(str)
-
-    def __init__(self, info, parent=None):
-        super().__init__(parent)
-        self._info = info
-        from core.assistant.kb_update import KBUpdater
-        self._up = KBUpdater(progress=lambda s, f: self.progress.emit(s, f))
-
-    def cancel(self):
-        self._up.cancel()
-
-    def run(self):
-        try:
-            self._up.update(self._info)
-            self.done.emit(str(self._info.get("kb_version", "")))
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
 class SettingsDialog(QDialog):
     update_request = Signal(str, str, str)   # version, download_url, notes
     _update_result = Signal(str, str, str)   # résultat du thread → main thread
@@ -499,99 +394,33 @@ class SettingsDialog(QDialog):
         _pflay.addLayout(btn_row)
         _pflay.addSpacing(4)
 
-        # ── Section ASSISTANT IA ──────────────────────────────────────────────
+        # ── Section MODULES (Oen, neoGen, ... — briques optionnelles) ────────
         _pflay.addSpacing(10)
-        self._sep_assist = self._make_sep()
-        _pflay.addWidget(self._sep_assist)
+        self._sep_modules = self._make_sep()
+        _pflay.addWidget(self._sep_modules)
         _pflay.addSpacing(14)
 
-        self._lbl_assist = self._make_section_label(_("oen.section"))
-        _pflay.addWidget(self._lbl_assist)
+        self._lbl_modules = self._make_section_label(_("modules.section"))
+        _pflay.addWidget(self._lbl_modules)
         _pflay.addSpacing(10)
 
-        self._assist_status_lbl = QLabel()
-        self._assist_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
-        self._assist_status_lbl.setWordWrap(True)
-        _pflay.addWidget(self._assist_status_lbl)
+        self._modules_status_lbl = QLabel()
+        self._modules_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
+        self._modules_status_lbl.setWordWrap(True)
+        _pflay.addWidget(self._modules_status_lbl)
         _pflay.addSpacing(6)
 
-        self._assist_progress = QProgressBar()
-        self._assist_progress.setRange(0, 100)
-        self._assist_progress.setValue(0)
-        self._assist_progress.setTextVisible(True)
-        self._assist_progress.setFixedHeight(16)
-        self._assist_progress.hide()
-        _pflay.addWidget(self._assist_progress)
-        _pflay.addSpacing(6)
-
-        assist_btn_row = QHBoxLayout()
-        assist_btn_row.setContentsMargins(0, 0, 0, 0)
-        self._assist_btn = QPushButton()
-        self._assist_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
-        self._assist_btn.setFixedHeight(28)
-        self._assist_btn.setCursor(Qt.PointingHandCursor)
-        self._assist_btn.clicked.connect(self._on_assist_btn)
-        # Bouton secondaire : mettre a jour la base de connaissances d'Oen sans
-        # reinstaller ni ressortir l'app. SUR LA MEME LIGNE que installer/desinstaller
-        # (n'ajoute aucune hauteur a la fenetre). Visible seulement si Oen est installe.
-        self._kb_btn = QPushButton(_("oen.kb_update"))
-        self._kb_btn.setFont(QFont(FONT_MAIN, 8))
-        self._kb_btn.setFixedHeight(28)
-        self._kb_btn.setCursor(Qt.PointingHandCursor)
-        self._kb_btn.clicked.connect(self._on_kb_update_btn)
-        self._kb_btn.hide()
-        assist_btn_row.addStretch()
-        assist_btn_row.addWidget(self._kb_btn)
-        assist_btn_row.addSpacing(6)
-        assist_btn_row.addWidget(self._assist_btn)
-        _pflay.addLayout(assist_btn_row)
-
-        self._assist_worker = None
-        self._uninstall_worker = None
-        self._kb_check_worker = None
-        self._kb_update_worker = None
-        self._refresh_assistant_status()
-        _pflay.addSpacing(4)
-
-        # ── Section NEOGEN (génération d'objets 3D — modèle dédié, indépendant) ──
-        _pflay.addSpacing(10)
-        self._sep_neogen = self._make_sep()
-        _pflay.addWidget(self._sep_neogen)
-        _pflay.addSpacing(14)
-
-        self._lbl_neogen = self._make_section_label(_("neogen.section"))
-        _pflay.addWidget(self._lbl_neogen)
-        _pflay.addSpacing(10)
-
-        self._neogen_status_lbl = QLabel()
-        self._neogen_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
-        self._neogen_status_lbl.setWordWrap(True)
-        _pflay.addWidget(self._neogen_status_lbl)
-        _pflay.addSpacing(6)
-
-        self._neogen_progress = QProgressBar()
-        self._neogen_progress.setRange(0, 100)
-        self._neogen_progress.setValue(0)
-        self._neogen_progress.setTextVisible(True)
-        self._neogen_progress.setFixedHeight(16)
-        self._neogen_progress.hide()
-        _pflay.addWidget(self._neogen_progress)
-        _pflay.addSpacing(6)
-
-        neogen_btn_row = QHBoxLayout()
-        neogen_btn_row.setContentsMargins(0, 0, 0, 0)
-        self._neogen_btn = QPushButton()
-        self._neogen_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
-        self._neogen_btn.setFixedHeight(28)
-        self._neogen_btn.setCursor(Qt.PointingHandCursor)
-        self._neogen_btn.clicked.connect(self._on_neogen_btn)
-        neogen_btn_row.addStretch()
-        neogen_btn_row.addWidget(self._neogen_btn)
-        _pflay.addLayout(neogen_btn_row)
-
-        self._neogen_worker = None
-        self._neogen_un_worker = None
-        self._refresh_neogen_status()
+        modules_row = QHBoxLayout()
+        modules_row.setContentsMargins(0, 0, 0, 0)
+        self._modules_btn = QPushButton(_("modules.manage_btn"))
+        self._modules_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        self._modules_btn.setFixedHeight(28)
+        self._modules_btn.setCursor(Qt.PointingHandCursor)
+        self._modules_btn.clicked.connect(self._open_modules)
+        modules_row.addStretch()
+        modules_row.addWidget(self._modules_btn)
+        _pflay.addLayout(modules_row)
+        self._refresh_modules_summary()
         _pflay.addSpacing(4)
 
         lay.addWidget(self._pro_features_section)
@@ -657,293 +486,29 @@ class SettingsDialog(QDialog):
         dlg.exec()
 
     # ── Assistant IA : installation optionnelle ──────────────────────────────
-    def _refresh_assistant_status(self):
-        from core.assistant.engine import AssistantEngine
-        from core.assistant.installer import is_installed
-        from core import licensing
+    # ── MODULES : resume + ouverture du gestionnaire ─────────────────────────
+    def _refresh_modules_summary(self):
         pal = _T.palette()
-        installed = is_installed() or AssistantEngine.available()
-        # Le bouton de mise a jour de la base n'a de sens qu'une fois Oen installe.
-        if hasattr(self, "_kb_btn"):
-            busy = bool(self._kb_check_worker or self._kb_update_worker)
-            self._kb_btn.setVisible(installed)
-            if installed and not busy:
-                self._kb_btn.setEnabled(True)
-                self._kb_btn.setText(_("oen.kb_update"))
-            self._kb_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: transparent; color: {pal['TEXT_SECONDARY']};
-                    border: 1px solid {pal['INACTIVE']}; border-radius: 4px; padding: 3px 10px;
-                }}
-                QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT_BRIGHT']}; }}
-                QPushButton:disabled {{ color: {pal['INACTIVE']}; border-color: {pal['INACTIVE']}; }}
-            """)
-        if installed:
-            self._assist_status_lbl.setText(_("oen.ready"))
-            self._assist_status_lbl.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
-            self._assist_btn.setText(_("oen.uninstall"))
-            self._assist_btn.setFont(QFont(FONT_MAIN, 8))
-            self._assist_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: transparent; color: {pal['TEXT_SECONDARY']};
-                    border: 1px solid {pal['INACTIVE']}; border-radius: 4px; padding: 4px 12px;
-                }}
-                QPushButton:hover {{ border-color: {pal['ERROR_RED']}; color: {pal['ERROR_RED']}; }}
-            """)
-            self._assist_btn.setEnabled(True)
-            self._assist_btn.show()
-            return
-        if not licensing.est_pro():
-            self._assist_status_lbl.setText(_("oen.pro_only"))
-            self._assist_status_lbl.setStyleSheet(
-                f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
-            self._assist_btn.hide()
-            return
-        self._assist_status_lbl.setText(_("oen.install_pitch"))
-        self._assist_status_lbl.setStyleSheet(
+        try:
+            from ui.components.modules_dialog import resume_etat
+            self._modules_status_lbl.setText(resume_etat())
+        except Exception:
+            self._modules_status_lbl.setText("")
+        self._modules_status_lbl.setStyleSheet(
             f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
-        self._assist_btn.setText(_("oen.install"))
-        self._assist_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
-        self._assist_btn.setStyleSheet(f"""
+        self._modules_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {pal['ACCENT']}; color: #ffffff; border: none;
                 border-radius: 4px; padding: 4px 14px;
             }}
             QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
-            QPushButton:disabled {{ background: {pal['INACTIVE']}; color: {pal['BG_PANEL']}; }}
         """)
-        self._assist_btn.setEnabled(True)
-        self._assist_btn.show()
 
-    # ── neoGen : statut + installer/désinstaller (modèle 14b dédié) ──────────
-    def _refresh_neogen_status(self):
-        from core.neogen import installation
-        from core import licensing
-        pal = _T.palette()
-        if installation.est_installe():
-            self._neogen_status_lbl.setText(_("neogen.ready"))
-            self._neogen_status_lbl.setStyleSheet(
-                f"color: {pal['TELE_GREEN']}; background: transparent;")
-            self._neogen_btn.setText(_("neogen.uninstall"))
-            self._neogen_btn.setFont(QFont(FONT_MAIN, 8))
-            self._neogen_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: transparent; color: {pal['TEXT_SECONDARY']};
-                    border: 1px solid {pal['INACTIVE']}; border-radius: 4px; padding: 4px 12px;
-                }}
-                QPushButton:hover {{ border-color: {pal['ERROR_RED']}; color: {pal['ERROR_RED']}; }}
-            """)
-            self._neogen_btn.setEnabled(True)
-            self._neogen_btn.show()
-            return
-        if not licensing.est_pro():
-            self._neogen_status_lbl.setText(_("neogen.pro_only"))
-            self._neogen_status_lbl.setStyleSheet(
-                f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
-            self._neogen_btn.hide()
-            return
-        if not installation.runtime_present():
-            self._neogen_status_lbl.setText(_("neogen.need_runtime"))
-            self._neogen_status_lbl.setStyleSheet(
-                f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
-            self._neogen_btn.hide()
-            return
-        self._neogen_status_lbl.setText(_("neogen.install_pitch"))
-        self._neogen_status_lbl.setStyleSheet(
-            f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
-        self._neogen_btn.setText(_("neogen.install"))
-        self._neogen_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
-        self._neogen_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {pal['ACCENT']}; color: #ffffff; border: none;
-                border-radius: 4px; padding: 4px 14px;
-            }}
-            QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
-            QPushButton:disabled {{ background: {pal['INACTIVE']}; color: {pal['BG_PANEL']}; }}
-        """)
-        self._neogen_btn.setEnabled(True)
-        self._neogen_btn.show()
-
-    def _on_neogen_btn(self):
-        from core.neogen import installation
-        if installation.est_installe():
-            rep = QMessageBox.question(
-                self, _("neogen.uninstall_title"), _("neogen.uninstall_confirm"),
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if rep != QMessageBox.Yes:
-                return
-            self._neogen_btn.setEnabled(False)
-            self._neogen_un_worker = _NeoGenUninstallWorker(self)
-            self._neogen_un_worker.done.connect(self._on_neogen_un_done)
-            self._neogen_un_worker.failed.connect(self._on_neogen_failed)
-            self._neogen_un_worker.start()
-            return
-        if self._neogen_worker is not None:
-            return
-        self._neogen_btn.setEnabled(False)
-        self._neogen_btn.setText(_("neogen.installing"))
-        self._neogen_progress.setValue(0)
-        self._neogen_progress.show()
-        self._neogen_worker = _NeoGenInstallWorker(self)
-        self._neogen_worker.progress.connect(
-            lambda p, s: self._neogen_progress.setValue(int(p)))
-        self._neogen_worker.done.connect(self._on_neogen_done)
-        self._neogen_worker.failed.connect(self._on_neogen_failed)
-        self._neogen_worker.start()
-
-    def _on_neogen_done(self):
-        self._neogen_worker = None
-        self._neogen_progress.hide()
-        self._refresh_neogen_status()
-
-    def _on_neogen_un_done(self):
-        self._neogen_un_worker = None
-        self._refresh_neogen_status()
-
-    def _on_neogen_failed(self, msg: str):
-        self._neogen_worker = None
-        self._neogen_un_worker = None
-        self._neogen_progress.hide()
-        pal = _T.palette()
-        self._neogen_status_lbl.setText("⚠ " + msg)
-        self._neogen_status_lbl.setStyleSheet(
-            f"color: {pal['ERROR_RED']}; background: transparent;")
-        self._neogen_btn.setEnabled(True)
-        self._neogen_btn.setText(_("neogen.install"))
-
-    def _on_assist_btn(self):
-        """Le bouton sert selon l'etat : installer si absent, desinstaller si present."""
-        from core.assistant.installer import is_installed
-        from core.assistant.engine import AssistantEngine
-        if is_installed() or AssistantEngine.available():
-            self._uninstall_assistant()
-        else:
-            self._on_install_assistant()
-
-    def _on_install_assistant(self):
-        if self._assist_worker is not None:
-            return
-        self._assist_btn.setEnabled(False)
-        self._assist_btn.setText(_("oen.installing"))
-        self._assist_progress.setValue(0)
-        self._assist_progress.show()
-        self._assist_worker = _InstallWorker(self)
-        self._assist_worker.progress.connect(self._on_install_progress)
-        self._assist_worker.done.connect(self._on_install_done)
-        self._assist_worker.failed.connect(self._on_install_failed)
-        self._assist_worker.start()
-
-    def _uninstall_assistant(self):
-        if self._uninstall_worker is not None:
-            return
-        rep = QMessageBox.question(
-            self, _("oen.uninstall_title"), _("oen.uninstall_confirm"),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if rep != QMessageBox.Yes:
-            return
-        pal = _T.palette()
-        self._assist_btn.setEnabled(False)
-        self._assist_btn.setText(_("oen.uninstalling_btn"))
-        self._assist_status_lbl.setText(_("oen.uninstalling"))
-        self._assist_status_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
-        self._uninstall_worker = _UninstallWorker(self)
-        self._uninstall_worker.done.connect(self._on_uninstall_done)
-        self._uninstall_worker.failed.connect(self._on_uninstall_failed)
-        self._uninstall_worker.start()
-
-    def _on_uninstall_done(self):
-        self._uninstall_worker = None
-        self._refresh_assistant_status()
-
-    def _on_uninstall_failed(self, err: str):
-        self._uninstall_worker = None
-        pal = _T.palette()
-        self._assist_status_lbl.setText(_("oen.uninstall_failed", err=err[:140]))
-        self._assist_status_lbl.setStyleSheet(f"color: {pal['ERROR_RED']}; background: transparent;")
-        self._assist_btn.setEnabled(True)
-        self._refresh_assistant_status()
-
-    def _on_install_progress(self, label: str, frac: float):
-        self._assist_progress.setValue(int(frac * 100))
-        self._assist_progress.setFormat(f"{label}  %p%")
-
-    def _on_install_done(self):
-        self._assist_worker = None
-        self._assist_progress.setValue(100)
-        self._assist_progress.hide()
-        self._refresh_assistant_status()
-
-    def _on_install_failed(self, err: str):
-        self._assist_worker = None
-        self._assist_progress.hide()
-        pal = _T.palette()
-        self._assist_status_lbl.setText(_("oen.install_failed", err=err[:140]))
-        self._assist_status_lbl.setStyleSheet(f"color: {pal['ERROR_RED']}; background: transparent;")
-        self._assist_btn.setText(_("oen.retry"))
-        self._assist_btn.setEnabled(True)
-        self._assist_btn.show()
-
-    # ── Oen : mise a jour de la base de connaissances (sans reinstaller) ───────
-    def _on_kb_update_btn(self):
-        if self._kb_check_worker is not None or self._kb_update_worker is not None:
-            return
-        self._kb_btn.setEnabled(False)
-        self._kb_btn.setText(_("oen.kb_checking"))
-        self._kb_check_worker = _KBCheckWorker(self)
-        self._kb_check_worker.result.connect(self._on_kb_checked)
-        self._kb_check_worker.start()
-
-    def _on_kb_checked(self, info):
-        self._kb_check_worker = None
-        pal = _T.palette()
-        self._kb_btn.setEnabled(True)
-        self._kb_btn.setText(_("oen.kb_update"))
-        if not info:
-            self._assist_status_lbl.setText(_("oen.kb_uptodate"))
-            self._assist_status_lbl.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
-            return
-        if info.get("incompatible_app"):
-            self._assist_status_lbl.setText(
-                _("oen.kb_needs_app", min=info.get("min_app_version")))
-            self._assist_status_lbl.setStyleSheet(f"color: {pal['AMBER']}; background: transparent;")
-            return
-        mo = float(info.get("download_size", 0)) / 1e6
-        notes = info.get("notes", "")
-        msg = (_("oen.kb_available", version=info.get("kb_version")) + "\n\n"
-               + _("oen.kb_download_size", mo=f"{mo:.0f}") + "\n")
-        if notes:
-            msg += f"\n{notes}\n"
-        msg += "\n" + _("oen.kb_reassure")
-        rep = QMessageBox.question(
-            self, _("oen.kb_update_title"), msg,
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-        if rep != QMessageBox.Yes:
-            return
-        self._kb_btn.setEnabled(False)
-        self._assist_progress.setValue(0)
-        self._assist_progress.show()
-        self._kb_update_worker = _KBUpdateWorker(info, self)
-        self._kb_update_worker.progress.connect(self._on_install_progress)  # meme barre
-        self._kb_update_worker.done.connect(self._on_kb_update_done)
-        self._kb_update_worker.failed.connect(self._on_kb_update_failed)
-        self._kb_update_worker.start()
-
-    def _on_kb_update_done(self, version: str):
-        self._kb_update_worker = None
-        self._assist_progress.setValue(100)
-        self._assist_progress.hide()
-        pal = _T.palette()
-        self._assist_status_lbl.setText(_("oen.kb_done", version=version))
-        self._assist_status_lbl.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
-        self._kb_btn.setEnabled(True)
-
-    def _on_kb_update_failed(self, err: str):
-        self._kb_update_worker = None
-        self._assist_progress.hide()
-        pal = _T.palette()
-        self._assist_status_lbl.setText(_("oen.kb_failed", err=err[:140]))
-        self._assist_status_lbl.setStyleSheet(f"color: {pal['ERROR_RED']}; background: transparent;")
-        self._kb_btn.setEnabled(True)
+    def _open_modules(self):
+        from ui.components.modules_dialog import ModulesDialog
+        dlg = ModulesDialog(self)
+        dlg.exec()
+        self._refresh_modules_summary()   # l'etat a pu changer (install/desinstall)
 
     def _refresh_pro_status(self):
         from core import licensing
@@ -1255,14 +820,18 @@ class SettingsDialog(QDialog):
 
         sep_style = f"background: {pal['INACTIVE']}; border: none;"
         for sep in (self._sep_top, self._sep_print, self._sep_export, self._sep_perf,
-                    self._sep_updates, self._sep_diag, self._sep_assist, self._sep_pro):
+                    self._sep_updates, self._sep_diag, self._sep_modules, self._sep_pro):
             sep.setStyleSheet(sep_style)
 
         section_style = f"color: {pal['TEXT_LABEL']}; background: transparent; letter-spacing: 1px;"
         for lbl in (self._lbl_apparence, self._lbl_print, self._lbl_export,
                     self._lbl_perf, self._lbl_updates, self._lbl_diag,
-                    self._lbl_assist, self._lbl_pro):
+                    self._lbl_modules, self._lbl_pro):
             lbl.setStyleSheet(section_style)
+
+        # Résumé Modules (couleurs dépendantes du thème)
+        if hasattr(self, "_modules_status_lbl"):
+            self._refresh_modules_summary()
 
         # Section neoSlice Pro (le bouton est stylé selon l'état dans _refresh_pro_status)
         self._refresh_pro_status()

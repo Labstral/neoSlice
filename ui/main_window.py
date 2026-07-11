@@ -2318,12 +2318,17 @@ class MainWindow(QMainWindow):
         threading.Thread(target=_work, daemon=True).start()
 
     def _on_kb_update_available(self, version: str):
-        """MAJ de la base d'Oen dispo : toast discret, clic -> ouvre les Réglages."""
+        """MAJ de la base d'Oen dispo : toast discret, clic -> gestionnaire de
+        Modules (où vit désormais le bouton de mise à jour de la base)."""
         try:
             from ui.components.toast import show_toast
-            show_toast(self, _("oen.kb_update_toast"), on_click=self._open_settings)
+            show_toast(self, _("oen.kb_update_toast"), on_click=self._open_modules_mgr)
         except Exception:
             pass
+
+    def _open_modules_mgr(self):
+        from ui.components.modules_dialog import ModulesDialog
+        ModulesDialog(self).exec()
 
     def _show_update_dialog(self):
         info = getattr(self, "_pending_update", None)
