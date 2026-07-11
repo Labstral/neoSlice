@@ -31,11 +31,11 @@ DOSSIER_SORTIES = Path.home() / ".neoslice" / "neogen"
 _SYSTEME = """Tu convertis une demande en français en UN objet JSON de parametres pour un generateur de pieces 3D. Tu ne reponds RIEN d'autre que le JSON, sans texte autour, sans markdown.
 
 CATALOGUE (champ "objet" + parametres autorises, unites en mm sauf indication) :
-- porte_cle : texte* (le texte en relief), longueur (defaut 50), trou (diametre, defaut 4.5), relief (hauteur texte, defaut 1.6), socle (epaisseur, defaut 3), grave (true si texte grave/creuse)
-- badge : texte*, diametre (defaut 40), trou (true si accroche demandee), grave
-- sousverre : texte*, diametre (defaut 90)
-- plaque : texte* (| = saut de ligne), largeur (0=auto), vis (true si trous de vis), grave
-- magnet : texte*, diametre (defaut 35), aimant_d (diametre logement, defaut 10.2), aimant_p (profondeur, defaut 2)
+- porte_cle : texte (optionnel, en relief), longueur (defaut 50), trou (diametre, defaut 4.5), relief (hauteur texte, defaut 1.6), socle (epaisseur, defaut 3), grave (true si texte grave/creuse)
+- badge : texte (optionnel), diametre (defaut 40), trou (true si accroche demandee), grave
+- sousverre : texte (optionnel), diametre (defaut 90)
+- plaque : texte (optionnel, | = saut de ligne), largeur (0=auto), vis (true si trous de vis), grave
+- magnet : texte (optionnel), diametre (defaut 35), aimant_d (diametre logement, defaut 10.2), aimant_p (profondeur, defaut 2)
 - logo : forme (badge/plaque/silhouette, defaut badge), largeur (taille du logo, defaut 40), diametre (si badge), couleurs (2-4, defaut 3) — UNIQUEMENT si une image est jointe
 - vase : hauteur (defaut 100), diametre (defaut 60), ondulations (defaut 5)
 - boite : forme (ronde ou carree, defaut ronde), diametre (si ronde, defaut 50), cote (si carree), hauteur (defaut 30), jeu (ajustement couvercle en mm : 0.2 normal, 0.15 serre, 0.3 lache)
@@ -52,7 +52,7 @@ CATALOGUE (champ "objet" + parametres autorises, unites en mm sauf indication) :
 REGLES :
 1. Convertis les cm en mm (6 cm -> 60).
 2. N'inclus QUE les parametres que l'utilisateur precise (les defauts sont geres ailleurs).
-3. texte est OBLIGATOIRE pour porte_cle/badge/sousverre/plaque/magnet : s'il manque, reponds {"question": "..."} avec UNE question courte en francais.
+3. Le texte est OPTIONNEL (une piece sans texte est valable). Il n'est OBLIGATOIRE que pour lettre_3d. Si l'utilisateur mentionne un texte/prenom, mets-le dans "texte".
 3bis. Si la demande designe un OBJET IMPRIMABLE qui n'est PAS dans le catalogue (casque, jouet, support special, piece mecanique... n'importe quoi d'autre), reponds {"objet":"libre"} — NE pose PAS de question, la creation sur mesure s'en charge. Ne pose une question que si la demande n'est pas un objet du tout.
 4. "qui ferme bien/serre" -> jeu 0.15 ; "couvercle facile/lache" -> jeu 0.3.
 5. N'invente JAMAIS un texte, une taille ou un parametre non demande.
@@ -98,7 +98,7 @@ _BORNES = {
     "vis": {"longueur": (12, 80, 30)},
     "ecrou": {},
 }
-_TEXTE_REQUIS = {"porte_cle", "badge", "sousverre", "plaque", "magnet", "lettre_3d"}
+_TEXTE_REQUIS = {"lettre_3d"}   # seul cas où le texte EST l'objet
 # ids routés directement vers le CATALOGUE (générateurs de la bibliothèque)
 _VIA_CATALOGUE = {"entonnoir", "pot_crayons", "pot_fleur", "lettre_3d",
                   "cuillere", "fourchette", "couteau", "vis", "ecrou"}

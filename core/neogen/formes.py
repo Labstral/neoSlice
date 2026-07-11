@@ -82,6 +82,25 @@ def _recipient(emp: Polygon, hauteur: float, paroi: float, fond: float,
     return piece
 
 
+def _percer_3d(piece: trimesh.Trimesh, point, axe: str, d: float = 4.4,
+               longueur: float | None = None) -> trimesh.Trimesh:
+    """Perce un trou cylindrique le long de `axe` ('x'|'y'|'z'), centré sur
+    `point` — à utiliser APRÈS extrusion/rotation. (Les perçages 2D dans le
+    profil sortaient dans l'axe d'extrusion : ils TRANCHAIENT la pièce au
+    lieu de traverser la face de fixation.) Traversant par défaut ;
+    `longueur` limitée = trou borgne (centrer le point en conséquence)."""
+    outil = trimesh.creation.cylinder(radius=d / 2, height=longueur or 500.0,
+                                      sections=32)
+    if axe == "x":
+        outil.apply_transform(
+            trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
+    elif axe == "y":
+        outil.apply_transform(
+            trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
+    outil.apply_translation(point)
+    return trimesh.boolean.difference([piece, outil], engine="manifold")
+
+
 def _revolution_fermee(profil_rz: list, sections: int = 96) -> trimesh.Trimesh:
     """Révolution d'un profil [(r, z), ...] fermé sur l'axe."""
     pts = [(float(r), float(z)) for r, z in profil_rz]
@@ -98,13 +117,16 @@ def _revolution_fermee(profil_rz: list, sections: int = 96) -> trimesh.Trimesh:
 
 def _texte_sur(piece: trimesh.Trimesh, emp: Polygon, texte: str, z_haut: float,
                grave: bool, hauteur_relief: float = 1.2,
-               marge_ratio: float = 0.7) -> trimesh.Trimesh:
-    """Ajoute un texte relief/gravé sur la face supérieure plane d'une pièce."""
+               marge_ratio: float = 0.7, police: str | None = None) -> trimesh.Trimesh:
+    """Ajoute un texte relief/gravé sur la face supérieure plane d'une pièce.
+    Le texte est PARFAITEMENT CENTRÉ sur la zone `emp` (translation vers son
+    centre — sans elle, toute zone décalée de l'origine décalait le texte)."""
     if not texte or not texte.strip():
         return piece
     minx, miny, maxx, maxy = emp.bounds
-    txt = ajuster_dans(texte_multilignes(texte),
+    txt = ajuster_dans(texte_multilignes(texte, police=police),
                        (maxx - minx) * marge_ratio, (maxy - miny) * marge_ratio)
+    txt = translate(txt, xoff=(minx + maxx) / 2.0, yoff=(miny + maxy) / 2.0)
     txt_u = unary_union(list(txt.geoms))
     if grave:
         # gravure = on retire une fine tranche sup et on repose la tranche évidée
@@ -258,17 +280,23 @@ def bac_compartiments(longueur: float = 140, largeur: float = 90,
 
 def bac_empilable(longueur: float = 120, largeur: float = 90,
                   hauteur: float = 50) -> trimesh.Trimesh:
-    """Bac ouvert empilable : lèvre haute rentrante -> le bac du dessus
-    s'emboîte (retrait paroi + 0.3 mm de jeu)."""
-    p, fond, levre_h = 2.0, 2.4, 6.0
+    """Bac ouvert empilable : murs droits + collerette ÉVASÉE sur les 8
+    derniers mm (entonnoir). Le bas du bac suivant — même taille — s'y pose
+    et s'auto-centre, jeu 0.3 mm. (L'ancienne lèvre RENTRANTE était plus
+    petite que le fond : les bacs ne s'emboîtaient pas.) Évasement par
+    tranches -> pente ~16°, aucun surplomb."""
+    p, fond, evase_h, jeu = 2.0, 2.4, 8.0, 0.3
     emp = _empreinte("rect", longueur, largeur)
     solides = _extruder(emp, fond)
     murs = emp.difference(emp.buffer(-p, join_style=1))
-    solides += _extruder(murs, hauteur - fond - levre_h + CHEV, fond - CHEV)
-    # lèvre rentrante (le fond du bac supérieur vient s'y poser)
-    ext_l = emp.buffer(-(p + 0.3), join_style=1)
-    levre = ext_l.difference(ext_l.buffer(-p, join_style=1))
-    solides += _extruder(levre, levre_h + CHEV, hauteur - levre_h - CHEV)
+    solides += _extruder(murs, hauteur - fond - evase_h + CHEV, fond - CHEV)
+    n = 6
+    dz = evase_h / n
+    for i in range(n):
+        z = hauteur - evase_h + i * dz
+        ext = emp.buffer((p + jeu) * (i + 1) / n, join_style=1)
+        mur = ext.difference(ext.buffer(-p, join_style=1))
+        solides += _extruder(mur, dz + CHEV, z - CHEV)
     piece = union_solides(solides)
     piece.apply_translation(-piece.bounds[0])
     return piece
@@ -294,12 +322,15 @@ def crochet_mural(hauteur: float = 60, profondeur: float = 35,
     bas = box(0, 0, profondeur, ep)
     remonte = box(profondeur - ep, 0, profondeur, hauteur * 0.45)
     prof = unary_union([dos, bas, remonte]).buffer(1.5, join_style=1).buffer(-1.5, join_style=1)
-    if vis:
-        for yv in (hauteur * 0.8, hauteur * 0.25):
-            prof = prof.difference(Point(ep / 2, yv).buffer(2.2, resolution=32))
     piece = union_solides(_extruder(prof, largeur))
     piece.apply_transform(trimesh.transformations.rotation_matrix(np.radians(90), [1, 0, 0]))
     piece.apply_translation(-piece.bounds[0])
+    if vis:
+        # perçage 3D dans l'axe X : les vis traversent la PLAQUE MURALE
+        # (dos, épaisseur ep) perpendiculairement au mur.
+        for zv in (hauteur * 0.8, hauteur * 0.25):
+            piece = _percer_3d(piece, [ep / 2, largeur / 2, zv], "x", d=4.4,
+                               longueur=ep * 4)
     return piece
 
 
@@ -313,10 +344,14 @@ def poignee_meuble(entraxe: float = 96, saillie: float = 28,
     pied1 = box(-entraxe / 2 - section / 2, 0, -entraxe / 2 + section / 2, saillie)
     pied2 = box(entraxe / 2 - section / 2, 0, entraxe / 2 + section / 2, saillie)
     prof = unary_union([barre, pied1, pied2]).buffer(2, join_style=1).buffer(-2, join_style=1)
-    prof = prof.difference(Point(-entraxe / 2, saillie * 0.35).buffer(2.05, resolution=32))
-    prof = prof.difference(Point(entraxe / 2, saillie * 0.35).buffer(2.05, resolution=32))
     piece = union_solides(_extruder(prof, section))
     piece.apply_translation(-piece.bounds[0])
+    # trous M4 BORGNES dans l'axe Y : la vis entre par la face de montage
+    # (y=0, dos du tiroir) et remonte DANS le pied — pas en travers.
+    prof_trou = saillie * 0.6
+    for xv in (L / 2 - entraxe / 2, L / 2 + entraxe / 2):
+        piece = _percer_3d(piece, [xv, prof_trou / 2 - 1.0, section / 2], "y",
+                           d=4.1, longueur=prof_trou + 2.0)
     return piece
 
 
@@ -376,17 +411,11 @@ def cadre_photo(largeur_photo: float = 100, hauteur_photo: float = 150,
 # ═════════════════════════════ SALLE DE BAIN / JARDIN ═══════════════════════
 def porte_savon(longueur: float = 105, largeur: float = 75,
                 hauteur: float = 22) -> trimesh.Trimesh:
-    """Porte-savon : bac à rebord + trous de drainage + petits pieds."""
+    """Porte-savon : bac à rebord + trous de drainage — posé à plat, SANS
+    pieds (les 4 cylindres rapportés apparaissaient comme des parasites et
+    suspendaient le fond : que le porte-savon)."""
     emp = _empreinte("rect", longueur, largeur)
     piece = _recipient(emp, hauteur, 2.0, 2.4, drainage=6, d_drain=7)
-    pieds = []
-    minx, miny, maxx, maxy = emp.bounds
-    for sx in (minx + 12, maxx - 12):
-        for sy in (miny + 10, maxy - 10):
-            c = trimesh.creation.cylinder(radius=4, height=4, sections=48)
-            c.apply_translation([sx, sy, -2])
-            pieds.append(c)
-    piece = union_solides([piece] + pieds)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
@@ -420,14 +449,17 @@ def pot_fleur(diametre: float = 110, hauteur: float = 100, drainage: bool = True
 
 def etiquette_plante(longueur: float = 120, largeur: float = 22,
                      texte: str = "Basilic", grave: bool = True) -> trimesh.Trimesh:
-    """Étiquette de plantation : piquet pointu + zone texte."""
+    """Étiquette de plantation : piquet pointu + zone texte. Le texte est
+    posé dans le TIERS HAUT de la palette (loin de la pointe qui va en
+    terre — avant il était centré et finissait près du sol)."""
     ep = 2.4
     zone = box(-largeur / 2, 0, largeur / 2, longueur * 0.45)
     pointe = Polygon([(-largeur / 2, 0), (largeur / 2, 0), (0, -longueur * 0.55)])
     emp = unary_union([zone, pointe]).buffer(1.5, join_style=1).buffer(-1.5, join_style=1)
     piece = union_solides(_extruder(emp, ep))
     if texte:
-        piece = _texte_sur(piece, zone, texte, ep, grave, 0.8, 0.75)
+        zone_txt = box(-largeur / 2, longueur * 0.18, largeur / 2, longueur * 0.43)
+        piece = _texte_sur(piece, zone_txt, texte, ep, grave, 0.8, 0.85)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
@@ -472,13 +504,14 @@ def porte_cartes(largeur: float = 100) -> trimesh.Trimesh:
     return piece
 
 
-def marque_page(longueur: float = 140, largeur: float = 35,
+def marque_page(longueur: float = 140, largeur: float = 35, ep: float = 1.6,
                 texte: str = "", grave: bool = True) -> trimesh.Trimesh:
-    """Marque-page fin (1.6 mm) à coin arrondi, texte gravé."""
+    """Marque-page fin à coin arrondi, texte gravé — épaisseur réglable."""
+    ep = min(3.2, max(0.8, ep))
     emp = _empreinte("rect", largeur, longueur)
-    piece = union_solides(_extruder(emp, 1.6))
+    piece = union_solides(_extruder(emp, ep))
     if texte:
-        piece = _texte_sur(piece, emp, texte, 1.6, grave, 0.6, 0.8)
+        piece = _texte_sur(piece, emp, texte, ep, grave, min(0.6, ep * 0.35), 0.8)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
@@ -501,14 +534,18 @@ def clip_cable(d_cable: float = 5, vis: bool = True) -> trimesh.Trimesh:
 
 
 def passe_cable(d_trou_panneau: float = 60, ep_panneau: float = 18) -> trimesh.Trimesh:
-    """Passe-câble de bureau (grommet) : tube à collerette + entrée latérale."""
+    """Passe-câble de bureau (grommet) : ANNEAU traversant à collerette +
+    entrée latérale. Profil en anneau — il ne se referme PAS sur l'axe
+    (l'ancien profil créait un fond plein : le câble ne passait pas)."""
     j = 0.4
     r = d_trou_panneau / 2 - j
-    piece = _revolution_fermee([
+    r_int = max(r * 0.45, 8.0)                    # ouverture centrale du câble
+    profil = np.array([
         (r + 6, 0), (r + 6, 2.4), (r, 2.4), (r, ep_panneau + 2.4),
-        (r - 1.8, ep_panneau + 2.4), (r - 1.8, 2.4 + 1.8), (r - 20 if r > 24 else 4, 2.4),
-        (r - 20 if r > 24 else 4, 0),
+        (r - 1.8, ep_panneau + 2.4), (r - 1.8, 2.4 + 1.8),
+        (r_int, 2.4), (r_int, 0), (r + 6, 0),
     ])
+    piece = trimesh.creation.revolve(profil, sections=96)
     fente = trimesh.creation.box((14, d_trou_panneau, ep_panneau * 3))
     fente.apply_translation([r, 0, 0])
     piece = trimesh.boolean.difference([piece, fente], engine="manifold")
@@ -541,12 +578,17 @@ def equerre(taille: float = 80, ep: float = 4, vis: bool = True) -> trimesh.Trim
     b = box(0, 0, ep, taille)                       # aile verticale
     gousset = Polygon([(ep, ep), (taille * 0.55, ep), (ep, taille * 0.55)])
     prof = unary_union([a, b, gousset])
-    if vis:
-        prof = prof.difference(Point(taille * 0.7, ep / 2).buffer(2.2, resolution=32))
-        prof = prof.difference(Point(ep / 2, taille * 0.7).buffer(2.2, resolution=32))
-    piece = union_solides(_extruder(prof, 20))
+    largeur = 20.0
+    piece = union_solides(_extruder(prof, largeur))
     piece.apply_transform(trimesh.transformations.rotation_matrix(np.radians(90), [1, 0, 0]))
     piece.apply_translation(-piece.bounds[0])
+    if vis:
+        # perçage 3D perpendiculaire à CHAQUE aile : vertical (z) dans l'aile
+        # posée, horizontal (x) dans l'aile dressée.
+        piece = _percer_3d(piece, [taille * 0.7, largeur / 2, ep / 2], "z",
+                           d=4.4, longueur=ep * 4)
+        piece = _percer_3d(piece, [ep / 2, largeur / 2, taille * 0.7], "x",
+                           d=4.4, longueur=ep * 4)
     return piece
 
 

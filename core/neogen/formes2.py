@@ -31,23 +31,32 @@ def _etoile_2d(branches: int, d_ext: float, ratio: float = 0.45) -> Polygon:
 
 
 def _coeur_2d(taille: float) -> Polygon:
-    """Cœur paramétrique (2 disques + pointe), largeur = taille."""
-    r = taille / 4
-    g = Point(-r, r * 0.9).buffer(r * 1.08, resolution=64)
-    d = Point(r, r * 0.9).buffer(r * 1.08, resolution=64)
-    pointe = Polygon([(-taille / 2, r * 0.8), (taille / 2, r * 0.8), (0, -taille / 2)])
-    c = unary_union([g, d, pointe])
-    return c.buffer(1, join_style=1).buffer(-1, join_style=1)
+    """Cœur par la courbe paramétrique classique (flancs galbés, pointe
+    élégante) — les 2-disques-plus-triangle faisaient des flancs droits."""
+    t = np.linspace(0, 2 * np.pi, 240, endpoint=False)
+    x = 16 * np.sin(t) ** 3
+    y = 13 * np.cos(t) - 5 * np.cos(2 * t) - 2 * np.cos(3 * t) - np.cos(4 * t)
+    c = Polygon(zip(x, y)).buffer(0)
+    # adoucit les cusps (pointe, échancrure) + simplifie : sans cela la
+    # triangulation de l'extrusion produit des faces dégénérées (non étanche)
+    c = c.buffer(0.3, join_style=1).buffer(-0.3, join_style=1).simplify(0.05)
+    from shapely.affinity import scale as shp_scale
+    f = taille / (c.bounds[2] - c.bounds[0])
+    return shp_scale(c, xfact=f, yfact=f, origin=(0, 0))
 
 
 def ornement_etoile(diametre: float = 80, branches: int = 5, ep: float = 4,
                     suspension: bool = True, texte: str = "",
                     grave: bool = True) -> trimesh.Trimesh:
-    """Étoile déco (sapin, guirlande) avec trou de suspension."""
+    """Étoile déco (sapin, guirlande) avec ŒILLET de suspension renforcé
+    (anneau fusionné au sommet — le trou nu dans la pointe fine la
+    détachait)."""
     emp = _etoile_2d(int(branches), diametre)
     if suspension:
         _minx, _miny, _maxx, maxy = emp.bounds
-        emp = emp.difference(Point(0, maxy - 4).buffer(1.8, resolution=32))
+        centre = Point(0, maxy + 1.5)
+        emp = unary_union([emp, centre.buffer(4.2, resolution=48)])
+        emp = emp.difference(centre.buffer(1.9, resolution=32))
     piece = union_solides(_extruder(emp, ep))
     if texte:
         piece = _texte_sur(piece, _empreinte("rond", diametre * 0.45), texte, ep, grave, 0.8)
@@ -57,11 +66,16 @@ def ornement_etoile(diametre: float = 80, branches: int = 5, ep: float = 4,
 
 def coeur_deco(taille: float = 70, ep: float = 5, suspension: bool = False,
                texte: str = "", grave: bool = False) -> trimesh.Trimesh:
-    """Cœur déco / cadeau, texte relief ou gravé."""
+    """Cœur déco / cadeau, texte relief ou gravé. Suspension = ŒILLET posé
+    AU-DESSUS de l'échancrure et relié par un pont (l'ancien trou tombait
+    DANS l'échancrure entre les lobes : il ne perçait rien)."""
     emp = _coeur_2d(taille)
     if suspension:
         _minx, _miny, _maxx, maxy = emp.bounds
-        emp = emp.difference(Point(0, maxy - 4).buffer(1.8, resolution=32))
+        centre = Point(0, maxy + 2.0)
+        pont = box(-2.6, maxy - taille * 0.30, 2.6, maxy + 2.0)
+        emp = unary_union([emp, pont, centre.buffer(4.4, resolution=48)])
+        emp = emp.difference(centre.buffer(1.9, resolution=32))
     piece = union_solides(_extruder(emp, ep))
     if texte:
         piece = _texte_sur(piece, _empreinte("rond", taille * 0.5), texte, ep, grave, 1.0)
@@ -69,19 +83,22 @@ def coeur_deco(taille: float = 70, ep: float = 5, suspension: bool = False,
     return piece
 
 
-def lettre_3d(caractere: str = "A", hauteur: float = 100,
-              ep: float = 15) -> trimesh.Trimesh:
-    """Lettre ou chiffre géant autoportant (déco étagère, initiale)."""
-    car = (caractere or "A").strip()[:3]
-    mp = texte_multilignes(car, hauteur)
+def lettre_3d(texte: str = "A", hauteur: float = 100, ep: float = 15,
+              police: str | None = None) -> trimesh.Trimesh:
+    """Lettre ou chiffre géant autoportant (déco étagère, initiale).
+    NB : le paramètre DOIT s'appeler `texte` (le pont catalogue filtre les
+    kwargs par signature — nommé `caractere`, il était perdu -> toujours A)."""
+    car = (texte or "A").strip()[:3]
+    mp = texte_multilignes(car, hauteur, police=police)
     piece = union_solides(_extruder(unary_union(list(mp.geoms)), ep))
     piece.apply_translation(-piece.bounds[0])
     return piece
 
 
-def numero_maison(numero: str = "12", hauteur: float = 120) -> trimesh.Trimesh:
+def numero_maison(texte: str = "12", hauteur: float = 120,
+                  police: str | None = None) -> trimesh.Trimesh:
     """Numéro de maison : chiffres en relief sur plaque à trous de vis."""
-    mp = texte_multilignes(str(numero), hauteur * 0.55)
+    mp = texte_multilignes(str(texte), hauteur * 0.55, police=police)
     minx, miny, maxx, maxy = mp.bounds
     emp = box(minx - 14, miny - 12, maxx + 14, maxy + 12)
     emp = emp.buffer(4, join_style=1).buffer(-4, join_style=1)
@@ -95,7 +112,9 @@ def numero_maison(numero: str = "12", hauteur: float = 120) -> trimesh.Trimesh:
 
 
 def trophee(hauteur: float = 120, texte: str = "", grave: bool = False) -> trimesh.Trimesh:
-    """Trophée coupe (révolution) sur socle carré, bande porte-texte."""
+    """Trophée coupe (révolution) sur socle À DEUX ÉTAGES : le texte est
+    gravé/en relief sur la MARCHE AVANT de l'étage bas — large et lisible
+    (l'ancienne bande de 2.6 mm rendait le texte illisible, en bloc)."""
     h = hauteur
     coupe = _revolution_fermee([
         (h * 0.16, 0), (h * 0.16, h * 0.04), (h * 0.05, h * 0.08),
@@ -103,14 +122,15 @@ def trophee(hauteur: float = 120, texte: str = "", grave: bool = False) -> trime
         (h * 0.17, h * 0.80), (h * 0.155, h * 0.80), (h * 0.145, h * 0.62),
         (h * 0.085, h * 0.46), (h * 0.05, h * 0.34),
     ])
-    socle_emp = _empreinte("carre", h * 0.38)
-    socle = union_solides(_extruder(socle_emp, h * 0.07))
-    coupe.apply_translation([0, 0, h * 0.07 - CHEV])
-    piece = union_solides([socle, coupe])
+    h_bas, h_haut = h * 0.05, h * 0.06
+    solides = _extruder(_empreinte("carre", h * 0.46), h_bas)
+    solides += _extruder(_empreinte("carre", h * 0.34), h_haut + CHEV, h_bas - CHEV)
+    coupe.apply_translation([0, 0, h_bas + h_haut - CHEV])
+    piece = union_solides(solides + [coupe])
     if texte:
-        bande = box(-h * 0.17, -h * 0.19 - 1.6, h * 0.17, -h * 0.19 + 1)
-        piece = union_solides([piece] + _extruder(bande, h * 0.055))
-        piece = _texte_sur(piece, bande, texte, h * 0.055, grave, 0.8)
+        # marche avant de l'étage bas : y de -0.23h (bord) à -0.17h (étage haut)
+        zone = box(-h * 0.20, -h * 0.225, h * 0.20, -h * 0.178)
+        piece = _texte_sur(piece, zone, texte, h_bas, grave, 0.8, 0.9)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
@@ -204,7 +224,10 @@ def tire_fermeture(longueur: float = 30, texte: str = "") -> trimesh.Trimesh:
 
 
 def regle(longueur: float = 150, largeur: float = 25) -> trimesh.Trimesh:
-    """Règle avec graduations gravées (traits longs tous les 10 mm)."""
+    """Règle avec graduations gravées (traits longs tous les 10 mm) et
+    CHIFFRES gravés sous chaque trait de centimètre."""
+    from shapely.affinity import translate as shp_translate
+    from core.neogen.goodies import _ligne_texte
     ep = 2.4
     emp = box(0, 0, longueur, largeur)
     solides = _extruder(emp, ep - 0.6)
@@ -214,6 +237,13 @@ def regle(longueur: float = 150, largeur: float = 25) -> trimesh.Trimesh:
         haut = 8 if (round(x) % 10 == 0) else 4.5
         grads.append(box(x - 0.35, largeur - haut, x + 0.35, largeur))
         x += 5.0
+    for cm in range(1, int(longueur // 10) + 1):
+        chif = _ligne_texte(str(cm), 4.0)
+        minx, miny, maxx, maxy = chif.bounds
+        chif = shp_translate(chif, xoff=cm * 10 - (minx + maxx) / 2,
+                             yoff=largeur - 14.5 - miny)
+        if chif.bounds[2] < longueur - 1:          # ne déborde pas du bout
+            grads.extend(chif.geoms)
     haut_2d = emp.difference(unary_union(grads))
     solides += _extruder(haut_2d, 0.6 + CHEV, ep - 0.6 - CHEV)
     piece = union_solides(solides)

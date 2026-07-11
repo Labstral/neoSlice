@@ -21,10 +21,14 @@ def test_bornes_clampees():
     assert objet == "boite" and params["jeu"] == 0.1
 
 
-def test_texte_requis_sinon_question():
+def test_texte_optionnel_sauf_lettre():
+    """Le texte est OPTIONNEL (pièce nue valable) — sauf lettre_3d où il EST
+    l'objet. Régression : avant, 5 objets bloquaient sur une question."""
     for o in ("porte_cle", "badge", "sousverre", "plaque", "magnet"):
         objet, _p, q = P.valider({"objet": o})
-        assert objet is None and q, o
+        assert objet == o and q is None, o
+    objet, _p, q = P.valider({"objet": "lettre_3d"})
+    assert objet is None and q
 
 
 def test_hors_catalogue_route_vers_libre():
@@ -166,6 +170,23 @@ def test_installation_marker(tmp_path, monkeypatch):
     assert I.est_installe()
     I.desinstaller()
     assert not I.est_installe()
+
+
+def test_maj_cookbook_valide_en_sandbox(tmp_path, monkeypatch):
+    """La base d'objets distante : chaque recette est EXECUTEE en sandbox et
+    verifiee avant installation — du code dangereux ou casse est ecarte."""
+    from core.neogen import maj, libre as L
+    monkeypatch.setattr(maj, "FICHIER_LOCAL", tmp_path / "extra.json")
+    manifest = {"version": "t1", "recettes": [
+        {"cles": "anneau test", "demande": "un anneau",
+         "code": "piece = percer(cylindre(45, 35), cylindre(38, 60))"},
+        {"cles": "hack", "demande": "hack", "code": "import os"},
+    ]}
+    n, ecartees = maj.appliquer(manifest)
+    assert n == 1 and ecartees == 1
+    assert maj.version_locale() == "t1"
+    assert len(maj.charger_extra()) == 1
+    L.COOKBOOK_EXTRA.clear()          # ne pas polluer les autres tests
 
 
 def test_entonnoir_canal_traversant():

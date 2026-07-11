@@ -234,33 +234,38 @@ class NeoGenPanel(QWidget):
             grille.addWidget(b, i // 2, i % 2)
         v.addLayout(grille)
 
+        # boutons d'action BIEN VISIBLES (fond plein + bordure colorée)
         ligne2 = QHBoxLayout()
         self._btn_logo = QPushButton(_("neogen.attach_logo"))
         self._btn_logo.setCursor(Qt.PointingHandCursor)
+        self._btn_logo.setMinimumHeight(30)
         self._btn_logo.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {pal['TEXT_LABEL']};
-                border: 1px dashed {pal['INACTIVE']}; border-radius: 6px;
-                padding: 4px 10px; font-size: 9pt; }}
-            QPushButton:hover {{ color: {PRO_VIOLET}; border-color: {PRO_VIOLET}; }}
+            QPushButton {{ background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
+                border: 1px solid {PRO_VIOLET}; border-radius: 6px;
+                padding: 5px 12px; font-size: 9pt; font-weight: bold; }}
+            QPushButton:hover {{ background: rgba(168,85,247,0.18); }}
         """)
         self._btn_logo.clicked.connect(self._choisir_logo)
-        ligne2.addWidget(self._btn_logo)
-        self._lbl_logo = QLabel("")
-        self._lbl_logo.setStyleSheet(
-            f"color: {PRO_VIOLET}; background: transparent; font-size: 9pt;")
-        ligne2.addWidget(self._lbl_logo, 1)
+        ligne2.addWidget(self._btn_logo, 1)
         self._btn_reset = QPushButton(_("neogen.new_request"))
         self._btn_reset.setCursor(Qt.PointingHandCursor)
+        self._btn_reset.setMinimumHeight(30)
         self._btn_reset.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {pal['TEXT_LABEL']};
-                border: 1px solid {pal['INACTIVE']}; border-radius: 6px;
-                padding: 4px 10px; font-size: 9pt; }}
-            QPushButton:hover {{ color: {PRO_CYAN}; border-color: {PRO_CYAN}; }}
+            QPushButton {{ background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
+                border: 1px solid {PRO_CYAN}; border-radius: 6px;
+                padding: 5px 12px; font-size: 9pt; font-weight: bold; }}
+            QPushButton:hover {{ background: rgba(34,211,238,0.18); }}
         """)
         self._btn_reset.clicked.connect(self._nouvelle_demande)
         self._btn_reset.hide()
-        ligne2.addWidget(self._btn_reset)
+        ligne2.addWidget(self._btn_reset, 1)
         v.addLayout(ligne2)
+        # nom du logo SOUS les boutons, élidé : un nom long ne peut plus
+        # élargir la colonne et casser la mise en page
+        self._lbl_logo = QLabel("")
+        self._lbl_logo.setStyleSheet(
+            f"color: {PRO_VIOLET}; background: transparent; font-size: 9pt;")
+        v.addWidget(self._lbl_logo)
         v.addStretch()
         return w
 
@@ -268,6 +273,7 @@ class NeoGenPanel(QWidget):
         self._historique.clear()
         self._dernier_code = None
         self._btn_reset.hide()
+        self._btn_go.setText(_("neogen.generate"))
         self._statut.setText("")
         self._input.clear()
         self._input.setPlaceholderText(_("neogen.placeholder"))
@@ -278,12 +284,17 @@ class NeoGenPanel(QWidget):
         self._input.setText(txt)
         self._input.setFocus()
 
+    def _nom_logo_elide(self, nom: str) -> str:
+        from PySide6.QtGui import QFontMetrics
+        fm = QFontMetrics(self._lbl_logo.font())
+        return fm.elidedText(nom, Qt.ElideMiddle, 350)
+
     def _choisir_logo(self):
         chemin, _f = QFileDialog.getOpenFileName(
             self, _("neogen.attach_logo"), "", "Logo (*.svg *.png *.jpg *.jpeg)")
         if chemin:
             self._image = Path(chemin)
-            self._lbl_logo.setText(self._image.name)
+            self._lbl_logo.setText(self._nom_logo_elide(self._image.name))
 
     def _lancer_libre(self):
         phrase = self._input.text().strip()
@@ -370,12 +381,32 @@ class NeoGenPanel(QWidget):
         form = QFormLayout()
         form.setSpacing(6)
         champs: dict = {}
+        # flèches de spinbox EXPLICITES (largeur garantie : sans sous-contrôle,
+        # certaines sections les rendaient trop étroites pour être cliquées)
+        # + popup de combo stylée (sinon illisible en thème clair)
         style_champ = f"""
             QDoubleSpinBox, QComboBox, QLineEdit {{
                 background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
                 border: 1px solid {pal['INACTIVE']}; border-radius: 4px;
                 padding: 3px 6px; min-width: 90px; }}
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+                width: 18px; background: {pal['BG_ELEVATED']};
+                border-left: 1px solid {pal['INACTIVE']}; }}
+            QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
+                background: rgba(34,211,238,0.25); }}
+            QComboBox QAbstractItemView {{
+                background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
+                selection-background-color: rgba(34,211,238,0.25);
+                selection-color: {pal['TEXT_PRIMARY']}; }}
         """
+
+        def _lbl(txt: str) -> QLabel:
+            """Label de formulaire à couleur EXPLICITE (l'implicite héritait du
+            mauvais contraste en thème clair : illisible)."""
+            l = QLabel(txt)
+            l.setStyleSheet(
+                f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+            return l
         for (pid, pfr, pen, mini, maxi, defaut, pas) in e["params"]:
             sp = QDoubleSpinBox()
             sp.setRange(mini, maxi)
@@ -386,7 +417,7 @@ class NeoGenPanel(QWidget):
                                               "colonnes", "branches", "ondulations",
                                               "couleurs") else "")
             sp.setStyleSheet(style_champ)
-            form.addRow(_fr_en(pfr, pen), sp)
+            form.addRow(_lbl(_fr_en(pfr, pen)), sp)
             champs[pid] = sp
         for (cid, cfr, cen, options, defaut) in e["choix"]:
             cb = QComboBox()
@@ -394,7 +425,7 @@ class NeoGenPanel(QWidget):
                 cb.addItem(_fr_en(ofr, oen), val)
             cb.setCurrentIndex(max(0, [o[0] for o in options].index(defaut)))
             cb.setStyleSheet(style_champ)
-            form.addRow(_fr_en(cfr, cen), cb)
+            form.addRow(_lbl(_fr_en(cfr, cen)), cb)
             champs[cid] = cb
         for (fid, ffr, fen, defaut) in e["flags"]:
             ch = QCheckBox(_fr_en(ffr, fen))
@@ -407,8 +438,19 @@ class NeoGenPanel(QWidget):
             le.setPlaceholderText(_("neogen.text_placeholder")
                                   + (" *" if e["texte"] == "requis" else ""))
             le.setStyleSheet(style_champ)
-            form.addRow(_("neogen.text_label"), le)
+            form.addRow(_lbl(_("neogen.text_label")), le)
             champs["texte"] = le
+            cb_pol = QComboBox()
+            cb_pol.addItem(_("neogen.font_default"), None)
+            try:
+                from core.neogen.catalogue import polices_disponibles
+                for fam in polices_disponibles():
+                    cb_pol.addItem(fam, fam)
+            except Exception:
+                pass
+            cb_pol.setStyleSheet(style_champ)
+            form.addRow(_lbl(_("neogen.font_label")), cb_pol)
+            champs["police"] = cb_pol
             if not any(f[0] == "grave" for f in e["flags"]):
                 ch = QCheckBox(_("neogen.engraved"))
                 ch.setStyleSheet(
@@ -508,6 +550,7 @@ class NeoGenPanel(QWidget):
                  **{k: v for k, v in contexte["params"].items() if k != "image"}},
                 ensure_ascii=False)})
         self._btn_reset.show()
+        self._btn_go.setText(_("neogen.modify_btn"))   # le bouton dit ce qu'il fait
         self._statut.setText(f"✓ {resume} — {_('neogen.loaded_iterate')}")
         self._input.setPlaceholderText(_("neogen.modify_placeholder"))
         self.piece_ready.emit(Path(chemin))
@@ -540,7 +583,8 @@ class NeoGenPanel(QWidget):
         if hasattr(self, "_tabs"):
             self._tabs.setCurrentIndex(int(etat.get("onglet", 0)))
         if self._image and hasattr(self, "_lbl_logo"):
-            self._lbl_logo.setText(Path(self._image).name)
+            self._lbl_logo.setText(self._nom_logo_elide(Path(self._image).name))
         if self._dernier_code and hasattr(self, "_btn_reset"):
             self._btn_reset.show()
+            self._btn_go.setText(_("neogen.modify_btn"))
             self._input.setPlaceholderText(_("neogen.modify_placeholder"))

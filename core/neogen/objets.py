@@ -112,28 +112,26 @@ def boite(diametre: float = 50, hauteur: float = 30, paroi: float = 2.0,
 
 # ── SUPPORT DE TÉLÉPHONE : profil incliné extrudé ────────────────────────────
 def support_tel(largeur: float = 70, angle_deg: float = 62, ep: float = 8) -> trimesh.Trimesh:
-    """Profil en coupe (dossier incliné + assise + butée) extrudé sur la largeur.
-    Angle du dossier 62° depuis l'horizontale -> aucune face < 45°, zéro support.
-    Imprimé À PLAT sur sa face arrière ? Non : posé sur sa BASE (profil stable)."""
+    """Support téléphone « coin » : dossier massif incliné + VRAIE FENTE
+    d'insertion de 13 mm (téléphone avec coque) parallèle au dossier, lèvre
+    avant de retenue. Le téléphone se GLISSE dans la fente le long de la
+    pente — l'ancien « creux » de 4 mm ne laissait rien entrer. Aucune face
+    en surplomb : la fente est ouverte vers le haut."""
+    from shapely.geometry import LineString
+    from shapely.ops import unary_union
     a = np.radians(angle_deg)
-    prof = 78.0          # profondeur au sol
-    h_dos = 92.0         # hauteur du dossier
-    dx = h_dos / np.tan(a)          # recul horizontal du dossier
-    butee_h, butee_l = 14.0, 12.0   # lèvre avant qui retient le téléphone
-    # polygone du profil (X = profondeur, Y = hauteur) — sens horaire
-    pts = [
-        (0, 0), (prof, 0),                          # base au sol
-        (prof, ep),                                  # arrière bas
-        (butee_l + ep + dx * (ep / h_dos) + 8, ep),  # dessus de l'assise
-        (butee_l + ep + 8 - 0, butee_h + ep),        # butée avant (extérieur)
-        (butee_l + ep - 4, butee_h + ep),            # sommet butée
-        (butee_l + ep - 4, ep + 2),                  # creux entre butée et dossier
-        (butee_l, ep + 2),
-        (butee_l + dx * ((h_dos - ep) / h_dos), h_dos),        # sommet dossier (incliné)
-        (butee_l + dx * ((h_dos - ep) / h_dos) - ep / np.sin(a), h_dos),  # épaisseur dossier
-        (0, ep * 1.2),
-    ]
-    poly = Polygon(pts).buffer(0)
+    cot = 1.0 / np.tan(a)
+    h = 90.0
+    base = h * cot + 34.0                     # profondeur totale au sol
+    tri = Polygon([(0, 0), (base, 0), (0, h)])          # coin plein
+    talon = box(base - 26.0, 0, base + 4.0, 26.0)        # lèvre avant rehaussée
+    corps = unary_union([tri, talon])
+    # fente : bande de 13 mm le long de la direction du dossier, fond à y=7
+    p0 = np.array([base - 19.0, 0.0])
+    d = np.array([-cot, 1.0]); d /= np.linalg.norm(d)
+    fente = LineString([tuple(p0), tuple(p0 + d * h * 1.4)]).buffer(6.5, cap_style=2)
+    fente = fente.intersection(box(-10, 7.0, base + 20, h * 1.5))
+    poly = corps.difference(fente)
     if isinstance(poly, MultiPolygon):
         poly = max(poly.geoms, key=lambda g: g.area)
     poly = poly.buffer(1.5, join_style=1).buffer(-1.5, join_style=1)  # angles adoucis

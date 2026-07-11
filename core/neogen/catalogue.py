@@ -41,28 +41,30 @@ def _e(id, fr, en, domaine, construire, texte="aucun", image=False,
 # ── Constructeurs (imports paresseux : le catalogue se charge instantanément) ─
 def _b_porte_cle(p):
     from core.neogen.texte import construire_porte_cle
-    return construire_porte_cle(p.get("texte", "Léa"), p.get("longueur", 50),
+    return construire_porte_cle(p.get("texte", ""), p.get("longueur", 50),
                                 ep_socle=p.get("socle", 3.0), ep_texte=p.get("relief", 1.6),
-                                d_trou=p.get("trou", 4.5), grave=p.get("grave", False))
+                                d_trou=p.get("trou", 4.5), grave=p.get("grave", False),
+                                police=p.get("police"))
 
 def _b_badge(p):
     from core.neogen.goodies import badge
     return badge(p.get("texte", ""), p.get("diametre", 40), grave=p.get("grave", False),
-                 trou=4.5 if p.get("accroche") else 0.0)
+                 trou=4.5 if p.get("accroche") else 0.0, police=p.get("police"))
 
 def _b_sousverre(p):
     from core.neogen.goodies import sous_verre
-    return sous_verre(p.get("texte", ""), p.get("diametre", 90))
+    return sous_verre(p.get("texte", ""), p.get("diametre", 90), police=p.get("police"))
 
 def _b_plaque(p):
     from core.neogen.goodies import plaque
     return plaque(p.get("texte", ""), p.get("largeur", 0), grave=p.get("grave", False),
-                  vis=p.get("vis", False))
+                  vis=p.get("vis", False), police=p.get("police"))
 
 def _b_magnet(p):
     from core.neogen.goodies import magnet
     return magnet(p.get("texte", ""), p.get("diametre", 35),
-                  d_aimant=p.get("aimant_d", 10.2), prof_aimant=p.get("aimant_p", 2.0))
+                  d_aimant=p.get("aimant_d", 10.2), prof_aimant=p.get("aimant_p", 2.0),
+                  police=p.get("police"))
 
 def _b_vase(p):
     from core.neogen.objets import vase
@@ -121,26 +123,26 @@ _FORMES3 = [("rond", "Rond", "Round"), ("carre", "Carré", "Square"),
 
 CATALOGUE = [
     # ── Personnalisation ──
-    _e("porte_cle", "Porte-clé", "Keychain", "perso", _b_porte_cle, texte="requis",
+    _e("porte_cle", "Porte-clé", "Keychain", "perso", _b_porte_cle, texte="optionnel",
        params=[_P("longueur", "Longueur", "Length", 25, 120, 50, 1),
                _P("trou", "Trou (ø)", "Hole (ø)", 2, 12, 4.5, 0.5),
                _P("relief", "Hauteur texte", "Text height", 0.4, 4, 1.6, 0.2),
                _P("socle", "Épaisseur socle", "Base thickness", 1.5, 8, 3, 0.5)],
        flags=[("grave", "Texte gravé", "Engraved text", False)]),
-    _e("badge", "Badge", "Badge", "perso", _b_badge, texte="requis",
+    _e("badge", "Badge", "Badge", "perso", _b_badge, texte="optionnel",
        params=[_P("diametre", "Diamètre", "Diameter", 20, 120, 40, 1)],
        flags=[("grave", "Texte gravé", "Engraved text", False),
               ("accroche", "Trou d'accroche", "Hanging hole", False)]),
     _e("plaque", "Plaque (multi-lignes)", "Plate (multi-line)", "perso", _b_plaque,
-       texte="requis",
+       texte="optionnel",
        params=[_P("largeur", "Largeur (0=auto)", "Width (0=auto)", 0, 300, 0, 5)],
        flags=[("grave", "Texte gravé", "Engraved text", False),
               ("vis", "Trous de vis", "Screw holes", False)]),
-    _e("magnet", "Magnet frigo", "Fridge magnet", "perso", _b_magnet, texte="requis",
+    _e("magnet", "Magnet frigo", "Fridge magnet", "perso", _b_magnet, texte="optionnel",
        params=[_P("diametre", "Diamètre", "Diameter", 20, 80, 35, 1),
                _P("aimant_d", "Aimant (ø)", "Magnet (ø)", 4, 25, 10.2, 0.1),
                _P("aimant_p", "Aimant (prof.)", "Magnet (depth)", 1, 5, 2, 0.5)]),
-    _e("sousverre", "Sous-verre", "Coaster", "perso", _b_sousverre, texte="requis",
+    _e("sousverre", "Sous-verre", "Coaster", "perso", _b_sousverre, texte="optionnel",
        params=[_P("diametre", "Diamètre", "Diameter", 60, 140, 90, 5)]),
     _e("logo", "Logo 3D (image)", "3D logo (image)", "perso", _b_logo, image=True,
        params=[_P("largeur", "Taille du logo", "Logo size", 15, 150, 40, 5),
@@ -152,7 +154,8 @@ CATALOGUE = [
     _e("marque_page", "Marque-page", "Bookmark", "perso", _f("formes", "marque_page"),
        texte="optionnel",
        params=[_P("longueur", "Longueur", "Length", 80, 220, 140, 5),
-               _P("largeur", "Largeur", "Width", 20, 60, 35, 1)]),
+               _P("largeur", "Largeur", "Width", 20, 60, 35, 1),
+               _P("ep", "Épaisseur", "Thickness", 0.8, 3.2, 1.6, 0.2)]),
     _e("tire_fermeture", "Tirette de zip", "Zipper pull", "perso",
        _f("formes2", "tire_fermeture"), texte="optionnel",
        params=[_P("longueur", "Longueur", "Length", 20, 60, 30, 1)]),
@@ -306,7 +309,7 @@ CATALOGUE = [
        flags=[("drainage", "Trous de drainage", "Drainage holes", True),
               ("soucoupe", "Générer la soucoupe", "Generate the saucer", False)]),
     _e("etiquette_plante", "Étiquette de plantation", "Plant label", "sdb",
-       _f("formes", "etiquette_plante"), texte="requis",
+       _f("formes", "etiquette_plante"), texte="optionnel",
        params=[_P("longueur", "Longueur", "Length", 80, 200, 120, 5),
                _P("largeur", "Largeur", "Width", 15, 35, 22, 1)]),
     _e("gobelet_sdb", "Gobelet brosses à dents", "Toothbrush cup", "sdb",
@@ -423,15 +426,23 @@ def construire(entree_id: str, params: dict):
         t = str(params.get("texte", "") or "").strip()[:40]
         if e["texte"] == "requis" and not t:
             raise ValueError("texte requis")
-        if t:
-            p["texte"] = t
+        p["texte"] = t
+        if params.get("police"):
+            p["police"] = str(params["police"])
         if "grave" in params and not any(f[0] == "grave" for f in e["flags"]):
             p["grave"] = bool(params.get("grave"))
     if e["image"]:
         p["image"] = params.get("image")
         if not p["image"]:
             raise ValueError("image requise")
-    return e["construire"](p)
+    # Police "de session" : atteint TOUS les générateurs à texte (même ceux
+    # sans paramètre `police` dans leur signature — coquetier, trophée...).
+    from core.neogen import goodies as _g
+    _g.POLICE_ACTIVE = p.get("police")
+    try:
+        return e["construire"](p)
+    finally:
+        _g.POLICE_ACTIVE = None
 
 
 def generer_fichier(entree_id: str, params: dict):
@@ -450,3 +461,15 @@ def generer_fichier(entree_id: str, params: dict):
         return base.with_suffix(".3mf")
     except Exception:
         return base.with_suffix(".stl")
+
+
+def polices_disponibles() -> list[str]:
+    """Familles de polices installées (via matplotlib, celles que TextPath
+    sait réellement vectoriser). Triées, dédupliquées."""
+    try:
+        from matplotlib import font_manager
+        familles = sorted({f.name for f in font_manager.fontManager.ttflist
+                           if not f.name.startswith(".")})
+        return familles
+    except Exception:
+        return ["Arial", "Arial Black", "Segoe UI"]

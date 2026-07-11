@@ -382,9 +382,10 @@ COOKBOOK = [
      "piece = percer(fusionner(roue, dents), cylindre(8, 20))"),
     ("boite rangement couvercle", "une boite carree",
      "corps = creuser(boite_3d(60, 60, 30), 2)\npiece = corps"),
-    ("tirelire cochon fente piece", "une tirelire simple",
-     "corps = creuser(cylindre(80, 70), 2.4)\nfente = boite_3d(3, 40, 20)\n"
-     "piece = percer(corps, deplacer(fente, 0, 0, 60))"),
+    ("tirelire cochon fente piece economies", "une tirelire simple",
+     "corps = cylindre(80, 70)\n"
+     "corps = percer(corps, deplacer(cylindre(75, 65), 0, 0, 2.5))\n"
+     "piece = percer(corps, deplacer(boite_3d(3.5, 40, 30), 0, 0, 60))"),
     ("presse papier", "un presse-papier",
      "piece = fusionner(boite_3d(70, 50, 8), deplacer(demi_sphere(40), 0, 0, 7.8))"),
     ("support bague bijou cone", "un porte-bagues",
@@ -494,6 +495,38 @@ COOKBOOK = [
     ("tour chateau creneaux donjon", "une tour de chateau avec creneaux",
      "mur = tube(50, 42, 88)\nmerlons = repeter_cercle(deplacer(boite_3d(10, 8, 12), 23, 0, 87.8), 8, 0)\n"
      "piece = fusionner(mur, merlons)"),
+    ("bouchon bouteille liege conique", "un bouchon de bouteille",
+     "piece = cone(20, 28, 24)"),
+    ("cale porte coin bloquer marches", "une cale de porte",
+     "piece = fusionner(boite_3d(60, 80, 8), deplacer(boite_3d(60, 60, 8), 0, -10, 7),\n"
+     "                  deplacer(boite_3d(60, 40, 8), 0, -20, 14),\n"
+     "                  deplacer(boite_3d(60, 20, 8), 0, -30, 21))"),
+    ("entretoise hexagonale ecrou espaceur", "une entretoise hexagonale",
+     "piece = percer(prisme(6, 12, 15), cylindre(5, 40))"),
+    ("tampon encreur manche poignee", "un tampon",
+     "piece = fusionner(boite_3d(50, 30, 8), deplacer(cylindre(14, 30), 0, 0, 7))"),
+    ("porte carte visite bureau fente", "un porte-carte de visite",
+     "piece = percer(boite_3d(70, 24, 12), deplacer(boite_3d(70, 3, 20), 0, 4, 4))"),
+    ("verre doseur mesurer cuisine evase", "un verre doseur",
+     "piece = creuser(cone(60, 70, 80), 2.5)"),
+    ("pot stylo incline bureau penche", "un pot a stylos incline",
+     "corps = prisme(6, 50, 85)\n"
+     "trou = tourner(deplacer(cylindre(34, 95), 0, 0, 12), 'x', 12)\n"
+     "piece = percer(corps, trou)"),
+    ("passoire trous egouttoir cuisine", "une passoire",
+     "bol = demi_sphere(120, creuse=3)\n"
+     "trous = repeter_cercle(cylindre(6, 200), 8, 30)\n"
+     "piece = percer(bol, trous)"),
+    ("rond serviette anneau table", "un rond de serviette",
+     "piece = percer(cylindre(45, 35), cylindre(38, 60))"),
+    ("repose cuillere cuisine plat", "un repose-cuillere",
+     "coupelle = creuser(cylindre(90, 15), 3)\n"
+     "piece = percer(coupelle, deplacer(boite_3d(30, 100, 20), 0, -40, 8))"),
+    ("porte photo chevalet cadre fente", "un porte-photo",
+     "piece = percer(boite_3d(80, 30, 16),\n"
+     "               tourner(deplacer(boite_3d(80, 3, 40), 0, 0, 6), 'x', 15))"),
+    ("embout pied chaise protection sol", "un embout de pied de chaise",
+     "piece = percer(cylindre(30, 25), deplacer(cylindre(25.5, 25), 0, 0, 3))"),
 ]
 
 _MOTS = re.compile(r"[a-zà-ÿ0-9]+")
@@ -506,10 +539,26 @@ def _normaliser_mots(txt: str) -> set:
                                       "l", "a", "au", "pour", "sur"}
 
 
-def _exemples_pertinents(phrase: str, n: int = 2) -> list[tuple[str, str]]:
+# Recettes SUPPLÉMENTAIRES téléchargées (base actualisable sans rebuild —
+# voir core/neogen/maj.py : validées en sandbox à l'installation).
+COOKBOOK_EXTRA: list[tuple[str, str, str]] = []
+
+
+def recharger_extra() -> None:
+    from core.neogen.maj import charger_extra
+    COOKBOOK_EXTRA[:] = charger_extra()
+
+
+try:
+    recharger_extra()
+except Exception:
+    pass
+
+
+def _exemples_pertinents(phrase: str, n: int = 3) -> list[tuple[str, str]]:
     mots = _normaliser_mots(phrase)
     scores = []
-    for cles, demande, code in COOKBOOK:
+    for cles, demande, code in list(COOKBOOK) + COOKBOOK_EXTRA:
         s = len(mots & _normaliser_mots(cles))
         if s > 0:
             scores.append((s, demande, code))
@@ -560,12 +609,27 @@ def verifier(piece: trimesh.Trimesh) -> str | None:
         return "la piece ne touche pas le plateau (utilise poser_au_sol)"
     # UN SEUL TENANT : une piece en morceaux separes (vecu : un bol et son
     # manche poses COTE A COTE...) n'est pas un objet — les elements doivent
-    # se chevaucher pour ne former qu'un solide.
+    # se chevaucher pour ne former qu'un solide. EXCEPTION : une CAVITE
+    # FERMEE entierement enclose dans le corps (tirelire, flotteur...) est
+    # une coque interieure legitime, pas un morceau pose a cote.
     try:
-        if len(piece.split(only_watertight=False)) > 1:
-            return ("la piece est en PLUSIEURS morceaux disjoints : "
-                    "fusionner() ne colle pas a distance — repositionne les "
-                    "elements avec deplacer() pour qu'ils se CHEVAUCHENT")
+        comps = piece.split(only_watertight=False)
+        if len(comps) > 1:
+            principal = max(comps, key=lambda c: c.area)
+            for c in comps:
+                if c is principal:
+                    continue
+                try:
+                    interne = (bool(principal.contains([c.centroid])[0])
+                               and (c.bounds[0] > principal.bounds[0] - 1e-6).all()
+                               and (c.bounds[1] < principal.bounds[1] + 1e-6).all())
+                except Exception:
+                    interne = False
+                if not interne:
+                    return ("la piece est en PLUSIEURS morceaux disjoints : "
+                            "fusionner() ne colle pas a distance — repositionne "
+                            "les elements avec deplacer() pour qu'ils se "
+                            "CHEVAUCHENT")
     except Exception:
         pass
     # IMPRIMABILITÉ : le vrai analyseur de neoSlice juge la pièce. Une pièce

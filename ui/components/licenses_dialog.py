@@ -283,10 +283,17 @@ class LicensesDialog(QDialog):
 
         parts.append(
             f"<p style='color:{c_text};font-size:12px;margin:10px 0 2px 0;'>"
-            "<b>Qwen2.5-7B-Instruct</b> (modele de discussion), par Alibaba Cloud, "
+            "<b>Qwen3-8B</b> (modele de discussion d'Oen), par Alibaba Cloud, "
             "sous licence Apache 2.0.<br>"
-            "<a href='https://huggingface.co/Qwen/Qwen2.5-7B-Instruct' style='color:" + c_head +
-            "';>huggingface.co/Qwen/Qwen2.5-7B-Instruct</a></p>")
+            "<a href='https://huggingface.co/Qwen/Qwen3-8B' style='color:" + c_head +
+            "';>huggingface.co/Qwen/Qwen3-8B</a></p>")
+        parts.append(
+            f"<p style='color:{c_text};font-size:12px;margin:10px 0 2px 0;'>"
+            "<b>Gemma 4 12B</b> (modele de generation 3D de neoGen), par Google "
+            "DeepMind, sous les <i>Gemma Terms of Use</i> (usage et redistribution "
+            "permis dans le respect de la politique d'usage interdit).<br>"
+            "<a href='https://ai.google.dev/gemma/terms' style='color:" + c_head +
+            "';>ai.google.dev/gemma/terms</a></p>")
         parts.append(
             f"<p style='color:{c_text};font-size:12px;margin:10px 0 2px 0;'>"
             "<b>nomic-embed-text</b> (modele d'embedding pour la recherche), par "
@@ -294,7 +301,31 @@ class LicensesDialog(QDialog):
             "<a href='https://huggingface.co/nomic-ai/nomic-embed-text-v1.5' style='color:" + c_head +
             "';>huggingface.co/nomic-ai/nomic-embed-text-v1.5</a></p>")
 
-        # Texte Apache 2.0 (une seule fois, vaut pour les deux modeles)
+        # Bibliothèques logicielles principales
+        parts.append(
+            f"<p style='color:{c_head};font-weight:bold;font-size:14px;"
+            f"margin:16px 0 2px 0;'>{esc(_('licenses.sec_libs'))}</p>")
+        libs = (
+            ("PySide6 / Qt 6", "LGPL v3", "https://www.qt.io/qt-for-python"),
+            ("PyVista", "MIT", "https://github.com/pyvista/pyvista"),
+            ("Trimesh", "MIT", "https://github.com/mikedh/trimesh"),
+            ("Shapely", "BSD-3-Clause", "https://github.com/shapely/shapely"),
+            ("NumPy / SciPy", "BSD-3-Clause", "https://numpy.org"),
+            ("Matplotlib", "PSF-based (Matplotlib License)", "https://matplotlib.org"),
+            ("OpenCV", "Apache 2.0", "https://opencv.org"),
+            ("manifold3d", "Apache 2.0", "https://github.com/elalish/manifold"),
+            ("mapbox-earcut", "ISC", "https://github.com/skogler/mapbox_earcut_python"),
+            ("svgelements", "MIT", "https://github.com/meerk40t/svgelements"),
+            ("Pydantic", "MIT", "https://github.com/pydantic/pydantic"),
+        )
+        rows_libs = "".join(
+            f"<li style='margin:3px 0;'>{esc(n)} — {esc(lic)} : "
+            f"<a href='{u}' style='color:{c_head};'>{esc(u)}</a></li>"
+            for n, lic, u in libs)
+        parts.append(
+            f"<ul style='color:{c_text};font-size:12px;margin:4px 0;'>{rows_libs}</ul>")
+
+        # Texte Apache 2.0 (une seule fois, vaut pour tous les composants Apache)
         parts.append(
             f"<p style='color:{c_head};font-weight:bold;font-size:14px;"
             f"margin:16px 0 2px 0;'>{esc(_('licenses.sec_apache'))}</p>")

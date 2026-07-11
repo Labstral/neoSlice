@@ -69,10 +69,15 @@ def _rings_vers_polygones(rings: list[np.ndarray]) -> MultiPolygon:
     return merged
 
 
-def contours_texte(texte: str, hauteur_mm: float) -> MultiPolygon:
+def contours_texte(texte: str, hauteur_mm: float,
+                   police: str | None = None) -> MultiPolygon:
     """Contours 2D du texte, mis à l'échelle pour une hauteur de capitale donnée."""
     derniere_err = None
-    for police in POLICES:
+    if police is None:                       # police "de session" (voir goodies)
+        from core.neogen import goodies as _g
+        police = _g.POLICE_ACTIVE
+    essais = ([police] if police else []) + POLICES
+    for police in essais:
         try:
             prop = FontProperties(family=police, weight="bold")
             tp = TextPath((0, 0), texte, size=100, prop=prop)
@@ -95,10 +100,11 @@ def contours_texte(texte: str, hauteur_mm: float) -> MultiPolygon:
     raise RuntimeError(f"Impossible de vectoriser le texte : {derniere_err}")
 
 
-def construire_porte_cle(texte: str, longueur_mm: float = LONGUEUR_DEFAUT,
+def construire_porte_cle(texte: str = "", longueur_mm: float = LONGUEUR_DEFAUT,
                          ep_socle: float = EP_SOCLE, ep_texte: float = EP_TEXTE,
                          d_trou: float = D_TROU, marge: float = MARGE,
-                         grave: bool = False) -> trimesh.Trimesh:
+                         grave: bool = False,
+                         police: str | None = None) -> trimesh.Trimesh:
     """Socle arrondi + languette percée + texte en relief (ou gravé) -> un maillage.
 
     TOUT est paramétrable (c'est ce qu'Oen pilotera) :
@@ -112,7 +118,19 @@ def construire_porte_cle(texte: str, longueur_mm: float = LONGUEUR_DEFAUT,
         ep_texte = max(0.4, ep_socle - 0.8)   # gravure bornée : jamais traversante
 
     # 1) Texte d'abord à hauteur arbitraire, remis à l'échelle pour la longueur cible.
-    mp = contours_texte(texte, hauteur_mm=10.0)
+    if not (texte or "").strip():
+        # Sans texte : etiquette ovale nue avec trou d'anneau
+        from shapely.geometry import Point as _Pt
+        from shapely.affinity import scale as _sc
+        corps = _sc(_Pt(0, 0).buffer(1, resolution=96),
+                    xfact=longueur_mm / 2 - d_trou, yfact=longueur_mm * 0.16)
+        trou = _Pt(-(longueur_mm / 2 - d_trou * 1.6), 0).buffer(d_trou / 2, resolution=48)
+        piece = trimesh.util.concatenate(
+            [trimesh.creation.extrude_polygon(g, ep_socle)
+             for g in [corps.difference(trou)]])
+        piece.apply_translation(-piece.bounds[0])
+        return piece
+    mp = contours_texte(texte, hauteur_mm=10.0, police=police)
     minx, miny, maxx, maxy = mp.bounds
     l_texte = maxx - minx
     # longueur totale = languette (~1.2*d_trou*2) + marge + texte + marge
@@ -123,7 +141,7 @@ def construire_porte_cle(texte: str, longueur_mm: float = LONGUEUR_DEFAUT,
     facteur = l_dispo / l_texte
     hauteur_texte = 10.0 * facteur
     hauteur_texte = min(hauteur_texte, 14.0)          # évite un porte-clé géant
-    mp = contours_texte(texte, hauteur_mm=hauteur_texte)
+    mp = contours_texte(texte, hauteur_mm=hauteur_texte, police=police)
     minx, miny, maxx, maxy = mp.bounds
 
     # 2) Socle : enveloppe du texte arrondie (buffer) + pastille percée à gauche.

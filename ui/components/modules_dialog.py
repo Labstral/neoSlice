@@ -95,6 +95,25 @@ class _NeoGenUninstallWorker(QThread):
             self.failed.emit(str(e))
 
 
+class _NeoGenBaseWorker(QThread):
+    """Met a jour la BASE D'OBJETS de neoGen (cookbook distant, valide en
+    sandbox recette par recette avant installation — voir core/neogen/maj.py)."""
+    done = Signal(str)          # "" = deja a jour, sinon "version|acceptees"
+    failed = Signal(str)
+
+    def run(self):
+        try:
+            from core.neogen import maj
+            manifest = maj.verifier_maj()
+            if not manifest:
+                self.done.emit("")
+                return
+            n, _ecartees = maj.appliquer(manifest)
+            self.done.emit(f"{manifest['version']}|{n}")
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class _KBCheckWorker(QThread):
     """Verifie (appel reseau) si une nouvelle base d'Oen existe."""
     result = Signal(object)
@@ -185,6 +204,7 @@ class ModulesDialog(QDialog):
         self._kb_update_worker = None
         self._neogen_worker = None
         self._neogen_un_worker = None
+        self._neogen_base_worker = None
         self._refresh_assistant_status()
         self._refresh_neogen_status()
 
@@ -258,6 +278,12 @@ class ModulesDialog(QDialog):
         self._neogen_progress.hide()
         v.addWidget(self._neogen_progress)
         row = QHBoxLayout()
+        self._neogen_base_btn = QPushButton(_("neogen.base_update"))
+        self._neogen_base_btn.setFont(QFont(FONT_MAIN, 8))
+        self._neogen_base_btn.setFixedHeight(26)
+        self._neogen_base_btn.setCursor(Qt.PointingHandCursor)
+        self._neogen_base_btn.clicked.connect(self._on_neogen_base_btn)
+        row.addWidget(self._neogen_base_btn)
         self._neogen_btn = QPushButton()
         self._neogen_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
         self._neogen_btn.setFixedHeight(26)
@@ -463,6 +489,15 @@ class ModulesDialog(QDialog):
         from core.neogen import installation
         from core import licensing
         pal = _T.palette()
+        self._neogen_base_btn.setVisible(installation.est_installe())
+        self._neogen_base_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {pal['TEXT_SECONDARY']};
+                border: 1px solid {pal['INACTIVE']}; border-radius: 4px; padding: 3px 10px;
+            }}
+            QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT_BRIGHT']}; }}
+            QPushButton:disabled {{ color: {pal['INACTIVE']}; border-color: {pal['INACTIVE']}; }}
+        """)
         if installation.est_installe():
             self._neogen_status_lbl.setText(_("neogen.ready"))
             self._neogen_status_lbl.setStyleSheet(
@@ -506,6 +541,46 @@ class ModulesDialog(QDialog):
         """)
         self._neogen_btn.setEnabled(True)
         self._neogen_btn.show()
+
+    def _on_neogen_base_btn(self):
+        """Base d'objets : vérifie et applique en un clic (worker unique —
+        chaque recette est validée en sandbox avant d'être installée)."""
+        if self._neogen_base_worker is not None:
+            return
+        pal = _T.palette()
+        self._neogen_base_btn.setEnabled(False)
+        self._neogen_base_btn.setText(_("neogen.base_checking"))
+        self._neogen_status_lbl.setText(_("neogen.base_checking"))
+        self._neogen_status_lbl.setStyleSheet(
+            f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        self._neogen_base_worker = _NeoGenBaseWorker(self)
+        self._neogen_base_worker.done.connect(self._on_neogen_base_done)
+        self._neogen_base_worker.failed.connect(self._on_neogen_base_failed)
+        self._neogen_base_worker.start()
+
+    def _on_neogen_base_done(self, resultat: str):
+        pal = _T.palette()
+        self._neogen_base_worker = None
+        self._neogen_base_btn.setEnabled(True)
+        self._neogen_base_btn.setText(_("neogen.base_update"))
+        if not resultat:
+            self._neogen_status_lbl.setText(_("neogen.base_uptodate"))
+            self._neogen_status_lbl.setStyleSheet(
+                f"color: {pal['TELE_GREEN']}; background: transparent;")
+            return
+        version, n = resultat.split("|")
+        self._neogen_status_lbl.setText(_("neogen.base_done", v=version, n=n))
+        self._neogen_status_lbl.setStyleSheet(
+            f"color: {pal['TELE_GREEN']}; background: transparent;")
+
+    def _on_neogen_base_failed(self, err: str):
+        pal = _T.palette()
+        self._neogen_base_worker = None
+        self._neogen_base_btn.setEnabled(True)
+        self._neogen_base_btn.setText(_("neogen.base_update"))
+        self._neogen_status_lbl.setText("⚠ " + err[:140])
+        self._neogen_status_lbl.setStyleSheet(
+            f"color: {pal['ERROR_RED']}; background: transparent;")
 
     def _on_neogen_btn(self):
         from core.neogen import installation

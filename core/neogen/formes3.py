@@ -130,52 +130,98 @@ def _hexagone_surplat(surplat: float) -> Polygon:
 
 
 # ═══════════════════════════════ COUVERTS ═══════════════════════════════════
-def cuillere(longueur: float = 180, largeur: float = 42) -> trimesh.Trimesh:
-    """Cuillère UNE PIÈCE imprimée à plat : cuvette elliptique peu profonde à
-    fond plat (imprimable) + manche plat fusionné dans la paroi."""
-    from core.neogen.libre import demi_sphere
-    bol = demi_sphere(largeur, creuse=2.0)
-    t = np.eye(4)
-    t[1, 1] = 1.35                                # allonge la cuvette
-    t[2, 2] = 0.62                                # l'aplatit
-    bol.apply_transform(t)
-    bol.apply_translation([0, 0, -float(bol.bounds[0][2])])
-    l_bol = float(bol.bounds[1][1] - bol.bounds[0][1])
-    manche_l = longueur - l_bol + 8               # 8 mm de recouvrement
-    manche = _extruder(box(-5.5, 0, 5.5, manche_l), 3.2)
-    m = union_solides(manche)
-    m.apply_translation([0, float(bol.bounds[1][1]) - 8, 0])
-    piece = union_solides([bol, m])
+def _capsule(demi_larg: float, y0: float, y1: float) -> Polygon:
+    """Manche à bouts ARRONDIS : rectangle terminé par des demi-cercles
+    (axe Y, centré en x=0)."""
+    from shapely.geometry import LineString
+    return LineString([(0, y0 + demi_larg), (0, y1 - demi_larg)]).buffer(
+        demi_larg, quad_segs=24)
+
+
+def _extruder_bombe(prof, ep: float, retrait: float = 0.8) -> list:
+    """Extrusion aux arêtes hautes ADOUCIES : pleine section aux 2/3 de la
+    hauteur, section érodée jusqu'au sommet (chanfrein ~ galbe imprimé).
+    Le retrait crée un épaulement orienté vers le HAUT — aucun surplomb."""
+    solides = _extruder(prof, ep * 0.7)
+    haut = prof.buffer(-retrait, join_style=1)
+    if not haut.is_empty:
+        solides += _extruder(haut, ep - ep * 0.7 + CHEV, ep * 0.7 - CHEV)
+    return solides
+
+
+def cuillere(longueur: float = 180, largeur: float = 40) -> trimesh.Trimesh:
+    """Cuillère v2 « taillée dans la masse » : cuvette elliptique PEU PROFONDE
+    creusée dans un plateau (fond plat -> impression à plat, zéro surplomb :
+    la cavité n'a que des faces orientées vers le haut), col plein fusionné
+    PLEINE HAUTEUR (jonction solide), manche à bout rond."""
+    from shapely.affinity import scale as shp_scale, translate as shp_translate
+    from shapely.geometry import Point
+    h_bol, ep_manche, prof_cuv = 7.0, 4.5, 5.4
+    rx = largeur / 2.0
+    bol2d = shp_scale(Point(0, 0).buffer(rx, quad_segs=48), xfact=1.0, yfact=1.42)
+    l_bol = rx * 1.42 * 2
+    bol2d = shp_translate(bol2d, yoff=l_bol / 2)          # cuvette de y=0 à l_bol
+    col = Polygon([(-8.0, l_bol * 0.62), (8.0, l_bol * 0.62),
+                   (5.0, l_bol + 14.0), (-5.0, l_bol + 14.0)])
+    manche = _capsule(5.5, l_bol + 6.0, longueur)
+    prof2d = unary_union([bol2d, col, manche])
+    prof2d = prof2d.buffer(2.0, join_style=1).buffer(-2.0, join_style=1)
+    haut2d = unary_union([bol2d, col]).intersection(
+        box(-rx - 2, -2, rx + 2, l_bol + 6.0))
+    piece = union_solides(
+        _extruder(prof2d, ep_manche)
+        + _extruder(haut2d, h_bol - ep_manche + CHEV, ep_manche - CHEV))
+    # cuvette : demi-ellipsoïde soustrait PAR LE DESSUS (fond restant 1.6 mm)
+    cav = trimesh.creation.icosphere(subdivisions=4, radius=1.0)
+    cav.apply_scale([rx - 2.2, (rx - 2.2) * 1.42, prof_cuv])
+    cav.apply_translation([0, l_bol / 2, h_bol])
+    piece = trimesh.boolean.difference([piece, cav], engine="manifold")
     piece.apply_translation(-piece.bounds[0])
     return piece
 
 
-def fourchette(longueur: float = 185, largeur_tete: float = 27) -> trimesh.Trimesh:
-    """Fourchette plate 4 dents (une pièce, 3 mm, imprimée à plat)."""
-    l_tete = 52.0
-    tete = box(-largeur_tete / 2, 0, largeur_tete / 2, l_tete)
-    # 3 fentes -> 4 dents (fentes arrondies, fermées côté manche)
-    pas_d = largeur_tete / 4.0
-    fentes = []
-    for i in range(3):
-        x = -largeur_tete / 2 + pas_d * (i + 1)
-        fentes.append(box(x - 1.6, -2, x + 1.6, l_tete * 0.62).buffer(0.8))
-    manche = box(-5.5, l_tete - 6, 5.5, longueur)
-    prof = unary_union([tete, manche]).difference(unary_union(fentes))
-    prof = prof.buffer(2.2, join_style=1).buffer(-2.2, join_style=1)
-    piece = union_solides(_extruder(prof, 3.0))
+def fourchette(longueur: float = 185, largeur_tete: float = 26) -> trimesh.Trimesh:
+    """Fourchette v2 : 4 dents à POINTES effilées (triangles au bout), paume
+    trapézoïdale, manche à bout rond, chants supérieurs adoucis."""
+    ep, n_dents, l_dent, l_pointe = 3.2, 4, 20.0, 9.0
+    w_dent = largeur_tete / (n_dents + (n_dents - 1) * 0.55)
+    w_fente = w_dent * 0.55
+    dents = []
+    for i in range(n_dents):
+        x = -largeur_tete / 2 + i * (w_dent + w_fente) + w_dent / 2
+        dents.append(Polygon([
+            (x - w_dent / 2, l_pointe), (x, 0.0),          # la pointe
+            (x + w_dent / 2, l_pointe),
+            (x + w_dent / 2, l_pointe + l_dent + 4),
+            (x - w_dent / 2, l_pointe + l_dent + 4),
+        ]))
+    y_palme = l_pointe + l_dent
+    palme = Polygon([(-largeur_tete / 2, y_palme), (largeur_tete / 2, y_palme),
+                     (largeur_tete / 2 - 1.5, y_palme + 14),
+                     (5.5, y_palme + 26), (-5.5, y_palme + 26),
+                     (-largeur_tete / 2 + 1.5, y_palme + 14)])
+    manche = _capsule(5.5, y_palme + 20, longueur)
+    prof = unary_union(dents + [palme, manche])
+    prof = prof.buffer(0.7, join_style=1).buffer(-0.7, join_style=1)
+    piece = union_solides(_extruder_bombe(prof, ep, retrait=0.8))
     piece.apply_translation(-piece.bounds[0])
     return piece
 
 
 def couteau(longueur: float = 190) -> trimesh.Trimesh:
-    """Couteau de table plat (lame arrondie non coupante, une pièce)."""
-    l_lame = longueur * 0.45
-    lame = Polygon([(-11, 0), (9, 0), (11, l_lame * 0.35), (9, l_lame * 0.8),
-                    (2, l_lame), (-9, l_lame * 0.9), (-11, l_lame * 0.3)])
+    """Couteau v2 : lame à BISEAU sur le dessus (3 étages érodés = tranchant
+    doux, non dangereux mais qui coupe le beurre), manche à bout rond galbé."""
+    ep, l_lame = 2.8, longueur * 0.45
+    lame = Polygon([(-11, 0), (7, 0), (10, l_lame * 0.30), (9, l_lame * 0.78),
+                    (2, l_lame), (-9, l_lame * 0.92), (-11, l_lame * 0.30)])
     lame = lame.buffer(2.5, join_style=1).buffer(-2.5, join_style=1)
-    manche = box(-6, l_lame - 8, 6, longueur).buffer(2, join_style=1).buffer(-2, join_style=1)
-    prof = unary_union([lame, manche])
-    piece = union_solides(_extruder(prof, 2.8))
+    manche = _capsule(6.0, l_lame - 10, longueur)
+    solides = _extruder(unary_union([lame, manche]), 1.2)
+    solides += _extruder(unary_union([lame.buffer(-1.1, join_style=1), manche]),
+                         1.0, 1.0)
+    solides += _extruder(unary_union([lame.buffer(-2.2, join_style=1),
+                                      manche.buffer(-0.9, join_style=1)]),
+                         ep - 1.8, 1.8)
+    piece = union_solides(solides)
     piece.apply_translation(-piece.bounds[0])
     return piece

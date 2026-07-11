@@ -83,6 +83,12 @@ class SettingsDialog(QDialog):
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedWidth(400)
+        # Hauteur PLAFONNÉE + corps scrollable : la fenêtre était devenue plus
+        # haute que l'écran (le lien Licences en bas était inatteignable).
+        from PySide6.QtGui import QGuiApplication
+        ecran = QGuiApplication.primaryScreen()
+        h_dispo = ecran.availableGeometry().height() if ecran else 800
+        self.setFixedHeight(min(700, h_dispo - 80))
         self._drag_pos: QPoint | None = None
         self._bench_worker: _BenchmarkWorker | None = None
         # Valeurs au moment de l'ouverture — sert à ne suggérer le redémarrage
@@ -141,7 +147,20 @@ class SettingsDialog(QDialog):
 
         self._sep_top = self._make_sep()
         lay.addWidget(self._sep_top)
-        lay.addSpacing(16)
+
+        # ── Corps SCROLLABLE : tout le contenu défile, barre de titre fixe ────
+        from PySide6.QtWidgets import QScrollArea
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        _corps = QWidget()
+        _corps.setObjectName("settings_body")
+        self._scroll.setWidget(_corps)
+        lay.addWidget(self._scroll, 1)
+        lay = QVBoxLayout(_corps)      # tout ce qui suit va dans le corps
+        lay.setContentsMargins(0, 16, 8, 4)
+        lay.setSpacing(0)
 
         # ── Section APPARENCE ─────────────────────────────────────────────────
         self._lbl_apparence = self._make_section_label(_("settings.sec_appearance"))
@@ -806,6 +825,16 @@ class SettingsDialog(QDialog):
                 border: 1px solid {pal['INACTIVE']};
                 border-radius: 8px;
             }}
+        """)
+        self._scroll.setStyleSheet(f"""
+            QScrollArea {{ background: transparent; border: none; }}
+            QWidget#settings_body {{ background: transparent; }}
+            QScrollBar:vertical {{
+                background: transparent; width: 10px; margin: 0; }}
+            QScrollBar::handle:vertical {{
+                background: {pal['INACTIVE']}; border-radius: 5px; min-height: 30px; }}
+            QScrollBar::handle:vertical:hover {{ background: {pal['ACCENT']}; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
         """)
         self._title_lbl.setStyleSheet(
             f"color: {pal['ACCENT_BRIGHT']}; background: transparent; letter-spacing: 2px;"
