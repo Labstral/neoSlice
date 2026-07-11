@@ -132,7 +132,7 @@ CATALOGUE = [
        flags=[("grave", "Texte gravé", "Engraved text", False)],
        choix=[("forme", "Style", "Style",
                [("contour", "Suit les lettres", "Follows the letters"),
-                ("rectangle", "Rectangle arrondi", "Rounded rectangle"),
+                ("rectangle", "Rectangle", "Rectangle"),
                 ("ovale", "Ovale", "Oval"),
                 ("rond", "Rond", "Round"),
                 ("etiquette", "Étiquette", "Tag")], "contour")]),

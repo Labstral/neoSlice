@@ -100,18 +100,19 @@ def contours_texte(texte: str, hauteur_mm: float,
     raise RuntimeError(f"Impossible de vectoriser le texte : {derniere_err}")
 
 
-def _socle_forme(forme: str, mp, marge: float, d_trou: float):
-    """Renvoie (socle_2d percé, MultiPolygon du texte) pour la FORME de base
-    choisie. « contour » suit les lettres ; les autres sont des gabarits
-    (rectangle/ovale/rond/étiquette) dimensionnés pour CONTENIR le texte. La
-    pastille percée chevauche toujours le corps -> pièce d'un seul tenant."""
+def _socle_forme(forme: str, bounds, marge: float, d_trou: float,
+                 texte_2d=None):
+    """Renvoie le socle_2d percé pour la FORME de base choisie, dimensionné pour
+    contenir la zone `bounds` (minx, miny, maxx, maxy). « contour » suit les
+    lettres (nécessite `texte_2d`) ; les autres sont des gabarits (rectangle/
+    ovale/rond/étiquette). La pastille percée chevauche toujours le corps ->
+    pièce d'un seul tenant. Fonctionne AUSSI sans texte (plaquette nue)."""
     from shapely.geometry import Point as _Pt, Polygon as _Poly
-    minx, miny, maxx, maxy = mp.bounds
+    minx, miny, maxx, maxy = bounds
     cx0, cy0 = (minx + maxx) / 2.0, (miny + maxy) / 2.0
     demi_l, demi_h = (maxx - minx) / 2.0 + marge, (maxy - miny) / 2.0 + marge
-    texte_2d = unary_union([g for g in mp.geoms])
 
-    if forme == "contour":
+    if forme == "contour" and texte_2d is not None:
         corps = texte_2d.buffer(marge, join_style=1)
         corps = corps.buffer(1.2, join_style=1).buffer(-1.2, join_style=1)
     elif forme == "rectangle":
@@ -132,8 +133,11 @@ def _socle_forme(forme: str, mp, marge: float, d_trou: float):
                        (maxx + marge, miny - marge), (maxx + marge, maxy + marge),
                        (minx - marge, maxy + marge), (minx - marge, miny - marge + coupe)])
         corps = corps.buffer(1.0, join_style=1).buffer(-1.0, join_style=1)
-    else:
-        corps = texte_2d.buffer(marge, join_style=1)
+    else:                                    # repli : rectangle arrondi
+        r = min(demi_h, demi_l) * 0.5
+        corps = _Poly([(minx - marge, miny - marge), (maxx + marge, miny - marge),
+                       (maxx + marge, maxy + marge), (minx - marge, maxy + marge)])
+        corps = corps.buffer(r, join_style=1).buffer(-r, join_style=1)
 
     # pastille percée : à gauche (formes allongées) ou en haut (rond/étiquette)
     if forme in ("rond", "etiquette"):
@@ -143,7 +147,7 @@ def _socle_forme(forme: str, mp, marge: float, d_trou: float):
     pastille = centre_trou.buffer(max(d_trou * 1.2, d_trou / 2 + 2.5), resolution=48)
     socle_2d = unary_union([corps, pastille]).difference(
         centre_trou.buffer(d_trou / 2.0, resolution=48))
-    return socle_2d, texte_2d
+    return socle_2d
 
 
 def construire_porte_cle(texte: str = "", longueur_mm: float = LONGUEUR_DEFAUT,
@@ -164,17 +168,21 @@ def construire_porte_cle(texte: str = "", longueur_mm: float = LONGUEUR_DEFAUT,
     if grave and ep_texte >= ep_socle - 0.6:
         ep_texte = max(0.4, ep_socle - 0.8)   # gravure bornée : jamais traversante
 
-    # 1) Texte d'abord à hauteur arbitraire, remis à l'échelle pour la longueur cible.
+    if forme not in ("contour", "rectangle", "ovale", "rond", "etiquette"):
+        forme = "contour"
+
+    # 1) SANS texte : la FORME choisie s'affiche quand même (plaquette nue).
+    #    « contour » (qui suit les lettres) n'a pas de sens sans texte -> ovale.
     if not (texte or "").strip():
-        # Sans texte : etiquette ovale nue avec trou d'anneau
-        from shapely.geometry import Point as _Pt
-        from shapely.affinity import scale as _sc
-        corps = _sc(_Pt(0, 0).buffer(1, resolution=96),
-                    xfact=longueur_mm / 2 - d_trou, yfact=longueur_mm * 0.16)
-        trou = _Pt(-(longueur_mm / 2 - d_trou * 1.6), 0).buffer(d_trou / 2, resolution=48)
-        piece = trimesh.util.concatenate(
-            [trimesh.creation.extrude_polygon(g, ep_socle)
-             for g in [corps.difference(trou)]])
+        f = "ovale" if forme == "contour" else forme
+        demi = longueur_mm / 2.0 - d_trou * 1.4
+        bounds = (-demi, -longueur_mm * 0.22, demi, longueur_mm * 0.22)
+        socle_2d = _socle_forme(f, bounds, marge, d_trou)
+        from core.neogen.geo_utils import union_solides
+        piece = union_solides([trimesh.creation.extrude_polygon(g, ep_socle)
+                               for g in (socle_2d.geoms
+                                         if isinstance(socle_2d, MultiPolygon)
+                                         else [socle_2d])])
         piece.apply_translation(-piece.bounds[0])
         return piece
     mp = contours_texte(texte, hauteur_mm=10.0, police=police)
@@ -192,9 +200,8 @@ def construire_porte_cle(texte: str = "", longueur_mm: float = LONGUEUR_DEFAUT,
     minx, miny, maxx, maxy = mp.bounds
 
     # 2) Socle selon la FORME choisie (contour des lettres, ou gabarit).
-    if forme not in ("contour", "rectangle", "ovale", "rond", "etiquette"):
-        forme = "contour"
-    socle_2d, texte_2d = _socle_forme(forme, mp, marge, d_trou)
+    texte_2d = unary_union([g for g in mp.geoms])
+    socle_2d = _socle_forme(forme, mp.bounds, marge, d_trou, texte_2d)
 
     solides = []
     if grave:
