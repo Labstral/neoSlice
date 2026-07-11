@@ -100,17 +100,64 @@ def contours_texte(texte: str, hauteur_mm: float,
     raise RuntimeError(f"Impossible de vectoriser le texte : {derniere_err}")
 
 
+def _socle_forme(forme: str, mp, marge: float, d_trou: float):
+    """Renvoie (socle_2d percé, MultiPolygon du texte) pour la FORME de base
+    choisie. « contour » suit les lettres ; les autres sont des gabarits
+    (rectangle/ovale/rond/étiquette) dimensionnés pour CONTENIR le texte. La
+    pastille percée chevauche toujours le corps -> pièce d'un seul tenant."""
+    from shapely.geometry import Point as _Pt, Polygon as _Poly
+    minx, miny, maxx, maxy = mp.bounds
+    cx0, cy0 = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+    demi_l, demi_h = (maxx - minx) / 2.0 + marge, (maxy - miny) / 2.0 + marge
+    texte_2d = unary_union([g for g in mp.geoms])
+
+    if forme == "contour":
+        corps = texte_2d.buffer(marge, join_style=1)
+        corps = corps.buffer(1.2, join_style=1).buffer(-1.2, join_style=1)
+    elif forme == "rectangle":
+        r = min(demi_h, demi_l) * 0.5
+        corps = _Poly([(minx - marge, miny - marge), (maxx + marge, miny - marge),
+                       (maxx + marge, maxy + marge), (minx - marge, maxy + marge)])
+        corps = corps.buffer(r, join_style=1).buffer(-r, join_style=1)  # coins ronds
+    elif forme == "ovale":
+        from shapely.affinity import scale as _sc
+        corps = _sc(_Pt(cx0, cy0).buffer(1, resolution=96),
+                    xfact=demi_l * 1.15, yfact=demi_h * 1.25)
+    elif forme == "rond":
+        r = max(demi_l, demi_h) * 1.12
+        corps = _Pt(cx0, cy0).buffer(r, resolution=96)
+    elif forme == "etiquette":                       # étiquette bagage : coin coupé
+        coupe = min(demi_h, demi_l) * 0.9
+        corps = _Poly([(minx - marge + coupe, miny - marge),
+                       (maxx + marge, miny - marge), (maxx + marge, maxy + marge),
+                       (minx - marge, maxy + marge), (minx - marge, miny - marge + coupe)])
+        corps = corps.buffer(1.0, join_style=1).buffer(-1.0, join_style=1)
+    else:
+        corps = texte_2d.buffer(marge, join_style=1)
+
+    # pastille percée : à gauche (formes allongées) ou en haut (rond/étiquette)
+    if forme in ("rond", "etiquette"):
+        centre_trou = _Pt(cx0, corps.bounds[3] + d_trou * 0.3)
+    else:
+        centre_trou = _Pt(corps.bounds[0] - d_trou * 0.5, cy0)
+    pastille = centre_trou.buffer(max(d_trou * 1.2, d_trou / 2 + 2.5), resolution=48)
+    socle_2d = unary_union([corps, pastille]).difference(
+        centre_trou.buffer(d_trou / 2.0, resolution=48))
+    return socle_2d, texte_2d
+
+
 def construire_porte_cle(texte: str = "", longueur_mm: float = LONGUEUR_DEFAUT,
                          ep_socle: float = EP_SOCLE, ep_texte: float = EP_TEXTE,
                          d_trou: float = D_TROU, marge: float = MARGE,
-                         grave: bool = False,
+                         grave: bool = False, forme: str = "contour",
                          police: str | None = None) -> trimesh.Trimesh:
-    """Socle arrondi + languette percée + texte en relief (ou gravé) -> un maillage.
+    """Socle + languette percée + texte en relief (ou gravé) -> un maillage.
 
     TOUT est paramétrable (c'est ce qu'Oen pilotera) :
       ep_socle : épaisseur du socle (mm)     ep_texte : hauteur du relief (mm)
       d_trou   : diamètre du trou d'anneau   marge    : socle autour du texte
       grave    : True = texte CREUSÉ dans le socle au lieu d'être en relief
+      forme    : contour (suit les lettres) | rectangle | ovale | rond | etiquette
     """
     if ep_socle < 1.2:
         raise ValueError("Socle trop fin (< 1.2 mm) : fragile à l'impression.")
@@ -144,22 +191,15 @@ def construire_porte_cle(texte: str = "", longueur_mm: float = LONGUEUR_DEFAUT,
     mp = contours_texte(texte, hauteur_mm=hauteur_texte, police=police)
     minx, miny, maxx, maxy = mp.bounds
 
-    # 2) Socle : enveloppe du texte arrondie (buffer) + pastille percée à gauche.
-    corps = unary_union([g for g in mp.geoms]).buffer(marge, join_style=1)
-    corps = corps.buffer(1.2, join_style=1).buffer(-1.2, join_style=1)  # lisse
-    cx = minx - marge - d_trou * 0.2                   # centre pastille à gauche
-    cy = (miny + maxy) / 2.0
-    centre_trou = Point(cx - d_trou * 0.7, cy)
-    pastille = centre_trou.buffer(max(d_trou * 1.2, d_trou / 2 + 2.5), resolution=48)
-    socle_2d = unary_union([corps, pastille])
-    trou = centre_trou.buffer(d_trou / 2.0, resolution=48)
-    socle_2d = socle_2d.difference(trou)
+    # 2) Socle selon la FORME choisie (contour des lettres, ou gabarit).
+    if forme not in ("contour", "rectangle", "ovale", "rond", "etiquette"):
+        forme = "contour"
+    socle_2d, texte_2d = _socle_forme(forme, mp, marge, d_trou)
 
     solides = []
     if grave:
         # Texte CREUSÉ : différence 2D socle - texte sur la hauteur de gravure,
         # + tranche pleine dessous (le tout SANS booléens 3D).
-        texte_2d = unary_union([g for g in mp.geoms])
         haut_2d = socle_2d.difference(texte_2d)
         for g in (haut_2d.geoms if isinstance(haut_2d, MultiPolygon) else [haut_2d]):
             m = trimesh.creation.extrude_polygon(g, ep_texte + CHEVAUCHEMENT)

@@ -44,6 +44,7 @@ def _b_porte_cle(p):
     return construire_porte_cle(p.get("texte", ""), p.get("longueur", 50),
                                 ep_socle=p.get("socle", 3.0), ep_texte=p.get("relief", 1.6),
                                 d_trou=p.get("trou", 4.5), grave=p.get("grave", False),
+                                forme=p.get("forme", "contour"),
                                 police=p.get("police"))
 
 def _b_badge(p):
@@ -128,7 +129,13 @@ CATALOGUE = [
                _P("trou", "Trou (ø)", "Hole (ø)", 2, 12, 4.5, 0.5),
                _P("relief", "Hauteur texte", "Text height", 0.4, 4, 1.6, 0.2),
                _P("socle", "Épaisseur socle", "Base thickness", 1.5, 8, 3, 0.5)],
-       flags=[("grave", "Texte gravé", "Engraved text", False)]),
+       flags=[("grave", "Texte gravé", "Engraved text", False)],
+       choix=[("forme", "Style", "Style",
+               [("contour", "Suit les lettres", "Follows the letters"),
+                ("rectangle", "Rectangle arrondi", "Rounded rectangle"),
+                ("ovale", "Ovale", "Oval"),
+                ("rond", "Rond", "Round"),
+                ("etiquette", "Étiquette", "Tag")], "contour")]),
     _e("badge", "Badge", "Badge", "perso", _b_badge, texte="optionnel",
        params=[_P("diametre", "Diamètre", "Diameter", 20, 120, 40, 1)],
        flags=[("grave", "Texte gravé", "Engraved text", False),
