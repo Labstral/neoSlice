@@ -54,53 +54,42 @@ class _CatalogueWorker(QThread):
             self.erreur.emit(str(exc))
 
 
-class _LibreWorker(QThread):
-    """Phrase française -> pilote (catalogue) OU atelier libre (script).
-    Si `code_precedent` est fourni : MODIFICATION de la pièce déjà générée."""
-    question = Signal(str)
-    statut = Signal(str)
-    fini = Signal(object, str, object)   # (Path, résumé, contexte {code, objet, params})
+class _RechercheWorker(QThread):
+    """Demande en langage naturel -> OBJET de la bibliothèque le plus proche +
+    paramètres. Ne génère JAMAIS de code : l'intelligence est dans la
+    bibliothèque validée. Deux niveaux, du plus riche au plus fiable :
+      1. le modèle neoGen (s'il est installé) extrait objet + dimensions/texte ;
+      2. repli SANS modèle : recherche par mots-clés (instantané, ne peut pas
+         « ne rien donner de correct »)."""
+    trouve = Signal(str, object)         # (entry_id, params)
+    aucun = Signal()
     erreur = Signal(str)
 
-    def __init__(self, phrase: str, image: Path | None, historique: list,
-                 code_precedent: str | None = None):
+    def __init__(self, phrase: str, image: Path | None):
         super().__init__()
-        self._phrase, self._image, self._historique = phrase, image, historique
-        self._code_precedent = code_precedent
+        self._phrase, self._image = phrase, image
 
     def run(self):
         try:
-            from core.neogen.libre import generer_et_exporter
-            if self._code_precedent:            # MODE ITÉRATIF : on modifie
-                self.statut.emit(_("neogen.modifying"))
-                chemin, code, _j = generer_et_exporter(
-                    self._phrase, code_precedent=self._code_precedent)
-                if chemin is None:
-                    self.erreur.emit(_("neogen.free_failed"))
-                    return
-                self.fini.emit(chemin, _("neogen.free_done"), {"code": code})
+            from core.neogen import catalogue as C
+            entry_id, params = None, {}
+            # 1) extraction par le modèle (dimensions, texte) — best effort
+            try:
+                from core.neogen import pilote
+                objet, p, _q = pilote.interpreter(self._phrase, image=self._image)
+                if objet and objet != "__libre__" and objet in C.PAR_ID:
+                    entry_id, params = objet, (p or {})
+            except Exception:
+                pass
+            # 2) repli fiable : recherche par mots-clés dans la bibliothèque
+            if entry_id is None:
+                entry_id = C.rechercher(self._phrase)
+            if entry_id is None:
+                self.aucun.emit()
                 return
-            from core.neogen import pilote
-            objet, params, q = pilote.interpreter(self._phrase, image=self._image,
-                                                  historique=self._historique)
-            if objet and objet != "__libre__":  # chemin rapide catalogue
-                resume = pilote.resume_params(objet, params)
-                self.fini.emit(pilote.generer(objet, params), resume,
-                               {"objet": objet, "params": params})
-                return
-            # Question du modèle : SEULEMENT si ce n'est pas un « hors
-            # catalogue » reformulé (le modèle rédige ses propres phrases).
-            if (objet != "__libre__" and q
-                    and not q.startswith("Quel objet")
-                    and "catalogue" not in q.lower()):
-                self.question.emit(q)
-                return
-            self.statut.emit(_("neogen.free_running"))
-            chemin, code, _journal = generer_et_exporter(self._phrase)
-            if chemin is None:
-                self.erreur.emit(_("neogen.free_failed"))
-                return
-            self.fini.emit(chemin, _("neogen.free_done"), {"code": code})
+            if self._image and C.PAR_ID[entry_id].get("image"):
+                params = dict(params); params["image"] = str(self._image)
+            self.trouve.emit(entry_id, params)
         except Exception as exc:
             self.erreur.emit(str(exc))
 
@@ -117,8 +106,6 @@ class NeoGenPanel(QWidget):
         self._pal = _THEME.palette()
         self._worker = None
         self._image: Path | None = None
-        self._historique: list[dict] = []
-        self._dernier_code: str | None = None   # mode itératif (pièce sur mesure)
         self.setStyleSheet(f"background: {self._pal['BG_PANEL']};")
 
         lay = QVBoxLayout(self)
@@ -165,8 +152,9 @@ class NeoGenPanel(QWidget):
             QTabBar::tab:selected {{ color: {PRO_CYAN};
                                      border-bottom: 2px solid {PRO_CYAN}; }}
         """)
-        self._tabs.addTab(self._onglet_libre(), _("neogen.tab_free"))
         self._tabs.addTab(self._onglet_bibliotheque(), _("neogen.tab_library"))
+        self._tabs.insertTab(0, self._onglet_libre(), _("neogen.tab_search"))
+        self._tabs.setCurrentIndex(0)
         lay.addWidget(self._tabs, 1)
 
         self._statut = QLabel("")
@@ -175,7 +163,7 @@ class NeoGenPanel(QWidget):
             f"color: {self._pal['TEXT_PRIMARY']}; background: transparent; font-size: 9pt;")
         lay.addWidget(self._statut)
 
-    # ═════════════════════════ Onglet CRÉATION LIBRE ════════════════════════
+    # ═════════════════════════ Onglet RECHERCHER ════════════════════════════
     def _onglet_libre(self) -> QWidget:
         pal = self._pal
         w = QWidget()
@@ -184,14 +172,14 @@ class NeoGenPanel(QWidget):
         v.setContentsMargins(2, 8, 2, 2)
         v.setSpacing(8)
 
-        sous = QLabel(_("neogen.free_subtitle"))
+        sous = QLabel(_("neogen.search_subtitle"))
         sous.setWordWrap(True)
         sous.setStyleSheet(
             f"color: {pal['TEXT_LABEL']}; background: transparent; font-size: 9pt;")
         v.addWidget(sous)
 
         self._input = QLineEdit()
-        self._input.setPlaceholderText(_("neogen.placeholder"))
+        self._input.setPlaceholderText(_("neogen.search_placeholder"))
         self._input.setMinimumHeight(32)
         self._input.setStyleSheet(f"""
             QLineEdit {{ background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
@@ -199,10 +187,10 @@ class NeoGenPanel(QWidget):
                 padding: 4px 10px; font-size: 10pt; }}
             QLineEdit:focus {{ border-color: {PRO_CYAN}; }}
         """)
-        self._input.returnPressed.connect(self._lancer_libre)
+        self._input.returnPressed.connect(self._lancer_recherche)
         v.addWidget(self._input)
 
-        self._btn_go = QPushButton(_("neogen.generate"))
+        self._btn_go = QPushButton(_("neogen.search_btn"))
         self._btn_go.setMinimumHeight(32)
         self._btn_go.setCursor(Qt.PointingHandCursor)
         self._btn_go.setStyleSheet(f"""
@@ -212,10 +200,10 @@ class NeoGenPanel(QWidget):
                 padding: 0 18px; font-weight: bold; }}
             QPushButton:disabled {{ background: {pal['INACTIVE']}; }}
         """)
-        self._btn_go.clicked.connect(self._lancer_libre)
+        self._btn_go.clicked.connect(self._lancer_recherche)
         v.addWidget(self._btn_go)
 
-        # exemples en grille 2 colonnes (colonne étroite)
+        # exemples : chacun correspond à un objet de la bibliothèque
         grille = QGridLayout()
         grille.setSpacing(5)
         exemples = ["neogen.ex1", "neogen.ex2", "neogen.ex3",
@@ -234,8 +222,7 @@ class NeoGenPanel(QWidget):
             grille.addWidget(b, i // 2, i % 2)
         v.addLayout(grille)
 
-        # boutons d'action BIEN VISIBLES (fond plein + bordure colorée)
-        ligne2 = QHBoxLayout()
+        # joindre une image (pour un logo / une lithophanie trouvés par recherche)
         self._btn_logo = QPushButton(_("neogen.attach_logo"))
         self._btn_logo.setCursor(Qt.PointingHandCursor)
         self._btn_logo.setMinimumHeight(30)
@@ -246,22 +233,7 @@ class NeoGenPanel(QWidget):
             QPushButton:hover {{ background: rgba(168,85,247,0.18); }}
         """)
         self._btn_logo.clicked.connect(self._choisir_logo)
-        ligne2.addWidget(self._btn_logo, 1)
-        self._btn_reset = QPushButton(_("neogen.new_request"))
-        self._btn_reset.setCursor(Qt.PointingHandCursor)
-        self._btn_reset.setMinimumHeight(30)
-        self._btn_reset.setStyleSheet(f"""
-            QPushButton {{ background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
-                border: 1px solid {PRO_CYAN}; border-radius: 6px;
-                padding: 5px 12px; font-size: 9pt; font-weight: bold; }}
-            QPushButton:hover {{ background: rgba(34,211,238,0.18); }}
-        """)
-        self._btn_reset.clicked.connect(self._nouvelle_demande)
-        self._btn_reset.hide()
-        ligne2.addWidget(self._btn_reset, 1)
-        v.addLayout(ligne2)
-        # nom du logo SOUS les boutons, élidé : un nom long ne peut plus
-        # élargir la colonne et casser la mise en page
+        v.addWidget(self._btn_logo)
         self._lbl_logo = QLabel("")
         self._lbl_logo.setStyleSheet(
             f"color: {PRO_VIOLET}; background: transparent; font-size: 9pt;")
@@ -269,20 +241,10 @@ class NeoGenPanel(QWidget):
         v.addStretch()
         return w
 
-    def _nouvelle_demande(self):
-        self._historique.clear()
-        self._dernier_code = None
-        self._btn_reset.hide()
-        self._btn_go.setText(_("neogen.generate"))
-        self._statut.setText("")
-        self._input.clear()
-        self._input.setPlaceholderText(_("neogen.placeholder"))
-        self._input.setFocus()
-
     def _choisir_exemple(self, txt: str):
-        self._nouvelle_demande()
         self._input.setText(txt)
         self._input.setFocus()
+        self._lancer_recherche()
 
     def _nom_logo_elide(self, nom: str) -> str:
         from PySide6.QtGui import QFontMetrics
@@ -291,26 +253,22 @@ class NeoGenPanel(QWidget):
 
     def _choisir_logo(self):
         chemin, _f = QFileDialog.getOpenFileName(
-            self, _("neogen.attach_logo"), "", "Logo (*.svg *.png *.jpg *.jpeg)")
+            self, _("neogen.attach_logo"), "", "Image (*.svg *.png *.jpg *.jpeg)")
         if chemin:
             self._image = Path(chemin)
             self._lbl_logo.setText(self._nom_logo_elide(self._image.name))
 
-    def _lancer_libre(self):
+    def _lancer_recherche(self):
         phrase = self._input.text().strip()
         if not phrase or (self._worker and self._worker.isRunning()):
             return
         self._btn_go.setEnabled(False)
-        self._statut.setText("🧠 " + _("neogen.thinking"))
-        self._worker = _LibreWorker(phrase, self._image, list(self._historique),
-                                    code_precedent=self._dernier_code)
-        self._worker.question.connect(self._sur_question)
-        self._worker.statut.connect(lambda s: self._statut.setText("🛠 " + s))
-        self._worker.fini.connect(self._sur_fini_libre)
+        self._statut.setText("🔎 " + _("neogen.searching"))
+        self._worker = _RechercheWorker(phrase, self._image)
+        self._worker.trouve.connect(self._sur_trouve)
+        self._worker.aucun.connect(self._sur_aucun)
         self._worker.erreur.connect(self._sur_erreur)
         self._worker.start()
-        self._historique.append({"role": "user", "content": phrase})
-        self._input.clear()
 
     # ═════════════════════════ Onglet BIBLIOTHÈQUE ══════════════════════════
     def _onglet_bibliotheque(self) -> QWidget:
@@ -519,7 +477,64 @@ class NeoGenPanel(QWidget):
         v.addWidget(btn)
         v.addStretch()
         self._btn_cat = btn
+        # exposés pour la recherche (pré-remplissage + génération auto)
+        self._champs_courant = champs
+        self._entree_courante = e
         return w
+
+    def _ouvrir_dans_biblio(self, entry_id: str, params: dict) -> None:
+        """Sélectionne l'objet `entry_id` dans la Bibliothèque, PRÉ-REMPLIT son
+        formulaire avec `params`, bascule sur l'onglet et génère une fois — la
+        recherche en langage naturel aboutit à un objet validé, ajustable."""
+        di = oi = None
+        for i, (_dom, entrees) in enumerate(self._donnees):
+            for j, e in enumerate(entrees):
+                if e["id"] == entry_id:
+                    di, oi = i, j
+                    break
+            if di is not None:
+                break
+        if di is None:
+            return
+        self._combo_domaine.blockSignals(True)
+        self._combo_domaine.setCurrentIndex(di)
+        self._combo_domaine.blockSignals(False)
+        self._choisir_domaine(di)
+        self._combo_objet.blockSignals(True)
+        self._combo_objet.setCurrentIndex(oi)
+        self._combo_objet.blockSignals(False)
+        self._choisir_objet(oi)
+        # pré-remplissage du formulaire fraîchement construit
+        champs = getattr(self, "_champs_courant", {})
+        for k, val in (params or {}).items():
+            if k == "image":
+                champs["__image"] = val
+                continue
+            wdg = champs.get(k)
+            if wdg is None:
+                continue
+            if isinstance(wdg, QDoubleSpinBox):
+                try:
+                    wdg.setValue(float(val))
+                except (TypeError, ValueError):
+                    pass
+            elif isinstance(wdg, QComboBox):
+                idx = wdg.findData(val)
+                if idx >= 0:
+                    wdg.setCurrentIndex(idx)
+            elif isinstance(wdg, QCheckBox):
+                wdg.setChecked(bool(val))
+            elif isinstance(wdg, QLineEdit):
+                wdg.setText(str(val))
+        self._tabs.setCurrentIndex(1)          # bascule sur la Bibliothèque
+        # génération immédiate si tout le nécessaire est là (sinon on laisse
+        # l'utilisateur compléter — ex. texte requis, image manquante)
+        e = self._entree_courante
+        pret = not (e["texte"] == "requis" and not champs.get("texte")
+                    and not str((params or {}).get("texte", "")).strip())
+        pret = pret and not (e["image"] and not champs.get("__image"))
+        if pret:
+            self._generer_catalogue(e, champs, self._btn_cat)
 
     def _generer_catalogue(self, e: dict, champs: dict, btn: QPushButton):
         params = {}
@@ -548,41 +563,26 @@ class NeoGenPanel(QWidget):
         self._worker.start()
 
     # ── Résultats ────────────────────────────────────────────────────────────
-    def _sur_question(self, q: str):
-        import json as _json
-        self._historique.append({"role": "assistant",
-                                 "content": _json.dumps({"question": q},
-                                                        ensure_ascii=False)})
+    def _sur_trouve(self, entry_id: str, params: object):
+        """Recherche aboutie : ouvre l'objet de bibliothèque le plus proche,
+        paramètres pré-remplis, et le génère."""
         self._btn_go.setEnabled(True)
-        self._statut.setText(f"💬 {q}")
-        self._input.setPlaceholderText(q)
-        self._input.setFocus()
+        from core.neogen.catalogue import PAR_ID
+        e = PAR_ID.get(entry_id, {})
+        nom = _fr_en(e.get("fr", entry_id), e.get("en", entry_id))
+        self._statut.setText("✓ " + _("neogen.search_found", nom=nom))
+        self._ouvrir_dans_biblio(entry_id, params or {})
+
+    def _sur_aucun(self):
+        self._btn_go.setEnabled(True)
+        self._statut.setText("💬 " + _("neogen.search_none"))
+        self._tabs.setCurrentIndex(1)          # invite à parcourir la biblio
 
     def _sur_fini(self, chemin):
         """Objet Bibliothèque généré : le panneau reste — on ajuste, on regénère."""
         if hasattr(self, "_btn_cat"):
             self._btn_cat.setEnabled(True)
         self._statut.setText("✓ " + _("neogen.loaded_adjust_form"))
-        self.piece_ready.emit(Path(chemin))
-
-    def _sur_fini_libre(self, chemin, resume: str, contexte: dict):
-        """Pièce générée/modifiée : MODE ITÉRATIF — les phrases suivantes
-        modifient la pièce."""
-        import json as _json
-        self._btn_go.setEnabled(True)
-        code = (contexte or {}).get("code")
-        if code:
-            self._dernier_code = code
-        elif (contexte or {}).get("objet"):
-            self._dernier_code = None
-            self._historique.append({"role": "assistant", "content": _json.dumps(
-                {"objet": contexte["objet"],
-                 **{k: v for k, v in contexte["params"].items() if k != "image"}},
-                ensure_ascii=False)})
-        self._btn_reset.show()
-        self._btn_go.setText(_("neogen.modify_btn"))   # le bouton dit ce qu'il fait
-        self._statut.setText(f"✓ {resume} — {_('neogen.loaded_iterate')}")
-        self._input.setPlaceholderText(_("neogen.modify_placeholder"))
         self.piece_ready.emit(Path(chemin))
 
     def _sur_erreur(self, msg: str):
@@ -593,20 +593,16 @@ class NeoGenPanel(QWidget):
         self._statut.setText(f"⚠ {msg}")
 
     # ── Thème : le panneau capture sa palette à la construction. Au changement
-    # de thème, main_window le RECONSTRUIT et transplante cet état (la pièce en
-    # cours de modification et la conversation survivent au changement).
+    # de thème, main_window le RECONSTRUIT et transplante cet état (l'image
+    # jointe et l'onglet actif survivent au changement).
     def exporter_etat(self) -> dict:
         return {
-            "historique": list(self._historique),
-            "dernier_code": self._dernier_code,
             "image": self._image,
             "statut": self._statut.text() if hasattr(self, "_statut") else "",
             "onglet": self._tabs.currentIndex() if hasattr(self, "_tabs") else 0,
         }
 
     def importer_etat(self, etat: dict) -> None:
-        self._historique = list(etat.get("historique") or [])
-        self._dernier_code = etat.get("dernier_code")
         self._image = etat.get("image")
         if hasattr(self, "_statut") and etat.get("statut"):
             self._statut.setText(etat["statut"])
@@ -614,7 +610,3 @@ class NeoGenPanel(QWidget):
             self._tabs.setCurrentIndex(int(etat.get("onglet", 0)))
         if self._image and hasattr(self, "_lbl_logo"):
             self._lbl_logo.setText(self._nom_logo_elide(Path(self._image).name))
-        if self._dernier_code and hasattr(self, "_btn_reset"):
-            self._btn_reset.show()
-            self._btn_go.setText(_("neogen.modify_btn"))
-            self._input.setPlaceholderText(_("neogen.modify_placeholder"))

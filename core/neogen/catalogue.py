@@ -429,6 +429,91 @@ for _e_txt in CATALOGUE:
 PAR_ID = {e["id"]: e for e in CATALOGUE}
 
 
+# ═════════════════ Recherche en langage naturel -> objet biblio ═════════════
+# Mots-clés supplémentaires (synonymes, usages) par id : une demande libre
+# tombe ainsi sur l'objet le plus proche de la BIBLIOTHÈQUE (l'intelligence est
+# ici, dans des objets validés, pas dans un modèle qui génère du code).
+_SYNONYMES: dict[str, str] = {
+    "porte_cle": "porteclef breloque trousseau cles initiale prenom",
+    "badge": "medaille pin pins insigne broche",
+    "plaque": "panneau ecriteau enseigne pancarte porte nom",
+    "magnet": "aimant frigo frigidaire souvenir",
+    "sousverre": "dessous verre tasse mug rond bol boisson",
+    "logo": "logotype marque embleme image dessin",
+    "photo_relief": "photo lithophanie litho image relief portrait cadre lumineux",
+    "vase": "fleurs bouquet soliflore",
+    "boite": "rangement boitier coffret couvercle contenant",
+    "support": "telephone smartphone portable chevalet stand dock",
+    "de": "des jouer jeu societe",
+    "marque_page": "marquepage livre lecture signet",
+    "tire_fermeture": "tirette zip fermeture eclair curseur",
+    "coquetier": "oeuf coque petit dejeuner",
+    "gobelet": "verre tasse pot brosses dents",
+    "entonnoir": "verser transvaser liquide",
+    "pot_crayons": "crayons stylos bureau pot organiseur",
+    "pot_fleur": "plante fleur jardiniere cache pot",
+    "lettre_3d": "lettre initiale alphabet caractere",
+    "numero_maison": "numero maison porte adresse rue boite lettres",
+    "cuillere": "couvert doser dosette",
+    "fourchette": "couvert",
+    "couteau": "couvert tartiner",
+    "vis": "visserie boulon filetage fixation",
+    "ecrou": "visserie boulon filetage",
+    "crochet_mural": "crochet accroche mur porte manteau patere",
+    "poignee_meuble": "poignee meuble tiroir placard porte",
+    "equerre": "equerre fixation angle support etagere",
+    "cadre_photo": "cadre photo portrait souvenir",
+    "porte_savon": "savon salle bain douche",
+    "dessous_de_plat": "dessous plat chaud cuisine table",
+    "bac_empilable": "bac empilable rangement caisse bin",
+    "passe_cable": "passe cable bureau trou gestion cables",
+    "etiquette_plante": "etiquette plante jardin semis potager nom",
+    "ornement_etoile": "etoile noel sapin decoration suspension",
+    "coeur_deco": "coeur amour saint valentin decoration cadeau",
+    "trophee": "trophee coupe recompense champion prix",
+    "regle": "regle graduation mesure centimetre",
+    "rond_serviette": "rond serviette table anneau",
+    "repose_cuillere": "repose cuillere cuisine louche",
+    "range_cable": "range cable bobine enrouleur",
+}
+# index normalisé id -> ensemble de mots-clés (nom FR + EN + synonymes)
+_INDEX_RECHERCHE: dict[str, set] = {}
+
+
+def _mots_norm(txt: str) -> set:
+    import re
+    import unicodedata
+    t = unicodedata.normalize("NFKD", txt.lower()).encode("ascii", "ignore").decode()
+    return set(re.findall(r"[a-z0-9]+", t)) - {
+        "un", "une", "de", "des", "du", "le", "la", "les", "avec", "et", "en",
+        "mm", "cm", "pour", "sur", "the", "a", "an", "with", "of", "je", "veux",
+        "faire", "creer", "genere", "generer", "voudrais", "aimerais"}
+
+
+def _construire_index() -> None:
+    for e in CATALOGUE:
+        mots = _mots_norm(e["fr"]) | _mots_norm(e["en"]) | _mots_norm(_SYNONYMES.get(e["id"], ""))
+        _INDEX_RECHERCHE[e["id"]] = mots
+
+
+_construire_index()
+
+
+def rechercher(phrase: str) -> str | None:
+    """Objet de bibliothèque le plus proche d'une demande en langage naturel
+    (recouvrement de mots-clés, SANS modèle -> instantané et fiable). Renvoie
+    l'id, ou None si rien de pertinent (score nul)."""
+    mots = _mots_norm(phrase or "")
+    if not mots:
+        return None
+    best_id, best_score = None, 0
+    for eid, cles in _INDEX_RECHERCHE.items():
+        score = len(mots & cles)
+        if score > best_score:
+            best_id, best_score = eid, score
+    return best_id
+
+
 def par_domaine() -> list[tuple[tuple, list[dict]]]:
     """[(domaine (id, fr, en), [entrées...]), ...] dans l'ordre d'affichage."""
     return [(d, [e for e in CATALOGUE if e["domaine"] == d[0]]) for d in DOMAINES]

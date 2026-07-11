@@ -172,6 +172,26 @@ def test_installation_marker(tmp_path, monkeypatch):
     assert not I.est_installe()
 
 
+def test_recherche_langage_naturel():
+    """La barre « Rechercher » (remplace la création libre par code) : une
+    demande en langage naturel tombe sur l'OBJET de bibliothèque le plus proche
+    — matching mots-clés PUR (sans modèle) : instantané et fiable."""
+    from core.neogen import catalogue as C
+    cas = {
+        "un porte-clé Léa": "porte_cle",
+        "un truc pour ranger mes stylos": "pot_crayons",
+        "une lithophanie de ma photo": "photo_relief",
+        "un aimant pour le frigo": "magnet",
+        "une coupe de champion": "trophee",
+        "un crochet pour accrocher un manteau": "crochet_mural",
+        "un numéro de maison": "numero_maison",
+    }
+    for phrase, attendu in cas.items():
+        assert C.rechercher(phrase) == attendu, phrase
+    assert C.rechercher("xyzzy blabla zzz") is None      # rien de pertinent
+    assert C.rechercher("") is None
+
+
 def test_photo_relief_lithophanie(tmp_path):
     """Photo -> plaque lithophanie ÉTANCHE : sombre = épais, clair = fin,
     cadre rigide, debout par défaut (qualité d'impression)."""
