@@ -1553,6 +1553,66 @@ class Viewer3D(QWidget):
 
         QTimer.singleShot(300, _phase2)
 
+    def afficher_carte(self, scene) -> None:
+        """Aperçu COLORÉ d'une carte de visite (trimesh.Scene multi-corps) :
+        chaque corps garde SA couleur (visual.face_colors) et la caméra se met
+        en VUE DE DESSUS, centrée sur la carte posée à plat. La rotation auto
+        est coupée (on regarde la carte d'en haut, pas en orbite)."""
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+        import trimesh as _tm
+        self._cancel_mesh_prep()
+        self.stop_auto_rotate()
+        corps = list(scene.geometry.values())
+        if not corps:
+            return
+        fusion = _tm.util.concatenate(corps)
+        self._mesh = fusion
+        self._pv_mesh_cache = None
+        self._face_colors = None
+        self._view_mode = "carte"
+        self._plotter.clear()
+        self._setup_lights()
+        self._add_build_plate(fusion)
+        for i, g in enumerate(corps):
+            try:
+                col = g.visual.face_colors[0][:3] / 255.0
+            except Exception:
+                col = (0.9, 0.9, 0.9)
+            pv = self._place_on_plate(self._trimesh_to_pyvista(g))
+            self._plotter.add_mesh(pv, color=col, show_edges=False,
+                                   smooth_shading=False, name=f"carte_{i}")
+        self.vue_dessus(fusion)
+        self._plotter.render()
+
+    def vue_dessus(self, mesh=None) -> None:
+        """Caméra pile au-dessus du plateau, regardant vers le bas — la carte
+        (à plat) est vue de dessus, bien centrée. `up` = +Y (haut de la carte
+        vers le haut de l'écran)."""
+        if self._plotter is None:
+            return
+        m = mesh if mesh is not None else self._mesh
+        try:
+            self._plotter.camera.position = (0.0, 0.0, 1e6)
+            self._plotter.camera.focal_point = (0.0, 0.0, 0.0)
+            self._plotter.camera.up = (0.0, 1.0, 0.0)
+            if m is not None:
+                pv = self._place_on_plate(self._trimesh_to_pyvista(m))
+                pb = pv.bounds
+                pad = float(m.bounding_box.extents.max()) * 0.18
+                try:
+                    self._plotter.reset_camera(
+                        bounds=[pb[0]-pad, pb[1]+pad, pb[2]-pad, pb[3]+pad,
+                                pb[4], pb[5]])
+                except TypeError:
+                    self._plotter.reset_camera()
+            else:
+                self._plotter.reset_camera()
+            self._plotter.renderer.ResetCameraClippingRange()
+            self._plotter.render()
+        except Exception as exc:
+            logger.warning(f"vue_dessus échouée : {exc}")
+
     def _apply_pbr_mesh(self, pv_mesh, rq: dict) -> None:
         """Reçu sur le main thread — remplace le mesh brut par la version PBR."""
         if pv_mesh is None or self._mesh is None or self._plotter is None:
