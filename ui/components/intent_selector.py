@@ -1099,6 +1099,10 @@ class IntentSelector(QWidget):
             g.set_preset_visible("strength_litho", True)
             g.select_preset("strength_litho")
             g.set_grise(True)
+            # Qualité FINE pré-sélectionnée (cohérente avec la couche fine
+            # voulue pour la photo) — mais MODIFIABLE, contrairement à la
+            # Résistance : l'utilisateur garde la main sur la qualité.
+            self._groups[0].select_preset("quality_fine")
         else:
             g.set_grise(False)
             if g.get_selected_id() == "strength_litho":
@@ -1113,7 +1117,9 @@ class IntentSelector(QWidget):
         fragile   = getattr(report, "has_fragile_zones", False)
         large_flat = getattr(report, "is_large_flat_part", False)
 
-        self._groups[0].select_preset("quality_std")
+        self._groups[0].select_preset(
+            "quality_fine" if getattr(self, "_litho_actif", False)
+            else "quality_std")
 
         if getattr(self, "_litho_actif", False):
             pass                        # résistance IMPOSÉE par la lithophanie

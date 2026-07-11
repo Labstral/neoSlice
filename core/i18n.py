@@ -238,10 +238,10 @@ _FR: dict[str, str] = {
     "intent.s_ultra_desc":      "Résistance maximale — gyroid 80%",
     "intent.s_litho":           "Lithophanie",
     "intent.s_litho_desc":      "Remplissage 100% imposé — réglé par neoSlice",
-    "litho.banner": ("◈ PROFIL LITHOPHANIE — remplissage 100%, 4 parois, couche fine, "
-                     "parois lentes et brim sont IMPOSÉS pour la qualité photo. La "
-                     "Résistance est verrouillée (volontaire). Filament BLANC "
-                     "recommandé, éclairer la pièce par l'arrière."),
+    "litho.banner": ("◈ PROFIL LITHOPHANIE — remplissage 100%, 4 parois, parois "
+                     "lentes et brim sont IMPOSÉS pour la qualité photo (Résistance "
+                     "verrouillée, volontaire). Qualité « Fine » pré-sélectionnée — "
+                     "modifiable. Filament BLANC recommandé, éclairer par l'arrière."),
 
     # Vitesse
     "intent.sp_standard":       "Standard",
@@ -1507,10 +1507,10 @@ _EN: dict[str, str] = {
     "intent.s_ultra_desc":      "Maximum strength — gyroid 80%",
     "intent.s_litho":           "Lithophane",
     "intent.s_litho_desc":      "100% infill enforced — set by neoSlice",
-    "litho.banner": ("◈ LITHOPHANE PROFILE — 100% infill, 4 walls, fine layers, "
-                     "slow walls and brim are ENFORCED for photo quality. Strength "
-                     "is locked (on purpose). WHITE filament recommended, "
-                     "backlight the part."),
+    "litho.banner": ("◈ LITHOPHANE PROFILE — 100% infill, 4 walls, slow walls and "
+                     "brim are ENFORCED for photo quality (Strength locked, on "
+                     "purpose). “Fine” quality pre-selected — changeable. WHITE "
+                     "filament recommended, backlight the part."),
 
     "intent.sp_standard":       "Standard",
     "intent.sp_standard_desc":  "Bambu Lab recommended speeds",

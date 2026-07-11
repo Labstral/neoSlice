@@ -506,7 +506,8 @@ class AnalysisPanel(QWidget):
             self._litho_banner.hide()
             return
         pal = _T.palette()
-        cyan = "#22D3EE" if _T.is_dark() else "#0E7490"
+        # thème clair : teal FONCÉ (le cyan vif était illisible sur fond clair)
+        cyan = "#22D3EE" if _T.is_dark() else "#0B5568"
         r, g, b = (int(cyan[i:i + 2], 16) for i in (1, 3, 5))
         self._litho_banner.setText(_("litho.banner"))
         self._litho_banner.setStyleSheet(

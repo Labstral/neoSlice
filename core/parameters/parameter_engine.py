@@ -56,15 +56,14 @@ def appliquer_profil_lithophanie(config: "PrintConfig") -> "PrintConfig":
     tête de l'utilisateur. La translucidité exige une matière HOMOGÈNE :
       - remplissage 100 % (un motif partiel se voit par transparence),
       - 4 parois (la plaque fine devient massive, débit régulier),
-      - couche fine (chaque couche = une ligne de l'image imprimée debout),
       - parois lentes (les variations de débit font des « vagues » de lumière),
       - brim (assise étroite d'une plaque debout).
+    La hauteur de couche n'est PAS forcée : la Qualité (pré-sélectionnée
+    « Fine » au chargement) reste le choix de l'utilisateur.
     Appliqué APRÈS l'intention : ces clés-là priment, le reste suit l'intent."""
     config.infill_density = 100
     config.infill_pattern = "rectilinear"
     config.wall_loops = max(config.wall_loops, 4)
-    config.layer_height = min(config.layer_height, 0.16)
-    config.first_layer_height = max(config.layer_height, 0.2)
     config.outer_wall_speed = min(config.outer_wall_speed, 50)
     config.inner_wall_speed = min(config.inner_wall_speed, 80)
     config.infill_speed = min(config.infill_speed, 80)

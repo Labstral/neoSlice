@@ -200,12 +200,15 @@ def test_profil_lithophanie_automatique(tmp_path, monkeypatch):
     nommé « lithophanie* » pour être reconnu au chargement."""
     from core.parameters.parameter_engine import appliquer_profil_lithophanie
     from core.parameters.print_config import PrintConfig
-    cfg = PrintConfig(infill_density=15, wall_loops=2, layer_height=0.28,
+    cfg = PrintConfig(infill_density=15, wall_loops=2, layer_height=0.12,
                       outer_wall_speed=200, brim_type="no_brim")
     cfg = appliquer_profil_lithophanie(cfg)
     assert cfg.infill_density == 100 and cfg.wall_loops >= 4
-    assert cfg.layer_height <= 0.16 and cfg.outer_wall_speed <= 50
+    assert cfg.outer_wall_speed <= 50
     assert cfg.brim_type != "no_brim" and cfg.brim_width >= 5
+    # la hauteur de couche N'EST PAS forcée : la Qualité (pré-sélectionnée
+    # Fine, modifiable) garde la main
+    assert cfg.layer_height == 0.12
     # nommage : mode lithophanie -> « lithophanie », mode relief -> nom normal
     import numpy as np
     from PIL import Image
