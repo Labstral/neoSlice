@@ -53,8 +53,10 @@ Pour toute modification non triviale :
 - Utiliser des subagents pour les recherches larges (évite de polluer le contexte principal)
 
 ## Build & test
-- **Emmanuel teste toujours via** `dist/neoSlice.exe` (raccourci bureau), jamais `python main.py`
-- **Toujours rebuilder** après modification de code avant de déclarer terminé
+- **Emmanuel teste TOUJOURS via `python main.py` (PowerShell), JAMAIS via l'exe** —
+  un fix est testable dès le prochain lancement, AUCUN rebuild nécessaire
+  (mais l'app doit être RELANCÉE si elle tournait pendant la modification)
+- **Ne builder QUE quand Emmanuel écrit « build »** (préparation d'une distribution)
 - Build output : `C:\neoSlice\dist\neoSlice.exe`
 
 ## Dépendances externes
