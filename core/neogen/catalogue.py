@@ -446,6 +446,31 @@ CATALOGUE = [
        params=[_P("longueur", "Longueur", "Length", 120, 250, 180, 10),
                _P("largeur", "Largeur", "Width", 40, 90, 55, 5),
                _P("hauteur", "Hauteur", "Height", 30, 70, 45, 5)]),
+
+    # ── Mariage & événementiel ──
+    _e("porte_alliances", "Porte-alliances (cœur)", "Ring holder (heart)", "mariage",
+       _f("pro_mariage", "porte_alliances"),
+       params=[_P("taille", "Taille", "Size", 55, 120, 80, 5),
+               _P("ep", "Épaisseur socle", "Base thickness", 5, 12, 7, 1)]),
+    _e("panneau_bienvenue", "Panneau bienvenue", "Welcome sign", "mariage",
+       _f("pro_mariage", "panneau_bienvenue"), texte="optionnel",
+       params=[_P("largeur", "Largeur", "Width", 90, 200, 130, 5),
+               _P("hauteur", "Hauteur", "Height", 45, 110, 75, 5)],
+       flags=[("grave", "Texte gravé", "Engraved text", False)]),
+    _e("cone_petales", "Cornet à pétales", "Petal cone", "mariage",
+       _f("pro_mariage", "cone_petales"),
+       params=[_P("d_haut", "Ø haut", "Top ø", 50, 100, 70, 5),
+               _P("d_bas", "Ø bas", "Bottom ø", 15, 35, 22, 1),
+               _P("hauteur", "Hauteur", "Height", 70, 140, 95, 5)]),
+    _e("coeur_marque_place", "Marque-place cœur", "Heart place card", "mariage",
+       _f("pro_mariage", "coeur_marque_place"), texte="optionnel",
+       params=[_P("taille", "Taille", "Size", 40, 90, 55, 5)],
+       flags=[("grave", "Texte gravé", "Engraved text", False)]),
+    _e("support_plan_table", "Support plan de table", "Seating chart holder",
+       "mariage", _f("pro_mariage", "support_plan_table"),
+       params=[_P("largeur", "Largeur", "Width", 100, 220, 150, 10),
+               _P("hauteur", "Hauteur", "Height", 40, 80, 55, 5),
+               _P("ep_fente", "Largeur fente", "Slot width", 4, 12, 7, 1)]),
 ]
 
 # Réglage « relief / gravure » (hauteur du texte en relief OU profondeur de
@@ -514,6 +539,12 @@ _SYNONYMES: dict[str, str] = {
     "porte_addition": "porte addition note ticket presentoir cheque paiement restaurant",
     "marque_place": "marque place nom invite convive table nominatif",
     "porte_couverts": "bac couverts serviettes caisson compartiment restaurant table",
+    # mariage & événementiel
+    "porte_alliances": "porte alliances bagues anneaux mariage coussin coeur ceremonie",
+    "panneau_bienvenue": "panneau bienvenue welcome accueil entree mariage evenement pancarte",
+    "cone_petales": "cornet cone petales riz confettis mariage sortie eglise",
+    "coeur_marque_place": "marque place coeur nom invite mariage etiquette cadeau merci",
+    "support_plan_table": "plan table seating chart support panneau ardoise mariage menu",
 }
 # index normalisé id -> ensemble de mots-clés (nom FR + EN + synonymes)
 _INDEX_RECHERCHE: dict[str, set] = {}
