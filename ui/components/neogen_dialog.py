@@ -55,36 +55,50 @@ class _CatalogueWorker(QThread):
 
 
 class _LibreWorker(QThread):
-    """Phrase française -> pilote (catalogue) OU atelier libre (script)."""
+    """Phrase française -> pilote (catalogue) OU atelier libre (script).
+    Si `code_precedent` est fourni : MODIFICATION de la pièce déjà générée."""
     question = Signal(str)
     statut = Signal(str)
-    fini = Signal(object, str)
+    fini = Signal(object, str, object)   # (Path, résumé, contexte {code, objet, params})
     erreur = Signal(str)
 
-    def __init__(self, phrase: str, image: Path | None, historique: list):
+    def __init__(self, phrase: str, image: Path | None, historique: list,
+                 code_precedent: str | None = None):
         super().__init__()
         self._phrase, self._image, self._historique = phrase, image, historique
+        self._code_precedent = code_precedent
 
     def run(self):
         try:
+            from core.neogen.libre import generer_et_exporter
+            # Mode ITÉRATIF : une pièce sur mesure existe -> on la MODIFIE
+            if self._code_precedent:
+                self.statut.emit(_("neogen.modifying"))
+                chemin, code, _j = generer_et_exporter(
+                    self._phrase, code_precedent=self._code_precedent)
+                if chemin is None:
+                    self.erreur.emit(_("neogen.free_failed"))
+                    return
+                self.fini.emit(chemin, _("neogen.free_done"), {"code": code})
+                return
             from core.neogen import pilote
             objet, params, q = pilote.interpreter(self._phrase, image=self._image,
                                                   historique=self._historique)
             if objet:                                   # chemin rapide catalogue
                 resume = pilote.resume_params(objet, params)
-                self.fini.emit(pilote.generer(objet, params), resume)
+                self.fini.emit(pilote.generer(objet, params), resume,
+                               {"objet": objet, "params": params})
                 return
             if q and not q.startswith("Quel objet"):    # info manquante -> question
                 self.question.emit(q)
                 return
             # Hors catalogue -> ATELIER LIBRE (le modèle écrit la géométrie)
             self.statut.emit(_("neogen.free_running"))
-            from core.neogen.libre import generer_et_exporter
-            chemin, journal = generer_et_exporter(self._phrase)
+            chemin, code, journal = generer_et_exporter(self._phrase)
             if chemin is None:
                 self.erreur.emit(_("neogen.free_failed"))
                 return
-            self.fini.emit(chemin, _("neogen.free_done"))
+            self.fini.emit(chemin, _("neogen.free_done"), {"code": code})
         except Exception as exc:
             self.erreur.emit(str(exc))
 
@@ -101,6 +115,9 @@ class NeoGenDialog(QDialog):
         self._worker = None
         self._image: Path | None = None
         self._historique: list[dict] = []
+        # Mode itératif : script de la dernière pièce SUR MESURE générée —
+        # les phrases suivantes deviennent des MODIFICATIONS de cette pièce.
+        self._dernier_code: str | None = None
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(18, 14, 18, 14)
@@ -387,12 +404,33 @@ class NeoGenDialog(QDialog):
         self._lbl_logo = QLabel("")
         self._lbl_logo.setStyleSheet(f"color: {PRO_VIOLET}; background: transparent;")
         ligne2.addWidget(self._lbl_logo, 1)
+        # « Nouvelle demande » : repart de zéro (oublie la pièce et le contexte)
+        self._btn_reset = QPushButton(_("neogen.new_request"))
+        self._btn_reset.setCursor(Qt.PointingHandCursor)
+        self._btn_reset.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {pal['TEXT_LABEL']};
+                border: 1px solid {pal['INACTIVE']}; border-radius: 6px;
+                padding: 4px 12px; }}
+            QPushButton:hover {{ color: {PRO_CYAN}; border-color: {PRO_CYAN}; }}
+        """)
+        self._btn_reset.clicked.connect(self._nouvelle_demande)
+        self._btn_reset.hide()
+        ligne2.addWidget(self._btn_reset)
         v.addLayout(ligne2)
         v.addStretch()
         return w
 
-    def _choisir_exemple(self, txt: str):
+    def _nouvelle_demande(self):
         self._historique.clear()
+        self._dernier_code = None
+        self._btn_reset.hide()
+        self._statut.setText("")
+        self._input.clear()
+        self._input.setPlaceholderText(_("neogen.placeholder"))
+        self._input.setFocus()
+
+    def _choisir_exemple(self, txt: str):
+        self._nouvelle_demande()
         self._input.setText(txt)
         self._input.setFocus()
 
@@ -409,7 +447,8 @@ class NeoGenDialog(QDialog):
             return
         self._btn_go.setEnabled(False)
         self._statut.setText("🧠 " + _("neogen.thinking"))
-        self._worker = _LibreWorker(phrase, self._image, list(self._historique))
+        self._worker = _LibreWorker(phrase, self._image, list(self._historique),
+                                    code_precedent=self._dernier_code)
         self._worker.question.connect(self._sur_question)
         self._worker.statut.connect(lambda s: self._statut.setText("🛠 " + s))
         self._worker.fini.connect(self._sur_fini_libre)
@@ -429,18 +468,31 @@ class NeoGenDialog(QDialog):
         self._input.setFocus()
 
     def _sur_fini(self, chemin):
+        """Objet de la Bibliothèque généré : la fenêtre RESTE ouverte — l'utilisateur
+        peut ajuster le formulaire et regénérer, la pièce se met à jour au viewer."""
         if hasattr(self, "_btn_cat"):
             self._btn_cat.setEnabled(True)
-        self._statut.setText("✓ " + _("neogen.loading_viewer"))
+        self._statut.setText("✓ " + _("neogen.loaded_adjust_form"))
         self.piece_ready.emit(Path(chemin))
-        self.accept()
 
-    def _sur_fini_libre(self, chemin, resume: str):
-        self._historique.clear()
+    def _sur_fini_libre(self, chemin, resume: str, contexte: dict):
+        """Pièce générée/modifiée : la fenêtre RESTE ouverte en mode ITÉRATIF —
+        les phrases suivantes modifient la pièce (taille, trous, éléments...)."""
+        import json as _json
         self._btn_go.setEnabled(True)
-        self._statut.setText(f"✓ {resume} — {_('neogen.loading_viewer')}")
+        code = (contexte or {}).get("code")
+        if code:                        # pièce SUR MESURE : mémorise son script
+            self._dernier_code = code
+        elif (contexte or {}).get("objet"):
+            # pièce du CATALOGUE : la conversation du pilote garde le contexte
+            self._dernier_code = None
+            self._historique.append({"role": "assistant", "content": _json.dumps(
+                {"objet": contexte["objet"], **{k: v for k, v in contexte["params"].items()
+                                                if k != "image"}}, ensure_ascii=False)})
+        self._btn_reset.show()
+        self._statut.setText(f"✓ {resume} — {_('neogen.loaded_iterate')}")
+        self._input.setPlaceholderText(_("neogen.modify_placeholder"))
         self.piece_ready.emit(Path(chemin))
-        self.accept()
 
     def _sur_erreur(self, msg: str):
         if hasattr(self, "_btn_cat"):

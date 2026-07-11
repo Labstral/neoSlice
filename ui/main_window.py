@@ -1854,13 +1854,19 @@ class MainWindow(QMainWindow):
         self._maybe_launch_pro_tutorial()
 
     def _open_neogen(self):
-        """Ouvre neoGen : l'utilisateur décrit une pièce, Oen l'interprète, le
-        générateur la produit, et elle est chargée dans le viewer via le même
-        pipeline qu'un fichier déposé."""
+        """Ouvre neoGen (NON-modal : la fenêtre reste ouverte pendant que la
+        pièce se charge au viewer -> l'utilisateur itère « plus grand », « trou
+        de 8 mm »... en voyant le résultat). Instance réutilisée : le contexte
+        de modification survit à une fermeture/réouverture."""
         from ui.components.neogen_dialog import NeoGenDialog
-        dlg = NeoGenDialog(self)
-        dlg.piece_ready.connect(self._on_stl_dropped)
-        dlg.exec()
+        dlg = getattr(self, "_neogen_dlg", None)
+        if dlg is None:
+            dlg = NeoGenDialog(self)
+            dlg.piece_ready.connect(self._on_stl_dropped)
+            self._neogen_dlg = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _open_diagnostic(self):
         from ui.components.defect_diagnostic import DefectDiagnosticDialog

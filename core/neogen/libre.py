@@ -590,12 +590,28 @@ def _extraire_code(txt: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
-def generer_libre(phrase: str, modele: str = NEOGEN_MODEL):
-    """Boucle complète. Renvoie (piece|None, essais, journal)."""
+def generer_libre(phrase: str, modele: str = NEOGEN_MODEL,
+                  code_precedent: str | None = None):
+    """Boucle complète. Renvoie (piece|None, code|None, essais, journal).
+
+    `code_precedent` : script de la pièce déjà générée — le modèle le MODIFIE
+    selon la demande (« plus grand », « trou de 8 mm »...) au lieu de repartir
+    de zéro. C'est le mode itératif de la fenêtre neoGen."""
     from core.neogen.pilote import _preparer_moteur
     _preparer_moteur()
+    if code_precedent:
+        contenu = (f"Script actuel de la piece :\n```python\n{code_precedent}\n```\n"
+                   f"MODIFICATION demandee : {phrase}\n"
+                   f"Applique UNIQUEMENT cette modification et renvoie le script "
+                   f"COMPLET mis a jour. RAPPELS : pour agrandir, change les "
+                   f"dimensions dans les appels existants ; pour ajouter un element "
+                   f"SOUS la piece, SOULEVE d'abord l'existant de la hauteur de "
+                   f"l'element avec deplacer(..., 0, 0, h) ; l'ensemble doit rester "
+                   f"pose au sol et d'un seul tenant.")
+    else:
+        contenu = phrase
     messages = [{"role": "system", "content": _prompt_systeme(phrase)},
-                {"role": "user", "content": phrase}]
+                {"role": "user", "content": contenu}]
     journal = []
     for essai in range(1, MAX_ESSAIS + 1):
         rep = _appel_modele(messages, modele)
@@ -610,7 +626,7 @@ def generer_libre(phrase: str, modele: str = NEOGEN_MODEL):
             pb = verifier(piece)
             if pb is None:
                 journal.append(f"essai {essai}: OK")
-                return piece, essai, journal
+                return piece, code, essai, journal
             erreur = pb
         except Exception as exc:
             erreur = f"{type(exc).__name__}: {exc}"
@@ -621,20 +637,23 @@ def generer_libre(phrase: str, modele: str = NEOGEN_MODEL):
                                  f"(percer/deplacer/creuser) travaillent sur des VOLUMES ; "
                                  f"une forme 2D doit d'abord passer par extrusion(forme, "
                                  f"hauteur). Corrige et renvoie le script EN ENTIER."}]
-    return None, MAX_ESSAIS, journal
+    return None, None, MAX_ESSAIS, journal
 
 
-def generer_et_exporter(phrase: str, modele: str = NEOGEN_MODEL):
-    """Pour l'UI : génère et exporte. Renvoie (Path|None, journal)."""
-    piece, _essais, journal = generer_libre(phrase, modele)
+def generer_et_exporter(phrase: str, modele: str = NEOGEN_MODEL,
+                        code_precedent: str | None = None):
+    """Pour l'UI : génère (ou modifie) et exporte.
+    Renvoie (Path|None, code|None, journal)."""
+    piece, code, _essais, journal = generer_libre(phrase, modele,
+                                                  code_precedent=code_precedent)
     if piece is None:
-        return None, journal
+        return None, None, journal
     DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
     mots = "_".join(list(_normaliser_mots(phrase))[:4]) or "piece"
     base = DOSSIER_SORTIES / f"libre_{mots[:40]}"
     piece.export(base.with_suffix(".stl"))
     try:
         piece.export(base.with_suffix(".3mf"))
-        return base.with_suffix(".3mf"), journal
+        return base.with_suffix(".3mf"), code, journal
     except Exception:
-        return base.with_suffix(".stl"), journal
+        return base.with_suffix(".stl"), code, journal
