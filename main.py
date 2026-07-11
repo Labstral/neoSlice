@@ -250,8 +250,15 @@ def main():
     from ui.styles.theme import apply_title_bar_theme as _tb
 
     class _TitleBarFilter(QObject):
+        # Show : chaque nouvelle fenêtre naît au bon thème. ThemeChange /
+        # PaletteChange (fenêtres seulement) : Qt vient de repeindre la frame
+        # selon SON idée du thème -> on repasse derrière lui immédiatement.
+        _TYPES = (QEvent.Type.Show, QEvent.Type.ThemeChange,
+                  QEvent.Type.ApplicationPaletteChange)
+
         def eventFilter(self, obj, event):
-            if event.type() == QEvent.Type.Show and isinstance(obj, _QWidget) and obj.isWindow():
+            if (event.type() in self._TYPES
+                    and isinstance(obj, _QWidget) and obj.isWindow()):
                 _tb(obj)
             return False
 
@@ -268,7 +275,17 @@ def main():
         for w in app.topLevelWidgets():
             if w.isWindow():
                 _tb(w)
-    _THEME_MGR.register(_retheme_titlebars)
+
+    def _retheme_cascade():
+        # Au switch de thème, Qt (6.8+) repeint parfois la frame APRÈS nous
+        # (setColorScheme et palette sont traités en différé) -> la barre
+        # « redevenait » claire. On repasse derrière lui à plusieurs horizons ;
+        # le DWM n'émet aucun signal Qt, donc aucune boucle possible.
+        from PySide6.QtCore import QTimer as _QT3
+        _retheme_titlebars()
+        for _ms in (120, 400, 900):
+            _QT3.singleShot(_ms, _retheme_titlebars)
+    _THEME_MGR.register(_retheme_cascade)
 
     # CORRECTIF DE FOND barre de titre : Qt 6.8+ SUIT le thème de l'OS et ré-aligne la
     # couleur de la barre de titre native sur celui de l'OS — sur un changement de thème
