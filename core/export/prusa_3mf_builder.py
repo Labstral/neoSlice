@@ -34,6 +34,7 @@ def _load_json(name: str) -> dict:
 _FILL_PATTERN = {
     "grid": "grid", "gyroid": "gyroid", "honeycomb": "honeycomb",
     "cubic": "cubic", "adaptivecubic": "adaptivecubic", "lightning": "lightning",
+    "zig-zag": "rectilinear",     # nom Bambu -> nom Prusa (lithophanie 100 %)
 }
 _TOP_PATTERN = {
     "monotonicline": "monotoniclines", "monotonic": "monotonic",

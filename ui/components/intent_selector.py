@@ -759,6 +759,7 @@ class IntentSelector(QWidget):
                 border: 1px solid transparent;
                 border-radius: 3px;
                 letter-spacing: 1px;
+                padding: 0 10px;
             }}
             QPushButton:hover {{ background: {_dp['ACCENT_BRIGHT']}; color: #ffffff; }}
             QPushButton:disabled {{ background: {_dp['INACTIVE']}; color: {_dp['TEXT_LABEL']}; }}
@@ -805,7 +806,7 @@ class IntentSelector(QWidget):
                 QPushButton {{
                     background: {_bp['INACTIVE']};
                     color: {_bp['TEXT_LABEL']};
-                    border: 1px solid transparent; border-radius: 3px; letter-spacing: 1px;
+                    border: 1px solid transparent; border-radius: 3px; letter-spacing: 1px; padding: 0 10px;
                 }}
             """)
             self._btn.setText(_("intent.btn_conflicts"))

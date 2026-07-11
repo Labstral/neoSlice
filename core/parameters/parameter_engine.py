@@ -62,7 +62,10 @@ def appliquer_profil_lithophanie(config: "PrintConfig") -> "PrintConfig":
     « Fine » au chargement) reste le choix de l'utilisateur.
     Appliqué APRÈS l'intention : ces clés-là priment, le reste suit l'intent."""
     config.infill_density = 100
-    config.infill_pattern = "rectilinear"
+    # « zig-zag » = nom BAMBU du remplissage rectiligne — seul motif accepté à
+    # 100 % de densité. « rectilinear » (vocabulaire Prusa/Orca) était inconnu
+    # de BS, remplacé par cubic... que BS refuse ensuite à 100 % (vécu).
+    config.infill_pattern = "zig-zag"
     config.wall_loops = max(config.wall_loops, 4)
     config.outer_wall_speed = min(config.outer_wall_speed, 50)
     config.inner_wall_speed = min(config.inner_wall_speed, 80)

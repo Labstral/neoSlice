@@ -204,6 +204,9 @@ def test_profil_lithophanie_automatique(tmp_path, monkeypatch):
                       outer_wall_speed=200, brim_type="no_brim")
     cfg = appliquer_profil_lithophanie(cfg)
     assert cfg.infill_density == 100 and cfg.wall_loops >= 4
+    # « zig-zag » : nom BAMBU du rectiligne, seul motif accepté à 100 %
+    # (« rectilinear » était inconnu de BS -> remplacé par cubic -> refusé)
+    assert cfg.infill_pattern == "zig-zag"
     assert cfg.outer_wall_speed <= 50
     assert cfg.brim_type != "no_brim" and cfg.brim_width >= 5
     # la hauteur de couche N'EST PAS forcée : la Qualité (pré-sélectionnée
