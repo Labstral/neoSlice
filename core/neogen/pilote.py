@@ -21,8 +21,9 @@ from pathlib import Path
 
 from core.assistant.engine import HOST
 
-# neoGen a SON modèle (qwen3:14b, installé indépendamment d'Oen 8B — réglages).
-NEOGEN_MODEL = "qwen3:14b"
+# neoGen a SON modèle (gemma4:12b — benchmark A/B 12/12 extraction en 19 s),
+# installé indépendamment d'Oen 8B via les réglages.
+NEOGEN_MODEL = "gemma4:12b"
 
 DOSSIER_SORTIES = Path.home() / ".neoslice" / "neogen"
 
@@ -93,7 +94,7 @@ _ALIAS = {"sous_verre": "sousverre", "portecle": "porte_cle", "porte_cles": "por
 
 def _preparer_moteur() -> None:
     """Démarre le serveur Ollama via l'infrastructure partagée (no-op si déjà
-    en marche). NE touche PAS au modèle d'Oen : neoGen a le sien (14b) et les
+    en marche). NE touche PAS au modèle d'Oen : neoGen a le sien (gemma4:12b) et les
     deux s'installent indépendamment."""
     from core.assistant.engine import AssistantEngine
     AssistantEngine.instance()._ensure_server()

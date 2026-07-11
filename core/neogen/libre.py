@@ -15,7 +15,7 @@ Fiabilité (leçons des batteries 8B/14B) :
     solution juste au lieu d'inventer (bol, pyramide, jeton... corrigés).
   - Boucle : erreur d'exécution/vérification -> renvoyée au modèle (3 essais).
 
-Modèle : qwen3:14b DÉDIÉ à neoGen (installé indépendamment d'Oen 8B via les
+Modèle : gemma4:12b DÉDIÉ à neoGen (choisi par benchmark A/B : 14/14 vs 13/14, ×12 plus rapide, −1,7 Go vs qwen3:14b) (installé indépendamment d'Oen 8B via les
 réglages — voir installation.py).
 """
 from __future__ import annotations
@@ -35,7 +35,7 @@ from shapely.affinity import translate as shp_translate, rotate as shp_rotate
 from core.assistant.engine import HOST
 from core.neogen.geo_utils import union_solides
 
-NEOGEN_MODEL = "qwen3:14b"
+NEOGEN_MODEL = "gemma4:12b"
 MAX_ESSAIS = 3
 DOSSIER_SORTIES = Path.home() / ".neoslice" / "neogen"
 
@@ -575,14 +575,28 @@ def verifier(piece: trimesh.Trimesh) -> str | None:
 
 
 def _appel_modele(messages: list[dict], modele: str = NEOGEN_MODEL) -> str:
-    corps = json.dumps({
-        "model": modele, "messages": messages, "stream": False, "think": False,
-        "options": {"num_ctx": 4096, "temperature": 0.2},
-    }).encode("utf-8")
-    req = urllib.request.Request(f"http://{HOST}/api/chat", data=corps,
-                                 headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=600) as r:
-        return json.loads(r.read().decode("utf-8")).get("message", {}).get("content", "")
+    """Appel Ollama tolérant : le paramètre `think` (spécifique à certaines
+    familles, ex. Qwen3) est retiré et l'appel rejoué si le modèle le refuse —
+    permet de changer de modèle (Gemma, Mistral...) sans toucher au code."""
+    def _corps(avec_think: bool) -> bytes:
+        d = {"model": modele, "messages": messages, "stream": False,
+             "options": {"num_ctx": 4096, "temperature": 0.2}}
+        if avec_think:
+            d["think"] = False
+        return json.dumps(d).encode("utf-8")
+    for avec_think in (True, False):
+        req = urllib.request.Request(f"http://{HOST}/api/chat",
+                                     data=_corps(avec_think),
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=600) as r:
+                return json.loads(r.read().decode("utf-8")).get(
+                    "message", {}).get("content", "")
+        except urllib.error.HTTPError as e:
+            if avec_think and e.code == 400:
+                continue          # modèle sans mode think -> rejoue sans
+            raise
+    return ""
 
 
 def _extraire_code(txt: str) -> str | None:

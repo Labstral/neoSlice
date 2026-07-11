@@ -18,8 +18,8 @@ from core.assistant.engine import HOST, OLLAMA_EXE
 
 NEOGEN_DIR = Path.home() / ".neoslice" / "neogen"
 MARKER = NEOGEN_DIR / "installed.json"
-MODELE = "qwen3:14b"
-TAILLE_GO = 9.3
+MODELE = "gemma4:12b"
+TAILLE_GO = 7.6
 
 
 def runtime_present() -> bool:
