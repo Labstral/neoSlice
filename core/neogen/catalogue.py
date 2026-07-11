@@ -471,6 +471,38 @@ CATALOGUE = [
        params=[_P("largeur", "Largeur", "Width", 100, 220, 150, 10),
                _P("hauteur", "Hauteur", "Height", 40, 80, 55, 5),
                _P("ep_fente", "Largeur fente", "Slot width", 4, 12, 7, 1)]),
+
+    # ── Boutique & bureau pro ──
+    _e("presentoir_gradins", "Présentoir à gradins", "Stepped display", "commerce",
+       _f("pro_boutique", "presentoir_gradins"),
+       params=[_P("largeur", "Largeur", "Width", 90, 220, 140, 10),
+               _P("marches", "Marches", "Steps", 2, 5, 3, 1),
+               _P("prof_marche", "Profondeur marche", "Step depth", 30, 60, 42, 2),
+               _P("h_marche", "Hauteur marche", "Step height", 20, 45, 30, 2)]),
+    _e("serre_livres", "Serre-livres", "Bookend", "commerce",
+       _f("pro_boutique", "serre_livres"),
+       params=[_P("hauteur", "Hauteur", "Height", 90, 200, 140, 10),
+               _P("base", "Longueur semelle", "Base length", 80, 160, 120, 5),
+               _P("largeur", "Largeur", "Width", 70, 140, 100, 5)]),
+    _e("presentoir_bijoux", "Présentoir à bijoux", "Jewelry stand", "commerce",
+       _f("pro_boutique", "presentoir_bijoux"),
+       params=[_P("largeur", "Largeur", "Width", 80, 180, 120, 10),
+               _P("hauteur", "Hauteur", "Height", 90, 180, 130, 10),
+               _P("section", "Section barre", "Bar section", 8, 20, 12, 1)]),
+    _e("organiseur_bureau", "Organiseur de bureau", "Desk organizer", "commerce",
+       _f("pro_boutique", "organiseur_bureau"),
+       params=[_P("longueur", "Longueur", "Length", 120, 240, 170, 10),
+               _P("largeur", "Largeur", "Width", 60, 130, 90, 5),
+               _P("hauteur", "Hauteur", "Height", 40, 80, 55, 5)]),
+    _e("porte_cartes", "Porte-cartes de visite", "Card holder", "commerce",
+       _f("pro_boutique", "porte_cartes"),
+       params=[_P("largeur", "Largeur", "Width", 70, 130, 95, 5),
+               _P("hauteur", "Hauteur", "Height", 30, 60, 40, 5)]),
+    _e("etiquette_prix", "Étiquette-prix", "Price tag stand", "commerce",
+       _f("pro_boutique", "etiquette_prix"), texte="optionnel",
+       params=[_P("largeur", "Largeur", "Width", 40, 90, 55, 5),
+               _P("hauteur", "Hauteur", "Height", 20, 45, 30, 2)],
+       flags=[("grave", "Texte gravé", "Engraved text", False)]),
 ]
 
 # Réglage « relief / gravure » (hauteur du texte en relief OU profondeur de
@@ -507,7 +539,7 @@ _SYNONYMES: dict[str, str] = {
     "coquetier": "oeuf coque petit dejeuner",
     "gobelet": "verre tasse pot brosses dents",
     "entonnoir": "verser transvaser liquide",
-    "pot_crayons": "crayons stylos bureau pot organiseur",
+    "pot_crayons": "crayons stylos pot gobelet",
     "pot_fleur": "plante fleur jardiniere cache pot",
     "lettre_3d": "lettre initiale alphabet caractere",
     "numero_maison": "numero maison porte adresse rue boite lettres",
@@ -545,6 +577,13 @@ _SYNONYMES: dict[str, str] = {
     "cone_petales": "cornet cone petales riz confettis mariage sortie eglise",
     "coeur_marque_place": "marque place coeur nom invite mariage etiquette cadeau merci",
     "support_plan_table": "plan table seating chart support panneau ardoise mariage menu",
+    # boutique & bureau pro
+    "presentoir_gradins": "presentoir gradins escalier marches produits boutique vitrine etale",
+    "serre_livres": "serre livres bookend etagere bureau bibliotheque",
+    "presentoir_bijoux": "presentoir bijoux colliers bracelets boucles arche portique boutique",
+    "organiseur_bureau": "organiseur bureau rangement stylos crayons trombones bac compartiment",
+    "porte_cartes": "porte cartes visite presentoir comptoir boutique accueil",
+    "etiquette_prix": "etiquette prix tarif rayon marche vitrine pancarte",
 }
 # index normalisé id -> ensemble de mots-clés (nom FR + EN + synonymes)
 _INDEX_RECHERCHE: dict[str, set] = {}
