@@ -462,7 +462,13 @@ def generer_fichier(entree_id: str, params: dict):
     piece = construire(entree_id, params)
     DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
     suffixe = _slug(str(params.get("texte", "")))[:20]
-    base = DOSSIER_SORTIES / (entree_id + ("_" + suffixe if suffixe and suffixe != "piece" else ""))
+    nom = entree_id
+    if entree_id == "photo_relief" and \
+            str(params.get("mode", "lithophanie")) == "lithophanie":
+        # nom dédié : l'app reconnaît une LITHOPHANIE au chargement et applique
+        # son profil d'impression automatique (remplissage 100 %, couche fine…)
+        nom = "lithophanie"
+    base = DOSSIER_SORTIES / (nom + ("_" + suffixe if suffixe and suffixe != "piece" else ""))
     fusion = (trimesh.util.concatenate(list(piece.geometry.values()))
               if isinstance(piece, trimesh.Scene) else piece)
     fusion.export(base.with_suffix(".stl"))

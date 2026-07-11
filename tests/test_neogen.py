@@ -194,6 +194,33 @@ def test_photo_relief_lithophanie(tmp_path):
     assert p2.bounds[1][2] - p2.bounds[0][2] > 3.0
 
 
+def test_profil_lithophanie_automatique(tmp_path, monkeypatch):
+    """Une lithophanie doit s'imprimer PLEINE et lente : le profil auto force
+    remplissage 100 %, 4 parois, couche fine, brim — et le fichier neoGen est
+    nommé « lithophanie* » pour être reconnu au chargement."""
+    from core.parameters.parameter_engine import appliquer_profil_lithophanie
+    from core.parameters.print_config import PrintConfig
+    cfg = PrintConfig(infill_density=15, wall_loops=2, layer_height=0.28,
+                      outer_wall_speed=200, brim_type="no_brim")
+    cfg = appliquer_profil_lithophanie(cfg)
+    assert cfg.infill_density == 100 and cfg.wall_loops >= 4
+    assert cfg.layer_height <= 0.16 and cfg.outer_wall_speed <= 50
+    assert cfg.brim_type != "no_brim" and cfg.brim_width >= 5
+    # nommage : mode lithophanie -> « lithophanie », mode relief -> nom normal
+    import numpy as np
+    from PIL import Image
+    img = tmp_path / "g.png"
+    Image.fromarray(np.tile(np.linspace(0, 255, 32, dtype=np.uint8), (24, 1)),
+                    "L").save(img)
+    monkeypatch.setattr(P, "DOSSIER_SORTIES", tmp_path)
+    from core.neogen import catalogue as C
+    assert C.generer_fichier("photo_relief", {"image": str(img)}).stem \
+        .startswith("lithophanie")
+    assert C.generer_fichier("photo_relief", {"image": str(img),
+                                              "mode": "relief"}).stem \
+        .startswith("photo_relief")
+
+
 def test_maj_cookbook_valide_en_sandbox(tmp_path, monkeypatch):
     """La base d'objets distante : chaque recette est EXECUTEE en sandbox et
     verifiee avant installation — du code dangereux ou casse est ecarte."""

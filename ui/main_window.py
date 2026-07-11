@@ -2713,6 +2713,9 @@ class MainWindow(QMainWindow):
         """Démarre le chargement STL en thread — feedback immédiat, zéro freeze UI."""
         logger.info(f"STL reçu : {path}")
         self._stl_path = path
+        # Lithophanie neoGen : reconnue au NOM du fichier -> son profil
+        # d'impression sera appliqué automatiquement à la génération.
+        self._est_lithophanie = path.stem.lower().startswith("lithophanie")
 
         # ── Feedback instantané (< 1 ms) ────────────────────────────────────
         self._step_stl.set_active()
@@ -3156,6 +3159,15 @@ class MainWindow(QMainWindow):
                 if hasattr(config, attr):
                     setattr(config, attr, value)
 
+            # Pièce lithophanie (neoGen) : profil d'impression AUTOMATIQUE —
+            # remplissage 100 %, 4 parois, couche fine, parois lentes, brim.
+            # Prime sur l'intention : sans lui, le motif de remplissage se
+            # voit par transparence et ruine la photo.
+            if getattr(self, "_est_lithophanie", False):
+                from core.parameters.parameter_engine import (
+                    appliquer_profil_lithophanie)
+                config = appliquer_profil_lithophanie(config)
+
             config.neoslice_intent_text = result.human_summary
 
             self._current_config = config
@@ -3168,9 +3180,12 @@ class MainWindow(QMainWindow):
             # actionnable à nouveau.
             self._refresh_diag_button()
             self._analysis_panel.set_generation_active()
-            self._analysis_panel.show_material_warnings(
-                _compute_material_warnings(filament, printer, analysis)
-            )
+            _warns = _compute_material_warnings(filament, printer, analysis)
+            if getattr(self, "_est_lithophanie", False):
+                _warns.insert(0, "Profil LITHOPHANIE appliqué : remplissage "
+                                 "100 %, 4 parois, couche fine, parois lentes, "
+                                 "brim — filament BLANC recommandé")
+            self._analysis_panel.show_material_warnings(_warns)
             self._statusbar.set_message(
                 f"Configuration générée — profil : {config.neoslice_profile_name}",
                 TELE_GREEN,

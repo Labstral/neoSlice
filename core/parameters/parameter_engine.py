@@ -51,6 +51,30 @@ _FLEXIBLE_MATERIALS = frozenset({"TPU", "TPE"})
 _WARP_PRONE_MATERIALS = frozenset({"ABS", "ASA", "PC", "PA", "PA-CF", "Nylon"})
 
 
+def appliquer_profil_lithophanie(config: "PrintConfig") -> "PrintConfig":
+    """Profil AUTOMATIQUE lithophanie — l'expertise dans le code, pas dans la
+    tête de l'utilisateur. La translucidité exige une matière HOMOGÈNE :
+      - remplissage 100 % (un motif partiel se voit par transparence),
+      - 4 parois (la plaque fine devient massive, débit régulier),
+      - couche fine (chaque couche = une ligne de l'image imprimée debout),
+      - parois lentes (les variations de débit font des « vagues » de lumière),
+      - brim (assise étroite d'une plaque debout).
+    Appliqué APRÈS l'intention : ces clés-là priment, le reste suit l'intent."""
+    config.infill_density = 100
+    config.infill_pattern = "rectilinear"
+    config.wall_loops = max(config.wall_loops, 4)
+    config.layer_height = min(config.layer_height, 0.16)
+    config.first_layer_height = max(config.layer_height, 0.2)
+    config.outer_wall_speed = min(config.outer_wall_speed, 50)
+    config.inner_wall_speed = min(config.inner_wall_speed, 80)
+    config.infill_speed = min(config.infill_speed, 80)
+    config.top_surface_speed = min(config.top_surface_speed, 50)
+    if config.brim_type == "no_brim":
+        config.brim_type = "outer_only"
+    config.brim_width = max(config.brim_width, 5.0)
+    return config
+
+
 class ParameterEngine:
     """Traduit IntentProfile + AnalysisReport + filament en PrintConfig Bambu Studio.
 
