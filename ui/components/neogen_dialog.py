@@ -458,20 +458,41 @@ class NeoGenPanel(QWidget):
                 form.addRow("", ch)
                 champs["grave"] = ch
         if e["image"]:
-            btn_img = QPushButton(_("neogen.attach_logo"))
+            # bouton PLEINE LARGEUR, même style visible que « Joindre un
+            # logo » de la Création libre (avant : QPushButton sans style,
+            # on ne voyait pas que c'était cliquable)
+            cle_btn = ("neogen.attach_photo" if e["id"] == "photo_relief"
+                       else "neogen.attach_logo")
+            btn_img = QPushButton(_(cle_btn))
             btn_img.setCursor(Qt.PointingHandCursor)
+            btn_img.setMinimumHeight(30)
+            btn_img.setStyleSheet(f"""
+                QPushButton {{ background: {pal['BG_SURFACE']};
+                    color: {pal['TEXT_PRIMARY']};
+                    border: 1px solid {PRO_VIOLET}; border-radius: 6px;
+                    padding: 5px 12px; font-size: 9pt; font-weight: bold; }}
+                QPushButton:hover {{ background: rgba(168,85,247,0.18); }}
+            """)
             lbl_img = QLabel("")
-            lbl_img.setStyleSheet(f"color: {PRO_VIOLET}; background: transparent;")
+            lbl_img.setStyleSheet(f"color: {PRO_VIOLET}; background: transparent;"
+                                  " font-size: 9pt;")
 
             def _pick():
+                from PySide6.QtGui import QFontMetrics
                 chemin, _f2 = QFileDialog.getOpenFileName(
-                    self, _("neogen.attach_logo"), "",
-                    "Logo (*.svg *.png *.jpg *.jpeg)")
+                    self, _(cle_btn), "",
+                    "Image (*.svg *.png *.jpg *.jpeg)")
                 if chemin:
-                    lbl_img.setText(Path(chemin).name)
+                    fm = QFontMetrics(lbl_img.font())
+                    lbl_img.setText(fm.elidedText(Path(chemin).name,
+                                                  Qt.ElideMiddle, 330))
                     champs["__image"] = chemin
             btn_img.clicked.connect(_pick)
-            form.addRow(btn_img, lbl_img)
+            v.addLayout(form)
+            v.addSpacing(2)
+            v.addWidget(btn_img)
+            v.addWidget(lbl_img)
+            form = QFormLayout()          # (rien après, mais reste cohérent)
         v.addLayout(form)
 
         btn = QPushButton(_("neogen.generate"))
