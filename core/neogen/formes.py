@@ -386,26 +386,48 @@ def separateur_tiroir(longueur: float = 150, hauteur: float = 60,
 
 
 def cadre_photo(largeur_photo: float = 100, hauteur_photo: float = 150,
-                bord: float = 12, texte: str = "", grave: bool = True) -> trimesh.Trimesh:
-    """Cadre photo à feuillure arrière (la photo + un carton glissent dedans),
-    à poser ou accrocher (trou au dos)."""
-    ep_fond, ep_avant = 1.6, 2.4
-    ext = box(-(largeur_photo / 2 + bord), -(hauteur_photo / 2 + bord),
-              largeur_photo / 2 + bord, hauteur_photo / 2 + bord)
+                bord: float = 12, texte: str = "", grave: bool = True):
+    """Cadre photo DEUX CORPS (3MF) : cadre à poche arrière + FOND qui
+    S'EMBOÎTE — 6 ergots en légère interférence (~0.15 mm) pressent contre la
+    paroi de la poche : tenue franche, fond amovible pour changer la photo.
+    Le fond a un trou d'accroche murale et une encoche d'extraction.
+    Construit FACE AVANT SUR LE DESSUS : le texte est sur la face visible
+    (avant, il tombait dans l'épaisseur, invisible)."""
+    ep_avant, h_poche, ep_fond = 2.4, 2.8, 2.0
+    lp2, hp2 = largeur_photo / 2, hauteur_photo / 2
+    ext = box(-(lp2 + bord), -(hp2 + bord), lp2 + bord, hp2 + bord)
     ext = ext.buffer(3, join_style=1).buffer(-3, join_style=1)
-    fenetre = box(-(largeur_photo / 2 - 4), -(hauteur_photo / 2 - 4),
-                  largeur_photo / 2 - 4, hauteur_photo / 2 - 4)
-    feuillure = box(-(largeur_photo / 2 + 0.5), -(hauteur_photo / 2 + 0.5),
-                    largeur_photo / 2 + 0.5, hauteur_photo / 2 + 0.5)
-    solides = _extruder(ext.difference(fenetre), ep_avant)                 # face avant
-    solides += _extruder(ext.difference(feuillure), ep_fond + CHEV, ep_avant - CHEV)
-    piece = union_solides(solides)
+    fenetre = box(-(lp2 - 4), -(hp2 - 4), lp2 - 4, hp2 - 4)
+    poche = box(-(lp2 + 0.5), -(hp2 + 0.5), lp2 + 0.5, hp2 + 0.5)
+    solides = _extruder(ext.difference(poche), h_poche)          # anneau arrière
+    solides += _extruder(ext.difference(fenetre), ep_avant + CHEV,
+                         h_poche - CHEV)                          # face avant
+    cadre = union_solides(solides)
     if texte:
-        bande = box(-(largeur_photo / 2), -(hauteur_photo / 2 + bord),
-                    largeur_photo / 2, -(hauteur_photo / 2 + 2))
-        piece = _texte_sur(piece, bande, texte, ep_avant, grave, 0.8, 0.8)
-    piece.apply_translation(-piece.bounds[0])
-    return piece
+        bande = box(-lp2, -(hp2 + bord), lp2, -(hp2 + 2))
+        cadre = _texte_sur(cadre, bande, texte, h_poche + ep_avant, grave, 0.8, 0.8)
+    cadre.apply_translation(-cadre.bounds[0])
+
+    # FOND : plaque au jeu 0.15/côté + 6 ergots (r 0.8, centre à 0.5 du bord
+    # -> débord 0.3, soit 0.15 D'INTERFÉRENCE dans la poche = emboîtement).
+    fond2d = box(-(lp2 + 0.35), -(hp2 + 0.35), lp2 + 0.35, hp2 + 0.35)
+    ergots = [Point(cx, cy).buffer(0.8, resolution=24) for cx, cy in (
+        (0, hp2 - 0.15),                                   # haut : centre
+        (lp2 * 0.5, -(hp2 - 0.15)), (-lp2 * 0.5, -(hp2 - 0.15)),   # bas : de
+        # part et d'autre de l'encoche d'extraction (au centre, elle l'avalait)
+        (lp2 - 0.15, hp2 * 0.45), (lp2 - 0.15, -hp2 * 0.45),
+        (-(lp2 - 0.15), hp2 * 0.45), (-(lp2 - 0.15), -hp2 * 0.45))]
+    fond2d = unary_union([fond2d] + ergots)
+    fond2d = fond2d.difference(Point(0, hp2 + 0.35 - 8).buffer(2.6, resolution=32))
+    fond2d = fond2d.difference(Point(0, -(hp2 + 0.35)).buffer(6, resolution=32))
+    fond = union_solides(_extruder(fond2d, ep_fond))
+    fond.apply_translation(-fond.bounds[0])
+    fond.apply_translation([float(cadre.bounds[1][0]) + 8.0, 0, 0])
+
+    scene = trimesh.Scene()
+    scene.add_geometry(cadre, node_name="cadre", geom_name="cadre")
+    scene.add_geometry(fond, node_name="fond", geom_name="fond")
+    return scene
 
 
 # ═════════════════════════════ SALLE DE BAIN / JARDIN ═══════════════════════
