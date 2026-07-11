@@ -172,6 +172,32 @@ def test_installation_marker(tmp_path, monkeypatch):
     assert not I.est_installe()
 
 
+def test_familles_pro_construisent_et_trouvables():
+    """Familles « entreprise d'impression 3D » (restauration, mariage,
+    boutique) : chaque objet se construit étanche par défaut ET est trouvé par
+    la recherche en langage naturel."""
+    import trimesh
+    from core.neogen import catalogue as C
+    pros = [e for e in C.CATALOGUE if e["domaine"] in ("resto", "mariage", "commerce")]
+    assert len(pros) >= 15
+    for e in pros:
+        params = {"texte": "12" if e["id"] == "numero_table" else "Test"} \
+            if e["texte"] != "aucun" else {}
+        p = C.construire(e["id"], params)
+        geoms = [p] if isinstance(p, trimesh.Trimesh) else list(p.geometry.values())
+        for g in geoms:
+            assert g.is_watertight, e["id"]
+            assert g.bounds[0][2] < 0.5, e["id"] + " pas au sol"
+    for phrase, attendu in [
+        ("un numéro de table", "numero_table"),
+        ("un porte-alliances pour le mariage", "porte_alliances"),
+        ("un serre-livres", "serre_livres"),
+        ("un cornet à pétales", "cone_petales"),
+        ("un présentoir à bijoux", "presentoir_bijoux"),
+    ]:
+        assert C.rechercher(phrase) == attendu, phrase
+
+
 def test_carte_visite_multicouleur():
     """Carte de visite : socle + un corps par couleur d'élément, tous étanches,
     et la liste ordonnée des couleurs (couleur de base en tête) pour les slots
