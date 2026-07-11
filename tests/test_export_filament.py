@@ -96,6 +96,27 @@ def test_inject_3mf_nu_identite_machine(tmp_path):
     assert len(ps) > 300, "base = template complet, pas un fichier quasi vide"
 
 
+def test_export_catalogue_piece_neogen(tmp_path):
+    """Une pièce neoGen exportée vers une imprimante CATALOGUE (fork Creality/
+    Elegoo/Anycubic...) passe par la reconstruction native : identité machine
+    remplacée + filament suivi — mêmes clés que n'importe quel STL."""
+    import json as _json
+    import zipfile as _zip
+    from core.export.tmf_builder import ThreeMFBuilder, _find_bambu_template
+    if not _find_bambu_template():
+        pytest.skip("Bambu Studio non installé (pas de template)")
+    out = tmp_path / "cat.3mf"
+    ThreeMFBuilder().build(_mini_mesh(), PrintConfig(), out,
+                           printer_ui_name="Anycubic i3 Mega S 0.4 nozzle",
+                           filament_ui_name="Sunlu PLA+")
+    ps = _json.loads(_zip.ZipFile(out).read("Metadata/project_settings.config"))
+    assert "Anycubic i3 Mega S" in str(ps.get("printer_model", "")) \
+        or "Anycubic i3 Mega S" in str(ps.get("printer_settings_id", ""))
+    assert ps["filament_settings_id"] == ["neoSlice Sunlu PLA+"]
+    assert ps["nozzle_temperature"] == ["215"]           # fiche Sunlu PLA+
+    assert len(ps) > 150, "config complète, pas un fichier squelette"
+
+
 def test_prusa_ventilation_suit_le_materiau():
     from core.export.prusa_3mf_builder import _config_to_prusa
     o = _config_to_prusa(PrintConfig(), {}, 0.4, filament_name="Nylon")
