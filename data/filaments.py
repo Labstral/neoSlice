@@ -122,6 +122,9 @@ FILAMENTS: dict[str, dict] = {
     },
 
     "Nylon": {
+        # `label` = nom AFFICHÉ (sélecteur, récapitulatif). La CLÉ « Nylon »
+        # reste l'identifiant interne (moteur, tables sécurité, export 3MF).
+        "label": "Nylon (PA)",
         "famille": "Technique",
         "buse_1ere": 260, "buse_autres": 255,
         "plateau": 70,

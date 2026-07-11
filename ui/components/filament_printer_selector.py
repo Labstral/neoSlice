@@ -518,7 +518,9 @@ class FilamentPrinterSelector(QWidget):
             header.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
             model.appendRow(header)
             for name in by_family[famille]:
-                item = QStandardItem(f"  {name}")
+                # affichage = label du catalogue (ex. « Nylon (PA) ») ;
+                # la CLÉ interne reste dans UserRole (moteur, export)
+                item = QStandardItem(f"  {FILAMENTS[name].get('label', name)}")
                 item.setData(name, Qt.UserRole)
                 item.setFont(QFont(FONT_MAIN, 9))
                 model.appendRow(item)

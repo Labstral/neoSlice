@@ -3345,7 +3345,8 @@ class MainWindow(QMainWindow):
             hl.addWidget(lbl_v, 0)
             return row
 
-        fil_layout.addWidget(_kv("Filament sélectionné", filament_name))
+        fil_layout.addWidget(_kv("Filament sélectionné",
+                                 filament_data.get("label", filament_name)))
         fil_layout.addWidget(_kv("Imprimante", printer_name))
         layout.addWidget(fil_box)
 
