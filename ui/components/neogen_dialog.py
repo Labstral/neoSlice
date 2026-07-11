@@ -183,7 +183,7 @@ class NeoGenPanel(QWidget):
         sous = QLabel(_("neogen.free_subtitle"))
         sous.setWordWrap(True)
         sous.setStyleSheet(
-            f"color: {pal['TEXT_LABEL']}; background: transparent; font-size: 8pt;")
+            f"color: {pal['TEXT_LABEL']}; background: transparent; font-size: 9pt;")
         v.addWidget(sous)
 
         self._input = QLineEdit()
@@ -222,8 +222,8 @@ class NeoGenPanel(QWidget):
             b.setCursor(Qt.PointingHandCursor)
             b.setStyleSheet(f"""
                 QPushButton {{ background: transparent; color: {pal['TEXT_LABEL']};
-                    border: 1px solid {pal['INACTIVE']}; border-radius: 9px;
-                    padding: 3px 8px; font-size: 7pt; text-align: left; }}
+                    border: 1px solid {pal['INACTIVE']}; border-radius: 10px;
+                    padding: 4px 9px; font-size: 9pt; text-align: left; }}
                 QPushButton:hover {{ color: {PRO_CYAN}; border-color: {PRO_CYAN}; }}
             """)
             b.clicked.connect(lambda _c=False, t=txt: self._choisir_exemple(t))
@@ -236,21 +236,21 @@ class NeoGenPanel(QWidget):
         self._btn_logo.setStyleSheet(f"""
             QPushButton {{ background: transparent; color: {pal['TEXT_LABEL']};
                 border: 1px dashed {pal['INACTIVE']}; border-radius: 6px;
-                padding: 4px 10px; font-size: 8pt; }}
+                padding: 4px 10px; font-size: 9pt; }}
             QPushButton:hover {{ color: {PRO_VIOLET}; border-color: {PRO_VIOLET}; }}
         """)
         self._btn_logo.clicked.connect(self._choisir_logo)
         ligne2.addWidget(self._btn_logo)
         self._lbl_logo = QLabel("")
         self._lbl_logo.setStyleSheet(
-            f"color: {PRO_VIOLET}; background: transparent; font-size: 8pt;")
+            f"color: {PRO_VIOLET}; background: transparent; font-size: 9pt;")
         ligne2.addWidget(self._lbl_logo, 1)
         self._btn_reset = QPushButton(_("neogen.new_request"))
         self._btn_reset.setCursor(Qt.PointingHandCursor)
         self._btn_reset.setStyleSheet(f"""
             QPushButton {{ background: transparent; color: {pal['TEXT_LABEL']};
                 border: 1px solid {pal['INACTIVE']}; border-radius: 6px;
-                padding: 4px 10px; font-size: 8pt; }}
+                padding: 4px 10px; font-size: 9pt; }}
             QPushButton:hover {{ color: {PRO_CYAN}; border-color: {PRO_CYAN}; }}
         """)
         self._btn_reset.clicked.connect(self._nouvelle_demande)
