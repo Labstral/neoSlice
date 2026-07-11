@@ -619,6 +619,14 @@ _FILAMENT_BBL_NAMES: dict[str, str] = {
     "PETG-CF":    "Generic PETG-CF",
     "ABS-GF":     "Generic ABS-GF",
     "Support PLA": "Generic Support W",
+    # noms du catalogue data/filaments.py (sélecteur neoSlice)
+    "Nylon":          "Generic PA",
+    "PA-CF":          "Generic PA-CF",
+    "TPE":            "Generic TPU",
+    "HIPS":           "Generic HIPS",
+    "PVA":            "Generic PVA",
+    "PLA Bois":       "Generic PLA",
+    "PLA Métallique": "Generic PLA",
 }
 
 
@@ -858,7 +866,24 @@ class ThreeMFBuilder:
             _lh_display = "0.20"
         project_settings["print_settings_id"] = f"neoSlice {_lh_display}mm @BBL {bbl_id}"
 
-        # Slot filament Generic PLA neutre — BS exige ces clés pour charger sans crash.
+        # Slot filament au MATÉRIAU sélectionné — BS exige ces clés pour charger
+        # sans crash. AVANT : slot figé « Generic PLA » à 220 °C plein ventilo →
+        # un nylon slicé tel quel partait à température de PLA (retour terrain :
+        # Sunlu Easy PA « à l'ouest »). MAINTENANT :
+        #   - filament_settings_id = preset système générique du matériau
+        #     (Generic PA, Generic PETG...) : BS recharge SON preset — temps,
+        #     ventilation et plateaux corrects, maintenus par Bambu ;
+        #   - les valeurs embarquées (temps/ventilation/densité) sont celles du
+        #     matériau : les forks stricts qui ignorent cet id restent justes.
+        _BS_FIL_TYPE = {
+            "Nylon": "PA", "TPE": "TPU",
+            "PLA Bois": "PLA", "PLA Métallique": "PLA",
+        }
+        from data.filaments import FILAMENTS as _FILS, filament_density as _dens
+        _fil = _FILS.get(filament_ui_name, {})
+        _b1 = int(_fil.get("buse_1ere", 220))
+        _bn = int(_fil.get("buse_autres", _b1))
+        _bed = int(_fil.get("plateau", 60))
         _filament_strip = [k for k in project_settings
                            if k.startswith("filament_") or k.startswith("default_filament_")]
         _filament_strip += [
@@ -869,20 +894,41 @@ class ThreeMFBuilder:
         for _k in _filament_strip:
             project_settings.pop(_k, None)
         project_settings.update({
-            "filament_settings_id":              ["Generic PLA"],
+            "filament_settings_id": [_FILAMENT_BBL_NAMES.get(filament_ui_name, "Generic PLA")],
             "filament_colour":                   ["#FFFFFF"],
-            "filament_type":                     ["PLA"],
+            "filament_type": [_BS_FIL_TYPE.get(filament_ui_name,
+                                               filament_ui_name if _fil else "PLA")],
             "filament_diameter":                 ["1.75"],
-            "filament_density":                  ["1.24"],
-            "filament_flow_ratio":               ["0.98"],
+            "filament_density":                  [f"{_dens(filament_ui_name):.2f}"],
+            "filament_flow_ratio":               [str(_fil.get("rapport_debit", 0.98))],
             "filament_is_support":               ["0"],
-            "filament_soluble":                  ["0"],
-            "nozzle_temperature":                ["220"],
-            "nozzle_temperature_initial_layer":  ["220"],
-            "nozzle_temperature_range_high":     ["240"],
-            "nozzle_temperature_range_low":      ["190"],
-            "required_nozzle_HRC":               ["3"],
+            "filament_soluble":                  ["1" if filament_ui_name == "PVA" else "0"],
+            "nozzle_temperature":                [str(_bn)],
+            "nozzle_temperature_initial_layer":  [str(_b1)],
+            "nozzle_temperature_range_high":     [str(max(_b1, _bn) + 20)],
+            "nozzle_temperature_range_low":      [str(min(_b1, _bn) - 30)],
+            "required_nozzle_HRC": ["40" if filament_ui_name.endswith("-CF") else "3"],
         })
+        # Ventilation + températures de plateau : valeurs du matériau, posées
+        # UNIQUEMENT sur les clés déjà présentes dans le template (noms garantis
+        # par le vrai Bambu Studio — on n'invente aucune clé).
+        if _fil:
+            def _maj(cle: str, val) -> None:
+                if cle in project_settings:
+                    project_settings[cle] = [str(val)]
+            _maj("fan_max_speed", int(_fil.get("ventilateur_max", 100)))
+            _maj("fan_min_speed", int(_fil.get("ventilateur_seuil_mini", 35)))
+            _maj("close_fan_the_first_x_layers",
+                 1 if int(_fil.get("ventilateur_1ere_couche", 0)) == 0 else 0)
+            _maj("overhang_fan_speed", int(_fil.get("ventilateur_surplombs", 100)))
+            _maj("overhang_fan_threshold",
+                 f"{int(_fil.get('ventiler_surplombs_depassant', 50))}%")
+            _maj("slow_down_for_layer_cooling",
+                 1 if _fil.get("ralentir_refroidir", True) else 0)
+            for _pk in ("hot_plate_temp", "hot_plate_temp_initial_layer",
+                        "eng_plate_temp", "eng_plate_temp_initial_layer",
+                        "textured_plate_temp", "textured_plate_temp_initial_layer"):
+                _maj(_pk, _bed)
 
         # Imprimante non-Bambu (catalogue) → remplacer le bloc machine + identité
         _machine = _apply_non_bambu_machine(project_settings, printer_ui_name, _D)

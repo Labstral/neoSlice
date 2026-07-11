@@ -44,7 +44,8 @@ _BRIM = {"no_brim": "no_brim", "outer_only": "outer_only",
          "inner_only": "inner_only", "outer_and_inner": "outer_and_inner"}
 
 
-def _config_to_prusa(config: PrintConfig, printer: dict, nozzle_mm: float) -> dict:
+def _config_to_prusa(config: PrintConfig, printer: dict, nozzle_mm: float,
+                     filament_name: str = "") -> dict:
     """Construit les overrides PrusaSlicer depuis un PrintConfig + l'imprimante cible."""
     o: dict[str, str] = {}
 
@@ -76,6 +77,21 @@ def _config_to_prusa(config: PrintConfig, printer: dict, nozzle_mm: float) -> di
     o["first_layer_temperature"] = f"{config.nozzle_temperature}"
     o["bed_temperature"] = f"{config.bed_temperature}"
     o["first_layer_bed_temperature"] = f"{config.bed_temperature}"
+
+    # Ventilation — suit le MATÉRIAU (avant : celle du preset PLA du slicer ;
+    # un PA/ABS refroidi plein ventilateur délamine entre couches)
+    try:
+        from data.filaments import FILAMENTS
+        fil = FILAMENTS.get(filament_name, {})
+    except Exception:
+        fil = {}
+    if fil:
+        o["min_fan_speed"] = f"{int(fil.get('ventilateur_seuil_mini', 35))}"
+        o["max_fan_speed"] = f"{int(fil.get('ventilateur_max', 100))}"
+        o["bridge_fan_speed"] = f"{int(fil.get('ventilateur_surplombs', 100))}"
+        o["disable_fan_first_layers"] = (
+            "1" if int(fil.get("ventilateur_1ere_couche", 0)) == 0 else "0")
+        o["fan_always_on"] = "1" if fil.get("ventilation_active", True) else "0"
 
     # Supports
     has_support = config.support_type != "none"
@@ -137,7 +153,8 @@ class PrusaThreeMFBuilder:
 
         # Config = base complète (341 clés) + overrides neoSlice
         settings = _load_json("prusa_base_config.json")
-        settings.update(_config_to_prusa(config, printer, nozzle_diameter_mm))
+        settings.update(_config_to_prusa(config, printer, nozzle_diameter_mm,
+                                         filament_name=filament_ui_name))
 
         # Identité presets (PrusaSlicer fait correspondre à l'installé)
         settings["printer_settings_id"] = printer_ui_name
