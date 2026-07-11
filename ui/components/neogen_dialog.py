@@ -83,12 +83,16 @@ class _LibreWorker(QThread):
             from core.neogen import pilote
             objet, params, q = pilote.interpreter(self._phrase, image=self._image,
                                                   historique=self._historique)
-            if objet:                           # chemin rapide catalogue
+            if objet and objet != "__libre__":  # chemin rapide catalogue
                 resume = pilote.resume_params(objet, params)
                 self.fini.emit(pilote.generer(objet, params), resume,
                                {"objet": objet, "params": params})
                 return
-            if q and not q.startswith("Quel objet"):
+            # Question du modèle : SEULEMENT si ce n'est pas un « hors
+            # catalogue » reformulé (le modèle rédige ses propres phrases).
+            if (objet != "__libre__" and q
+                    and not q.startswith("Quel objet")
+                    and "catalogue" not in q.lower()):
                 self.question.emit(q)
                 return
             self.statut.emit(_("neogen.free_running"))

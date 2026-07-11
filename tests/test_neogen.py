@@ -27,9 +27,14 @@ def test_texte_requis_sinon_question():
         assert objet is None and q, o
 
 
-def test_hors_catalogue_et_question_passthrough():
-    objet, _p, q = P.valider({"objet": "fusee"})
-    assert objet is None and "objet" in q.lower()
+def test_hors_catalogue_route_vers_libre():
+    """Un objet nommé HORS catalogue (cuillère, 'libre'...) doit router vers la
+    création sur mesure — signal EXPLICITE __libre__, jamais une question
+    (régression : Gemma reformulait la question -> l'utilisateur restait bloqué)."""
+    for nom in ("libre", "cuillere", "casque", "fusee"):
+        objet, _p, q = P.valider({"objet": nom})
+        assert objet == "__libre__" and q is None, nom
+    # une vraie question (texte manquant, demande floue) passe toujours
     objet, _p, q = P.valider({"question": "Quel texte ?"})
     assert objet is None and q == "Quel texte ?"
 

@@ -49,7 +49,8 @@ CATALOGUE (champ "objet" + parametres autorises, unites en mm sauf indication) :
 REGLES :
 1. Convertis les cm en mm (6 cm -> 60).
 2. N'inclus QUE les parametres que l'utilisateur precise (les defauts sont geres ailleurs).
-3. texte est OBLIGATOIRE pour porte_cle/badge/sousverre/plaque/magnet : s'il manque, ou si la demande est ambigue/hors catalogue, reponds {"question": "..."} avec UNE question courte en francais.
+3. texte est OBLIGATOIRE pour porte_cle/badge/sousverre/plaque/magnet : s'il manque, reponds {"question": "..."} avec UNE question courte en francais.
+3bis. Si la demande designe un OBJET IMPRIMABLE qui n'est PAS dans le catalogue (cuillere, casque, jouet, support special... n'importe quoi d'autre), reponds {"objet":"libre"} — NE pose PAS de question, la creation sur mesure s'en charge. Ne pose une question que si la demande n'est pas un objet du tout.
 4. "qui ferme bien/serre" -> jeu 0.15 ; "couvercle facile/lache" -> jeu 0.3.
 5. N'invente JAMAIS un texte, une taille ou un parametre non demande.
 6. Si la conversation contient deja ta question et la reponse de l'utilisateur, COMBINE toutes les infos des messages precedents pour produire le JSON COMPLET. Ne repose JAMAIS une question a laquelle il a deja repondu. Ex : s'il a dit "fais-moi un badge" puis, apres ta question, "Lea" -> {"objet":"badge","texte":"Lea"}.
@@ -62,6 +63,8 @@ EXEMPLES :
 "une boite ronde de 6 cm qui ferme bien" -> {"objet":"boite","diametre":60,"jeu":0.15}
 "une boite carree de 6 cm avec couvercle" -> {"objet":"boite","forme":"carree","cote":60}
 "un de a jouer de 2 cm" -> {"objet":"de","taille":20}
+"une cuillere de service" -> {"objet":"libre"}
+"un casque de chevalier pour figurine" -> {"objet":"libre"}
 "mon logo en badge de 5 cm" (image jointe) -> {"objet":"logo","forme":"badge","diametre":50}
 "fais-moi un truc sympa" -> {"question":"Quel objet veux-tu ? (porte-cle, badge, plaque, magnet, sous-verre, logo, vase, boite, support telephone, de...)"}
 """
@@ -138,6 +141,12 @@ def valider(d: dict, image: Path | None = None) -> tuple[str | None, dict, str |
         return None, {}, str(d["question"])
     objet = str(d.get("objet", "")).strip().lower().replace("-", "_")
     objet = _ALIAS.get(objet, objet)
+    if objet and objet not in _BORNES:
+        # Objet nommé mais HORS catalogue ("libre", "cuillere", "casque"...) :
+        # signal EXPLICITE -> la création sur mesure prend le relais (surtout
+        # pas une question — le modèle rédige ses propres formulations, on ne
+        # peut pas router sur du texte).
+        return "__libre__", {}, None
     if objet not in _BORNES:
         return None, {}, ("Quel objet veux-tu ? (porte-clé, badge, plaque, magnet, "
                           "sous-verre, logo, vase, boîte, support téléphone, dé)")
