@@ -1628,6 +1628,8 @@ class Viewer3D(QWidget):
             self._setup_lights()
             self._add_build_plate(fusion)
             self._carte_actors = {}          # nom acteur -> index élément (drag)
+            self._carte_vtk = {}             # nom acteur -> vtkActor (matching pick)
+            self._carte_sel = None           # nom de l'élément sélectionné
 
         # décalage COMMUN (centre la carte sur le plateau, base à z=0)
         b = fusion.bounds
@@ -1643,15 +1645,19 @@ class Viewer3D(QWidget):
             pvm = self._trimesh_to_pyvista(g)
             pvm.translate(off, inplace=True)
             acteur = f"carte_{nom}"
-            self._plotter.add_mesh(pvm, color=col, show_edges=False,
-                                   smooth_shading=False, name=acteur,
-                                   reset_camera=False)
+            _a = self._plotter.add_mesh(pvm, color=col, show_edges=False,
+                                        smooth_shading=False, name=acteur,
+                                        reset_camera=False)
             vus.add(acteur)
             if nom.startswith("el_"):
                 try:
                     mapping[acteur] = int(nom[3:])
+                    self._carte_vtk[acteur] = _a       # vtkActor pour le pick
                 except ValueError:
                     pass
+                # ré-applique la surbrillance si c'est l'élément sélectionné
+                if acteur == getattr(self, "_carte_sel", None):
+                    self._surligner_carte(acteur, True)
         # retirer les acteurs d'éléments SUPPRIMÉS depuis le dernier aperçu
         for ancien in list(getattr(self, "_carte_actors", {})):
             if ancien not in vus:
@@ -1673,63 +1679,123 @@ class Viewer3D(QWidget):
         self._view_mode = "normal"
         self._carte_actors = {}
 
-    # ── Déplacement des éléments à la souris (drag) ──────────────────────────
+    # ── Sélection + déplacement des éléments à la souris ─────────────────────
+    def _surligner_carte(self, nom: str, on: bool) -> None:
+        """Surbrillance d'un élément de carte : contour cyan épais."""
+        a = getattr(self, "_carte_vtk", {}).get(nom)
+        if a is None:
+            return
+        try:
+            p = a.GetProperty()
+            p.SetEdgeVisibility(bool(on))
+            if on:
+                p.SetEdgeColor(0.13, 0.83, 0.93)
+                p.SetLineWidth(3)
+        except Exception:
+            pass
+
     def _install_carte_drag(self) -> None:
-        """Permet de DÉPLACER un élément de la carte à la souris (le socle, lui,
-        n'est pas déplaçable). Clic sur un élément -> glisser dans le plan de la
-        carte ; au relâcher, le décalage est renvoyé au panneau (signal
-        element_deplace) qui met à jour dx/dy de l'élément."""
+        """Clic sur un élément -> il se SÉLECTIONNE (surbrillance cyan) ; on peut
+        alors le GLISSER dans le plan de la carte (le socle n'est pas
+        sélectionnable). Au relâcher, le décalage est renvoyé au panneau (signal
+        element_deplace) qui met à jour dx/dy. Clic dans le vide -> désélection."""
         if getattr(self, "_carte_drag_installe", False) or self._plotter is None:
             return
         try:
-            from vtkmodules.vtkRenderingCore import vtkPropPicker, vtkCoordinate
+            from vtkmodules.vtkRenderingCore import vtkPropPicker
         except Exception:
             return
         iren = getattr(self._plotter, "iren", None)
         iren = getattr(iren, "interactor", None) if iren else None
         if iren is None:
             return
-        self._carte_drag = {"actif": False, "acteur": None, "idx": -1,
-                            "x0": 0.0, "y0": 0.0}
         picker = vtkPropPicker()
         ren = self._plotter.renderer
+        st = {"drag": False, "nom": None, "idx": -1, "last": (0.0, 0.0),
+              "tot": [0.0, 0.0]}
 
-        def _monde(x, y):
-            c = vtkCoordinate(); c.SetCoordinateSystemToDisplay()
-            c.SetValue(x, y, 0.0)
-            wx, wy, _wz = c.GetComputedWorldValue(ren)
-            return wx, wy
+        def _world_xy(x, y, zp=0.0):
+            # rayon écran -> monde, intersection avec le plan z = zp (robuste,
+            # quelle que soit la caméra ; l'ancienne conversion visait le plan
+            # proche -> décalage faux).
+            ren.SetDisplayPoint(float(x), float(y), 0.0); ren.DisplayToWorld()
+            w0 = ren.GetWorldPoint()
+            ren.SetDisplayPoint(float(x), float(y), 1.0); ren.DisplayToWorld()
+            w1 = ren.GetWorldPoint()
+            p0 = np.array(w0[:3]) / (w0[3] or 1.0)
+            p1 = np.array(w1[:3]) / (w1[3] or 1.0)
+            d = p1 - p0
+            if abs(d[2]) < 1e-9:
+                return p0[0], p0[1]
+            t = (zp - p0[2]) / d[2]
+            p = p0 + t * d
+            return float(p[0]), float(p[1])
+
+        def _nom_pique():
+            x, y = iren.GetEventPosition()
+            picker.Pick(x, y, 0, ren)
+            act = picker.GetActor()
+            if act is None:
+                return None
+            try:
+                ad = act.GetAddressAsString("")
+            except Exception:
+                return None
+            for nom, a in getattr(self, "_carte_vtk", {}).items():
+                try:
+                    if a.GetAddressAsString("") == ad:
+                        return nom
+                except Exception:
+                    pass
+            return None
 
         def _press(caller, ev):
             try:
+                nom = _nom_pique()
+                # désélectionne l'ancien si on change de cible / clic dans le vide
+                anc = getattr(self, "_carte_sel", None)
+                if anc and anc != nom:
+                    self._surligner_carte(anc, False)
+                    self._carte_sel = None
+                if nom and nom in getattr(self, "_carte_actors", {}):
+                    self._carte_sel = nom
+                    self._surligner_carte(nom, True)
+                    x, y = iren.GetEventPosition()
+                    st.update(drag=True, nom=nom, idx=self._carte_actors[nom],
+                              last=_world_xy(x, y), tot=[0.0, 0.0])
+                    caller.SetAbortFlag(1)       # empêche l'orbite caméra
+                    self._plotter.render()
+            except Exception:
+                pass
+
+        def _move(caller, ev):
+            if not st["drag"]:
+                return
+            try:
                 x, y = iren.GetEventPosition()
-                picker.Pick(x, y, 0, ren)
-                act = picker.GetActor()
-                nom = None
-                for n, a in self._plotter.actors.items():
-                    if a is act:
-                        nom = n
-                        break
-                idx = self._carte_actors.get(nom, -1) if nom else -1
-                if idx >= 0:
-                    wx, wy = _monde(x, y)
-                    self._carte_drag.update(actif=True, idx=idx, x0=wx, y0=wy)
-                    caller.SetAbortFlag(1)        # bloque l'orbite caméra
+                wx, wy = _world_xy(x, y)
+                dx, dy = wx - st["last"][0], wy - st["last"][1]
+                a = self._carte_vtk.get(st["nom"])
+                if a is not None:
+                    a.AddPosition(dx, dy, 0.0)   # suit la souris (visuel)
+                    st["tot"][0] += dx; st["tot"][1] += dy
+                    st["last"] = (wx, wy)
+                    caller.SetAbortFlag(1)
+                    self._plotter.render()
             except Exception:
                 pass
 
         def _release(caller, ev):
-            d = self._carte_drag
-            if d["actif"]:
-                try:
-                    x, y = iren.GetEventPosition()
-                    wx, wy = _monde(x, y)
-                    self.element_deplace.emit(d["idx"], wx - d["x0"], wy - d["y0"])
-                except Exception:
-                    pass
-                d["actif"] = False
+            if st["drag"]:
+                st["drag"] = False
+                if abs(st["tot"][0]) > 0.05 or abs(st["tot"][1]) > 0.05:
+                    try:
+                        self.element_deplace.emit(st["idx"], st["tot"][0], st["tot"][1])
+                    except Exception:
+                        pass
 
         iren.AddObserver("LeftButtonPressEvent", _press, 10.0)   # priorité > caméra
+        iren.AddObserver("MouseMoveEvent", _move, 10.0)
         iren.AddObserver("LeftButtonReleaseEvent", _release, 10.0)
         self._carte_drag_installe = True
 
