@@ -2001,9 +2001,26 @@ class MainWindow(QMainWindow):
 
     def _charger_carte_dans_scene(self, spec, litho: bool = False, litho_params=None):
         panel = getattr(self, "_carte_panel", None)
+        carte_spec = None
         try:
-            from core.neogen.carte_visite import generer_fichier_carte
-            chemin = generer_fichier_carte(spec, litho=litho, litho_params=litho_params)
+            if litho:
+                from core.neogen.carte_visite import generer_fichier_carte
+                chemin = generer_fichier_carte(spec, litho=True, litho_params=litho_params)
+            else:
+                # MULTICOULEUR : vrai 3MF avec un slot par couleur (compatible avec
+                # le slicer de sortie choisi). On garde la spec colorée : « Générer
+                # le 3MF » reconstruira le multicouleur avec les params choisis.
+                import copy
+                from core.export.carte_multicouleur import build_carte_multicouleur
+                from core.parameters.print_config import PrintConfig
+                from core.neogen.pilote import DOSSIER_SORTIES
+                DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
+                chemin = DOSSIER_SORTIES / "carte_visite.3mf"
+                printer = getattr(self, "_current_printer", "") or "X1 Carbon"
+                nozzle = getattr(self, "_current_nozzle_mm", 0.4)
+                filament = getattr(self, "_current_filament", "") or "PLA"
+                build_carte_multicouleur(spec, PrintConfig(), chemin, printer, filament, nozzle)
+                carte_spec = copy.deepcopy(spec)
         except Exception as exc:
             logger.exception("Préparation carte échouée")
             if panel:
@@ -2017,6 +2034,9 @@ class MainWindow(QMainWindow):
             pass
         self._show_params_panel()
         self._on_stl_dropped(Path(chemin))
+        # APRÈS _on_stl_dropped (qui remet _carte_export_spec à None) : mémorise la
+        # spec colorée pour que l'export final reconstruise le multicouleur.
+        self._carte_export_spec = carte_spec
         if panel:
             panel.set_statut("✓ " + _("carte.dans_scene"))
 
@@ -2893,6 +2913,7 @@ class MainWindow(QMainWindow):
         self._analysis = None
         self._current_config = None
         self._current_selection = None
+        self._carte_export_spec = None   # tout nouveau fichier annule le mode carte multicouleur
         try:
             self._params_preview.reset()
             self._analysis_panel.reset()
@@ -3413,6 +3434,23 @@ class MainWindow(QMainWindow):
 
         try:
             nozzle_mm = self._filament_selector.current_nozzle_diameter_mm()
+
+            # CARTE MULTICOULEUR : reconstruire un vrai 3MF avec un slot par couleur,
+            # au format du slicer de sortie choisi (la spec colorée a été mémorisée).
+            _carte_spec = getattr(self, "_carte_export_spec", None)
+            if _carte_spec is not None:
+                from core.export.carte_multicouleur import build_carte_multicouleur
+                path = build_carte_multicouleur(
+                    _carte_spec, config, Path(output_path),
+                    self._current_printer, self._current_filament, nozzle_mm)
+                logger.info(f"3MF carte multicouleur exporté : {path}")
+                selection = getattr(self, "_current_selection", None)
+                self._show_success_dialog(config, selection, path)
+                if ok:
+                    self._statusbar.set_message(_("status.export_ok"), TELE_GREEN)
+                else:
+                    self._statusbar.set_message(_("status.export_ok_warn", msg=result_msg), AMBER)
+                return
 
             # Pour les 3MF en entrée : injecter les paramètres dans le fichier original.
             # NE PAS reconstruire le 3MF depuis zéro — ça perd la structure (modifier_part,
