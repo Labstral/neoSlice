@@ -146,16 +146,53 @@ def _rels_objets() -> str:
             '</Relationships>')
 
 
-def _poser_palette(project_settings: dict, couleurs: list[str]) -> None:
-    """Pose la palette de couleurs et ÉTEND de façon COHÉRENTE tous les tableaux
-    filament à N slots (BS refuse la config si les longueurs diffèrent)."""
+def _flush_matrix(n: int, off: str = "350") -> list[str]:
+    """Matrice de purge N×N (0 sur la diagonale) aplatie ligne par ligne."""
+    return [("0" if i == j else off) for i in range(n) for j in range(n)]
+
+
+def _appliquer_config_multi(project_settings: dict, couleurs: list[str]) -> None:
+    """Rend la config VALIDE pour N filaments (Bambu/Orca) : fusionne les clés
+    multi-matière d'une VRAIE config BS (data/bambu_multicolor_keys.json, extraite
+    d'un 3MF 2 couleurs réel) en les adaptant à N couleurs, + pose la palette.
+    Sans ces clés (single_extruder_multi_material, flush_volumes_matrix…), BS
+    rejette : « Invalid configuration file »."""
+    import json as _json
+    from pathlib import Path as _P
     n = len(couleurs)
+    _BASE_N = 2                                   # les tableaux de la base = 2 filaments
+    base = {}
+    for cand in (_P(__file__).resolve().parents[2] / "data" / "bambu_multicolor_keys.json",
+                 _P(__file__).resolve().parent / "bambu_multicolor_keys.json"):
+        try:
+            base = _json.loads(cand.read_text(encoding="utf-8"))
+            break
+        except Exception:
+            continue
+
+    def _resize(v):
+        if not isinstance(v, list) or not v:
+            return v
+        if len(v) >= _BASE_N and len(v) % _BASE_N == 0:
+            motif = v[:len(v) // _BASE_N]         # valeurs par filament
+            return motif * n
+        return [v[0]] * n
+
+    for k, v in base.items():
+        if k == "flush_volumes_matrix":
+            project_settings[k] = _flush_matrix(n)
+        elif k == "flush_volumes_vector":
+            project_settings[k] = ["140"] * (2 * n)
+        elif isinstance(v, list):
+            project_settings[k] = _resize(v)
+        else:
+            project_settings[k] = v
+    # étendre aussi les tableaux filament déjà présents (template neoSlice)
     for k, v in list(project_settings.items()):
-        if k.startswith("filament_") and isinstance(v, list) and v:
+        if k.startswith("filament_") and isinstance(v, list) and v and len(v) != n:
             project_settings[k] = [v[0]] * n
     project_settings["filament_colour"] = list(couleurs)
-    project_settings["filament_multi_colour"] = list(couleurs)   # clé lue par BS
-    project_settings["filament_map"] = ["1"] * n
+    project_settings["filament_multi_colour"] = list(couleurs)
 
 
 def build_carte_multicouleur(spec, config, output_path: Path,
@@ -184,7 +221,7 @@ def build_carte_multicouleur(spec, config, output_path: Path,
         data = {n: z.read(n) for n in names}
     base_model = data["3D/3dmodel.model"].decode("utf-8")
     ps = json.loads(data["Metadata/project_settings.config"].decode("utf-8"))
-    _poser_palette(ps, couleurs)
+    _appliquer_config_multi(ps, couleurs)
     data["3D/Objects/object_1.model"] = _external_objects_model(bodies).encode("utf-8")
     data["3D/_rels/3dmodel.model.rels"] = _rels_objets().encode("utf-8")
     data["3D/3dmodel.model"] = _build_multi_model(bodies, base_model).encode("utf-8")
