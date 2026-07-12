@@ -74,6 +74,7 @@ class _ElementEditor(QFrame):
         self._pal = pal
         self._image = ""
         self._couleur = "#111111"
+        self._reduit = False
         self._build()
 
     def set_actif(self, actif: bool):
@@ -99,17 +100,20 @@ class _ElementEditor(QFrame):
         v.setSpacing(5)
         champ = _champ_style(pal)
 
-        # en-tête : titre + supprimer
-        head = QHBoxLayout()
+        # en-tête CLIQUABLE : flèche + titre (repli/dépli) + supprimer
         _titres = {"texte": _fr("Texte", "Text"),
                    "logo": _fr("Logo (image)", "Logo (image)"),
                    "trait": _fr("Trait", "Line"),
                    "cadre": _fr("Cadre", "Frame")}
-        titre = QLabel(_titres.get(self.type_el, self.type_el))
-        titre.setObjectName("carteTitre")
-        titre.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; font-weight: bold; border: none;")
-        head.addWidget(titre)
-        head.addStretch()
+        self._titre_base = _titres.get(self.type_el, self.type_el)
+        head = QHBoxLayout()
+        self._btn_titre = QPushButton()
+        self._btn_titre.setCursor(Qt.PointingHandCursor)
+        self._btn_titre.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['TEXT_PRIMARY']};"
+            f" border: none; text-align: left; font-weight: bold; }}")
+        self._btn_titre.clicked.connect(self._toggle_reduit)
+        head.addWidget(self._btn_titre, 1)
         btn_x = QPushButton("✕")
         btn_x.setFixedSize(20, 20)
         btn_x.setCursor(Qt.PointingHandCursor)
@@ -119,6 +123,13 @@ class _ElementEditor(QFrame):
         btn_x.clicked.connect(lambda: self.supprime.emit(self))
         head.addWidget(btn_x)
         v.addLayout(head)
+
+        # corps repliable (masqué quand la case est réduite)
+        self._corps = QWidget()
+        self._corps.setStyleSheet("background: transparent;")
+        corps_lay = QVBoxLayout(self._corps)
+        corps_lay.setContentsMargins(0, 2, 0, 0)
+        corps_lay.setSpacing(5)
 
         form = QFormLayout()
         form.setSpacing(4)
@@ -137,6 +148,7 @@ class _ElementEditor(QFrame):
             self.le.setPlaceholderText(_fr("Votre texte", "Your text"))
             self.le.setStyleSheet(champ)
             self.le.textChanged.connect(self.change)
+            self.le.textChanged.connect(self._maj_titre)   # titre = contenu du texte
             form.addRow(_lbl(_fr("Texte", "Text")), self.le)
             self.cb_pol = QComboBox()
             self.cb_pol.addItem(_fr("(par défaut)", "(default)"), None)
@@ -205,7 +217,7 @@ class _ElementEditor(QFrame):
         form.addRow(_lbl(_fr("Décalage X / Y", "Offset X / Y")), row_off)
         self.sp_relief = self._spin(0.3, 1.5, 0.6, 0.1, champ, " mm")
         form.addRow(_lbl(_fr("Relief", "Relief")), self.sp_relief)
-        v.addLayout(form)
+        corps_lay.addLayout(form)
 
         # couleur
         crow = QHBoxLayout()
@@ -216,7 +228,29 @@ class _ElementEditor(QFrame):
         self._maj_bouton_couleur()
         self.btn_coul.clicked.connect(self._choisir_couleur)
         crow.addWidget(self.btn_coul, 1)
-        v.addLayout(crow)
+        corps_lay.addLayout(crow)
+        v.addWidget(self._corps)
+        self._maj_titre()
+
+    def _maj_titre(self):
+        """Titre = flèche de repli + type ; pour un texte, on y ajoute le contenu
+        saisi (pour reconnaître chaque case une fois réduite)."""
+        fleche = "▶  " if getattr(self, "_reduit", False) else "▼  "
+        base = self._titre_base
+        if self.type_el == "texte":
+            txt = (self.le.text() or "").strip()
+            if txt:
+                base = f"{base} : {txt[:18]}"
+        self._btn_titre.setText(fleche + base)
+
+    def _toggle_reduit(self):
+        self.set_reduit(not getattr(self, "_reduit", False))
+
+    def set_reduit(self, reduit: bool):
+        """Réduit (masque le corps) ou déplie l'éditeur."""
+        self._reduit = bool(reduit)
+        self._corps.setVisible(not self._reduit)
+        self._maj_titre()
 
     def refresh_theme(self):
         """Ré-applique les couleurs du thème courant (titres, labels, champs)."""
@@ -226,6 +260,10 @@ class _ElementEditor(QFrame):
         self.setStyleSheet(
             f"QFrame {{ background: {pal['BG_SURFACE']}; border: 1px solid "
             f"{pal['INACTIVE']}; border-radius: 6px; }}")
+        if hasattr(self, "_btn_titre"):
+            self._btn_titre.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {pal['TEXT_PRIMARY']};"
+                f" border: none; text-align: left; font-weight: bold; }}")
         for w in self.findChildren(QLabel):
             if w.objectName() == "carteTitre":
                 w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; font-weight: bold;"
@@ -542,6 +580,10 @@ class CartePanel(QWidget):
 
     # ── éléments ──
     def _ajouter(self, type_el: str):
+        # Réduire les cases existantes pour gagner de la place : seule la
+        # nouvelle reste dépliée.
+        for ed_existant in self._editeurs:
+            ed_existant.set_reduit(True)
         ed = _ElementEditor(type_el, self._pal)
         ed.change.connect(self._planifier_apercu)
         ed.supprime.connect(self._retirer)
@@ -687,6 +729,7 @@ class CartePanel(QWidget):
         for i, ed in enumerate(self._editeurs):
             ed.set_actif(i == index)
         if 0 <= index < len(self._editeurs):
+            self._editeurs[index].set_reduit(False)   # déplie l'élément cliqué
             try:
                 self._scroll.ensureWidgetVisible(self._editeurs[index])
             except Exception:
