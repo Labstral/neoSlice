@@ -610,30 +610,57 @@ class Viewer3D(QWidget):
         self._setup_cam_observer()
 
     def _setup_orientation_cube(self):
-        """Cube d'orientation cliquable en haut à droite (comme dans les logiciels
-        3D) : axes X/Y/Z aux couleurs classiques (rouge/vert/bleu) + clic sur une
-        face -> la caméra se recentre de ce côté. Repère la scène d'un coup d'œil."""
+        """Cube d'orientation en haut à droite (style logiciel 3D standard) :
+        cube sombre à faces annotées en français (Avant/Arrière/Gauche/Droite/
+        Dessus/Dessous) + flèches d'axes X/Y/Z aux couleurs classiques
+        (rouge/vert/bleu). Repère X/Y/Z de la scène (Z = haut du plateau)."""
         if self._plotter is None:
             return
         try:
-            # widget d'orientation cliquable (VTK OrientationMarker + cube).
-            # add_camera_orientation_widget : un CUBE dont chaque face recentre
-            # la caméra au clic ; placé en haut à droite.
-            w = self._plotter.add_camera_orientation_widget()
-            try:
-                w.SetViewport(0.82, 0.78, 1.0, 1.0)   # haut-droite
-            except Exception:
-                pass
-            self._orient_widget = w
+            from vtkmodules.vtkRenderingAnnotation import (
+                vtkAnnotatedCubeActor, vtkAxesActor)
+            from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
+            from vtkmodules.vtkRenderingCore import vtkPropAssembly
+
+            cube = vtkAnnotatedCubeActor()
+            # convention neoSlice : Z vers le haut du plateau, Y profondeur
+            cube.SetXPlusFaceText("Droite")
+            cube.SetXMinusFaceText("Gauche")
+            cube.SetYPlusFaceText("Arrière")
+            cube.SetYMinusFaceText("Avant")
+            cube.SetZPlusFaceText("Dessus")
+            cube.SetZMinusFaceText("Dessous")
+            cube.GetCubeProperty().SetColor(0.22, 0.22, 0.26)   # cube anthracite
+            cube.GetTextEdgesProperty().SetColor(0.10, 0.10, 0.12)
+            cube.GetTextEdgesProperty().SetLineWidth(1)
+            for f in (cube.GetXPlusFaceProperty, cube.GetXMinusFaceProperty,
+                      cube.GetYPlusFaceProperty, cube.GetYMinusFaceProperty,
+                      cube.GetZPlusFaceProperty, cube.GetZMinusFaceProperty):
+                f().SetColor(0.90, 0.90, 0.94)                  # texte clair
+
+            axes = vtkAxesActor()                               # X rouge, Y vert, Z bleu
+            axes.SetXAxisLabelText("x")
+            axes.SetYAxisLabelText("y")
+            axes.SetZAxisLabelText("z")
+            axes.SetShaftTypeToCylinder()
+
+            assemblage = vtkPropAssembly()
+            assemblage.AddPart(axes)
+            assemblage.AddPart(cube)
+
+            iren = getattr(self._plotter, "iren", None)
+            vtk_iren = getattr(iren, "interactor", None) if iren else None
+            if vtk_iren is None:
+                vtk_iren = self._plotter.render_window.GetInteractor()
+            omw = vtkOrientationMarkerWidget()
+            omw.SetOrientationMarker(assemblage)
+            omw.SetInteractor(vtk_iren)
+            omw.SetViewport(0.80, 0.77, 1.0, 1.0)               # haut-droite
+            omw.SetEnabled(1)
+            omw.InteractiveOff()                                # indicateur (suit la caméra)
+            self._orient_widget = omw
         except Exception as e:
-            # repli : petites flèches XYZ colorées (non cliquables) en coin
-            try:
-                self._plotter.add_axes(
-                    xlabel="X", ylabel="Y", zlabel="Z",
-                    color=_T.palette().get("TEXT_PRIMARY", "#ffffff"),
-                    line_width=3, viewport=(0.82, 0.78, 1.0, 1.0))
-            except Exception:
-                logger.debug(f"cube d'orientation indisponible : {e}")
+            logger.debug(f"cube d'orientation indisponible : {e}")
 
     def _setup_cam_observer(self):
         """Rend le plateau transparent quand la caméra passe en dessous (vue Bambu Studio)."""

@@ -265,8 +265,8 @@ class NeoGenPanel(QWidget):
         self._donnees = par_domaine()
         # injecte une « Carte de visite » en tête de Personnalisation (ouvre
         # l'éditeur dédié) — pseudo-entrée id=carte_visite traitée à part
-        _carte = {"id": "carte_visite", "fr": "Carte de visite ✎",
-                  "en": "Business card ✎", "domaine": "perso", "texte": "aucun",
+        _carte = {"id": "carte_visite", "fr": "Carte de visite",
+                  "en": "Business card", "domaine": "perso", "texte": "aucun",
                   "image": False, "params": [], "flags": [], "choix": [],
                   "construire": None}
         for _dom, _ents in self._donnees:
