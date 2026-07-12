@@ -34,6 +34,25 @@ def _fr(fr, en):
     return fr if lang() == "fr" else en
 
 
+def _choisir_couleur(parent, initiale: str, titre: str) -> QColor:
+    """Sélecteur de couleur à texte LISIBLE : le dialogue Qt héritait de la
+    palette sombre de l'app (labels Teinte/Sat/RVB illisibles, cf. retour). On
+    force une palette claire standard sur le dialogue (non natif)."""
+    dlg = QColorDialog(QColor(initiale), parent)
+    dlg.setOption(QColorDialog.ColorDialogOption.DontUseNativeDialog, True)
+    dlg.setWindowTitle(titre)
+    dlg.setStyleSheet("""
+        QColorDialog, QColorDialog QWidget { background:#f4f4f6; color:#111; }
+        QLabel { color:#111; }
+        QSpinBox, QLineEdit { background:#ffffff; color:#111;
+            border:1px solid #b8b8be; border-radius:3px; padding:1px 3px; }
+        QPushButton { background:#e6e6ea; color:#111;
+            border:1px solid #b8b8be; border-radius:4px; padding:4px 12px; }
+        QPushButton:hover { background:#d8d8de; }
+    """)
+    return dlg.currentColor() if dlg.exec() else QColor()
+
+
 class _ElementEditor(QFrame):
     """Éditeur d'un élément (texte ou logo) : contenu + style + couleur."""
     change = Signal()
@@ -173,8 +192,8 @@ class _ElementEditor(QFrame):
             f"font-weight: bold; }}")
 
     def _choisir_couleur(self):
-        c = QColorDialog.getColor(QColor(self._couleur), self,
-                                  _fr("Couleur de l'élément", "Element color"))
+        c = _choisir_couleur(self, self._couleur,
+                             _fr("Couleur de l'élément", "Element color"))
         if c.isValid():
             self._couleur = c.name()
             self._maj_bouton_couleur()
@@ -334,8 +353,8 @@ class CartePanel(QWidget):
             f"font-weight: bold; }}")
 
     def _choisir_base(self):
-        c = QColorDialog.getColor(QColor(self._couleur_base), self,
-                                  _fr("Couleur du fond", "Base color"))
+        c = _choisir_couleur(self, self._couleur_base,
+                             _fr("Couleur du fond", "Base color"))
         if c.isValid():
             self._couleur_base = c.name()
             self._maj_base()

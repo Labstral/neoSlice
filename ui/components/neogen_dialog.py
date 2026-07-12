@@ -100,6 +100,7 @@ class NeoGenPanel(QWidget):
 
     piece_ready = Signal(object)     # Path — branché sur le pipeline fichier déposé
     close_requested = Signal()       # ✕ -> revenir aux paramètres générés
+    ouvrir_carte = Signal()          # « Carte de visite » sélectionnée dans Perso
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -222,22 +223,8 @@ class NeoGenPanel(QWidget):
             grille.addWidget(b, i // 2, i % 2)
         v.addLayout(grille)
 
-        # joindre une image (pour un logo / une lithophanie trouvés par recherche)
-        self._btn_logo = QPushButton(_("neogen.attach_logo"))
-        self._btn_logo.setCursor(Qt.PointingHandCursor)
-        self._btn_logo.setMinimumHeight(30)
-        self._btn_logo.setStyleSheet(f"""
-            QPushButton {{ background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
-                border: 1px solid {PRO_VIOLET}; border-radius: 6px;
-                padding: 5px 12px; font-size: 9pt; font-weight: bold; }}
-            QPushButton:hover {{ background: rgba(168,85,247,0.18); }}
-        """)
-        self._btn_logo.clicked.connect(self._choisir_logo)
-        v.addWidget(self._btn_logo)
-        self._lbl_logo = QLabel("")
-        self._lbl_logo.setStyleSheet(
-            f"color: {PRO_VIOLET}; background: transparent; font-size: 9pt;")
-        v.addWidget(self._lbl_logo)
+        # (l'ajout d'image se fait dans Bibliothèque > Personnalisation, sur les
+        # objets Logo/Photo qui en ont besoin — pas ici)
         v.addStretch()
         return w
 
@@ -245,18 +232,6 @@ class NeoGenPanel(QWidget):
         self._input.setText(txt)
         self._input.setFocus()
         self._lancer_recherche()
-
-    def _nom_logo_elide(self, nom: str) -> str:
-        from PySide6.QtGui import QFontMetrics
-        fm = QFontMetrics(self._lbl_logo.font())
-        return fm.elidedText(nom, Qt.ElideMiddle, 350)
-
-    def _choisir_logo(self):
-        chemin, _f = QFileDialog.getOpenFileName(
-            self, _("neogen.attach_logo"), "", "Image (*.svg *.png *.jpg *.jpeg)")
-        if chemin:
-            self._image = Path(chemin)
-            self._lbl_logo.setText(self._nom_logo_elide(self._image.name))
 
     def _lancer_recherche(self):
         phrase = self._input.text().strip()
@@ -288,6 +263,16 @@ class NeoGenPanel(QWidget):
                 color: {pal['TEXT_PRIMARY']}; selection-background-color: rgba(34,211,238,0.25); }}
         """
         self._donnees = par_domaine()
+        # injecte une « Carte de visite » en tête de Personnalisation (ouvre
+        # l'éditeur dédié) — pseudo-entrée id=carte_visite traitée à part
+        _carte = {"id": "carte_visite", "fr": "Carte de visite ✎",
+                  "en": "Business card ✎", "domaine": "perso", "texte": "aucun",
+                  "image": False, "params": [], "flags": [], "choix": [],
+                  "construire": None}
+        for _dom, _ents in self._donnees:
+            if _dom[0] == "perso":
+                _ents.insert(0, _carte)
+                break
         self._combo_domaine = QComboBox()
         self._combo_domaine.setStyleSheet(style_combo)
         for (did, dfr, den), _objs in self._donnees:
@@ -335,6 +320,29 @@ class NeoGenPanel(QWidget):
         w.setStyleSheet("background: transparent;")
         v = QVBoxLayout(w)
         v.setContentsMargins(2, 2, 2, 0)
+
+        # cas spécial : la carte de visite a son PROPRE éditeur (multi-éléments,
+        # couleurs) -> un bouton l'ouvre dans la colonne de droite
+        if e["id"] == "carte_visite":
+            info = QLabel(_("carte.pitch"))
+            info.setWordWrap(True)
+            info.setStyleSheet(
+                f"color: {pal['TEXT_LABEL']}; background: transparent; font-size: 9pt;")
+            v.addWidget(info)
+            btn = QPushButton(_("carte.open_editor"))
+            btn.setMinimumHeight(34)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(f"""
+                QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {PRO_CYAN}, stop:1 {PRO_VIOLET});
+                    color: #ffffff; border: none; border-radius: 6px;
+                    padding: 0 14px; font-weight: bold; }}
+            """)
+            btn.clicked.connect(self.ouvrir_carte)
+            v.addSpacing(4)
+            v.addWidget(btn)
+            v.addStretch()
+            return w
 
         form = QFormLayout()
         form.setSpacing(6)
@@ -608,5 +616,3 @@ class NeoGenPanel(QWidget):
             self._statut.setText(etat["statut"])
         if hasattr(self, "_tabs"):
             self._tabs.setCurrentIndex(int(etat.get("onglet", 0)))
-        if self._image and hasattr(self, "_lbl_logo"):
-            self._lbl_logo.setText(self._nom_logo_elide(Path(self._image).name))

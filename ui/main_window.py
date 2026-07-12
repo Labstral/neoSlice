@@ -574,7 +574,6 @@ class _TopBar(QWidget):
     diag_clicked      = Signal()
     cost_clicked      = Signal()
     neogen_clicked    = Signal()      # bouton neoGen (génération de pièces par texte)
-    carte_clicked     = Signal()      # bouton CARTE (personnalisateur de carte de visite)
     pro_clicked       = Signal()      # bouton « neoSlice Pro » (ouvre le paywall)
 
     def __init__(self, parent=None):
@@ -629,14 +628,6 @@ class _TopBar(QWidget):
         self._neogen_btn.setCursor(Qt.PointingHandCursor)
         self._neogen_btn.setToolTip(_("neogen.tooltip"))
         self._neogen_btn.clicked.connect(self.neogen_clicked)
-
-        # Bouton CARTE (personnalisateur de carte de visite) — Pro
-        self._carte_btn = QPushButton(_("app.btn_carte"))
-        self._carte_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
-        self._carte_btn.setFixedHeight(26)
-        self._carte_btn.setCursor(Qt.PointingHandCursor)
-        self._carte_btn.setToolTip(_("carte.tooltip"))
-        self._carte_btn.clicked.connect(self.carte_clicked)
 
         self._diag_btn = QPushButton(_("app.btn_diag"))
         self._diag_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
@@ -711,10 +702,9 @@ class _TopBar(QWidget):
         """)
         self._new_btn.clicked.connect(self.new_piece_clicked)
         layout.addWidget(self._new_btn)
-        # NEOGEN + CARTE + DIAGNOSTIC + ESPACE PRO : quatre boutons séparés, mais
-        # UN seul dégradé cyan→violet continu qui s'étend sur les quatre.
+        # NEOGEN + DIAGNOSTIC + ESPACE PRO : trois boutons séparés, mais UN seul
+        # dégradé cyan→violet continu qui s'étend sur les trois.
         layout.addWidget(self._neogen_btn)
-        layout.addWidget(self._carte_btn)
         layout.addWidget(self._diag_btn)
         layout.addWidget(self._cost_btn)
         layout.addWidget(self._pro_cta_btn)
@@ -829,16 +819,14 @@ class _TopBar(QWidget):
         coming = getattr(_lic, "PRO_COMING_SOON", False)
         self._pro_badge.setVisible(is_pro)
         self._neogen_btn.setVisible(is_pro)
-        self._carte_btn.setVisible(is_pro)
         self._diag_btn.setVisible(is_pro)
         self._cost_btn.setVisible(is_pro)
         self._pro_cta_btn.setVisible(not is_pro)
         if is_pro:
-            # Quatre boutons distincts ; UN dégradé cyan→violet continu sur les 4
-            self._neogen_btn.setStyleSheet(_PRO_BTN_Q1)
-            self._carte_btn.setStyleSheet(_PRO_BTN_Q2)
-            self._diag_btn.setStyleSheet(_PRO_BTN_Q3)
-            self._cost_btn.setStyleSheet(_PRO_BTN_Q4)
+            # Trois boutons distincts ; UN dégradé cyan→violet continu sur les trois
+            self._neogen_btn.setStyleSheet(_PRO_BTN_LEFT)
+            self._diag_btn.setStyleSheet(_PRO_BTN_MID)
+            self._cost_btn.setStyleSheet(_PRO_BTN_RIGHT)
         else:
             self._pro_cta_btn.setText("neoSlice Pro")
             self._pro_cta_btn.setToolTip(
@@ -1595,7 +1583,6 @@ class MainWindow(QMainWindow):
         self._topbar.diag_clicked.connect(self._open_diagnostic)
         self._topbar.cost_clicked.connect(self._open_pro_hub)
         self._topbar.neogen_clicked.connect(self._open_neogen)
-        self._topbar.carte_clicked.connect(self._open_carte)
         # Bouton CTA « neoSlice Pro » : « bientôt disponible » en pré-lancement,
         # sinon ouvre le diagnostic (essais gratuits → paywall).
         self._topbar.pro_clicked.connect(self._on_pro_cta)
@@ -1921,6 +1908,7 @@ class MainWindow(QMainWindow):
             panel = NeoGenPanel()
             panel.piece_ready.connect(self._on_stl_dropped)
             panel.close_requested.connect(self._show_params_panel)
+            panel.ouvrir_carte.connect(self._open_carte)   # depuis Personnalisation
             self._neogen_panel = panel
         if self._right_scroll.widget() is panel:
             self._show_params_panel()          # 2e clic sur NEOGEN = referme
@@ -1938,7 +1926,9 @@ class MainWindow(QMainWindow):
             panel = CartePanel()
             panel.apercu_pret.connect(self._viewer.afficher_carte)
             panel.exporter_demande.connect(self._exporter_carte)
-            panel.close_requested.connect(self._show_params_panel)
+            # fermeture (✕) : revenir au panneau neoGen (la carte vient de
+            # Personnalisation), pas aux paramètres
+            panel.close_requested.connect(self._open_neogen_depuis_carte)
             self._carte_panel = panel
         if self._right_scroll.widget() is panel:
             self._show_params_panel()
@@ -1947,6 +1937,16 @@ class MainWindow(QMainWindow):
         self._right_scroll.setWidget(panel)
         self._right_scroll.setFixedWidth(400)
         panel._planifier_apercu()              # (re)génère l'aperçu courant
+
+    def _open_neogen_depuis_carte(self):
+        """✕ de la carte -> revient au panneau neoGen (d'où on l'a ouverte)."""
+        panel = getattr(self, "_neogen_panel", None)
+        if panel is not None:
+            self._right_scroll.takeWidget()
+            self._right_scroll.setWidget(panel)
+            self._right_scroll.setFixedWidth(400)
+        else:
+            self._show_params_panel()
 
     def _exporter_carte(self, spec, couleurs):
         """Exporte la carte : 3MF avec les couleurs choisies posées en slots de

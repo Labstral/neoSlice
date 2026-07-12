@@ -606,7 +606,34 @@ class Viewer3D(QWidget):
             self._plotter.render()
         except Exception:
             pass
+        self._setup_orientation_cube()
         self._setup_cam_observer()
+
+    def _setup_orientation_cube(self):
+        """Cube d'orientation cliquable en haut à droite (comme dans les logiciels
+        3D) : axes X/Y/Z aux couleurs classiques (rouge/vert/bleu) + clic sur une
+        face -> la caméra se recentre de ce côté. Repère la scène d'un coup d'œil."""
+        if self._plotter is None:
+            return
+        try:
+            # widget d'orientation cliquable (VTK OrientationMarker + cube).
+            # add_camera_orientation_widget : un CUBE dont chaque face recentre
+            # la caméra au clic ; placé en haut à droite.
+            w = self._plotter.add_camera_orientation_widget()
+            try:
+                w.SetViewport(0.82, 0.78, 1.0, 1.0)   # haut-droite
+            except Exception:
+                pass
+            self._orient_widget = w
+        except Exception as e:
+            # repli : petites flèches XYZ colorées (non cliquables) en coin
+            try:
+                self._plotter.add_axes(
+                    xlabel="X", ylabel="Y", zlabel="Z",
+                    color=_T.palette().get("TEXT_PRIMARY", "#ffffff"),
+                    line_width=3, viewport=(0.82, 0.78, 1.0, 1.0))
+            except Exception:
+                logger.debug(f"cube d'orientation indisponible : {e}")
 
     def _setup_cam_observer(self):
         """Rend le plateau transparent quand la caméra passe en dessous (vue Bambu Studio)."""
@@ -1574,14 +1601,23 @@ class Viewer3D(QWidget):
         self._plotter.clear()
         self._setup_lights()
         self._add_build_plate(fusion)
+        # DÉCALAGE COMMUN à tous les corps (centrer la carte sur le plateau,
+        # base à z=0). CRITIQUE : placer chaque corps séparément (_place_on_plate)
+        # les recentrerait INDÉPENDAMMENT -> le texte, décalé sur la carte, était
+        # ramené au centre puis noyé dans le socle (« on ne voit rien »).
+        b = fusion.bounds
+        off = [-(b[0][0] + b[1][0]) / 2, -(b[0][1] + b[1][1]) / 2, -b[0][2]]
         for i, g in enumerate(corps):
             try:
                 col = g.visual.face_colors[0][:3] / 255.0
             except Exception:
                 col = (0.9, 0.9, 0.9)
-            pv = self._place_on_plate(self._trimesh_to_pyvista(g))
-            self._plotter.add_mesh(pv, color=col, show_edges=False,
+            pvm = self._trimesh_to_pyvista(g)
+            pvm.translate(off, inplace=True)
+            self._plotter.add_mesh(pvm, color=col, show_edges=False,
                                    smooth_shading=False, name=f"carte_{i}")
+        fusion = fusion.copy()
+        fusion.apply_translation(off)
         self.vue_dessus(fusion)
         self._plotter.render()
 
