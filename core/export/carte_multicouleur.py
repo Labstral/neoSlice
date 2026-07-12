@@ -135,6 +135,17 @@ def _build_multi_settings(bodies) -> str:
             '  </plate>\n</config>')
 
 
+def _rels_objets() -> str:
+    """3D/_rels/3dmodel.model.rels : déclare le fichier de géométrie externe. SANS
+    ce fichier, Bambu Studio ne résout pas les <component p:path=…> → « pas de
+    données géométriques » (pièce manquante relevée sur un vrai 3MF BS)."""
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+            ' <Relationship Target="/3D/Objects/object_1.model" Id="rel-1" '
+            'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>\n'
+            '</Relationships>')
+
+
 def _poser_palette(project_settings: dict, couleurs: list[str]) -> None:
     """Pose la palette de couleurs et ÉTEND de façon COHÉRENTE tous les tableaux
     filament à N slots (BS refuse la config si les longueurs diffèrent)."""
@@ -143,6 +154,8 @@ def _poser_palette(project_settings: dict, couleurs: list[str]) -> None:
         if k.startswith("filament_") and isinstance(v, list) and v:
             project_settings[k] = [v[0]] * n
     project_settings["filament_colour"] = list(couleurs)
+    project_settings["filament_multi_colour"] = list(couleurs)   # clé lue par BS
+    project_settings["filament_map"] = ["1"] * n
 
 
 def build_carte_multicouleur(spec, config, output_path: Path,
@@ -173,6 +186,7 @@ def build_carte_multicouleur(spec, config, output_path: Path,
     ps = json.loads(data["Metadata/project_settings.config"].decode("utf-8"))
     _poser_palette(ps, couleurs)
     data["3D/Objects/object_1.model"] = _external_objects_model(bodies).encode("utf-8")
+    data["3D/_rels/3dmodel.model.rels"] = _rels_objets().encode("utf-8")
     data["3D/3dmodel.model"] = _build_multi_model(bodies, base_model).encode("utf-8")
     data["Metadata/model_settings.config"] = _build_multi_settings(bodies).encode("utf-8")
     data["Metadata/project_settings.config"] = json.dumps(ps, indent=4, ensure_ascii=False).encode("utf-8")
