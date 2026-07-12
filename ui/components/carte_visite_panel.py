@@ -44,6 +44,16 @@ def _champ_style(pal: dict) -> str:
             f"2px 5px; }}") + _spinbox_qss(pal, "rgba(34,211,238,0.35)")
 
 
+def _style_bouton_action(pal: dict, base: str = "BG_SURFACE") -> str:
+    """Bouton d'action neutre (survol doux, adapté au thème) — plus de cyan qui
+    « fait mal aux yeux » en thème sombre."""
+    return (f"QPushButton {{ background: {pal[base]}; color: {pal['TEXT_PRIMARY']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 6px; "
+            f"font-weight: bold; }} "
+            f"QPushButton:hover {{ background: {pal['BG_ELEVATED']}; "
+            f"border-color: {pal['ACCENT']}; }}")
+
+
 class LithoParamsDialog(QDialog):
     """Réglages de conversion en lithophanie : épaisseur mini (zones claires),
     contraste (épaisseur ajoutée aux zones foncées), et inversion clair/foncé."""
@@ -521,6 +531,7 @@ class CartePanel(QWidget):
 
         # boutons d'ajout
         addrow = QHBoxLayout()
+        self._btns_ajout = []
         for txt, tp in ((_fr("+ Texte", "+ Text"), "texte"),
                         (_fr("+ Logo", "+ Logo"), "logo"),
                         (_fr("+ Trait", "+ Line"), "trait"),
@@ -528,13 +539,10 @@ class CartePanel(QWidget):
             b = QPushButton(txt)
             b.setMinimumHeight(28)
             b.setCursor(Qt.PointingHandCursor)
-            b.setStyleSheet(
-                f"QPushButton {{ background: {pal['BG_SURFACE']}; color: "
-                f"{pal['TEXT_PRIMARY']}; border: 1px solid {PRO_CYAN}; "
-                f"border-radius: 6px; font-weight: bold; }} "
-                f"QPushButton:hover {{ background: rgba(34,211,238,0.15); }}")
+            b.setStyleSheet(_style_bouton_action(pal))
             b.clicked.connect(lambda _c=False, t=tp: self._ajouter(t))
             addrow.addWidget(b)
+            self._btns_ajout.append(b)
         root.addLayout(addrow)
 
         # liste scrollable des éléments
@@ -588,11 +596,7 @@ class CartePanel(QWidget):
                                          "Convert to lithophane"))
         self.btn_litho.setMinimumHeight(30)
         self.btn_litho.setCursor(Qt.PointingHandCursor)
-        self.btn_litho.setStyleSheet(
-            f"QPushButton {{ background: {pal['BG_ELEVATED']}; color: "
-            f"{pal['TEXT_PRIMARY']}; border: 1px solid {PRO_CYAN}; "
-            f"border-radius: 6px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background: rgba(34,211,238,0.15); }}")
+        self.btn_litho.setStyleSheet(_style_bouton_action(pal, "BG_ELEVATED"))
         self.btn_litho.setToolTip(_fr(
             "Prépare un .3MF lithophanie : une seule matière translucide + "
             "réglages d'impression lithophanie (à imprimer en PLA blanc/naturel).",
@@ -823,6 +827,10 @@ class CartePanel(QWidget):
                 w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; border: none; background: transparent;")
         for w in self.findChildren(QDoubleSpinBox):
             w.setStyleSheet(champ)
+        for b in getattr(self, "_btns_ajout", []):
+            b.setStyleSheet(_style_bouton_action(pal))
+        if hasattr(self, "btn_litho"):
+            self.btn_litho.setStyleSheet(_style_bouton_action(pal, "BG_ELEVATED"))
         self._maj_base()
         for ed in self._editeurs:
             ed.refresh_theme()
