@@ -631,6 +631,8 @@ class Viewer3D(QWidget):
                 rep.SetSize(88, 88)                 # un peu plus petit (défaut 120)
                 rep.SetHandleSize(0.008)            # boules plus fines
                 rep.SetTotalLength(0.9)
+                rep.SetContainerVisibility(0)       # PAS de disque/sphère de fond :
+                #                                     seulement les axes + bulles X/Y/Z
             except Exception:
                 pass
             self._orient_widget = w
@@ -640,23 +642,18 @@ class Viewer3D(QWidget):
             logger.debug(f"cube d'orientation indisponible : {e}")
 
     def _style_orient_labels(self):
-        """Rend le widget d'orientation lisible selon le thème. Le CONTAINER (le
-        disque de fond) est sombre par défaut -> invisible en thème sombre :
-        on l'éclaircit en sombre, on l'assombrit en clair. Labels X/Y/Z de même."""
+        """Labels X/Y/Z (dans leurs bulles) lisibles selon le thème : clairs sur
+        fond sombre, sombres sur fond clair. Le disque de fond (container) est
+        masqué -> seuls les axes et leurs bulles restent visibles."""
         rep = getattr(self, "_orient_rep", None)
         if rep is None:
             return
-        sombre = _T.is_dark()
-        lab = (0.95, 0.95, 0.97) if sombre else (0.12, 0.12, 0.16)
-        cont = (0.78, 0.80, 0.86) if sombre else (0.22, 0.24, 0.30)
+        lab = (0.95, 0.95, 0.97) if _T.is_dark() else (0.12, 0.12, 0.16)
         try:
             for getp in (rep.GetXPlusLabelProperty, rep.GetXMinusLabelProperty,
                          rep.GetYPlusLabelProperty, rep.GetYMinusLabelProperty,
                          rep.GetZPlusLabelProperty, rep.GetZMinusLabelProperty):
                 getp().SetColor(*lab)
-            cp = rep.GetContainerProperty()
-            cp.SetColor(*cont)
-            cp.SetOpacity(0.55)
             if self._plotter is not None:
                 self._plotter.render()
         except Exception:
