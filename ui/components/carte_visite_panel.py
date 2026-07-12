@@ -465,7 +465,16 @@ class CartePanel(QWidget):
         self._debounce.setSingleShot(True)
         self._debounce.setInterval(350)
         self._debounce.timeout.connect(self._emettre_apercu)
+        # historique undo/redo (états sérialisés via to_dict/from_dict)
+        self._history: list[dict] = []
+        self._hist_index = -1
+        self._restoring = False
         self._build()
+        from PySide6.QtGui import QShortcut, QKeySequence
+        for _seq, _slot in (("Ctrl+Z", self.undo), ("Ctrl+Y", self.redo)):
+            _sc = QShortcut(QKeySequence(_seq), self)
+            _sc.setContext(Qt.ShortcutContext.WindowShortcut)   # actif tant que le panneau est visible
+            _sc.activated.connect(_slot)
         QTimer.singleShot(0, self._planifier_apercu)   # aperçu initial (carte vide)
 
     def _build(self):
@@ -759,6 +768,45 @@ class CartePanel(QWidget):
             self.apercu_pret.emit(scene)
         except Exception as exc:
             self._statut.setText("⚠ " + str(exc)[:80])
+            return
+        # Enregistre l'état « posé » dans l'historique (sauf si on est en train de
+        # restaurer un état via undo/redo → le flag saute une capture).
+        if self._restoring:
+            self._restoring = False
+            return
+        self._commit_history()
+
+    # ── undo / redo (Ctrl+Z / Ctrl+Y) ──
+    def _commit_history(self):
+        try:
+            state = self.to_dict()
+        except Exception:
+            return
+        if (self._history and 0 <= self._hist_index < len(self._history)
+                and state == self._history[self._hist_index]):
+            return                                   # rien de changé
+        del self._history[self._hist_index + 1:]     # tronque le « redo »
+        self._history.append(state)
+        self._hist_index = len(self._history) - 1
+        if len(self._history) > 120:                 # borne la taille
+            self._history.pop(0)
+            self._hist_index -= 1
+
+    def _appliquer_etat(self, state: dict):
+        self._restoring = True
+        self.from_dict(dict(state))
+
+    def undo(self):
+        if self._hist_index > 0:
+            self._hist_index -= 1
+            self._appliquer_etat(self._history[self._hist_index])
+            self.set_statut(_fr("↶ Annulé", "↶ Undone"))
+
+    def redo(self):
+        if self._hist_index < len(self._history) - 1:
+            self._hist_index += 1
+            self._appliquer_etat(self._history[self._hist_index])
+            self.set_statut(_fr("↷ Rétabli", "↷ Redone"))
 
     def deplacer_element(self, index: int, dx: float, dy: float):
         """Reçu du viewer quand un élément est glissé à la souris : ajoute le
