@@ -2017,14 +2017,24 @@ class MainWindow(QMainWindow):
         panel = getattr(self, "_carte_panel", None)
         carte_spec = None
         try:
-            from core.neogen.carte_visite import generer_fichier_carte
-            chemin = generer_fichier_carte(spec, litho=litho, litho_params=litho_params)
-            # Multicouleur désactivé pour l'instant (le 3MF multi-matière fait main
-            # est refusé par Bambu Studio) → export mono-matière VALIDE en attendant
-            # de répliquer une structure 3MF réellement acceptée par les slicers.
-            if not litho and getattr(self, "_carte_multicouleur_actif", False):
+            if not litho:
+                # MULTICOULEUR : on charge la carte comme un vrai 3MF multi-slots
+                # (structure Bambu valide avec p:UUID) → la fenêtre d'export détecte
+                # les slots ; on garde la spec colorée pour reconstruire à l'export.
                 import copy
+                from core.export.carte_multicouleur import build_carte_multicouleur
+                from core.parameters.print_config import PrintConfig
+                from core.neogen.pilote import DOSSIER_SORTIES
+                DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
+                chemin = DOSSIER_SORTIES / "carte_visite.3mf"
+                printer = getattr(self, "_current_printer", "") or "X1 Carbon"
+                nozzle = getattr(self, "_current_nozzle_mm", 0.4)
+                filament = getattr(self, "_current_filament", "") or "PLA"
+                build_carte_multicouleur(spec, PrintConfig(), chemin, printer, filament, nozzle)
                 carte_spec = copy.deepcopy(spec)
+            else:
+                from core.neogen.carte_visite import generer_fichier_carte
+                chemin = generer_fichier_carte(spec, litho=True, litho_params=litho_params)
         except Exception as exc:
             logger.exception("Préparation carte échouée")
             if panel:

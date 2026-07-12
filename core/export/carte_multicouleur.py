@@ -56,8 +56,8 @@ def _build_multi_model(bodies, base_model_xml: str) -> str:
     (trimesh renomme la géométrie d'après ce name au rechargement → l'ID de part
     de model_settings.config peut le retrouver). Assemblés en UN objet imprimable."""
     import re
+    import uuid
     ns = re.search(r'<model[^>]*>', base_model_xml).group(0)
-    build_m = re.search(r'<build[^>]*>.*?</build>', base_model_xml, re.S)
     transform = "1 0 0 0 1 0 0 0 1 0 0 0"
     m = re.search(r'<item objectid="1"[^>]*transform="([^"]+)"', base_model_xml)
     if m:
@@ -66,33 +66,40 @@ def _build_multi_model(bodies, base_model_xml: str) -> str:
                      base_model_xml, re.S)
     meta_xml = meta.group(1) if meta else ""
 
+    # Structure Bambu Studio VALIDE : sous-objets géométriques (mesh inline) +
+    # UN objet assemblage qui les référence par <component>. p:UUID OBLIGATOIRE
+    # sur chaque objet/composant/item/build (requiredextensions="p"), sinon BS
+    # rejette (« pas de données géométriques »). part id = id du sous-objet.
     parts_objs = []
     comps = []
     for i, (mesh, _hex) in enumerate(bodies):
-        oid = 10 + i
+        oid = i + 2                                   # 2, 3, 4… (1 = assemblage)
         vx, tx = _mesh_xml(mesh, indent="   ")
         parts_objs.append(
-            f'  <object id="{oid}" type="model" name="couleur_{i+1}">\n'
+            f'  <object id="{oid}" p:UUID="{uuid.uuid4()}" type="model">\n'
             f'   <mesh>\n    <vertices>\n{vx}\n    </vertices>\n'
             f'    <triangles>\n{tx}\n    </triangles>\n   </mesh>\n  </object>')
-        comps.append(f'    <component objectid="{oid}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>')
-    assembly = ('  <object id="1" type="model" name="Carte de visite">\n'
+        comps.append(f'    <component objectid="{oid}" p:UUID="{uuid.uuid4()}" '
+                     f'transform="1 0 0 0 1 0 0 0 1 0 0 0"/>')
+    assembly = (f'  <object id="1" p:UUID="{uuid.uuid4()}" type="model" name="Carte de visite">\n'
                 '   <components>\n' + "\n".join(comps) + '\n   </components>\n  </object>')
     return (f'{ns}\n {meta_xml}\n <resources>\n'
             + "\n".join(parts_objs) + "\n" + assembly
             + '\n </resources>\n'
-            + f' <build>\n  <item objectid="1" transform="{transform}" printable="1"/>\n </build>\n</model>')
+            + f' <build p:UUID="{uuid.uuid4()}">\n'
+            + f'  <item objectid="1" p:UUID="{uuid.uuid4()}" transform="{transform}" printable="1"/>\n'
+            + ' </build>\n</model>')
 
 
 def _build_multi_settings(bodies) -> str:
-    """model_settings.config : l'objet 1 contient N parts (une par couleur), chacune
-    assignée à un extrudeur. Le part id = « couleur_i » (== name de l'objet géométrie
-    → le loader neoSlice et le slicer retrouvent l'assignation)."""
+    """model_settings.config : l'objet 1 (assemblage) contient N parts, une par
+    couleur, chacune assignée à un extrudeur. part id = id du sous-objet (2,3,4…)."""
     parts = []
     for i, (mesh, _hex) in enumerate(bodies):
+        oid = i + 2
         fc = len(mesh.faces)
         parts.append(
-            f'    <part id="couleur_{i+1}" subtype="normal_part">\n'
+            f'    <part id="{oid}" subtype="normal_part">\n'
             f'      <metadata key="name" value="couleur_{i+1}"/>\n'
             f'      <metadata key="extruder" value="{i+1}"/>\n'
             f'      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n'
@@ -114,19 +121,13 @@ def _build_multi_settings(bodies) -> str:
 
 
 def _poser_palette(project_settings: dict, couleurs: list[str]) -> None:
-    """Étend les tableaux filament à N slots et pose la palette de couleurs."""
+    """Pose la palette de couleurs et ÉTEND de façon COHÉRENTE tous les tableaux
+    filament à N slots (BS refuse la config si les longueurs diffèrent)."""
     n = len(couleurs)
-    def _grow(key, default):
-        v = project_settings.get(key)
-        if not isinstance(v, list) or not v:
-            v = [default]
-        v = [v[0]] * n
-        project_settings[key] = v
-    _grow("filament_settings_id", "Generic PLA")
-    _grow("filament_type", "PLA")
-    _grow("filament_ids", "")
+    for k, v in list(project_settings.items()):
+        if k.startswith("filament_") and isinstance(v, list) and v:
+            project_settings[k] = [v[0]] * n
     project_settings["filament_colour"] = list(couleurs)
-    project_settings["filament_map"] = list(range(1, n + 1))
 
 
 def build_carte_multicouleur(spec, config, output_path: Path,
