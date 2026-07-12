@@ -119,7 +119,7 @@ class NeoGenPanel(QWidget):
         titre.setObjectName("neogenTitre")
         titre.setFont(QFont("Segoe UI", 13, QFont.Bold))
         titre.setStyleSheet(
-            f"color: {self._pal['ACCENT_BRIGHT']}; background: transparent; letter-spacing: 1px;")
+            f"color: {self._pal['TEXT_PRIMARY']}; background: transparent; letter-spacing: 1px;")
         entete.addWidget(titre)
         entete.addStretch()
         btn_close = QPushButton("✕")
@@ -151,7 +151,7 @@ class NeoGenPanel(QWidget):
             QTabWidget::pane {{ border: none; }}
             QTabBar::tab {{ background: transparent; color: {self._pal['TEXT_LABEL']};
                             padding: 5px 12px; font-weight: bold; }}
-            QTabBar::tab:selected {{ color: {self._pal['ACCENT_BRIGHT']};
+            QTabBar::tab:selected {{ color: {self._pal['TEXT_PRIMARY']};
                                      border-bottom: 2px solid {self._pal['ACCENT_BRIGHT']}; }}
         """)
         self._tabs.addTab(self._onglet_bibliotheque(), _("neogen.tab_library"))
@@ -172,14 +172,14 @@ class NeoGenPanel(QWidget):
         pal = self._pal
         for w in self.findChildren(QLabel):
             if w.objectName() == "neogenTitre":
-                w.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;"
+                w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;"
                                 f" letter-spacing: 1px;")
         if hasattr(self, "_tabs"):
             self._tabs.setStyleSheet(f"""
                 QTabWidget::pane {{ border: none; }}
                 QTabBar::tab {{ background: transparent; color: {pal['TEXT_LABEL']};
                                 padding: 5px 12px; font-weight: bold; }}
-                QTabBar::tab:selected {{ color: {pal['ACCENT_BRIGHT']};
+                QTabBar::tab:selected {{ color: {pal['TEXT_PRIMARY']};
                                          border-bottom: 2px solid {pal['ACCENT_BRIGHT']}; }}
             """)
 

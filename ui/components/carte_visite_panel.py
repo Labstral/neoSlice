@@ -107,7 +107,7 @@ class _ElementEditor(QFrame):
                    "cadre": _fr("Cadre", "Frame")}
         titre = QLabel(_titres.get(self.type_el, self.type_el))
         titre.setObjectName("carteTitre")
-        titre.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; font-weight: bold; border: none;")
+        titre.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; font-weight: bold; border: none;")
         head.addWidget(titre)
         head.addStretch()
         btn_x = QPushButton("✕")
@@ -228,7 +228,7 @@ class _ElementEditor(QFrame):
             f"{pal['INACTIVE']}; border-radius: 6px; }}")
         for w in self.findChildren(QLabel):
             if w.objectName() == "carteTitre":
-                w.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; font-weight: bold;"
+                w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; font-weight: bold;"
                                 f" border: none; background: transparent;")
             else:
                 w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; border: none;"
@@ -383,7 +383,7 @@ class CartePanel(QWidget):
         titre = QLabel(_fr("Carte de visite", "Business card"))
         titre.setObjectName("carteTitre")
         titre.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        titre.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;")
+        titre.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
         entete.addWidget(titre)
         entete.addStretch()
         bx = QPushButton("✕")
@@ -466,11 +466,12 @@ class CartePanel(QWidget):
         self._scroll.setWidget(holder)
         root.addWidget(self._scroll, 1)
 
-        # enregistrer / rouvrir un modèle
+        # enregistrer / rouvrir / supprimer un modèle
         modrow = QHBoxLayout()
         modrow.setSpacing(4)
-        for txt, slot in ((_fr("Enregistrer le modèle", "Save model"), self._enregistrer_modele),
-                          (_fr("Ouvrir…", "Open…"), self._ouvrir_modele)):
+        for txt, slot in ((_fr("Enregistrer", "Save"), self._enregistrer_modele),
+                          (_fr("Ouvrir…", "Open…"), self._ouvrir_modele),
+                          (_fr("Supprimer…", "Delete…"), self._supprimer_modele)):
             bm = QPushButton(txt)
             bm.setMinimumHeight(26)
             bm.setCursor(Qt.PointingHandCursor)
@@ -629,6 +630,31 @@ class CartePanel(QWidget):
         except Exception as exc:
             self.set_statut("⚠ " + str(exc)[:80])
 
+    def _supprimer_modele(self):
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+        fichiers = sorted(self._dossier_cartes().glob("*.json"))
+        if not fichiers:
+            self.set_statut(_fr("Aucun modèle enregistré.", "No saved model."))
+            return
+        noms = [f.stem for f in fichiers]
+        nom, ok = QInputDialog.getItem(
+            self, _fr("Supprimer un modèle", "Delete model"),
+            _fr("Modèle :", "Model:"), noms, 0, False)
+        if not ok or not nom:
+            return
+        rep = QMessageBox.question(
+            self, _fr("Supprimer", "Delete"),
+            _fr(f"Supprimer définitivement le modèle « {nom} » ?",
+                f'Permanently delete model "{nom}"?'))
+        if rep != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            (self._dossier_cartes() / (nom + ".json")).unlink()
+            self.set_statut("✓ " + _fr(f"Modèle « {nom} » supprimé",
+                                       f'Model "{nom}" deleted'))
+        except Exception as exc:
+            self.set_statut("⚠ " + str(exc)[:80])
+
     def _planifier_apercu(self):
         self._debounce.start()
 
@@ -691,7 +717,7 @@ class CartePanel(QWidget):
         champ = _champ_style(pal)
         for w in self.findChildren(QLabel):
             if w.objectName() == "carteTitre":
-                w.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;")
+                w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
             elif w is getattr(self, "_statut", None):
                 w.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent; font-size: 9pt;")
             else:
