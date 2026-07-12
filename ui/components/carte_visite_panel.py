@@ -66,6 +66,19 @@ class _ElementEditor(QFrame):
         self._couleur = "#111111"
         self._build()
 
+    def set_actif(self, actif: bool):
+        """Encadre l'éditeur quand SON élément est sélectionné dans le viewer
+        (clic sur l'élément de la carte) → on voit tout de suite duquel il s'agit."""
+        pal = self._pal
+        if actif:
+            self.setStyleSheet(
+                f"QFrame {{ background: {pal['BG_ELEVATED']}; border: 2px solid "
+                f"{PRO_CYAN}; border-radius: 6px; }}")
+        else:
+            self.setStyleSheet(
+                f"QFrame {{ background: {pal['BG_SURFACE']}; border: 1px solid "
+                f"{pal['INACTIVE']}; border-radius: 6px; }}")
+
     def _build(self):
         pal = self._pal
         self.setStyleSheet(
@@ -461,6 +474,17 @@ class CartePanel(QWidget):
             ed = self._editeurs[index]
             ed.sp_dx.setValue(ed.sp_dx.value() + dx)
             ed.sp_dy.setValue(ed.sp_dy.value() + dy)
+
+    def surligner_element(self, index: int):
+        """Reçu du viewer au clic sur un élément de la carte : encadre la section
+        correspondante dans la colonne (et la fait défiler à vue). index=-1 → aucune."""
+        for i, ed in enumerate(self._editeurs):
+            ed.set_actif(i == index)
+        if 0 <= index < len(self._editeurs):
+            try:
+                self._scroll.ensureWidgetVisible(self._editeurs[index])
+            except Exception:
+                pass
 
     def _exporter(self):
         try:

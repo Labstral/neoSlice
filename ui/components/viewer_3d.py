@@ -176,6 +176,9 @@ class Viewer3D(QWidget):
 
     # (index élément, dx_mm, dy_mm) — élément de carte déplacé à la souris
     element_deplace = Signal(int, float, float)
+    # index élément sélectionné dans le viewer (-1 = désélection) — encadre la
+    # section correspondante dans l'éditeur de carte
+    element_selectionne = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1808,10 +1811,20 @@ class Viewer3D(QWidget):
             if nom and nom in getattr(self, "_carte_actors", {}):
                 self._carte_sel = nom
                 self._surligner_carte(nom, True)
-                st.update(drag=True, nom=nom, idx=self._carte_actors[nom],
+                idx = self._carte_actors[nom]
+                st.update(drag=True, nom=nom, idx=idx,
                           last=self._carte_world_xy(pos), tot=[0.0, 0.0])
+                try:
+                    self.element_selectionne.emit(idx)   # encadre la section
+                except Exception:
+                    pass
                 self._plotter.render()
                 return True
+            # rien de sélectionné (clic sur le socle / le vide) → désélection
+            try:
+                self.element_selectionne.emit(-1)
+            except Exception:
+                pass
             return None
         if t == QEvent.MouseMove and st["drag"]:
             wx, wy = self._carte_world_xy(pos)
