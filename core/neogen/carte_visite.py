@@ -214,12 +214,12 @@ def generer_fichier_carte(spec: CarteSpec, litho: bool = False):
         for el in spec.elements:
             el.couleur = "#FFFFFF"
     scene, _couleurs = construire(spec)
+    # Un SEUL corps fusionné : le parseur 3MF de neoSlice, orienté Bambu, prend
+    # les multi-corps d'un 3MF trimesh (sans model_settings.config) pour des
+    # « modificateurs » → éléments détachés/absents dans le viewer. Un STL fusionné
+    # se recharge comme une pièce solide normale (base + reliefs bien en place).
+    fusion = trimesh.util.concatenate(list(scene.geometry.values()))
     DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
     base = DOSSIER_SORTIES / ("lithophanie_carte" if litho else "carte_visite")
-    try:
-        scene.export(base.with_suffix(".3mf"))   # multi-corps → slots couleur
-        return base.with_suffix(".3mf")
-    except Exception:
-        fusion = trimesh.util.concatenate(list(scene.geometry.values()))
-        fusion.export(base.with_suffix(".stl"))
-        return base.with_suffix(".stl")
+    fusion.export(base.with_suffix(".stl"))
+    return base.with_suffix(".stl")
