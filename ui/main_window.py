@@ -1951,14 +1951,22 @@ class MainWindow(QMainWindow):
             # Personnalisation), pas aux paramètres
             panel.close_requested.connect(self._open_neogen_depuis_carte)
             self._carte_panel = panel
-        if self._right_scroll.widget() is panel:
-            self._show_params_panel()
-            return
-        self._right_scroll.takeWidget()
-        self._right_scroll.setWidget(panel)
-        self._right_scroll.setFixedWidth(400)
+        # « Ouvrir l'éditeur » doit TOUJOURS afficher l'éditeur (jamais rester
+        # sans effet). Si déjà affiché, on se contente de rafraîchir l'aperçu.
+        if self._right_scroll.widget() is not panel:
+            self._right_scroll.takeWidget()
+            self._right_scroll.setWidget(panel)
+            self._right_scroll.setFixedWidth(400)
         self._topbar.set_new_enabled(True)     # « Nouvelle pièce » actif sur la carte
         panel.refresh_theme()                  # thème courant (évite labels invisibles)
+        # Ré-initialisation PROPRE du viewer en mode carte : sans ça, si le
+        # « _view_mode » était resté à « carte » (ou l'inverse), afficher_carte
+        # sautait la 1re initialisation et la carte ne réapparaissait pas au
+        # ré-affichage → « rien ne se passe » au 2e « Ouvrir l'éditeur ».
+        try:
+            self._viewer.quitter_mode_carte()
+        except Exception:
+            pass
         panel._planifier_apercu()              # (re)génère l'aperçu courant
 
     def _open_neogen_depuis_carte(self):
