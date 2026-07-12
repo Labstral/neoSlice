@@ -394,6 +394,8 @@ class Viewer3D(QWidget):
             self._plotter.set_background(pal["VIEWER_BG"], top=pal["VIEWER_BG_TOP"])
         except Exception:
             pass
+        # labels du widget d'orientation : lisibles dans le nouveau thème
+        self._style_orient_labels()
         # Mesh — mise à jour du matériau/plateau si une pièce est chargée
         if self._mesh is not None:
             try:
@@ -610,15 +612,44 @@ class Viewer3D(QWidget):
         self._setup_cam_observer()
 
     def _setup_orientation_cube(self):
-        """Cube d'orientation CLIQUABLE en haut à droite (widget caméra VTK) :
-        un cube propre dont chaque face, au clic, recentre la caméra de ce
-        côté. Repère X/Y/Z de la scène (Z = haut du plateau)."""
+        """Widget d'orientation CLIQUABLE en haut à droite (axes X/Y/Z à boules) :
+        clic sur un axe -> la caméra se recentre de ce côté. Couleurs pâles
+        classiques (X rouge, Y vert pomme, Z bleu-violet) et labels adaptés au
+        thème (lisibles en clair ET en sombre)."""
         if self._plotter is None:
             return
         try:
-            self._orient_widget = self._plotter.add_camera_orientation_widget()
+            w = self._plotter.add_camera_orientation_widget()
+            rep = w.GetRepresentation()
+            rep.SetXAxisColor(0.90, 0.46, 0.46)     # rouge pâle
+            rep.SetYAxisColor(0.56, 0.83, 0.44)     # vert pomme pâle
+            rep.SetZAxisColor(0.58, 0.56, 0.92)     # bleu légèrement violet, pâle
+            try:
+                rep.SetSize(88, 88)                 # un peu plus petit (défaut 120)
+                rep.SetHandleSize(0.008)            # boules plus fines
+                rep.SetTotalLength(0.9)
+            except Exception:
+                pass
+            self._orient_widget = w
+            self._orient_rep = rep
+            self._style_orient_labels()
         except Exception as e:
             logger.debug(f"cube d'orientation indisponible : {e}")
+
+    def _style_orient_labels(self):
+        """Labels X/Y/Z du widget d'orientation lisibles selon le thème (clairs
+        sur fond sombre, sombres sur fond clair) — sinon invisibles en sombre."""
+        rep = getattr(self, "_orient_rep", None)
+        if rep is None:
+            return
+        col = (0.93, 0.93, 0.96) if _T.is_dark() else (0.12, 0.12, 0.16)
+        try:
+            for getp in (rep.GetXPlusLabelProperty, rep.GetXMinusLabelProperty,
+                         rep.GetYPlusLabelProperty, rep.GetYMinusLabelProperty,
+                         rep.GetZPlusLabelProperty, rep.GetZMinusLabelProperty):
+                getp().SetColor(*col)
+        except Exception:
+            pass
 
     def _setup_cam_observer(self):
         """Rend le plateau transparent quand la caméra passe en dessous (vue Bambu Studio)."""
