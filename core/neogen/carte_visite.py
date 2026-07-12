@@ -105,6 +105,20 @@ def _hex_rgba(h: str) -> list[int]:
         return [255, 255, 255, 255]
 
 
+def _polygones(geom):
+    """Extrait récursivement TOUS les Polygon d'une géométrie shapely (gère
+    GeometryCollection : certaines polices produisent des géométries mixtes
+    polygone+ligne qui, sinon, cassaient l'aperçu et la lithophanie)."""
+    if geom is None or geom.is_empty:
+        return []
+    if isinstance(geom, Polygon):
+        return [geom]
+    out = []
+    for g in getattr(geom, "geoms", []):
+        out.extend(_polygones(g))
+    return out
+
+
 def _forme_element(el, spec: CarteSpec) -> MultiPolygon | None:
     """Contour 2D de l'élément, centré sur son propre repère (0,0)."""
     tp = getattr(el, "type", "texte")
@@ -139,9 +153,10 @@ def _forme_element(el, spec: CarteSpec) -> MultiPolygon | None:
         mp = texte_multilignes(el.texte, el.hauteur, police=el.police,
                                espacement=getattr(el, "espacement", 0.0))
         mp = unary_union(list(mp.geoms))
-    if isinstance(mp, Polygon):
-        mp = MultiPolygon([mp])
-    return mp if not mp.is_empty else None
+    polys = _polygones(mp)                        # robuste aux GeometryCollection
+    if not polys:
+        return None
+    return MultiPolygon(polys)
 
 
 def _placer(mp, spec: CarteSpec, el) -> MultiPolygon:
@@ -304,12 +319,23 @@ def rendre_carte_image(spec: CarteSpec, chemin, px_par_mm: float = 8.0):
         if mp is None:
             continue
         mp = _placer(mp, spec, el)
-        for g in (mp.geoms if isinstance(mp, MultiPolygon) else [mp]):
+        for g in _polygones(mp):
             if g.is_empty or g.area <= 0:
                 continue
             draw.polygon([_px(p) for p in g.exterior.coords], fill=0)
             for ring in g.interiors:
                 draw.polygon([_px(p) for p in ring.coords], fill=255)
+    # Épaissir légèrement le texte : les traits FINS (polices décoratives) sont
+    # sinon effacés par le downscale + flou du générateur de lithophanie et
+    # deviennent invisibles. ~0,15 mm de dilatation → visibles sans empâter.
+    try:
+        import cv2
+        import numpy as _np
+        r = max(1, int(round(px_par_mm * 0.15)))
+        a = cv2.erode(_np.array(img), _np.ones((2 * r + 1, 2 * r + 1), _np.uint8))
+        img = Image.fromarray(a)
+    except Exception:
+        pass
     img.save(str(chemin))
     return chemin
 
