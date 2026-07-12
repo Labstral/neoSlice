@@ -238,6 +238,42 @@ class _ElementEditor(QFrame):
                 w.setStyleSheet(champ)
         self._maj_bouton_couleur()
 
+    @staticmethod
+    def _selc(cb, val):
+        for i in range(cb.count()):
+            if cb.itemData(i) == val:
+                cb.setCurrentIndex(i)
+                return
+
+    def charger(self, d: dict):
+        """Recharge les valeurs d'un élément sauvegardé dans les widgets."""
+        self._couleur = d.get("couleur", self._couleur)
+        self._maj_bouton_couleur()
+        if self.type_el == "texte":
+            self.le.setText(d.get("texte", ""))
+            self._selc(self.cb_pol, d.get("police"))
+            self.sp_h.setValue(float(d.get("hauteur", 5.0)))
+            self.sp_esp.setValue(float(d.get("espacement", 0.0)))
+        elif self.type_el == "logo":
+            self._image = d.get("chemin", "") or ""
+            if self._image:
+                self.btn_img.setText(Path(self._image).name[:24])
+            self.sp_h.setValue(float(d.get("largeur", 18.0)))
+        elif self.type_el == "trait":
+            self.sp_long.setValue(float(d.get("longueur", 40.0)))
+            self.sp_ep.setValue(float(d.get("epaisseur", 1.0)))
+            self._selc(self.cb_orient, d.get("orientation", "horizontal"))
+        elif self.type_el == "cadre":
+            self.sp_larg.setValue(float(d.get("largeur", 60.0)))
+            self.sp_haut.setValue(float(d.get("hauteur", 35.0)))
+            self.sp_ep.setValue(float(d.get("epaisseur", 1.5)))
+        # alignements AVANT les décalages (sinon « centre » remet dx/dy à 0)
+        self._selc(self.cb_ah, d.get("align_h", "centre"))
+        self._selc(self.cb_av, d.get("align_v", "milieu"))
+        self.sp_dx.setValue(float(d.get("dx", 0.0)))
+        self.sp_dy.setValue(float(d.get("dy", 0.0)))
+        self.sp_relief.setValue(float(d.get("relief", 0.6)))
+
     def _recentrer_x(self):
         if self.cb_ah.currentData() == "centre":
             self.sp_dx.setValue(0.0)            # centrage horizontal parfait
@@ -430,6 +466,23 @@ class CartePanel(QWidget):
         self._scroll.setWidget(holder)
         root.addWidget(self._scroll, 1)
 
+        # enregistrer / rouvrir un modèle
+        modrow = QHBoxLayout()
+        modrow.setSpacing(4)
+        for txt, slot in ((_fr("Enregistrer le modèle", "Save model"), self._enregistrer_modele),
+                          (_fr("Ouvrir…", "Open…"), self._ouvrir_modele)):
+            bm = QPushButton(txt)
+            bm.setMinimumHeight(26)
+            bm.setCursor(Qt.PointingHandCursor)
+            bm.setStyleSheet(
+                f"QPushButton {{ background: {pal['BG_SURFACE']}; color: "
+                f"{pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
+                f"border-radius: 6px; }} "
+                f"QPushButton:hover {{ border-color: {pal['ACCENT_BRIGHT']}; }}")
+            bm.clicked.connect(slot)
+            modrow.addWidget(bm)
+        root.addLayout(modrow)
+
         # export
         self.btn_export = QPushButton(_fr("Exporter la carte (multicouleur)",
                                           "Export card (multicolor)"))
@@ -494,6 +547,7 @@ class CartePanel(QWidget):
         self._editeurs.append(ed)
         self._liste.insertWidget(self._liste.count() - 1, ed)
         self._planifier_apercu()
+        return ed
 
     def _retirer(self, ed):
         if ed in self._editeurs:
@@ -508,6 +562,72 @@ class CartePanel(QWidget):
             largeur=self.sp_l.value(), hauteur=self.sp_h.value(),
             ep=self.sp_ep.value(), couleur_base=self._couleur_base,
             elements=[e.element() for e in self._editeurs])
+
+    # ── sauvegarde / réédition ──
+    def to_dict(self) -> dict:
+        import dataclasses
+        spec = self._spec()
+        return {"largeur": spec.largeur, "hauteur": spec.hauteur, "ep": spec.ep,
+                "couleur_base": spec.couleur_base,
+                "elements": [dataclasses.asdict(e) for e in spec.elements]}
+
+    def from_dict(self, d: dict):
+        self.sp_l.setValue(float(d.get("largeur", 85.0)))
+        self.sp_h.setValue(float(d.get("hauteur", 55.0)))
+        self.sp_ep.setValue(float(d.get("ep", 1.6)))
+        self._couleur_base = d.get("couleur_base", "#FFFFFF")
+        self._maj_base()
+        for ed in list(self._editeurs):
+            self._retirer(ed)
+        for eld in d.get("elements", []):
+            ed = self._ajouter(eld.get("type", "texte"))
+            ed.charger(eld)
+        self._planifier_apercu()
+
+    def _dossier_cartes(self):
+        d = Path.home() / ".neoslice" / "cartes"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _enregistrer_modele(self):
+        import json, re
+        from PySide6.QtWidgets import QInputDialog
+        nom, ok = QInputDialog.getText(
+            self, _fr("Enregistrer le modèle", "Save model"),
+            _fr("Nom du modèle :", "Model name:"))
+        if not ok or not nom.strip():
+            return
+        slug = re.sub(r"[^\w\- ]", "", nom.strip())[:40] or "carte"
+        try:
+            (self._dossier_cartes() / (slug + ".json")).write_text(
+                json.dumps(self.to_dict(), ensure_ascii=False, indent=2),
+                encoding="utf-8")
+            self.set_statut("✓ " + _fr(f"Modèle « {slug} » enregistré",
+                                       f'Model "{slug}" saved'))
+        except Exception as exc:
+            self.set_statut("⚠ " + str(exc)[:80])
+
+    def _ouvrir_modele(self):
+        import json
+        from PySide6.QtWidgets import QInputDialog
+        fichiers = sorted(self._dossier_cartes().glob("*.json"))
+        if not fichiers:
+            self.set_statut(_fr("Aucun modèle enregistré.", "No saved model."))
+            return
+        noms = [f.stem for f in fichiers]
+        nom, ok = QInputDialog.getItem(
+            self, _fr("Ouvrir un modèle", "Open model"),
+            _fr("Modèle :", "Model:"), noms, 0, False)
+        if not ok or not nom:
+            return
+        try:
+            data = json.loads(
+                (self._dossier_cartes() / (nom + ".json")).read_text(encoding="utf-8"))
+            self.from_dict(data)
+            self.set_statut("✓ " + _fr(f"Modèle « {nom} » chargé",
+                                       f'Model "{nom}" loaded'))
+        except Exception as exc:
+            self.set_statut("⚠ " + str(exc)[:80])
 
     def _planifier_apercu(self):
         self._debounce.start()
