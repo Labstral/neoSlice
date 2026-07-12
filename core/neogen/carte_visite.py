@@ -58,6 +58,34 @@ class ElementLogo:
 
 
 @dataclass
+class ElementTrait:
+    longueur: float = 40.0
+    epaisseur: float = 1.0
+    orientation: str = "horizontal"           # horizontal | vertical
+    align_h: str = "centre"
+    align_v: str = "milieu"
+    dx: float = 0.0
+    dy: float = 0.0
+    relief: float = 0.6
+    couleur: str = "#111111"
+    type: str = "trait"
+
+
+@dataclass
+class ElementCadre:
+    largeur: float = 60.0
+    hauteur: float = 35.0
+    epaisseur: float = 1.5                     # épaisseur du trait du cadre (mm)
+    align_h: str = "centre"
+    align_v: str = "milieu"
+    dx: float = 0.0
+    dy: float = 0.0
+    relief: float = 0.6
+    couleur: str = "#111111"
+    type: str = "cadre"
+
+
+@dataclass
 class CarteSpec:
     largeur: float = 85.0                     # format standard 85 × 55 mm
     hauteur: float = 55.0
@@ -79,7 +107,23 @@ def _hex_rgba(h: str) -> list[int]:
 
 def _forme_element(el, spec: CarteSpec) -> MultiPolygon | None:
     """Contour 2D de l'élément, centré sur son propre repère (0,0)."""
-    if getattr(el, "type", "texte") == "logo":
+    tp = getattr(el, "type", "texte")
+    if tp == "trait":
+        L = max(1.0, float(el.longueur))
+        e = max(0.3, float(el.epaisseur))
+        if getattr(el, "orientation", "horizontal") == "vertical":
+            L, e = e, L
+        return MultiPolygon([box(-L / 2, -e / 2, L / 2, e / 2)])
+    if tp == "cadre":
+        L = max(3.0, float(el.largeur))
+        H = max(3.0, float(el.hauteur))
+        e = max(0.3, min(float(el.epaisseur), min(L, H) / 2 - 0.2))
+        cadre = box(-L / 2, -H / 2, L / 2, H / 2).difference(
+            box(-L / 2 + e, -H / 2 + e, L / 2 - e, H / 2 - e))
+        if isinstance(cadre, Polygon):
+            cadre = MultiPolygon([cadre])
+        return cadre if not cadre.is_empty else None
+    if tp == "logo":
         if not el.chemin:
             return None
         from pathlib import Path as _P

@@ -28,6 +28,8 @@ _ALIGN_H = [("gauche", "Gauche", "Left"), ("centre", "Centre", "Center"),
             ("droite", "Droite", "Right")]
 _ALIGN_V = [("haut", "Haut", "Top"), ("milieu", "Milieu", "Middle"),
             ("bas", "Bas", "Bottom")]
+_ORIENT = [("horizontal", "Horizontal", "Horizontal"),
+           ("vertical", "Vertical", "Vertical")]
 
 
 def _fr(fr, en):
@@ -99,8 +101,11 @@ class _ElementEditor(QFrame):
 
         # en-tête : titre + supprimer
         head = QHBoxLayout()
-        titre = QLabel(_fr("Texte", "Text") if self.type_el == "texte"
-                       else _fr("Logo (image)", "Logo (image)"))
+        _titres = {"texte": _fr("Texte", "Text"),
+                   "logo": _fr("Logo (image)", "Logo (image)"),
+                   "trait": _fr("Trait", "Line"),
+                   "cadre": _fr("Cadre", "Frame")}
+        titre = QLabel(_titres.get(self.type_el, self.type_el))
         titre.setObjectName("carteTitre")
         titre.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; font-weight: bold; border: none;")
         head.addWidget(titre)
@@ -154,7 +159,7 @@ class _ElementEditor(QFrame):
             form.addRow(_lbl(_fr("Taille (mm)", "Size (mm)")), self.sp_h)
             self.sp_esp = self._spin(0.0, 10.0, 0.0, 0.5, champ, " mm")
             form.addRow(_lbl(_fr("Espacement", "Spacing")), self.sp_esp)
-        else:
+        elif self.type_el == "logo":
             row = QHBoxLayout()
             self.btn_img = QPushButton(_fr("Choisir une image…", "Choose image…"))
             self.btn_img.setCursor(Qt.PointingHandCursor)
@@ -167,6 +172,20 @@ class _ElementEditor(QFrame):
             form.addRow(_lbl(_fr("Fichier", "File")), row)
             self.sp_h = self._spin(6, 60, 18.0, 1.0, champ)
             form.addRow(_lbl(_fr("Largeur (mm)", "Width (mm)")), self.sp_h)
+        elif self.type_el == "trait":
+            self.sp_long = self._spin(1, 100, 40.0, 1.0, champ, " mm")
+            form.addRow(_lbl(_fr("Longueur", "Length")), self.sp_long)
+            self.sp_ep = self._spin(0.3, 8, 1.0, 0.1, champ, " mm")
+            form.addRow(_lbl(_fr("Épaisseur", "Thickness")), self.sp_ep)
+            self.cb_orient = self._combo(_ORIENT, "horizontal", champ)
+            form.addRow(_lbl(_fr("Orientation", "Orientation")), self.cb_orient)
+        elif self.type_el == "cadre":
+            self.sp_larg = self._spin(3, 100, 60.0, 1.0, champ, " mm")
+            form.addRow(_lbl(_fr("Largeur", "Width")), self.sp_larg)
+            self.sp_haut = self._spin(3, 80, 35.0, 1.0, champ, " mm")
+            form.addRow(_lbl(_fr("Hauteur", "Height")), self.sp_haut)
+            self.sp_ep = self._spin(0.3, 10, 1.5, 0.1, champ, " mm")
+            form.addRow(_lbl(_fr("Épaisseur", "Thickness")), self.sp_ep)
 
         self.cb_ah = self._combo(_ALIGN_H, "centre", champ)
         # « Centre » horizontal -> remet le décalage X à 0 (parfaitement centré)
@@ -276,19 +295,25 @@ class _ElementEditor(QFrame):
             self.change.emit()
 
     def element(self):
+        _common = dict(align_h=self.cb_ah.currentData(),
+                       align_v=self.cb_av.currentData(),
+                       dx=self.sp_dx.value(), dy=self.sp_dy.value(),
+                       relief=self.sp_relief.value(), couleur=self._couleur)
         if self.type_el == "texte":
             return CV.ElementTexte(
                 texte=self.le.text(), police=self.cb_pol.currentData(),
                 hauteur=self.sp_h.value(), espacement=self.sp_esp.value(),
-                align_h=self.cb_ah.currentData(),
-                align_v=self.cb_av.currentData(), dx=self.sp_dx.value(),
-                dy=self.sp_dy.value(), relief=self.sp_relief.value(),
-                couleur=self._couleur)
-        return CV.ElementLogo(
-            chemin=self._image, largeur=self.sp_h.value(),
-            align_h=self.cb_ah.currentData(), align_v=self.cb_av.currentData(),
-            dx=self.sp_dx.value(), dy=self.sp_dy.value(),
-            relief=self.sp_relief.value(), couleur=self._couleur)
+                **_common)
+        if self.type_el == "trait":
+            return CV.ElementTrait(
+                longueur=self.sp_long.value(), epaisseur=self.sp_ep.value(),
+                orientation=self.cb_orient.currentData(), **_common)
+        if self.type_el == "cadre":
+            return CV.ElementCadre(
+                largeur=self.sp_larg.value(), hauteur=self.sp_haut.value(),
+                epaisseur=self.sp_ep.value(), **_common)
+        return CV.ElementLogo(chemin=self._image, largeur=self.sp_h.value(),
+                              **_common)
 
 
 class CartePanel(QWidget):
@@ -376,7 +401,9 @@ class CartePanel(QWidget):
         # boutons d'ajout
         addrow = QHBoxLayout()
         for txt, tp in ((_fr("+ Texte", "+ Text"), "texte"),
-                        (_fr("+ Logo", "+ Logo"), "logo")):
+                        (_fr("+ Logo", "+ Logo"), "logo"),
+                        (_fr("+ Trait", "+ Line"), "trait"),
+                        (_fr("+ Cadre", "+ Frame"), "cadre")):
             b = QPushButton(txt)
             b.setMinimumHeight(28)
             b.setCursor(Qt.PointingHandCursor)
