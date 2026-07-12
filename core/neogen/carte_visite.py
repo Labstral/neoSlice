@@ -336,11 +336,11 @@ def generer_fichier_carte(spec: CarteSpec, litho: bool = False,
         base = DOSSIER_SORTIES / "lithophanie_carte"
     else:
         scene, _couleurs = construire(spec)
-        # Un SEUL corps fusionné : le parseur 3MF de neoSlice, orienté Bambu, prend
-        # les multi-corps d'un 3MF trimesh (sans model_settings.config) pour des
-        # « modificateurs » → éléments détachés/absents dans le viewer. Un STL
-        # fusionné se recharge comme une pièce solide normale.
-        fusion = trimesh.util.concatenate(list(scene.geometry.values()))
+        # VRAIE UNION (pas concatenate) : sinon les DESSOUS des reliefs (faces
+        # tournées vers le bas, à l'intérieur du socle) subsistent et sont comptés
+        # comme des surplombs → « 23 % de surplombs » + supports inutiles sur une
+        # carte plate. L'union booléenne supprime ces faces internes.
+        fusion = union_solides(list(scene.geometry.values()))
         base = DOSSIER_SORTIES / "carte_visite"
     fusion.export(base.with_suffix(".stl"))
     return base.with_suffix(".stl")
