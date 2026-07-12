@@ -388,10 +388,20 @@ class CartePanel(QWidget):
 
     def _emettre_apercu(self):
         try:
-            scene, _coul = CV.construire(self._spec())
+            # aperçu PAR ÉLÉMENT (mise à jour en place côté viewer -> pas de
+            # clignotement quand on tape, et chaque élément est déplaçable)
+            scene = CV.construire_apercu(self._spec())
             self.apercu_pret.emit(scene)
         except Exception as exc:
             self._statut.setText("⚠ " + str(exc)[:80])
+
+    def deplacer_element(self, index: int, dx: float, dy: float):
+        """Reçu du viewer quand un élément est glissé à la souris : ajoute le
+        décalage aux champs X/Y de l'élément (l'aperçu se met à jour en place)."""
+        if 0 <= index < len(self._editeurs):
+            ed = self._editeurs[index]
+            ed.sp_dx.setValue(ed.sp_dx.value() + dx)
+            ed.sp_dy.setValue(ed.sp_dy.value() + dy)
 
     def _exporter(self):
         try:

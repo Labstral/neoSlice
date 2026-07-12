@@ -1926,6 +1926,8 @@ class MainWindow(QMainWindow):
             panel = CartePanel()
             panel.apercu_pret.connect(self._viewer.afficher_carte)
             panel.exporter_demande.connect(self._exporter_carte)
+            # déplacement d'un élément à la souris (viewer) -> maj dx/dy panneau
+            self._viewer.element_deplace.connect(panel.deplacer_element)
             # fermeture (✕) : revenir au panneau neoGen (la carte vient de
             # Personnalisation), pas aux paramètres
             panel.close_requested.connect(self._open_neogen_depuis_carte)
@@ -1940,6 +1942,10 @@ class MainWindow(QMainWindow):
 
     def _open_neogen_depuis_carte(self):
         """✕ de la carte -> revient au panneau neoGen (d'où on l'a ouverte)."""
+        try:
+            self._viewer.quitter_mode_carte()
+        except Exception:
+            pass
         panel = getattr(self, "_neogen_panel", None)
         if panel is not None:
             self._right_scroll.takeWidget()

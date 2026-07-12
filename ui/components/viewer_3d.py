@@ -174,6 +174,9 @@ class Viewer3D(QWidget):
     Supporte la colorisation par zones (overhangs, fragilité).
     """
 
+    # (index élément, dx_mm, dy_mm) — élément de carte déplacé à la souris
+    element_deplace = Signal(int, float, float)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._mesh = None
@@ -1605,45 +1608,133 @@ class Viewer3D(QWidget):
         QTimer.singleShot(300, _phase2)
 
     def afficher_carte(self, scene) -> None:
-        """Aperçu COLORÉ d'une carte de visite (trimesh.Scene multi-corps) :
-        chaque corps garde SA couleur (visual.face_colors) et la caméra se met
-        en VUE DE DESSUS, centrée sur la carte posée à plat. La rotation auto
-        est coupée (on regarde la carte d'en haut, pas en orbite)."""
+        """Aperçu COLORÉ d'une carte de visite. Scene attendue : un corps
+        « socle » + un corps « el_<i> » par élément (voir construire_apercu).
+        MISE À JOUR EN PLACE : on remplace seulement les acteurs modifiés, SANS
+        vider la scène ni recadrer la caméra -> aucun clignotement quand on tape.
+        La caméra ne se met en vue de dessus qu'à la PREMIÈRE ouverture."""
         if not HAS_PYVISTA or self._plotter is None:
             return
         import trimesh as _tm
-        self._cancel_mesh_prep()
-        self.stop_auto_rotate()
-        corps = list(scene.geometry.values())
+        premiere = getattr(self, "_view_mode", "") != "carte"
+        corps = dict(scene.geometry)
         if not corps:
             return
-        fusion = _tm.util.concatenate(corps)
+        fusion = _tm.util.concatenate(list(corps.values()))
         self._mesh = fusion
-        self._pv_mesh_cache = None
         self._face_colors = None
         self._view_mode = "carte"
-        self._plotter.clear()
-        self._setup_lights()
-        self._add_build_plate(fusion)
-        # DÉCALAGE COMMUN à tous les corps (centrer la carte sur le plateau,
-        # base à z=0). CRITIQUE : placer chaque corps séparément (_place_on_plate)
-        # les recentrerait INDÉPENDAMMENT -> le texte, décalé sur la carte, était
-        # ramené au centre puis noyé dans le socle (« on ne voit rien »).
+        if premiere:
+            self._cancel_mesh_prep()
+            self.stop_auto_rotate()
+            self._plotter.clear()
+            self._setup_lights()
+            self._add_build_plate(fusion)
+            self._carte_actors = {}          # nom acteur -> index élément (drag)
+
+        # décalage COMMUN (centre la carte sur le plateau, base à z=0)
         b = fusion.bounds
         off = [-(b[0][0] + b[1][0]) / 2, -(b[0][1] + b[1][1]) / 2, -b[0][2]]
-        for i, g in enumerate(corps):
+        self._carte_offset = off
+        vus = set()
+        mapping = {}
+        for nom, g in corps.items():
             try:
                 col = g.visual.face_colors[0][:3] / 255.0
             except Exception:
                 col = (0.9, 0.9, 0.9)
             pvm = self._trimesh_to_pyvista(g)
             pvm.translate(off, inplace=True)
+            acteur = f"carte_{nom}"
             self._plotter.add_mesh(pvm, color=col, show_edges=False,
-                                   smooth_shading=False, name=f"carte_{i}")
-        fusion = fusion.copy()
-        fusion.apply_translation(off)
-        self.vue_dessus(fusion)
+                                   smooth_shading=False, name=acteur,
+                                   reset_camera=False)
+            vus.add(acteur)
+            if nom.startswith("el_"):
+                try:
+                    mapping[acteur] = int(nom[3:])
+                except ValueError:
+                    pass
+        # retirer les acteurs d'éléments SUPPRIMÉS depuis le dernier aperçu
+        for ancien in list(getattr(self, "_carte_actors", {})):
+            if ancien not in vus:
+                try:
+                    self._plotter.remove_actor(ancien, reset_camera=False)
+                except Exception:
+                    pass
+        self._carte_actors = mapping
+
+        if premiere:
+            fus = fusion.copy(); fus.apply_translation(off)
+            self.vue_dessus(fus)
+            self._install_carte_drag()
         self._plotter.render()
+
+    def quitter_mode_carte(self) -> None:
+        """À appeler quand on ferme l'éditeur de carte : réarme un affichage
+        normal au prochain chargement de pièce."""
+        self._view_mode = "normal"
+        self._carte_actors = {}
+
+    # ── Déplacement des éléments à la souris (drag) ──────────────────────────
+    def _install_carte_drag(self) -> None:
+        """Permet de DÉPLACER un élément de la carte à la souris (le socle, lui,
+        n'est pas déplaçable). Clic sur un élément -> glisser dans le plan de la
+        carte ; au relâcher, le décalage est renvoyé au panneau (signal
+        element_deplace) qui met à jour dx/dy de l'élément."""
+        if getattr(self, "_carte_drag_installe", False) or self._plotter is None:
+            return
+        try:
+            from vtkmodules.vtkRenderingCore import vtkPropPicker, vtkCoordinate
+        except Exception:
+            return
+        iren = getattr(self._plotter, "iren", None)
+        iren = getattr(iren, "interactor", None) if iren else None
+        if iren is None:
+            return
+        self._carte_drag = {"actif": False, "acteur": None, "idx": -1,
+                            "x0": 0.0, "y0": 0.0}
+        picker = vtkPropPicker()
+        ren = self._plotter.renderer
+
+        def _monde(x, y):
+            c = vtkCoordinate(); c.SetCoordinateSystemToDisplay()
+            c.SetValue(x, y, 0.0)
+            wx, wy, _wz = c.GetComputedWorldValue(ren)
+            return wx, wy
+
+        def _press(caller, ev):
+            try:
+                x, y = iren.GetEventPosition()
+                picker.Pick(x, y, 0, ren)
+                act = picker.GetActor()
+                nom = None
+                for n, a in self._plotter.actors.items():
+                    if a is act:
+                        nom = n
+                        break
+                idx = self._carte_actors.get(nom, -1) if nom else -1
+                if idx >= 0:
+                    wx, wy = _monde(x, y)
+                    self._carte_drag.update(actif=True, idx=idx, x0=wx, y0=wy)
+                    caller.SetAbortFlag(1)        # bloque l'orbite caméra
+            except Exception:
+                pass
+
+        def _release(caller, ev):
+            d = self._carte_drag
+            if d["actif"]:
+                try:
+                    x, y = iren.GetEventPosition()
+                    wx, wy = _monde(x, y)
+                    self.element_deplace.emit(d["idx"], wx - d["x0"], wy - d["y0"])
+                except Exception:
+                    pass
+                d["actif"] = False
+
+        iren.AddObserver("LeftButtonPressEvent", _press, 10.0)   # priorité > caméra
+        iren.AddObserver("LeftButtonReleaseEvent", _release, 10.0)
+        self._carte_drag_installe = True
 
     def vue_dessus(self, mesh=None) -> None:
         """Caméra pile au-dessus du plateau, regardant vers le bas — la carte

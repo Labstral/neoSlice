@@ -166,3 +166,31 @@ def construire(spec: CarteSpec):
         if coul not in couleurs:
             couleurs.append(coul)
     return scene, couleurs
+
+
+def construire_apercu(spec: CarteSpec):
+    """Aperçu ÉDITEUR : socle + UN corps par ÉLÉMENT (non fusionnés par couleur),
+    nommés « socle » et « el_<i> » (<i> = index dans spec.elements). Permet au
+    viewer de mettre à jour/piquer/déplacer chaque élément indépendamment (drag),
+    sans reconstruire toute la scène (pas de clignotement). L'EXPORT continue
+    d'utiliser construire() (fusion par couleur = slots de filament)."""
+    scene = trimesh.Scene()
+    base = union_solides(_extruder(_socle_2d(spec), spec.ep))
+    base.visual.face_colors = _hex_rgba(spec.couleur_base)
+    scene.add_geometry(base, node_name="socle", geom_name="socle")
+    for i, el in enumerate(spec.elements):
+        mp = _forme_element(el, spec)
+        if mp is None:
+            continue
+        mp = _placer(mp, spec, el)
+        if mp.is_empty:
+            continue
+        r = max(0.3, float(el.relief))
+        solides = [m for g in (mp.geoms if isinstance(mp, MultiPolygon) else [mp])
+                   if g.area > 0 for m in _extruder(g, r + CHEV, spec.ep - CHEV)]
+        if not solides:
+            continue
+        corps = union_solides(solides)
+        corps.visual.face_colors = _hex_rgba(el.couleur)
+        scene.add_geometry(corps, node_name=f"el_{i}", geom_name=f"el_{i}")
+    return scene
