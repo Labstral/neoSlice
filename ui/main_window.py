@@ -1967,63 +1967,38 @@ class MainWindow(QMainWindow):
             self._show_params_panel()
 
     def _exporter_carte_litho(self, spec):
-        """Variante LITHOPHANIE : la carte devient une plaque translucide
-        monomatière (couleurs ignorées) préparée avec le profil d'impression
-        lithophanie — mêmes réglages que l'option lithophanie de neoGen."""
-        self._exporter_carte(spec, [], litho=True)
+        """Variante LITHOPHANIE : la carte est injectée dans la scène comme une
+        pièce déposée, en matière unique + profil lithophanie automatique."""
+        self._charger_carte_dans_scene(spec, litho=True)
 
-    def _exporter_carte(self, spec, couleurs, litho: bool = False):
-        """Exporte la carte : 3MF avec les couleurs choisies posées en slots de
-        filament (le slicer ouvre la carte avec la bonne palette). En mode
-        lithophanie, une seule matière + profil lithophanie, sans slots couleur."""
-        from PySide6.QtWidgets import QFileDialog
-        from PySide6.QtCore import QStandardPaths
-        import trimesh as _tm
+    def _exporter_carte(self, spec, couleurs=None, litho: bool = False):
+        """« Exporter la carte » : au lieu d'un export direct (qui produisait un
+        3MF illisible), on INJECTE la carte dans la scène comme si on avait glissé
+        un fichier. L'utilisateur choisit ensuite imprimante/filament/paramètres
+        puis « Générer le 3MF » → export correct par le pipeline habituel
+        (multicouleur préservé via les corps du 3MF, ou lithophanie)."""
+        self._charger_carte_dans_scene(spec, litho=litho)
+
+    def _charger_carte_dans_scene(self, spec, litho: bool = False):
         panel = getattr(self, "_carte_panel", None)
         try:
-            if litho:
-                # Lithophanie = une seule matière translucide : on retire TOUTES les
-                # couleurs (fond + éléments) → un seul slot, pas de palette. On
-                # travaille sur une COPIE (l'éditeur garde le design couleur intact).
-                import copy as _copy
-                spec = _copy.deepcopy(spec)
-                spec.couleur_base = "#FFFFFF"
-                for _el in spec.elements:
-                    _el.couleur = "#FFFFFF"
-            scene, _c = __import__("core.neogen.carte_visite", fromlist=["construire"]).construire(spec)
-            fusion = _tm.util.concatenate(list(scene.geometry.values()))
-            _dl = QStandardPaths.writableLocation(
-                QStandardPaths.StandardLocation.DownloadLocation)
-            _nom = "carte_lithophanie_neoslice.3mf" if litho else "carte_visite_neoslice.3mf"
-            defaut = str(Path(_dl or str(Path.home())) / _nom)
-            out, _f = QFileDialog.getSaveFileName(
-                self, "Enregistrer la carte (.3mf)", defaut, "Fichiers 3MF (*.3mf)")
-            if not out:
-                return
-            from core.export.tmf_builder import ThreeMFBuilder
-            printer = getattr(self, "_current_printer", "") or "X1 Carbon"
-            nozzle = getattr(self, "_current_nozzle_mm", 0.4)
-            from core.parameters.print_config import PrintConfig
-            config = PrintConfig()
-            if litho:
-                from core.parameters.parameter_engine import appliquer_profil_lithophanie
-                config = appliquer_profil_lithophanie(config)
-            ThreeMFBuilder().build(fusion, config, Path(out),
-                                   object_name="Carte lithophanie" if litho else "Carte de visite",
-                                   printer_ui_name=printer, nozzle_diameter_mm=nozzle)
-            if litho:
-                # Lithophanie = monomatière : pas de patch multicouleur (un seul slot).
-                if panel:
-                    panel.set_statut("✓ " + _("carte.litho_exported"))
-            else:
-                from core.export.color_patch import patch_filament_colours
-                patch_filament_colours(out, couleurs)
-                if panel:
-                    panel.set_statut("✓ " + _("carte.exported", n=len(couleurs)))
+            from core.neogen.carte_visite import generer_fichier_carte
+            chemin = generer_fichier_carte(spec, litho=litho)
         except Exception as exc:
-            logger.exception("Export carte échoué")
+            logger.exception("Préparation carte échouée")
             if panel:
                 panel.set_statut("⚠ " + _("carte.export_err", msg=str(exc)[:80]))
+            return
+        # Quitter l'éditeur de carte + rendre la colonne aux paramètres, puis
+        # charger la pièce dans le pipeline normal (analyse, intention, export).
+        try:
+            self._viewer.quitter_mode_carte()
+        except Exception:
+            pass
+        self._show_params_panel()
+        self._on_stl_dropped(Path(chemin))
+        if panel:
+            panel.set_statut("✓ " + _("carte.dans_scene"))
 
     def _show_params_panel(self):
         """Rend la colonne de droite aux paramètres générés (état normal)."""

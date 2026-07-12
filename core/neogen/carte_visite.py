@@ -194,3 +194,32 @@ def construire_apercu(spec: CarteSpec):
         corps.visual.face_colors = _hex_rgba(el.couleur)
         scene.add_geometry(corps, node_name=f"el_{i}", geom_name=f"el_{i}")
     return scene
+
+
+def generer_fichier_carte(spec: CarteSpec, litho: bool = False):
+    """Écrit la carte dans le dossier de sorties neoGen et renvoie le Path (.3mf)
+    à CHARGER dans le pipeline normal (comme une pièce déposée). L'export final
+    correct (imprimante/filament/paramètres → « Générer le 3MF ») est ensuite fait
+    par le pipeline habituel, pas ici.
+
+    En lithophanie : les couleurs sont retirées (matière unique translucide) et le
+    fichier est nommé « lithophanie… » pour que l'app applique automatiquement son
+    profil d'impression lithophanie au chargement."""
+    import copy
+    import trimesh
+    from core.neogen.pilote import DOSSIER_SORTIES
+    if litho:
+        spec = copy.deepcopy(spec)
+        spec.couleur_base = "#FFFFFF"
+        for el in spec.elements:
+            el.couleur = "#FFFFFF"
+    scene, _couleurs = construire(spec)
+    DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
+    base = DOSSIER_SORTIES / ("lithophanie_carte" if litho else "carte_visite")
+    try:
+        scene.export(base.with_suffix(".3mf"))   # multi-corps → slots couleur
+        return base.with_suffix(".3mf")
+    except Exception:
+        fusion = trimesh.util.concatenate(list(scene.geometry.values()))
+        fusion.export(base.with_suffix(".stl"))
+        return base.with_suffix(".stl")
