@@ -179,6 +179,8 @@ class Viewer3D(QWidget):
     # index élément sélectionné dans le viewer (-1 = désélection) — encadre la
     # section correspondante dans l'éditeur de carte
     element_selectionne = Signal(int)
+    # touche Suppr sur un élément sélectionné → le supprimer de l'éditeur
+    element_suppr_demande = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -812,6 +814,17 @@ class Viewer3D(QWidget):
                     self._reposition_strands()      # suivi immédiat (sinon)
         if obj is self._plotter:
             t = event.type()
+            # Touche Suppr en mode carte avec un élément sélectionné → suppression.
+            if t == QEvent.KeyPress and getattr(self, "_carte_drag_mode", False):
+                from PySide6.QtCore import Qt as _Qt
+                if event.key() == _Qt.Key_Delete:
+                    sel = getattr(self, "_carte_sel", None)
+                    idx = getattr(self, "_carte_actors", {}).get(sel) if sel else None
+                    if idx is not None:
+                        self._surligner_carte(sel, False)   # retire la silhouette
+                        self._carte_sel = None
+                        self.element_suppr_demande.emit(idx)
+                        return True
             # Déplacement d'un élément de carte : press/move/release Qt (release
             # FIABLE). Si un drag est en cours, on CONSOMME l'événement (True)
             # pour empêcher l'orbite caméra.
@@ -1738,6 +1751,8 @@ class Viewer3D(QWidget):
         self._carte_drag_mode = True
         try:
             self._plotter.installEventFilter(self)   # (idempotent dans Qt)
+            from PySide6.QtCore import Qt as _Qt
+            self._plotter.setFocusPolicy(_Qt.StrongFocus)   # reçoit la touche Suppr
         except Exception:
             pass
 
@@ -1816,6 +1831,7 @@ class Viewer3D(QWidget):
                           last=self._carte_world_xy(pos), tot=[0.0, 0.0])
                 try:
                     self.element_selectionne.emit(idx)   # encadre la section
+                    self._plotter.setFocus()             # pour recevoir Suppr
                 except Exception:
                     pass
                 self._plotter.render()

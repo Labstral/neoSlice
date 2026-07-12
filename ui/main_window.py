@@ -1947,6 +1947,8 @@ class MainWindow(QMainWindow):
             self._viewer.element_deplace.connect(panel.deplacer_element)
             # clic sur un élément (viewer) -> encadre sa section dans la colonne
             self._viewer.element_selectionne.connect(panel.surligner_element)
+            # touche Suppr sur un élément sélectionné -> le supprimer
+            self._viewer.element_suppr_demande.connect(panel.supprimer_element)
             # fermeture (✕) : revenir au panneau neoGen (la carte vient de
             # Personnalisation), pas aux paramètres
             panel.close_requested.connect(self._open_neogen_depuis_carte)

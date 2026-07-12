@@ -675,6 +675,12 @@ class CartePanel(QWidget):
             ed.sp_dx.setValue(ed.sp_dx.value() + dx)
             ed.sp_dy.setValue(ed.sp_dy.value() + dy)
 
+    def supprimer_element(self, index: int):
+        """Reçu du viewer quand on presse Suppr avec un élément sélectionné :
+        retire l'éditeur correspondant."""
+        if 0 <= index < len(self._editeurs):
+            self._retirer(self._editeurs[index])
+
     def surligner_element(self, index: int):
         """Reçu du viewer au clic sur un élément de la carte : encadre la section
         correspondante dans la colonne (et la fait défiler à vue). index=-1 → aucune."""
