@@ -19461,5 +19461,77 @@
   "slicers": [
    "elegoo"
   ]
+ },
+ "Anycubic Kobra 3 V2 0.2 nozzle": {
+  "marque": "Anycubic",
+  "name": "Anycubic Kobra 3 V2 0.2 nozzle",
+  "printer_model": "Anycubic Kobra 3 V2",
+  "printer_settings_id": "Anycubic Kobra 3 V2 0.2 nozzle",
+  "nozzle_diameter": "0.2",
+  "printer_variant": "0.2",
+  "bed_size": "255×255",
+  "printable_height": "260",
+  "max_speed_mms": 600,
+  "max_accel_mms2": 20000,
+  "gcode_flavor": "klipper",
+  "default_print_profile": "0.10mm Standard @Anycubic Kobra 3 V2 0.2 nozzle",
+  "default_filament_profile": "Anycubic PLA @Anycubic Kobra 3 V2 0.2 nozzle",
+  "slicers": [
+   "anycubic"
+  ]
+ },
+ "Anycubic Kobra 3 V2 0.4 nozzle": {
+  "marque": "Anycubic",
+  "name": "Anycubic Kobra 3 V2 0.4 nozzle",
+  "printer_model": "Anycubic Kobra 3 V2",
+  "printer_settings_id": "Anycubic Kobra 3 V2 0.4 nozzle",
+  "nozzle_diameter": "0.4",
+  "printer_variant": "0.4",
+  "bed_size": "255×255",
+  "printable_height": "260",
+  "max_speed_mms": 600,
+  "max_accel_mms2": 20000,
+  "gcode_flavor": "klipper",
+  "default_print_profile": "0.20mm Standard @Anycubic Kobra 3 V2 0.4 nozzle",
+  "default_filament_profile": "Anycubic PLA @Anycubic Kobra 3 V2 0.4 nozzle",
+  "slicers": [
+   "anycubic"
+  ]
+ },
+ "Anycubic Kobra 3 V2 0.6 nozzle": {
+  "marque": "Anycubic",
+  "name": "Anycubic Kobra 3 V2 0.6 nozzle",
+  "printer_model": "Anycubic Kobra 3 V2",
+  "printer_settings_id": "Anycubic Kobra 3 V2 0.6 nozzle",
+  "nozzle_diameter": "0.6",
+  "printer_variant": "0.6",
+  "bed_size": "255×255",
+  "printable_height": "260",
+  "max_speed_mms": 600,
+  "max_accel_mms2": 20000,
+  "gcode_flavor": "klipper",
+  "default_print_profile": "0.30mm Standard @Anycubic Kobra 3 V2 0.6 nozzle",
+  "default_filament_profile": "Anycubic PLA @Anycubic Kobra 3 V2 0.6 nozzle",
+  "slicers": [
+   "anycubic"
+  ]
+ },
+ "Anycubic Kobra 3 V2 0.8 nozzle": {
+  "marque": "Anycubic",
+  "name": "Anycubic Kobra 3 V2 0.8 nozzle",
+  "printer_model": "Anycubic Kobra 3 V2",
+  "printer_settings_id": "Anycubic Kobra 3 V2 0.8 nozzle",
+  "nozzle_diameter": "0.8",
+  "printer_variant": "0.8",
+  "bed_size": "255×255",
+  "printable_height": "260",
+  "max_speed_mms": 600,
+  "max_accel_mms2": 20000,
+  "gcode_flavor": "klipper",
+  "default_print_profile": "0.40mm Standard @Anycubic Kobra 3 V2 0.8 nozzle",
+  "default_filament_profile": "Anycubic PLA @Anycubic Kobra 3 V2 0.8 nozzle",
+  "slicers": [
+   "anycubic"
+  ]
  }
 }

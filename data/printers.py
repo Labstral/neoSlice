@@ -339,16 +339,32 @@ def _brand_sort_key(b: str):
     return (prio.index(b) if b in prio else len(prio), b.lower())
 
 
+def _slicer_supported(slicer: str, entry_slicers, marque: str) -> bool:
+    """Un modèle est-il proposé pour ce slicer de sortie ?
+
+    Anycubic Slicer (Next) et Snapmaker Orca sont des forks d'OrcaSlicer :
+      • snapmaker embarque TOUTE la bibliothèque OrcaSlicer → disponibilité « orca » ;
+      • anycubic n'embarque que le vendor Anycubic → marque Anycubic uniquement,
+        + les modèles tagués « anycubic » absents d'OrcaSlicer (ex. Kobra 3 V2)."""
+    es = entry_slicers or []
+    if slicer == "snapmaker":
+        return "orca" in es or "snapmaker" in es
+    if slicer == "anycubic":
+        return marque == "Anycubic" and ("orca" in es or "anycubic" in es)
+    return slicer in es
+
+
 def catalogue_brands(slicer: str = "orca") -> list[str]:
-    """Marques tierces ayant ≥1 modèle supporté par ce slicer (bambu/orca)."""
-    present = {v["marque"] for v in _by_model().values() if slicer in v["slicers"]}
+    """Marques tierces ayant ≥1 modèle supporté par ce slicer (bambu/orca/…)."""
+    present = {v["marque"] for v in _by_model().values()
+               if _slicer_supported(slicer, v["slicers"], v["marque"])}
     return sorted(present, key=_brand_sort_key)
 
 
 def models_for_brand(brand: str, slicer: str = "orca") -> list[tuple[str, str]]:
     """[(libellé affiché, model_key)] triés, pour une marque et un slicer donnés."""
     items = [(v["display"], mk) for mk, v in _by_model().items()
-             if v["marque"] == brand and slicer in v["slicers"]]
+             if v["marque"] == brand and _slicer_supported(slicer, v["slicers"], v["marque"])]
     return sorted(items, key=lambda t: t[0].lower())
 
 

@@ -1394,7 +1394,9 @@ def _slicer_name() -> str:
     return _({"orca": "settings.slicer_orca",
               "prusa": "settings.slicer_prusa",
               "creality": "settings.slicer_creality",
-              "elegoo": "settings.slicer_elegoo"}.get(sl, "settings.slicer_bambu"))
+              "elegoo": "settings.slicer_elegoo",
+              "anycubic": "settings.slicer_anycubic",
+              "snapmaker": "settings.slicer_snapmaker"}.get(sl, "settings.slicer_bambu"))
 
 
 def _coffee_icon():
@@ -3655,7 +3657,9 @@ class MainWindow(QMainWindow):
         _btn_open_key = {"prusa": "export.btn_prusa",
                          "orca": "export.btn_orca",
                          "creality": "export.btn_creality",
-                         "elegoo": "export.btn_elegoo"}.get(_slicer_sel, "export.btn_bambu")
+                         "elegoo": "export.btn_elegoo",
+                         "anycubic": "export.btn_anycubic",
+                         "snapmaker": "export.btn_snapmaker"}.get(_slicer_sel, "export.btn_bambu")
         btn_bambu = QPushButton(_(_btn_open_key))
         btn_bambu.setIcon(_make_printer_icon())
         btn_bambu.setIconSize(QSize(18, 18))

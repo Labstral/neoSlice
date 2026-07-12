@@ -514,6 +514,11 @@ _ELEGOO_APP_VERSION = "1.5.2.2"
 # projet → plus de popup « Le fichier 3MF a été créé par BambuStudio ». Il garde les
 # clés/headers Bambu (qu'il lit nativement) → slice_info=None, pas de fichier dédié.
 _ORCA_APP_VERSION = "02.03.00.58"
+# Forks OrcaSlicer supplémentaires installés localement (producteurs relevés dans
+# leurs .conf : AnycubicSlicerNext v1.4.1.2, Snapmaker_Orca v01.10.01.50). Avec ce
+# producteur, chaque fork ouvre le 3MF comme SON projet (comme Elegoo/Orca).
+_ANYCUBIC_APP_VERSION = "1.4.1.2"
+_SNAPMAKER_APP_VERSION = "01.10.01.50"
 
 
 def _creality_config_xml() -> str:
@@ -560,6 +565,20 @@ def _slicer_branding() -> dict:
         # « créé par BambuStudio »). Clés Bambu conservées (Orca les lit).
         return {
             "application": f"OrcaSlicer-{_ORCA_APP_VERSION}",
+            "slice_info": None,
+            "extra_files": {},
+        }
+    if slicer == "anycubic":
+        # Anycubic Slicer (Next) = fork OrcaSlicer → producteur AnycubicSlicerNext.
+        return {
+            "application": f"AnycubicSlicerNext-{_ANYCUBIC_APP_VERSION}",
+            "slice_info": None,
+            "extra_files": {},
+        }
+    if slicer == "snapmaker":
+        # Snapmaker Orca = fork OrcaSlicer (bibliothèque Orca complète).
+        return {
+            "application": f"Snapmaker_Orca-{_SNAPMAKER_APP_VERSION}",
             "slice_info": None,
             "extra_files": {},
         }
