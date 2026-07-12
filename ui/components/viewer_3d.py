@@ -1639,7 +1639,9 @@ class Viewer3D(QWidget):
             self._add_build_plate(fusion)
             self._carte_actors = {}          # nom acteur -> index élément (drag)
             self._carte_vtk = {}             # nom acteur -> vtkActor (matching pick)
+            self._carte_pv = {}              # nom acteur -> pyvista mesh (silhouette)
             self._carte_sel = None           # nom de l'élément sélectionné
+            self._carte_sil = None           # acteur de silhouette (surbrillance)
 
         # décalage COMMUN (centre la carte sur le plateau, base à z=0)
         b = fusion.bounds
@@ -1663,6 +1665,7 @@ class Viewer3D(QWidget):
                 try:
                     mapping[acteur] = int(nom[3:])
                     self._carte_vtk[acteur] = _a       # vtkActor pour le pick
+                    self._carte_pv[acteur] = pvm       # mesh pour la silhouette
                 except ValueError:
                     pass
                 # ré-applique la surbrillance si c'est l'élément sélectionné
@@ -1689,20 +1692,36 @@ class Viewer3D(QWidget):
         self._view_mode = "normal"
         self._carte_actors = {}
         self._carte_drag_mode = False
+        if getattr(self, "_carte_sel", None):
+            self._surligner_carte(self._carte_sel, False)   # retire la silhouette
         self._carte_sel = None
 
     # ── Sélection + déplacement des éléments à la souris ─────────────────────
     def _surligner_carte(self, nom: str, on: bool) -> None:
-        """Surbrillance d'un élément de carte : contour cyan épais."""
-        a = getattr(self, "_carte_vtk", {}).get(nom)
-        if a is None:
+        """Surbrillance = SILHOUETTE (contour extérieur uniquement) en cyan. Pas
+        d'arêtes sur l'élément lui-même (SetEdgeVisibility traçait toutes les
+        arêtes des triangles -> traits partout sur les lettres)."""
+        # retire la silhouette précédente
+        sil = getattr(self, "_carte_sil", None)
+        if sil is not None:
+            try:
+                self._plotter.remove_actor(sil, reset_camera=False)
+            except Exception:
+                pass
+            self._carte_sil = None
+        if not on:
+            return
+        pvm = getattr(self, "_carte_pv", {}).get(nom)
+        if pvm is None:
             return
         try:
-            p = a.GetProperty()
-            p.SetEdgeVisibility(bool(on))
-            if on:
-                p.SetEdgeColor(0.13, 0.83, 0.93)
-                p.SetLineWidth(3)
+            self._carte_sil = self._plotter.add_silhouette(
+                pvm, color=(0.13, 0.83, 0.93), line_width=4, feature_angle=False)
+            # aligne la silhouette sur la position COURANTE de l'élément (utile
+            # si l'élément a été déplacé via AddPosition pendant un drag)
+            a = getattr(self, "_carte_vtk", {}).get(nom)
+            if a is not None and self._carte_sil is not None:
+                self._carte_sil.SetPosition(a.GetPosition())
         except Exception:
             pass
 
@@ -1800,6 +1819,9 @@ class Viewer3D(QWidget):
             a = getattr(self, "_carte_vtk", {}).get(st["nom"])
             if a is not None:
                 a.AddPosition(dx, dy, 0.0)
+                sil = getattr(self, "_carte_sil", None)
+                if sil is not None:
+                    sil.AddPosition(dx, dy, 0.0)     # le contour suit l'élément
                 st["tot"][0] += dx; st["tot"][1] += dy
                 st["last"] = (wx, wy)
                 self._plotter.render()
