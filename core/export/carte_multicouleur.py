@@ -169,14 +169,58 @@ def build_carte_multicouleur(spec, config, output_path: Path,
     return output_path
 
 
+def _prusa_model_config_multi(ranges, name: str) -> str:
+    """Slic3r_PE_model.config : un objet à N VOLUMES (plages de triangles), chaque
+    volume assigné à un extrudeur → PrusaSlicer ouvre la carte en multi-matière."""
+    vols = []
+    for i, (a, b) in enumerate(ranges):
+        vols.append(
+            f'  <volume firstid="{a}" lastid="{b}">\n'
+            f'   <metadata type="volume" key="name" value="couleur_{i+1}"/>\n'
+            f'   <metadata type="volume" key="volume_type" value="ModelPart"/>\n'
+            f'   <metadata type="volume" key="extruder" value="{i+1}"/>\n'
+            f'   <metadata type="volume" key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n'
+            f'  </volume>')
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n<config>\n'
+            f' <object id="1" instances_count="1">\n'
+            f'  <metadata type="object" key="name" value="{name}"/>\n'
+            + "\n".join(vols) + "\n </object>\n</config>")
+
+
+def _prusa_add_colors(pc: str, couleurs: list[str]) -> str:
+    cols = ";".join(couleurs)
+    lines = [l for l in pc.split("\n")
+             if not l.strip().startswith("; extruder_colour")
+             and not l.strip().startswith("; filament_colour")]
+    lines.append(f"; extruder_colour = {cols}")
+    lines.append(f"; filament_colour = {cols}")
+    return "\n".join(lines)
+
+
 def _build_prusa(spec, config, output_path, printer_ui_name, filament_ui_name,
                  nozzle_diameter_mm, bodies, couleurs, combined) -> Path:
-    """PrusaSlicer : 3MF Prusa mono-objet valide, puis on injecte l'assignation
-    d'extrudeur par volume (Prusa lit `<volume>` + `slic3rpe:mmu_segmentation` /
-    `extruder`). On reste simple : un objet à N volumes, extruder par volume."""
+    """PrusaSlicer : 3MF Prusa mono-objet valide, puis on remplace le volume unique
+    par N volumes (une plage de triangles par couleur) assignés à un extrudeur, et
+    on pose la palette extruder_colour/filament_colour."""
     from core.export.prusa_3mf_builder import PrusaThreeMFBuilder
+    # plages de triangles par corps (combined = concaténation dans cet ordre)
+    ranges = []
+    start = 0
+    for m, _h in bodies:
+        n = len(m.faces)
+        ranges.append((start, start + n - 1))
+        start += n
     PrusaThreeMFBuilder().build(mesh=combined, config=config, output_path=output_path,
                                 printer_ui_name=printer_ui_name,
                                 filament_ui_name=filament_ui_name,
                                 nozzle_diameter_mm=nozzle_diameter_mm)
+    with zipfile.ZipFile(output_path) as z:
+        data = {n: z.read(n) for n in z.namelist()}
+    data["Metadata/Slic3r_PE_model.config"] = _prusa_model_config_multi(
+        ranges, "Carte de visite").encode("utf-8")
+    pc = data["Metadata/Slic3r_PE.config"].decode("utf-8")
+    data["Metadata/Slic3r_PE.config"] = _prusa_add_colors(pc, couleurs).encode("utf-8")
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for n, b in data.items():
+            z.writestr(n, b)
     return output_path
