@@ -806,6 +806,12 @@ class _TopBar(QWidget):
     def set_has_stl(self, active: bool):
         self._new_btn.setEnabled(active)
 
+    def set_new_enabled(self, enabled: bool):
+        """Active « NOUVELLE PIÈCE » indépendamment du chargement d'un STL :
+        dans neoGen / l'éditeur de carte, on veut pouvoir réinitialiser la
+        scène de PARTOUT, même sans pièce déjà chargée."""
+        self._new_btn.setEnabled(enabled)
+
     def refresh_pro(self) -> None:
         """Bascule l'UI Pro selon l'état de la licence.
 
@@ -1918,6 +1924,7 @@ class MainWindow(QMainWindow):
         self._right_scroll.takeWidget()        # détache SANS détruire
         self._right_scroll.setWidget(panel)
         self._right_scroll.setFixedWidth(400)  # un peu plus large pour le confort
+        self._topbar.set_new_enabled(True)     # « Nouvelle pièce » actif dans neoGen
 
     def _open_carte(self):
         """Bascule la colonne de droite vers le personnalisateur de carte de
@@ -1941,6 +1948,7 @@ class MainWindow(QMainWindow):
         self._right_scroll.takeWidget()
         self._right_scroll.setWidget(panel)
         self._right_scroll.setFixedWidth(400)
+        self._topbar.set_new_enabled(True)     # « Nouvelle pièce » actif sur la carte
         panel._planifier_apercu()              # (re)génère l'aperçu courant
 
     def _open_neogen_depuis_carte(self):
@@ -1954,6 +1962,7 @@ class MainWindow(QMainWindow):
             self._right_scroll.takeWidget()
             self._right_scroll.setWidget(panel)
             self._right_scroll.setFixedWidth(400)
+            self._topbar.set_new_enabled(True)
         else:
             self._show_params_panel()
 
@@ -2020,6 +2029,9 @@ class MainWindow(QMainWindow):
         """Rend la colonne de droite aux paramètres générés (état normal)."""
         if not hasattr(self, "_right_scroll"):
             return
+        # De retour aux paramètres : « Nouvelle pièce » ne reste actif que si une
+        # pièce est réellement chargée (sinon rien à réinitialiser).
+        self._topbar.set_new_enabled(getattr(self, "_mesh", None) is not None)
         if self._right_scroll.widget() is self._params_preview:
             return
         self._right_scroll.takeWidget()
@@ -2823,12 +2835,21 @@ class MainWindow(QMainWindow):
         self._pending_diag_result = None   # nouvelle pièce → diagnostic obsolète
 
         self._viewer.stop_auto_rotate()
+        # Quitter un éventuel mode carte/neoGen : coupe le drag d'éléments et
+        # réarme l'affichage normal avant d'effacer la scène.
+        try:
+            self._viewer.quitter_mode_carte()
+        except Exception:
+            pass
         self._viewer.reset()
         self._analysis_panel.reset()
         self._drop_zone.reset()
         self._intent_selector.set_locked(True)
         self._intent_selector.reset_selection()
         self._params_preview.reset()
+        # Revenir à la colonne des paramètres (referme neoGen / l'éditeur de carte
+        # s'ils étaient ouverts) → scène réinitialisée de PARTOUT.
+        self._show_params_panel()
 
         self._step_stl.set_pending()
         self._step_intent.set_pending()
