@@ -1928,6 +1928,7 @@ class MainWindow(QMainWindow):
             panel = CartePanel()
             panel.apercu_pret.connect(self._viewer.afficher_carte)
             panel.exporter_demande.connect(self._exporter_carte)
+            panel.exporter_litho_demande.connect(self._exporter_carte_litho)
             # déplacement d'un élément à la souris (viewer) -> maj dx/dy panneau
             self._viewer.element_deplace.connect(panel.deplacer_element)
             # fermeture (✕) : revenir au panneau neoGen (la carte vient de
@@ -1956,19 +1957,36 @@ class MainWindow(QMainWindow):
         else:
             self._show_params_panel()
 
-    def _exporter_carte(self, spec, couleurs):
+    def _exporter_carte_litho(self, spec):
+        """Variante LITHOPHANIE : la carte devient une plaque translucide
+        monomatière (couleurs ignorées) préparée avec le profil d'impression
+        lithophanie — mêmes réglages que l'option lithophanie de neoGen."""
+        self._exporter_carte(spec, [], litho=True)
+
+    def _exporter_carte(self, spec, couleurs, litho: bool = False):
         """Exporte la carte : 3MF avec les couleurs choisies posées en slots de
-        filament (le slicer ouvre la carte avec la bonne palette)."""
+        filament (le slicer ouvre la carte avec la bonne palette). En mode
+        lithophanie, une seule matière + profil lithophanie, sans slots couleur."""
         from PySide6.QtWidgets import QFileDialog
         from PySide6.QtCore import QStandardPaths
         import trimesh as _tm
         panel = getattr(self, "_carte_panel", None)
         try:
+            if litho:
+                # Lithophanie = une seule matière translucide : on retire TOUTES les
+                # couleurs (fond + éléments) → un seul slot, pas de palette. On
+                # travaille sur une COPIE (l'éditeur garde le design couleur intact).
+                import copy as _copy
+                spec = _copy.deepcopy(spec)
+                spec.couleur_base = "#FFFFFF"
+                for _el in spec.elements:
+                    _el.couleur = "#FFFFFF"
             scene, _c = __import__("core.neogen.carte_visite", fromlist=["construire"]).construire(spec)
             fusion = _tm.util.concatenate(list(scene.geometry.values()))
             _dl = QStandardPaths.writableLocation(
                 QStandardPaths.StandardLocation.DownloadLocation)
-            defaut = str(Path(_dl or str(Path.home())) / "carte_visite_neoslice.3mf")
+            _nom = "carte_lithophanie_neoslice.3mf" if litho else "carte_visite_neoslice.3mf"
+            defaut = str(Path(_dl or str(Path.home())) / _nom)
             out, _f = QFileDialog.getSaveFileName(
                 self, "Enregistrer la carte (.3mf)", defaut, "Fichiers 3MF (*.3mf)")
             if not out:
@@ -1977,13 +1995,22 @@ class MainWindow(QMainWindow):
             printer = getattr(self, "_current_printer", "") or "X1 Carbon"
             nozzle = getattr(self, "_current_nozzle_mm", 0.4)
             from core.parameters.print_config import PrintConfig
-            ThreeMFBuilder().build(fusion, PrintConfig(), Path(out),
-                                   object_name="Carte de visite",
+            config = PrintConfig()
+            if litho:
+                from core.parameters.parameter_engine import appliquer_profil_lithophanie
+                config = appliquer_profil_lithophanie(config)
+            ThreeMFBuilder().build(fusion, config, Path(out),
+                                   object_name="Carte lithophanie" if litho else "Carte de visite",
                                    printer_ui_name=printer, nozzle_diameter_mm=nozzle)
-            from core.export.color_patch import patch_filament_colours
-            patch_filament_colours(out, couleurs)
-            if panel:
-                panel.set_statut("✓ " + _("carte.exported", n=len(couleurs)))
+            if litho:
+                # Lithophanie = monomatière : pas de patch multicouleur (un seul slot).
+                if panel:
+                    panel.set_statut("✓ " + _("carte.litho_exported"))
+            else:
+                from core.export.color_patch import patch_filament_colours
+                patch_filament_colours(out, couleurs)
+                if panel:
+                    panel.set_statut("✓ " + _("carte.exported", n=len(couleurs)))
         except Exception as exc:
             logger.exception("Export carte échoué")
             if panel:

@@ -254,6 +254,7 @@ class CartePanel(QWidget):
 
     apercu_pret = Signal(object)        # trimesh.Scene
     exporter_demande = Signal(object, object)   # (CarteSpec, couleurs)
+    exporter_litho_demande = Signal(object)     # (CarteSpec) — carte en lithophanie
     close_requested = Signal()
 
     def __init__(self, parent=None):
@@ -373,6 +374,27 @@ class CartePanel(QWidget):
             f"none; border-radius: 6px; font-weight: bold; }}")
         self.btn_export.clicked.connect(self._exporter)
         root.addWidget(self.btn_export)
+
+        # Conversion lithophanie : même carte, mais préparée comme une plaque
+        # translucide monomatière (l'épaisseur des reliefs donne le rendu
+        # rétroéclairé) + profil d'impression lithophanie (100 % / 4 parois / fin).
+        self.btn_litho = QPushButton(_fr("Convertir en lithophanie",
+                                         "Convert to lithophane"))
+        self.btn_litho.setMinimumHeight(30)
+        self.btn_litho.setCursor(Qt.PointingHandCursor)
+        self.btn_litho.setStyleSheet(
+            f"QPushButton {{ background: {pal['BG_ELEVATED']}; color: "
+            f"{pal['TEXT_PRIMARY']}; border: 1px solid {PRO_CYAN}; "
+            f"border-radius: 6px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: rgba(34,211,238,0.15); }}")
+        self.btn_litho.setToolTip(_fr(
+            "Prépare un .3MF lithophanie : une seule matière translucide + "
+            "réglages d'impression lithophanie (à imprimer en PLA blanc/naturel).",
+            "Prepares a lithophane .3MF: a single translucent material + "
+            "lithophane print settings (print in white/natural PLA)."))
+        self.btn_litho.clicked.connect(self._exporter_litho)
+        root.addWidget(self.btn_litho)
+
         self._statut = QLabel("")
         self._statut.setWordWrap(True)
         self._statut.setStyleSheet(
@@ -445,6 +467,16 @@ class CartePanel(QWidget):
             spec = self._spec()
             _scene, couleurs = CV.construire(spec)
             self.exporter_demande.emit(spec, couleurs)
+        except Exception as exc:
+            self._statut.setText("⚠ " + str(exc)[:80])
+
+    def _exporter_litho(self):
+        """Exporte la carte en LITHOPHANIE : monomatière + profil lithophanie
+        (la couleur des éléments est ignorée à l'impression, seul l'effet
+        d'épaisseur rétroéclairé compte)."""
+        try:
+            spec = self._spec()
+            self.exporter_litho_demande.emit(spec)
         except Exception as exc:
             self._statut.setText("⚠ " + str(exc)[:80])
 
