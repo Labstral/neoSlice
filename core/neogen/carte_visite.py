@@ -284,6 +284,36 @@ def construire_lithophanie(spec: CarteSpec, ep_base: float = 0.8,
     return mesh
 
 
+def rendre_carte_image(spec: CarteSpec, chemin, px_par_mm: float = 8.0):
+    """Rasterise le DESIGN de la carte en niveaux de gris (fond blanc = fin/clair,
+    éléments noirs = épais/foncés) → image source pour la LITHOPHANIE standard
+    (menu « Photo en relief / lithophanie » avec tous ses réglages)."""
+    from PIL import Image, ImageDraw
+    W = max(2, int(round(spec.largeur * px_par_mm)))
+    H = max(2, int(round(spec.hauteur * px_par_mm)))
+    img = Image.new("L", (W, H), 255)
+    draw = ImageDraw.Draw(img)
+
+    def _px(pt):
+        x, y = pt[0], pt[1]
+        return ((x + spec.largeur / 2.0) * px_par_mm,
+                (spec.hauteur / 2.0 - y) * px_par_mm)
+
+    for el in spec.elements:
+        mp = _forme_element(el, spec)
+        if mp is None:
+            continue
+        mp = _placer(mp, spec, el)
+        for g in (mp.geoms if isinstance(mp, MultiPolygon) else [mp]):
+            if g.is_empty or g.area <= 0:
+                continue
+            draw.polygon([_px(p) for p in g.exterior.coords], fill=0)
+            for ring in g.interiors:
+                draw.polygon([_px(p) for p in ring.coords], fill=255)
+    img.save(str(chemin))
+    return chemin
+
+
 def generer_fichier_carte(spec: CarteSpec, litho: bool = False,
                           litho_params: dict | None = None):
     """Écrit la carte dans le dossier de sorties neoGen et renvoie le Path (.3mf)

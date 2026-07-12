@@ -452,7 +452,7 @@ class CartePanel(QWidget):
 
     apercu_pret = Signal(object)        # trimesh.Scene
     exporter_demande = Signal(object, object)   # (CarteSpec, couleurs)
-    exporter_litho_demande = Signal(object, object)   # (CarteSpec, params litho)
+    convertir_litho_demande = Signal(object, object)  # (CarteSpec, chemin image)
     close_requested = Signal()
 
     def __init__(self, parent=None):
@@ -795,17 +795,20 @@ class CartePanel(QWidget):
             self._statut.setText("⚠ " + str(exc)[:80])
 
     def _exporter_litho(self):
-        """Ouvre le menu de personnalisation LITHOPHANIE, puis prépare la carte en
-        vraie lithophanie DEBOUT (plaque translucide à épaisseur modulée)."""
+        """Convertit la carte en LITHOPHANIE via le MENU STANDARD : on rend le
+        design en image niveaux de gris, puis on ouvre « Photo en relief /
+        lithophanie » pré-rempli → tous les réglages litho sont accessibles."""
         try:
             spec = self._spec()
+            import tempfile
+            from pathlib import Path as _P
+            from core.neogen.carte_visite import rendre_carte_image
+            img = _P(tempfile.gettempdir()) / "neoslice_carte_litho.png"
+            rendre_carte_image(spec, img)
         except Exception as exc:
             self._statut.setText("⚠ " + str(exc)[:80])
             return
-        dlg = LithoParamsDialog(self._pal, self)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        self.exporter_litho_demande.emit(spec, dlg.params())
+        self.convertir_litho_demande.emit(spec, str(img))
 
     def set_statut(self, txt: str):
         self._statut.setText(txt)

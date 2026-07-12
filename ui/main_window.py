@@ -1942,7 +1942,7 @@ class MainWindow(QMainWindow):
             panel = CartePanel()
             panel.apercu_pret.connect(self._viewer.afficher_carte)
             panel.exporter_demande.connect(self._exporter_carte)
-            panel.exporter_litho_demande.connect(self._exporter_carte_litho)
+            panel.convertir_litho_demande.connect(self._ouvrir_carte_en_litho)
             # déplacement d'un élément à la souris (viewer) -> maj dx/dy panneau
             self._viewer.element_deplace.connect(panel.deplacer_element)
             # clic sur un élément (viewer) -> encadre sa section dans la colonne
@@ -1986,10 +1986,24 @@ class MainWindow(QMainWindow):
         else:
             self._show_params_panel()
 
-    def _exporter_carte_litho(self, spec, params=None):
-        """Variante LITHOPHANIE : vraie plaque translucide DEBOUT à épaisseur
-        modulée (réglages du menu de personnalisation), injectée dans la scène."""
-        self._charger_carte_dans_scene(spec, litho=True, litho_params=params)
+    def _ouvrir_carte_en_litho(self, spec, image_path):
+        """« Convertir en lithophanie » : ouvre le MENU STANDARD de lithophanie
+        (objet « Photo en relief / lithophanie ») pré-rempli avec l'image du design
+        de la carte → l'utilisateur a accès à TOUS les réglages litho (ep_min,
+        ep_max, cadre, debout, mode) et génère une vraie lithophanie image."""
+        try:
+            self._viewer.quitter_mode_carte()
+        except Exception:
+            pass
+        self._open_neogen()
+        panel = getattr(self, "_neogen_panel", None)
+        if panel is not None and hasattr(panel, "_ouvrir_dans_biblio"):
+            try:
+                panel._ouvrir_dans_biblio(
+                    "photo_relief",
+                    {"image": str(image_path), "largeur": float(spec.largeur)})
+            except Exception:
+                logger.exception("Ouverture menu lithophanie échouée")
 
     def _exporter_carte(self, spec, couleurs=None, litho: bool = False):
         """« Exporter la carte » : au lieu d'un export direct (qui produisait un

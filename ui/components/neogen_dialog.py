@@ -479,6 +479,7 @@ class NeoGenPanel(QWidget):
             lbl_img = QLabel("")
             lbl_img.setStyleSheet(f"color: {PRO_VIOLET}; background: transparent;"
                                   " font-size: 9pt;")
+            self._lbl_img_courant = lbl_img   # pour l'aperçu image pré-rempli
 
             def _pick():
                 from PySide6.QtGui import QFontMetrics
@@ -545,6 +546,10 @@ class NeoGenPanel(QWidget):
         for k, val in (params or {}).items():
             if k == "image":
                 champs["__image"] = val
+                lbl = getattr(self, "_lbl_img_courant", None)
+                if lbl is not None:
+                    from pathlib import Path as _P
+                    lbl.setText(_P(str(val)).name)
                 continue
             wdg = champs.get(k)
             if wdg is None:
