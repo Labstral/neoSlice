@@ -98,6 +98,10 @@ class _ElementEditor(QFrame):
 
         form = QFormLayout()
         form.setSpacing(4)
+        # les champs s'étirent/rétrécissent à la largeur de la colonne (jamais
+        # de débordement à droite)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
 
         def _lbl(t):
             l = QLabel(t)
@@ -118,6 +122,12 @@ class _ElementEditor(QFrame):
                     self.cb_pol.addItem(f, f)
             except Exception:
                 pass
+            # ne PAS dimensionner le combo sur le nom de police le plus long
+            # (sinon il pousse toute la colonne à ~590 px -> contenu coupé) ;
+            # le popup, lui, affiche les noms complets
+            self.cb_pol.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            self.cb_pol.setMinimumContentsLength(6)
             self.cb_pol.setStyleSheet(champ)
             self.cb_pol.currentIndexChanged.connect(self.change)
             form.addRow(_lbl(_fr("Police", "Font")), self.cb_pol)
@@ -138,12 +148,18 @@ class _ElementEditor(QFrame):
             form.addRow(_lbl(_fr("Largeur (mm)", "Width (mm)")), self.sp_h)
 
         self.cb_ah = self._combo(_ALIGN_H, "centre", champ)
+        # « Centre » horizontal -> remet le décalage X à 0 (parfaitement centré)
+        self.cb_ah.currentIndexChanged.connect(self._recentrer_x)
         form.addRow(_lbl(_fr("Horizontal", "Horizontal")), self.cb_ah)
         self.cb_av = self._combo(_ALIGN_V, "milieu", champ)
+        self.cb_av.currentIndexChanged.connect(self._recentrer_y)
         form.addRow(_lbl(_fr("Vertical", "Vertical")), self.cb_av)
         row_off = QHBoxLayout()
+        row_off.setSpacing(4)
         self.sp_dx = self._spin(-60, 60, 0.0, 0.5, champ, " mm")
         self.sp_dy = self._spin(-40, 40, 0.0, 0.5, champ, " mm")
+        for s in (self.sp_dx, self.sp_dy):
+            s.setMaximumWidth(76)               # deux côte à côte -> rentre
         row_off.addWidget(self.sp_dx)
         row_off.addWidget(self.sp_dy)
         form.addRow(_lbl(_fr("Décalage X / Y", "Offset X / Y")), row_off)
@@ -162,6 +178,14 @@ class _ElementEditor(QFrame):
         crow.addWidget(self.btn_coul, 1)
         v.addLayout(crow)
 
+    def _recentrer_x(self):
+        if self.cb_ah.currentData() == "centre":
+            self.sp_dx.setValue(0.0)            # centrage horizontal parfait
+
+    def _recentrer_y(self):
+        if self.cb_av.currentData() == "milieu":
+            self.sp_dy.setValue(0.0)            # centrage vertical parfait
+
     def _spin(self, mini, maxi, val, pas, style, suffix=""):
         s = QDoubleSpinBox()
         s.setRange(mini, maxi)
@@ -170,6 +194,8 @@ class _ElementEditor(QFrame):
         s.setDecimals(1)
         s.setSuffix(suffix)
         s.setStyleSheet(style)
+        from PySide6.QtWidgets import QSizePolicy
+        s.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         s.valueChanged.connect(self.change)
         return s
 
@@ -271,18 +297,29 @@ class CartePanel(QWidget):
                  f"{pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
                  f"border-radius: 4px; padding: 2px 5px; }}"
                  ) + _spinbox_qss(pal, "rgba(34,211,238,0.35)")
+        from PySide6.QtWidgets import QSizePolicy
         fmt = QFormLayout()
         fmt.setSpacing(4)
+        fmt.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         def _lbl(t):
             l = QLabel(t)
             l.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
             return l
-        self.sp_l = QDoubleSpinBox(); self.sp_l.setRange(40, 120); self.sp_l.setValue(85); self.sp_l.setSuffix(" mm"); self.sp_l.setStyleSheet(champ); self.sp_l.valueChanged.connect(self._planifier_apercu)
-        self.sp_h = QDoubleSpinBox(); self.sp_h.setRange(30, 90); self.sp_h.setValue(55); self.sp_h.setSuffix(" mm"); self.sp_h.setStyleSheet(champ); self.sp_h.valueChanged.connect(self._planifier_apercu)
-        row = QHBoxLayout(); row.addWidget(self.sp_l); row.addWidget(self.sp_h)
+
+        def _fmt_spin(sp):
+            sp.setStyleSheet(champ)
+            sp.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            sp.valueChanged.connect(self._planifier_apercu)
+            return sp
+        self.sp_l = _fmt_spin(QDoubleSpinBox()); self.sp_l.setRange(40, 120); self.sp_l.setDecimals(0); self.sp_l.setValue(85); self.sp_l.setSuffix(" mm")
+        self.sp_h = _fmt_spin(QDoubleSpinBox()); self.sp_h.setRange(30, 90); self.sp_h.setDecimals(0); self.sp_h.setValue(55); self.sp_h.setSuffix(" mm")
+        row = QHBoxLayout(); row.setSpacing(4)
+        for s in (self.sp_l, self.sp_h):
+            s.setMaximumWidth(84)
+        row.addWidget(self.sp_l); row.addWidget(self.sp_h)
         fmt.addRow(_lbl(_fr("Format L × H", "Size W × H")), row)
-        self.sp_ep = QDoubleSpinBox(); self.sp_ep.setRange(0.8, 4); self.sp_ep.setValue(1.6); self.sp_ep.setSingleStep(0.2); self.sp_ep.setDecimals(1); self.sp_ep.setSuffix(" mm"); self.sp_ep.setStyleSheet(champ); self.sp_ep.valueChanged.connect(self._planifier_apercu)
+        self.sp_ep = _fmt_spin(QDoubleSpinBox()); self.sp_ep.setRange(0.8, 4); self.sp_ep.setValue(1.6); self.sp_ep.setSingleStep(0.2); self.sp_ep.setDecimals(1); self.sp_ep.setSuffix(" mm")
         fmt.addRow(_lbl(_fr("Épaisseur", "Thickness")), self.sp_ep)
         crow = QHBoxLayout()
         crow.addWidget(_lbl(_fr("Couleur du fond", "Base color")))
