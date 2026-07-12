@@ -34,6 +34,14 @@ def _fr(fr, en):
     return fr if lang() == "fr" else en
 
 
+def _champ_style(pal: dict) -> str:
+    """Style commun des champs (spin/combo/lineedit), dépendant du thème."""
+    return (f"QDoubleSpinBox, QComboBox, QLineEdit {{ background: "
+            f"{pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']}; border: "
+            f"1px solid {pal['INACTIVE']}; border-radius: 4px; padding: "
+            f"2px 5px; }}") + _spinbox_qss(pal, "rgba(34,211,238,0.35)")
+
+
 def _choisir_couleur(parent, initiale: str, titre: str) -> QColor:
     """Sélecteur de couleur à texte LISIBLE : le dialogue Qt héritait de la
     palette sombre de l'app (labels Teinte/Sat/RVB illisibles, cf. retour). On
@@ -87,16 +95,14 @@ class _ElementEditor(QFrame):
         v = QVBoxLayout(self)
         v.setContentsMargins(8, 6, 8, 8)
         v.setSpacing(5)
-        champ = (f"QDoubleSpinBox, QComboBox, QLineEdit {{ background: "
-                 f"{pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']}; border: "
-                 f"1px solid {pal['INACTIVE']}; border-radius: 4px; padding: "
-                 f"2px 5px; }}") + _spinbox_qss(pal, "rgba(34,211,238,0.35)")
+        champ = _champ_style(pal)
 
         # en-tête : titre + supprimer
         head = QHBoxLayout()
         titre = QLabel(_fr("Texte", "Text") if self.type_el == "texte"
                        else _fr("Logo (image)", "Logo (image)"))
-        titre.setStyleSheet(f"color: {PRO_CYAN}; font-weight: bold; border: none;")
+        titre.setObjectName("carteTitre")
+        titre.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; font-weight: bold; border: none;")
         head.addWidget(titre)
         head.addStretch()
         btn_x = QPushButton("✕")
@@ -190,6 +196,26 @@ class _ElementEditor(QFrame):
         self.btn_coul.clicked.connect(self._choisir_couleur)
         crow.addWidget(self.btn_coul, 1)
         v.addLayout(crow)
+
+    def refresh_theme(self):
+        """Ré-applique les couleurs du thème courant (titres, labels, champs)."""
+        self._pal = _THEME.palette()
+        pal = self._pal
+        champ = _champ_style(pal)
+        self.setStyleSheet(
+            f"QFrame {{ background: {pal['BG_SURFACE']}; border: 1px solid "
+            f"{pal['INACTIVE']}; border-radius: 6px; }}")
+        for w in self.findChildren(QLabel):
+            if w.objectName() == "carteTitre":
+                w.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; font-weight: bold;"
+                                f" border: none; background: transparent;")
+            else:
+                w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; border: none;"
+                                f" background: transparent;")
+        for cls in (QDoubleSpinBox, QComboBox, QLineEdit):
+            for w in self.findChildren(cls):
+                w.setStyleSheet(champ)
+        self._maj_bouton_couleur()
 
     def _recentrer_x(self):
         if self.cb_ah.currentData() == "centre":
@@ -291,8 +317,9 @@ class CartePanel(QWidget):
 
         entete = QHBoxLayout()
         titre = QLabel(_fr("Carte de visite", "Business card"))
+        titre.setObjectName("carteTitre")
         titre.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        titre.setStyleSheet(f"color: {PRO_CYAN}; background: transparent;")
+        titre.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;")
         entete.addWidget(titre)
         entete.addStretch()
         bx = QPushButton("✕")
@@ -307,10 +334,7 @@ class CartePanel(QWidget):
         root.addLayout(entete)
 
         # carte : format + couleur de base
-        champ = (f"QDoubleSpinBox {{ background: {pal['BG_SURFACE']}; color: "
-                 f"{pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
-                 f"border-radius: 4px; padding: 2px 5px; }}"
-                 ) + _spinbox_qss(pal, "rgba(34,211,238,0.35)")
+        champ = _champ_style(pal)
         from PySide6.QtWidgets import QSizePolicy
         fmt = QFormLayout()
         fmt.setSpacing(4)
@@ -506,3 +530,24 @@ class CartePanel(QWidget):
 
     def set_statut(self, txt: str):
         self._statut.setText(txt)
+
+    def refresh_theme(self):
+        """Ré-applique le thème courant (corrige les labels invisibles quand le
+        panneau a été construit dans un autre thème). Titres = accent standard
+        du thème (comme les autres modules), plus de cyan sur les polices."""
+        self._pal = _THEME.palette()
+        pal = self._pal
+        self.setStyleSheet(f"background: {pal['BG_PANEL']};")
+        champ = _champ_style(pal)
+        for w in self.findChildren(QLabel):
+            if w.objectName() == "carteTitre":
+                w.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;")
+            elif w is getattr(self, "_statut", None):
+                w.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent; font-size: 9pt;")
+            else:
+                w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; border: none; background: transparent;")
+        for w in self.findChildren(QDoubleSpinBox):
+            w.setStyleSheet(champ)
+        self._maj_base()
+        for ed in self._editeurs:
+            ed.refresh_theme()

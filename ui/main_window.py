@@ -1866,6 +1866,11 @@ class MainWindow(QMainWindow):
             self._params_preview.refresh_theme()
         if hasattr(self, '_drop_zone'):
             self._drop_zone.refresh_theme()
+        if getattr(self, '_carte_panel', None) is not None:
+            self._carte_panel.refresh_theme()
+        _ng = getattr(self, '_neogen_panel', None)
+        if _ng is not None and hasattr(_ng, 'refresh_theme'):
+            _ng.refresh_theme()
         apply_title_bar_theme(self)
 
     def _open_settings(self):
@@ -1925,6 +1930,8 @@ class MainWindow(QMainWindow):
         self._right_scroll.setWidget(panel)
         self._right_scroll.setFixedWidth(400)  # un peu plus large pour le confort
         self._topbar.set_new_enabled(True)     # « Nouvelle pièce » actif dans neoGen
+        if hasattr(panel, "refresh_theme"):
+            panel.refresh_theme()              # thème courant (titres/onglets)
 
     def _open_carte(self):
         """Bascule la colonne de droite vers le personnalisateur de carte de
@@ -1951,6 +1958,7 @@ class MainWindow(QMainWindow):
         self._right_scroll.setWidget(panel)
         self._right_scroll.setFixedWidth(400)
         self._topbar.set_new_enabled(True)     # « Nouvelle pièce » actif sur la carte
+        panel.refresh_theme()                  # thème courant (évite labels invisibles)
         panel._planifier_apercu()              # (re)génère l'aperçu courant
 
     def _open_neogen_depuis_carte(self):

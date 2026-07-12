@@ -116,9 +116,10 @@ class NeoGenPanel(QWidget):
         # ── En-tête : titre + ✕ ──────────────────────────────────────────────
         entete = QHBoxLayout()
         titre = QLabel("neoGen")
+        titre.setObjectName("neogenTitre")
         titre.setFont(QFont("Segoe UI", 13, QFont.Bold))
         titre.setStyleSheet(
-            f"color: {PRO_CYAN}; background: transparent; letter-spacing: 1px;")
+            f"color: {self._pal['ACCENT_BRIGHT']}; background: transparent; letter-spacing: 1px;")
         entete.addWidget(titre)
         entete.addStretch()
         btn_close = QPushButton("✕")
@@ -150,8 +151,8 @@ class NeoGenPanel(QWidget):
             QTabWidget::pane {{ border: none; }}
             QTabBar::tab {{ background: transparent; color: {self._pal['TEXT_LABEL']};
                             padding: 5px 12px; font-weight: bold; }}
-            QTabBar::tab:selected {{ color: {PRO_CYAN};
-                                     border-bottom: 2px solid {PRO_CYAN}; }}
+            QTabBar::tab:selected {{ color: {self._pal['ACCENT_BRIGHT']};
+                                     border-bottom: 2px solid {self._pal['ACCENT_BRIGHT']}; }}
         """)
         self._tabs.addTab(self._onglet_bibliotheque(), _("neogen.tab_library"))
         self._tabs.insertTab(0, self._onglet_libre(), _("neogen.tab_search"))
@@ -163,6 +164,24 @@ class NeoGenPanel(QWidget):
         self._statut.setStyleSheet(
             f"color: {self._pal['TEXT_PRIMARY']}; background: transparent; font-size: 9pt;")
         lay.addWidget(self._statut)
+
+    def refresh_theme(self):
+        """Ré-applique le thème (titre + onglets) : plus de cyan sur les polices,
+        accent standard du thème comme les autres modules."""
+        self._pal = _THEME.palette()
+        pal = self._pal
+        for w in self.findChildren(QLabel):
+            if w.objectName() == "neogenTitre":
+                w.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;"
+                                f" letter-spacing: 1px;")
+        if hasattr(self, "_tabs"):
+            self._tabs.setStyleSheet(f"""
+                QTabWidget::pane {{ border: none; }}
+                QTabBar::tab {{ background: transparent; color: {pal['TEXT_LABEL']};
+                                padding: 5px 12px; font-weight: bold; }}
+                QTabBar::tab:selected {{ color: {pal['ACCENT_BRIGHT']};
+                                         border-bottom: 2px solid {pal['ACCENT_BRIGHT']}; }}
+            """)
 
     # ═════════════════════════ Onglet RECHERCHER ════════════════════════════
     def _onglet_libre(self) -> QWidget:
@@ -217,7 +236,7 @@ class NeoGenPanel(QWidget):
                 QPushButton {{ background: transparent; color: {pal['TEXT_LABEL']};
                     border: 1px solid {pal['INACTIVE']}; border-radius: 10px;
                     padding: 4px 9px; font-size: 9pt; text-align: left; }}
-                QPushButton:hover {{ color: {PRO_CYAN}; border-color: {PRO_CYAN}; }}
+                QPushButton:hover {{ color: {pal['ACCENT_BRIGHT']}; border-color: {pal['ACCENT_BRIGHT']}; }}
             """)
             b.clicked.connect(lambda _c=False, t=txt: self._choisir_exemple(t))
             grille.addWidget(b, i // 2, i % 2)
