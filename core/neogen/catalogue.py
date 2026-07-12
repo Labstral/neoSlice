@@ -667,11 +667,18 @@ def construire(entree_id: str, params: dict):
     from core.neogen import goodies as _g
     _g.POLICE_ACTIVE = p.get("police")
     _g.RELIEF_ACTIF = p.get("relief") if e["texte"] != "aucun" else None
+    _g.ESPACEMENT_ACTIF = None
+    if e["texte"] != "aucun" and params.get("espacement") is not None:
+        try:
+            _g.ESPACEMENT_ACTIF = max(0.0, float(params["espacement"]))
+        except (TypeError, ValueError):
+            pass
     try:
         return e["construire"](p)
     finally:
         _g.POLICE_ACTIVE = None
         _g.RELIEF_ACTIF = None
+        _g.ESPACEMENT_ACTIF = None
 
 
 def generer_fichier(entree_id: str, params: dict):

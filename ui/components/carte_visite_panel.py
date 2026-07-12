@@ -152,6 +152,8 @@ class _ElementEditor(QFrame):
             form.addRow(_lbl(_fr("Police", "Font")), self.cb_pol)
             self.sp_h = self._spin(1.5, 20, 5.0, 0.5, champ)
             form.addRow(_lbl(_fr("Taille (mm)", "Size (mm)")), self.sp_h)
+            self.sp_esp = self._spin(0.0, 10.0, 0.0, 0.5, champ, " mm")
+            form.addRow(_lbl(_fr("Espacement", "Spacing")), self.sp_esp)
         else:
             row = QHBoxLayout()
             self.btn_img = QPushButton(_fr("Choisir une image…", "Choose image…"))
@@ -277,7 +279,8 @@ class _ElementEditor(QFrame):
         if self.type_el == "texte":
             return CV.ElementTexte(
                 texte=self.le.text(), police=self.cb_pol.currentData(),
-                hauteur=self.sp_h.value(), align_h=self.cb_ah.currentData(),
+                hauteur=self.sp_h.value(), espacement=self.sp_esp.value(),
+                align_h=self.cb_ah.currentData(),
                 align_v=self.cb_av.currentData(), dx=self.sp_dx.value(),
                 dy=self.sp_dy.value(), relief=self.sp_relief.value(),
                 couleur=self._couleur)

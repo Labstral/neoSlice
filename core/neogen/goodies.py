@@ -69,16 +69,59 @@ def _rings_vers_polygones(rings: list[np.ndarray]) -> MultiPolygon:
 POLICE_ACTIVE: str | None = None
 
 
+# Espacement des lettres « de session » (mm ajoutés entre chaque glyphe), posé
+# par catalogue.construire() comme POLICE_ACTIVE — atteint tous les objets à
+# texte. La carte de visite le passe en direct (par élément).
+ESPACEMENT_ACTIF: float | None = None
+
+
+def _ligne_espacee(texte: str, hauteur_mm: float, prop, esp: float) -> MultiPolygon:
+    """Une ligne avec ESPACEMENT réglable : chaque glyphe est rendu et posé
+    individuellement (avance = largeur du glyphe + `esp` mm)."""
+    full = TextPath((0, 0), texte, size=100, prop=prop)
+    fh = full.get_extents().height or 100.0
+    f = hauteur_mm / fh                                  # échelle cohérente
+    espace_mm = 0.30 * hauteur_mm                        # largeur d'une espace
+    x = 0.0
+    polys = []
+    for ch in texte:
+        if ch == " ":
+            x += espace_mm + esp
+            continue
+        tp = TextPath((0, 0), ch, size=100, prop=prop)
+        mp = _rings_vers_polygones([np.asarray(p) for p in tp.to_polygons()])
+        if mp.is_empty:
+            x += espace_mm + esp
+            continue
+        mp = shp_scale(mp, xfact=f, yfact=f, origin=(0, 0))
+        minx, _miny, maxx, _maxy = mp.bounds
+        mp = translate(mp, xoff=x - minx)                # colle le glyphe à x
+        polys += list(mp.geoms) if isinstance(mp, MultiPolygon) else [mp]
+        x += (maxx - minx) + esp                         # avance
+    tout = unary_union(polys) if polys else MultiPolygon()
+    if isinstance(tout, Polygon):
+        tout = MultiPolygon([tout])
+    if tout.is_empty:
+        raise RuntimeError("texte vide après espacement")
+    minx, miny, _, _ = tout.bounds
+    return translate(tout, xoff=-minx, yoff=-miny)
+
+
 def _ligne_texte(texte: str, hauteur_mm: float,
-                 police: str | None = None) -> MultiPolygon:
+                 police: str | None = None,
+                 espacement: float | None = None) -> MultiPolygon:
     """Une ligne de texte, hauteur donnée, coin bas-gauche en (0,0).
-    `police` : famille de police préférée (repli sur POLICES si absente)."""
+    `police` : famille de police préférée (repli sur POLICES si absente).
+    `espacement` : mm entre lettres (repli sur ESPACEMENT_ACTIF)."""
     derniere_err = None
     police = police or POLICE_ACTIVE
+    esp = ESPACEMENT_ACTIF if espacement is None else espacement
     essais = ([police] if police else []) + POLICES
     for police in essais:
         try:
             prop = FontProperties(family=police, weight="bold")
+            if esp and float(esp) > 0:
+                return _ligne_espacee(texte, hauteur_mm, prop, float(esp))
             tp = TextPath((0, 0), texte, size=100, prop=prop)
             mp = _rings_vers_polygones([np.asarray(p) for p in tp.to_polygons()])
             if mp.is_empty:
@@ -94,7 +137,8 @@ def _ligne_texte(texte: str, hauteur_mm: float,
 
 
 def texte_multilignes(texte: str, hauteur_ligne: float = 10.0,
-                      police: str | None = None) -> MultiPolygon:
+                      police: str | None = None,
+                      espacement: float | None = None) -> MultiPolygon:
     """Texte multi-lignes (séparateur « | »), lignes centrées, centre en (0,0)."""
     lignes = [l.strip() for l in texte.split("|") if l.strip()]
     if not lignes:
@@ -102,7 +146,7 @@ def texte_multilignes(texte: str, hauteur_ligne: float = 10.0,
     interligne = hauteur_ligne * 1.45
     blocs = []
     for i, l in enumerate(lignes):
-        mp = _ligne_texte(l, hauteur_ligne, police=police)
+        mp = _ligne_texte(l, hauteur_ligne, police=police, espacement=espacement)
         minx, miny, maxx, maxy = mp.bounds
         # centre la ligne en X, empile en Y (1re ligne en haut)
         y = -(i * interligne)

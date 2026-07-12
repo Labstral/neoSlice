@@ -445,6 +445,15 @@ class NeoGenPanel(QWidget):
             cb_pol.setStyleSheet(style_champ)
             form.addRow(_lbl(_("neogen.font_label")), cb_pol)
             champs["police"] = cb_pol
+            sp_esp = QDoubleSpinBox()
+            sp_esp.setRange(0.0, 10.0)
+            sp_esp.setValue(0.0)
+            sp_esp.setSingleStep(0.5)
+            sp_esp.setDecimals(1)
+            sp_esp.setSuffix(" mm")
+            sp_esp.setStyleSheet(style_champ)
+            form.addRow(_lbl(_("neogen.spacing_label")), sp_esp)
+            champs["espacement"] = sp_esp
             if not any(f[0] == "grave" for f in e["flags"]):
                 ch = QCheckBox(_("neogen.engraved"))
                 ch.setCursor(Qt.PointingHandCursor)

@@ -34,6 +34,7 @@ class ElementTexte:
     texte: str = ""
     police: str | None = None
     hauteur: float = 4.0                      # hauteur de capitale (mm)
+    espacement: float = 0.0                   # mm entre lettres (0 = normal)
     align_h: str = "centre"                   # gauche | centre | droite
     align_v: str = "milieu"                   # haut | milieu | bas
     dx: float = 0.0
@@ -91,7 +92,8 @@ def _forme_element(el, spec: CarteSpec) -> MultiPolygon | None:
     else:
         if not (el.texte or "").strip():
             return None
-        mp = texte_multilignes(el.texte, el.hauteur, police=el.police)
+        mp = texte_multilignes(el.texte, el.hauteur, police=el.police,
+                               espacement=getattr(el, "espacement", 0.0))
         mp = unary_union(list(mp.geoms))
     if isinstance(mp, Polygon):
         mp = MultiPolygon([mp])
