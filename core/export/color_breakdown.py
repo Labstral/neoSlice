@@ -49,6 +49,32 @@ def _est_g(config, vol_cm3: float, area_cm2: float) -> float:
         return 0.0
 
 
+def from_carte(spec, config) -> ColorBreakdown:
+    """Répartition couleur d'une CARTE DE VISITE : un slot par couleur choisie
+    (volume estimé depuis les corps de la scène). Sert à afficher les slots dans
+    la fenêtre d'export neoSlice même si l'aperçu est une carte fusionnée."""
+    from collections import OrderedDict
+    from core.neogen.carte_visite import construire
+    scene, _couleurs = construire(spec)
+    vol_by_colour: "OrderedDict[str, float]" = OrderedDict()
+    for _nom, g in scene.geometry.items():
+        try:
+            c = g.visual.face_colors[0][:3]
+            hexa = "#{:02X}{:02X}{:02X}".format(int(c[0]), int(c[1]), int(c[2]))
+        except Exception:
+            hexa = "#FFFFFF"
+        vol_by_colour[hexa] = vol_by_colour.get(hexa, 0.0) + float(g.volume) / 1000.0
+    slots, total_g = [], 0.0
+    for i, (hexa, vol) in enumerate(vol_by_colour.items()):
+        grams = _est_g(config, vol, 0.0)
+        total_g += grams
+        slots.append(ColorSlot(slot=i + 1, grams=round(grams, 1),
+                               volume_cm3=round(vol, 2), default_hex=hexa))
+    if len(slots) <= 1:
+        return ColorBreakdown("single", round(total_g, 1), slots, approximate=False)
+    return ColorBreakdown("multiobject", round(total_g, 1), slots, approximate=False)
+
+
 def compute(threemf_data, mesh, analysis, config) -> ColorBreakdown:
     """Construit la repartition couleur a partir de l'etat courant."""
     vol = float(getattr(analysis, "volume_cm3", 0.0) or 0.0)

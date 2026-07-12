@@ -2295,7 +2295,14 @@ class MainWindow(QMainWindow):
             if a is None or getattr(a, "volume_cm3", 0) <= 0:
                 return False
             from core.export.color_breakdown import compute as _compute_breakdown
-            breakdown = _compute_breakdown(self._threemf_data, self._mesh, a, config)
+            _carte_spec = getattr(self, "_carte_export_spec", None)
+            if _carte_spec is not None:
+                # Carte : un slot par couleur choisie (l'aperçu est fusionné, donc
+                # _threemf_data ne porte pas les slots).
+                from core.export.color_breakdown import from_carte as _bd_carte
+                breakdown = _bd_carte(_carte_spec, config)
+            else:
+                breakdown = _compute_breakdown(self._threemf_data, self._mesh, a, config)
             if breakdown.total_g <= 0:
                 return False
             material = (self._filament_selector.current_filament() or "").strip()
