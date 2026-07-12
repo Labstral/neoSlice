@@ -242,7 +242,50 @@ def construire_apercu(spec: CarteSpec):
     return scene
 
 
-def generer_fichier_carte(spec: CarteSpec, litho: bool = False):
+def construire_lithophanie(spec: CarteSpec, ep_base: float = 0.8,
+                           contraste: float = 2.2, inverser: bool = False):
+    """VRAIE lithophanie de la carte : plaque translucide FINE dont l'épaisseur
+    module la lumière (fin = clair, épais = foncé), en une seule matière blanche.
+    Retourne un mesh DEBOUT (vertical) prêt à poser sur le plateau.
+
+    - ep_base : épaisseur mini (zones claires, laissent passer la lumière) ;
+    - contraste : épaisseur AJOUTÉE aux zones foncées (relief) ;
+    - inverser : design clair sur fond foncé (au lieu de foncé sur clair)."""
+    ep_base = max(0.4, float(ep_base))
+    contraste = max(0.4, float(contraste))
+    socle = _socle_2d(spec)
+    formes = []
+    for el in spec.elements:
+        mp = _forme_element(el, spec)
+        if mp is None:
+            continue
+        mp = _placer(mp, spec, el)
+        if not mp.is_empty:
+            formes.append(mp)
+    design = unary_union(formes) if formes else None
+
+    solides = _extruder(socle, ep_base)            # plaque fine (fond)
+    if design is not None:
+        if inverser:
+            # design = zones FINES (claires) → on épaissit TOUT SAUF le design
+            haut = socle.difference(design)
+            solides += _extruder(haut, contraste + CHEV, ep_base - CHEV)
+        else:
+            # design = zones ÉPAISSES (foncées) en relief
+            for g in (design.geoms if isinstance(design, MultiPolygon) else [design]):
+                if g.area > 0:
+                    solides += _extruder(g, contraste + CHEV, ep_base - CHEV)
+    mesh = union_solides(solides)
+    mesh.visual.face_colors = [255, 255, 255, 255]
+    # DEBOUT : une lithophanie s'imprime/s'affiche verticalement (la carte est
+    # à plat dans le plan XY → rotation de 90° autour de X pour la mettre debout).
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2.0, [1, 0, 0]))
+    mesh.apply_translation(-mesh.bounds[0])        # coin mini à l'origine (pose plateau)
+    return mesh
+
+
+def generer_fichier_carte(spec: CarteSpec, litho: bool = False,
+                          litho_params: dict | None = None):
     """Écrit la carte dans le dossier de sorties neoGen et renvoie le Path (.3mf)
     à CHARGER dans le pipeline normal (comme une pièce déposée). L'export final
     correct (imprimante/filament/paramètres → « Générer le 3MF ») est ensuite fait
@@ -251,21 +294,23 @@ def generer_fichier_carte(spec: CarteSpec, litho: bool = False):
     En lithophanie : les couleurs sont retirées (matière unique translucide) et le
     fichier est nommé « lithophanie… » pour que l'app applique automatiquement son
     profil d'impression lithophanie au chargement."""
-    import copy
     import trimesh
     from core.neogen.pilote import DOSSIER_SORTIES
-    if litho:
-        spec = copy.deepcopy(spec)
-        spec.couleur_base = "#FFFFFF"
-        for el in spec.elements:
-            el.couleur = "#FFFFFF"
-    scene, _couleurs = construire(spec)
-    # Un SEUL corps fusionné : le parseur 3MF de neoSlice, orienté Bambu, prend
-    # les multi-corps d'un 3MF trimesh (sans model_settings.config) pour des
-    # « modificateurs » → éléments détachés/absents dans le viewer. Un STL fusionné
-    # se recharge comme une pièce solide normale (base + reliefs bien en place).
-    fusion = trimesh.util.concatenate(list(scene.geometry.values()))
     DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
-    base = DOSSIER_SORTIES / ("lithophanie_carte" if litho else "carte_visite")
+    if litho:
+        lp = litho_params or {}
+        fusion = construire_lithophanie(
+            spec, ep_base=float(lp.get("ep_base", 0.8)),
+            contraste=float(lp.get("contraste", 2.2)),
+            inverser=bool(lp.get("inverser", False)))
+        base = DOSSIER_SORTIES / "lithophanie_carte"
+    else:
+        scene, _couleurs = construire(spec)
+        # Un SEUL corps fusionné : le parseur 3MF de neoSlice, orienté Bambu, prend
+        # les multi-corps d'un 3MF trimesh (sans model_settings.config) pour des
+        # « modificateurs » → éléments détachés/absents dans le viewer. Un STL
+        # fusionné se recharge comme une pièce solide normale.
+        fusion = trimesh.util.concatenate(list(scene.geometry.values()))
+        base = DOSSIER_SORTIES / "carte_visite"
     fusion.export(base.with_suffix(".stl"))
     return base.with_suffix(".stl")

@@ -1986,10 +1986,10 @@ class MainWindow(QMainWindow):
         else:
             self._show_params_panel()
 
-    def _exporter_carte_litho(self, spec):
-        """Variante LITHOPHANIE : la carte est injectée dans la scène comme une
-        pièce déposée, en matière unique + profil lithophanie automatique."""
-        self._charger_carte_dans_scene(spec, litho=True)
+    def _exporter_carte_litho(self, spec, params=None):
+        """Variante LITHOPHANIE : vraie plaque translucide DEBOUT à épaisseur
+        modulée (réglages du menu de personnalisation), injectée dans la scène."""
+        self._charger_carte_dans_scene(spec, litho=True, litho_params=params)
 
     def _exporter_carte(self, spec, couleurs=None, litho: bool = False):
         """« Exporter la carte » : au lieu d'un export direct (qui produisait un
@@ -1999,11 +1999,11 @@ class MainWindow(QMainWindow):
         (multicouleur préservé via les corps du 3MF, ou lithophanie)."""
         self._charger_carte_dans_scene(spec, litho=litho)
 
-    def _charger_carte_dans_scene(self, spec, litho: bool = False):
+    def _charger_carte_dans_scene(self, spec, litho: bool = False, litho_params=None):
         panel = getattr(self, "_carte_panel", None)
         try:
             from core.neogen.carte_visite import generer_fichier_carte
-            chemin = generer_fichier_carte(spec, litho=litho)
+            chemin = generer_fichier_carte(spec, litho=litho, litho_params=litho_params)
         except Exception as exc:
             logger.exception("Préparation carte échouée")
             if panel:

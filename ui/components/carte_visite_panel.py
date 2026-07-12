@@ -15,7 +15,7 @@ from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
     QDoubleSpinBox, QComboBox, QColorDialog, QScrollArea, QFrame, QFileDialog,
-    QFormLayout,
+    QFormLayout, QDialog, QDialogButtonBox, QCheckBox,
 )
 
 from core.i18n import _, lang
@@ -42,6 +42,53 @@ def _champ_style(pal: dict) -> str:
             f"{pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']}; border: "
             f"1px solid {pal['INACTIVE']}; border-radius: 4px; padding: "
             f"2px 5px; }}") + _spinbox_qss(pal, "rgba(34,211,238,0.35)")
+
+
+class LithoParamsDialog(QDialog):
+    """Réglages de conversion en lithophanie : épaisseur mini (zones claires),
+    contraste (épaisseur ajoutée aux zones foncées), et inversion clair/foncé."""
+
+    def __init__(self, pal: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(_fr("Lithophanie — réglages", "Lithophane — settings"))
+        self.setStyleSheet(
+            f"QDialog {{ background: {pal['BG_PANEL']}; }} "
+            f"QLabel {{ color: {pal['TEXT_PRIMARY']}; background: transparent; }} "
+            + _champ_style(pal)
+            + f"QCheckBox {{ color: {pal['TEXT_PRIMARY']}; }}")
+        v = QVBoxLayout(self)
+        info = QLabel(_fr(
+            "La carte devient une plaque translucide DEBOUT : l'épaisseur module "
+            "la lumière (fin = clair, épais = foncé). À imprimer en PLA blanc.",
+            "The card becomes a STANDING translucent plate: thickness modulates "
+            "light (thin = bright, thick = dark). Print in white PLA."))
+        info.setWordWrap(True)
+        info.setStyleSheet(f"color: {pal['TEXT_LABEL']}; font-size: 9pt;")
+        v.addWidget(info)
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        self.sp_base = QDoubleSpinBox(); self.sp_base.setRange(0.4, 1.5)
+        self.sp_base.setValue(0.8); self.sp_base.setSingleStep(0.1)
+        self.sp_base.setDecimals(1); self.sp_base.setSuffix(" mm")
+        form.addRow(QLabel(_fr("Épaisseur mini (clair)", "Min thickness (bright)")), self.sp_base)
+        self.sp_contr = QDoubleSpinBox(); self.sp_contr.setRange(0.6, 4.0)
+        self.sp_contr.setValue(2.2); self.sp_contr.setSingleStep(0.2)
+        self.sp_contr.setDecimals(1); self.sp_contr.setSuffix(" mm")
+        form.addRow(QLabel(_fr("Contraste (relief foncé)", "Contrast (dark relief)")), self.sp_contr)
+        v.addLayout(form)
+        self.cb_inv = QCheckBox(_fr("Inverser (design clair sur fond foncé)",
+                                    "Invert (bright design on dark background)"))
+        v.addWidget(self.cb_inv)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                              QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        v.addWidget(bb)
+
+    def params(self) -> dict:
+        return {"ep_base": self.sp_base.value(),
+                "contraste": self.sp_contr.value(),
+                "inverser": self.cb_inv.isChecked()}
 
 
 def _choisir_couleur(parent, initiale: str, titre: str) -> QColor:
@@ -395,7 +442,7 @@ class CartePanel(QWidget):
 
     apercu_pret = Signal(object)        # trimesh.Scene
     exporter_demande = Signal(object, object)   # (CarteSpec, couleurs)
-    exporter_litho_demande = Signal(object)     # (CarteSpec) — carte en lithophanie
+    exporter_litho_demande = Signal(object, object)   # (CarteSpec, params litho)
     close_requested = Signal()
 
     def __init__(self, parent=None):
@@ -744,14 +791,17 @@ class CartePanel(QWidget):
             self._statut.setText("⚠ " + str(exc)[:80])
 
     def _exporter_litho(self):
-        """Exporte la carte en LITHOPHANIE : monomatière + profil lithophanie
-        (la couleur des éléments est ignorée à l'impression, seul l'effet
-        d'épaisseur rétroéclairé compte)."""
+        """Ouvre le menu de personnalisation LITHOPHANIE, puis prépare la carte en
+        vraie lithophanie DEBOUT (plaque translucide à épaisseur modulée)."""
         try:
             spec = self._spec()
-            self.exporter_litho_demande.emit(spec)
         except Exception as exc:
             self._statut.setText("⚠ " + str(exc)[:80])
+            return
+        dlg = LithoParamsDialog(self._pal, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.exporter_litho_demande.emit(spec, dlg.params())
 
     def set_statut(self, txt: str):
         self._statut.setText(txt)
