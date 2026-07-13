@@ -414,12 +414,27 @@ class NeoGenPanel(QWidget):
             champs[pid] = sp
         for (cid, cfr, cen, options, defaut) in e["choix"]:
             cb = QComboBox()
+            tips = {}
             for (val, ofr, oen) in options:
                 cb.addItem(_fr_en(ofr, oen), val)
+                _tk = f"neogen.tip.{val}"
+                _tv = _(_tk)
+                if _tv != _tk:                       # explication dispo pour cette option
+                    tips[val] = _tv
             cb.setCurrentIndex(max(0, [o[0] for o in options].index(defaut)))
             cb.setStyleSheet(style_champ)
             form.addRow(_lbl(_fr_en(cfr, cen)), cb)
             champs[cid] = cb
+            if tips:                                 # petite aide sous le choix, mise à jour au changement
+                for i in range(cb.count()):
+                    if cb.itemData(i) in tips:
+                        cb.setItemData(i, tips[cb.itemData(i)], Qt.ItemDataRole.ToolTipRole)
+                desc = QLabel(tips.get(defaut, ""))
+                desc.setWordWrap(True)
+                desc.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent; font-size: 8pt;")
+                form.addRow("", desc)
+                cb.currentIndexChanged.connect(
+                    lambda _ix, _c=cb, _l=desc, _t=tips: _l.setText(_t.get(_c.currentData(), "")))
         for (fid, ffr, fen, defaut) in e["flags"]:
             ch = QCheckBox(_fr_en(ffr, fen))
             ch.setChecked(defaut)
