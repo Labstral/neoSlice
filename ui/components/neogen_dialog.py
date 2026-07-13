@@ -166,8 +166,10 @@ class NeoGenPanel(QWidget):
         lay.addWidget(self._statut)
 
     def refresh_theme(self):
-        """Ré-applique le thème (titre + onglets) : plus de cyan sur les polices,
-        accent standard du thème comme les autres modules."""
+        """Ré-applique le thème SANS sortir l'utilisateur de l'objet en cours :
+        titre + onglets, puis reconstruit le formulaire courant avec le nouveau
+        thème en PRÉSERVANT les valeurs saisies (sinon les champs gardaient les
+        couleurs de l'ancien thème → formulaire illisible/« sorti du menu »)."""
         self._pal = _THEME.palette()
         pal = self._pal
         for w in self.findChildren(QLabel):
@@ -182,6 +184,57 @@ class NeoGenPanel(QWidget):
                 QTabBar::tab:selected {{ color: {pal['TEXT_PRIMARY']};
                                          border-bottom: 2px solid {pal['ACCENT_BRIGHT']}; }}
             """)
+        self._rethemer_formulaire()
+
+    def _rethemer_formulaire(self):
+        """Reconstruit le formulaire de l'objet courant avec le thème à jour, en
+        conservant l'objet sélectionné ET les valeurs déjà saisies."""
+        champs = getattr(self, "_champs_courant", None)
+        combo = getattr(self, "_combo_objet", None)
+        if not champs or combo is None:
+            return
+        # 1) capturer les valeurs courantes
+        vals = {}
+        for k, w in list(champs.items()):
+            if k == "__image":
+                vals[k] = w                       # chemin (str)
+            elif isinstance(w, QLineEdit):
+                vals[k] = ("text", w.text())
+            elif isinstance(w, QDoubleSpinBox):
+                vals[k] = ("val", w.value())
+            elif isinstance(w, QComboBox):
+                vals[k] = ("data", w.currentData())
+            elif isinstance(w, QCheckBox):
+                vals[k] = ("chk", w.isChecked())
+        # 2) reconstruire le formulaire (utilise self._pal mis à jour)
+        self._choisir_objet(combo.currentIndex())
+        # 3) restaurer les valeurs
+        new = getattr(self, "_champs_courant", {})
+        for k, v in vals.items():
+            if k == "__image":
+                new["__image"] = v
+                lbl = getattr(self, "_lbl_img_courant", None)
+                if lbl is not None and v:
+                    from pathlib import Path as _P
+                    lbl.setText(_P(str(v)).name)
+                continue
+            w = new.get(k)
+            if w is None:
+                continue
+            kind, val = v
+            try:
+                if kind == "text":
+                    w.setText(val)
+                elif kind == "val":
+                    w.setValue(float(val))
+                elif kind == "data":
+                    i = w.findData(val)
+                    if i >= 0:
+                        w.setCurrentIndex(i)
+                elif kind == "chk":
+                    w.setChecked(bool(val))
+            except Exception:
+                pass
 
     # ═════════════════════════ Onglet RECHERCHER ════════════════════════════
     def _onglet_libre(self) -> QWidget:
