@@ -299,7 +299,7 @@ def _bed_center(machine: dict) -> tuple[float, float]:
 
 
 def _apply_non_bambu_machine(project_settings: dict, printer_ui_name: str,
-                             nozzle_mm: float) -> dict | None:
+                             nozzle_mm: float, filament_ui_name: str = "PLA") -> dict | None:
     """Pour une imprimante du catalogue (Creality, Prusa, Anycubic, Flashforge,
     Elegoo, Qidi), remplace le bloc machine du 3MF par celui de l'imprimante cible
     (géométrie, g-code start/end, rétraction, identité) afin qu'OrcaSlicer / Bambu
@@ -339,7 +339,7 @@ def _apply_non_bambu_machine(project_settings: dict, printer_ui_name: str,
     project_settings["print_settings_id"] = f"neoSlice {_lhd}mm @{brand}"
     # Aligner imprimante + filament sur de VRAIS préréglages système du fork strict
     # (évite « préréglage personnalisé / confirmez le G-code » sur CrealityPrint/Elegoo).
-    _align_strict_preset_names(project_settings, pname, brand)
+    _align_strict_preset_names(project_settings, pname, brand, filament_ui_name)
     return machine
 
 
@@ -419,7 +419,8 @@ def _slicer_presets(slicer: str) -> dict | None:
     return _SLICER_PRESETS_CACHE[slicer]
 
 
-def _align_strict_preset_names(project_settings: dict, pname: str, brand: str) -> None:
+def _align_strict_preset_names(project_settings: dict, pname: str, brand: str,
+                               materiau: str | None = None) -> None:
     """Pour un fork strict (CrealityPrint/ElegooSlicer), remplace les noms de
     préréglages imprimante/filament par les VRAIS noms système installés. Sans ça,
     un nom inexistant (ex. filament « @K2-all », imprimante « … (0.4 nozzle) »
@@ -447,18 +448,31 @@ def _align_strict_preset_names(project_settings: dict, pname: str, brand: str) -
     if real_machine != pname and real_machine in machines:
         project_settings["printer_settings_id"] = real_machine
 
-    # 2) Filament : choisir un vrai « Generic PLA @… » (préréglage installé).
+    # 2) Filament : choisir un vrai « Generic <MATÉRIAU> @… » installé, qui SUIT
+    #    le matériau choisi (ASA, PETG…) — avant, on forçait « Generic PLA » quel
+    #    que soit le matériau (le slicer affichait PLA alors qu'on voulait ASA).
+    #    Repli sur Generic PLA si ce matériau n'a pas de préréglage installé.
     if filaments:
-        for cand in (f"Generic PLA @{real_machine}", f"Generic PLA @{brand}"):
-            if cand in filaments:
-                project_settings["filament_settings_id"] = [cand]
+        mat = "PLA"
+        if materiau:
+            try:
+                from data.filaments import base_materiau as _bm
+                mat = (_bm(materiau) or "PLA").strip() or "PLA"
+            except Exception:
+                mat = "PLA"
+        materiaux = [mat] + (["PLA"] if mat != "PLA" else [])   # matériau voulu, puis repli PLA
+        for _m in materiaux:
+            for cand in (f"Generic {_m} @{real_machine}", f"Generic {_m} @{brand}"):
+                if cand in filaments:
+                    project_settings["filament_settings_id"] = [cand]
+                    return
+            brand_fils = [x for x in filaments
+                          if x.startswith(f"Generic {_m} @") and brand and brand in x]
+            any_fils = [x for x in filaments if x.startswith(f"Generic {_m} @")]
+            pick = brand_fils or any_fils
+            if pick:
+                project_settings["filament_settings_id"] = [min(pick, key=len)]
                 return
-        brand_fils = [x for x in filaments
-                      if x.startswith("Generic PLA @") and brand and brand in x]
-        any_fils = [x for x in filaments if x.startswith("Generic PLA @")]
-        pick = brand_fils or any_fils
-        if pick:
-            project_settings["filament_settings_id"] = [min(pick, key=len)]
 
 
 def _filter_for_strict_slicer(project_settings: dict) -> None:
@@ -984,7 +998,7 @@ class ThreeMFBuilder:
         _slot_filament_materiau(project_settings, filament_ui_name)
 
         # Imprimante non-Bambu (catalogue) → remplacer le bloc machine + identité
-        _machine = _apply_non_bambu_machine(project_settings, printer_ui_name, _D)
+        _machine = _apply_non_bambu_machine(project_settings, printer_ui_name, _D, filament_ui_name)
         _sanitize_strict(project_settings)   # valeurs refusées par CrealityPrint
         _filter_for_strict_slicer(project_settings)   # retire les clés Bambu-only
 
