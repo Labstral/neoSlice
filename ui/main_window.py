@@ -1338,11 +1338,17 @@ class _GridWidget(QWidget):
 
 
 # Exécutables des slicers par plateforme (pour ouvrir le 3MF dans le bon logiciel)
-# CrealityPrint s'installe dans un dossier VERSIONNÉ (« Creality Print 6.3 ») → glob.
+# CrealityPrint ET UltiMaker Cura s'installent dans un dossier VERSIONNÉ
+# (« Creality Print 6.3 », « UltiMaker Cura 5.6.0 ») → glob, robuste aux MAJ.
 _CREALITY_EXES = [
     str(p)
     for base in (r"C:\Program Files\Creality", r"C:\Program Files (x86)\Creality")
     for p in sorted(Path(base).glob("Creality Print*/CrealityPrint.exe"))
+]
+_CURA_EXES = [
+    str(p)
+    for base in (r"C:\Program Files", r"C:\Program Files (x86)")
+    for p in sorted(Path(base).glob("UltiMaker Cura*/UltiMaker-Cura.exe"))
 ]
 
 _SLICER_EXES = {
@@ -1353,6 +1359,9 @@ _SLICER_EXES = {
         "prusa": [r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer.exe"],
         "creality": _CREALITY_EXES,
         "elegoo": [r"C:\Program Files\ElegooSlicer\elegoo-slicer.exe"],
+        "anycubic": [r"C:\Program Files\AnycubicSlicerNext\AnycubicSlicerNext.exe"],
+        "snapmaker": [r"C:\Program Files\Snapmaker_Orca\snapmaker-orca.exe"],
+        "cura": _CURA_EXES,
     },
     "darwin": {  # ouverts via `open -a <AppName>`
         "bambu": ["BambuStudio"],
@@ -1360,6 +1369,9 @@ _SLICER_EXES = {
         "prusa": ["PrusaSlicer"],
         "creality": ["Creality Print"],
         "elegoo": ["ElegooSlicer"],
+        "anycubic": ["AnycubicSlicerNext"],
+        "snapmaker": ["Snapmaker Orca"],
+        "cura": ["UltiMaker Cura"],
     },
 }
 
@@ -1402,7 +1414,8 @@ def _slicer_name() -> str:
               "creality": "settings.slicer_creality",
               "elegoo": "settings.slicer_elegoo",
               "anycubic": "settings.slicer_anycubic",
-              "snapmaker": "settings.slicer_snapmaker"}.get(sl, "settings.slicer_bambu"))
+              "snapmaker": "settings.slicer_snapmaker",
+              "cura": "settings.slicer_cura"}.get(sl, "settings.slicer_bambu"))
 
 
 def _coffee_icon():
@@ -3484,6 +3497,18 @@ class MainWindow(QMainWindow):
                     filament_ui_name=self._current_filament,
                     nozzle_diameter_mm=nozzle_mm,
                 )
+            elif _PREFS.get("slicer_output", "bambu") == "cura":
+                # Sortie Cura : format 3MF (pile de conteneurs) totalement différent
+                # de Bambu/Prusa → toujours reconstruire depuis le mesh.
+                from core.export.cura_3mf_builder import CuraThreeMFBuilder
+                path = CuraThreeMFBuilder().build(
+                    mesh=self._mesh,
+                    config=config,
+                    output_path=Path(output_path),
+                    printer_ui_name=self._current_printer,
+                    filament_ui_name=self._current_filament,
+                    nozzle_diameter_mm=nozzle_mm,
+                )
             elif _is_3mf_input and not _is_cat_model(self._current_printer):
                 # Injecter dans le 3MF source UNIQUEMENT pour une Bambu Lab : le 3MF
                 # source est alors cohérent. Pour une imprimante du CATALOGUE
@@ -3751,7 +3776,8 @@ class MainWindow(QMainWindow):
                          "creality": "export.btn_creality",
                          "elegoo": "export.btn_elegoo",
                          "anycubic": "export.btn_anycubic",
-                         "snapmaker": "export.btn_snapmaker"}.get(_slicer_sel, "export.btn_bambu")
+                         "snapmaker": "export.btn_snapmaker",
+                         "cura": "export.btn_cura"}.get(_slicer_sel, "export.btn_bambu")
         btn_bambu = QPushButton(_(_btn_open_key))
         btn_bambu.setIcon(_make_printer_icon())
         btn_bambu.setIconSize(QSize(18, 18))

@@ -20,7 +20,8 @@ from data.printers import (
     PRINTERS, SERIES_ORDRE,
     catalogue_brands, models_for_brand, nozzles_for_model, is_catalogue_model,
     prusa_brands, prusa_models_for_brand, prusa_nozzles_for_model, is_prusa_model,
-    split_popular,
+    cura_brands, cura_models_for_brand, cura_nozzles_for_model, is_cura_model,
+    split_popular, split_popular_souple,
 )
 from core.prefs import PREFS
 from ui.components.brand_menu_button import BrandMenuButton
@@ -484,6 +485,10 @@ class FilamentPrinterSelector(QWidget):
             brands = prusa_brands()
             models = prusa_models_for_brand
             groups: list = []
+        elif slicer == "cura":
+            brands = cura_brands()
+            models = cura_models_for_brand
+            groups = []
         else:
             brands = catalogue_brands(slicer)
             models = lambda b: models_for_brand(b, slicer)
@@ -494,7 +499,12 @@ class FilamentPrinterSelector(QWidget):
                      for name in by_serie.get(serie, [])]
             groups = [("Bambu Lab", bambu)]
 
-        popular, others = split_popular(brands)
+        # Cura : comparaison SOUPLE (fabricants suffixés différemment : « Creality3D »,
+        # « Ultimaker B.V. » au lieu de « Creality »/« UltiMaker » → l'égalité stricte
+        # les ratait tous, reléguant Creality et Ultimaker (marque native de Cura !)
+        # sous « Autres marques »).
+        popular, others = (split_popular_souple(brands) if slicer == "cura"
+                          else split_popular(brands))
         for b in popular:
             groups.append((b, models(b)))
         if others:
@@ -619,6 +629,14 @@ class FilamentPrinterSelector(QWidget):
             self._printer_note.show()
             return
 
+        if slicer == "cura" or (key and is_cura_model(key)):
+            self._printer_note.setText(
+                "ⓘ Sortie UltiMaker Cura : la machine, les réglages et la buse sont déjà "
+                "intégrés dans le 3MF — ouvrez-le simplement dans UltiMaker Cura."
+            )
+            self._printer_note.show()
+            return
+
         brand = brand_of(key) if key else ""
         if not brand:                      # imprimante Bambu Lab → rien à signaler
             self._printer_note.hide()
@@ -653,6 +671,8 @@ class FilamentPrinterSelector(QWidget):
         key = self.current_printer()
         if key and is_prusa_model(key):
             sizes = prusa_nozzles_for_model(key) or list(_NOZZLE_SIZES)
+        elif key and is_cura_model(key):
+            sizes = cura_nozzles_for_model(key) or list(_NOZZLE_SIZES)
         elif key and is_catalogue_model(key):
             sizes = nozzles_for_model(key) or list(_NOZZLE_SIZES)
         else:

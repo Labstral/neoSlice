@@ -244,9 +244,11 @@ class SettingsDialog(QDialog):
         self._slicer_combo.addItem(_("settings.slicer_elegoo"), "elegoo")
         self._slicer_combo.addItem(_("settings.slicer_anycubic"), "anycubic")
         self._slicer_combo.addItem(_("settings.slicer_snapmaker"), "snapmaker")
+        self._slicer_combo.addItem(_("settings.slicer_cura"), "cura")
         _saved_slicer = PREFS.get("slicer_output", "bambu")
         _slicer_idx = {"bambu": 0, "orca": 1, "prusa": 2, "creality": 3,
-                       "elegoo": 4, "anycubic": 5, "snapmaker": 6}.get(_saved_slicer, 0)
+                       "elegoo": 4, "anycubic": 5, "snapmaker": 6,
+                       "cura": 7}.get(_saved_slicer, 0)
         self._slicer_combo.setCurrentIndex(_slicer_idx)
         self._slicer_combo.currentIndexChanged.connect(self._on_slicer_changed)
         slicer_row.addWidget(self._slicer_lbl)

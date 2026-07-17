@@ -282,6 +282,19 @@ def split_popular(brands: list[str]) -> tuple[list[str], list[str]]:
     return popular, others
 
 
+def split_popular_souple(brands: list[str]) -> tuple[list[str], list[str]]:
+    """Comme split_popular, mais comparaison SOUPLE (préfixe, insensible casse) —
+    les fabricants Cura sont suffixés différemment du nom usuel ('Creality3D',
+    'Ultimaker B.V.' au lieu de 'Creality'/'UltiMaker'), l'égalité stricte les
+    ratait tous et les reléguait dans « Autres marques »."""
+    def _norm(s: str) -> str:
+        return s.lower().split(" ")[0].rstrip("3d.").strip()
+    by_norm = {_norm(b): b for b in brands}
+    popular = [by_norm[_norm(p)] for p in POPULAR_BRANDS if _norm(p) in by_norm]
+    others = [b for b in brands if b not in popular]
+    return popular, others
+
+
 @functools.lru_cache(maxsize=1)
 def _catalogue() -> dict:
     try:
@@ -493,3 +506,87 @@ def prusa_preset_for(model_key: str, nozzle_mm: float) -> str | None:
 
 def is_prusa_model(model_key: str) -> bool:
     return model_key in _prusa_by_model()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Catalogue Cura (sortie « Cura ») — data/cura_printers.json
+# Voir tools/extract_cura_printers.py (définitions officielles UltiMaker Cura,
+# résolues via leur chaîne `inherits` ; buses via l'index des fichiers variant).
+# ──────────────────────────────────────────────────────────────────────────────
+
+@functools.lru_cache(maxsize=1)
+def _cura_catalogue() -> dict:
+    try:
+        return json.loads((_DATA_DIR / "cura_printers.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _cura_display(machine_id: str, name: str, brand: str) -> str:
+    """Nom affiché sans le préfixe marque (déjà affiché comme en-tête du menu).
+    Comparaison souple (prefix) : marque officielle Cura souvent suffixée
+    ('Creality3D', 'Ultimaker B.V.') alors que le nom du modèle utilise la forme
+    courte ('Creality Ender-3')."""
+    bw = brand.split(" ")[0].split(".")[0].lower()
+    parts = name.split(" ", 1)
+    if len(parts) == 2:
+        fw = parts[0].lower()
+        if fw == bw or bw.startswith(fw) or fw.startswith(bw):
+            return parts[1]
+    return name
+
+
+@functools.lru_cache(maxsize=1)
+def _cura_by_model() -> dict:
+    """Index : machine_id -> {marque, display, nozzles, ...specs}."""
+    out: dict[str, dict] = {}
+    for machine_id, e in _cura_catalogue().items():
+        brand = e.get("manufacturer") or "Autre"
+        out[machine_id] = {
+            "marque": brand,
+            "display": _cura_display(machine_id, e.get("name", machine_id), brand),
+            "nozzles": e.get("nozzles", [0.4]),
+            "width": e.get("width", 200.0),
+            "depth": e.get("depth", 200.0),
+            "height": e.get("height", 200.0),
+            "center_is_zero": e.get("center_is_zero", False),
+            "extruder_count": e.get("extruder_count", 1),
+            "heated_bed": e.get("heated_bed", False),
+            "gcode_flavor": e.get("gcode_flavor", ""),
+            "quality_definition": e.get("quality_definition", machine_id),
+            "extruder_defs": e.get("extruder_defs", [f"{machine_id}_extruder_0"]),
+        }
+    return out
+
+
+def cura_brands() -> list[str]:
+    """Marques présentes dans le catalogue Cura (Ultimaker en tête, reste alpha)."""
+    present = sorted({v["marque"] for v in _cura_by_model().values()},
+                     key=lambda b: (not b.lower().startswith("ultimaker"), b.lower()))
+    return present
+
+
+def cura_models_for_brand(brand: str) -> list[tuple[str, str]]:
+    """[(libellé affiché, machine_id)] triés, pour une marque en mode Cura."""
+    items = [(v["display"], mk) for mk, v in _cura_by_model().items()
+             if v["marque"] == brand]
+    return sorted(items, key=lambda t: t[0].lower())
+
+
+def cura_models() -> list[tuple[str, str]]:
+    """[(libellé affiché, machine_id)] triés (toutes marques) — compat."""
+    items = [(v["display"], mk) for mk, v in _cura_by_model().items()]
+    return sorted(items, key=lambda t: t[0].lower())
+
+
+def cura_nozzles_for_model(machine_id: str) -> list[float]:
+    return sorted(float(x) for x in _cura_by_model().get(machine_id, {}).get("nozzles", [0.4]))
+
+
+def cura_machine_for(machine_id: str) -> dict:
+    """Specs COMPLÈTES résolues (dimensions, extrudeurs, g-code…) pour le 3MF projet."""
+    return dict(_cura_by_model().get(machine_id, {}))
+
+
+def is_cura_model(machine_id: str) -> bool:
+    return machine_id in _cura_by_model()

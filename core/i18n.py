@@ -142,6 +142,7 @@ _FR: dict[str, str] = {
     "export.btn_elegoo":        "  Ouvrir dans ElegooSlicer",
     "export.btn_anycubic":      "  Ouvrir dans Anycubic Slicer",
     "export.btn_snapmaker":     "  Ouvrir dans Snapmaker Orca",
+    "export.btn_cura":          "  Ouvrir dans UltiMaker Cura",
     "export.btn_pdf":           "  Fiche filament PDF",
     "export.btn_close":         "Fermer",
 
@@ -500,6 +501,7 @@ _FR: dict[str, str] = {
     "settings.slicer_elegoo":   "ElegooSlicer",
     "settings.slicer_anycubic": "Anycubic Slicer",
     "settings.slicer_snapmaker": "Snapmaker Orca",
+    "settings.slicer_cura":     "UltiMaker Cura",
     "settings.orient_suggest":  "Suggérer l'orientation optimale",
     "settings.sec_export":      "EXPORT",
     "settings.folder_ph":       "Dossier Téléchargements (par défaut)",
@@ -1438,6 +1440,7 @@ _EN: dict[str, str] = {
     "export.btn_elegoo":        "  Open in ElegooSlicer",
     "export.btn_anycubic":      "  Open in Anycubic Slicer",
     "export.btn_snapmaker":     "  Open in Snapmaker Orca",
+    "export.btn_cura":          "  Open in UltiMaker Cura",
     "export.btn_pdf":           "  Filament PDF sheet",
     "export.btn_close":         "Close",
 
@@ -1782,6 +1785,7 @@ _EN: dict[str, str] = {
     "settings.slicer_elegoo":   "ElegooSlicer",
     "settings.slicer_anycubic": "Anycubic Slicer",
     "settings.slicer_snapmaker": "Snapmaker Orca",
+    "settings.slicer_cura":     "UltiMaker Cura",
     "settings.orient_suggest":  "Suggest optimal orientation",
     "settings.sec_export":      "EXPORT",
     "settings.folder_ph":       "Downloads folder (default)",
