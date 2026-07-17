@@ -631,8 +631,9 @@ class FilamentPrinterSelector(QWidget):
 
         if slicer == "cura" or (key and is_cura_model(key)):
             self._printer_note.setText(
-                "ⓘ Sortie UltiMaker Cura : la machine, les réglages et la buse sont déjà "
-                "intégrés dans le 3MF — ouvrez-le simplement dans UltiMaker Cura."
+                "ⓘ À l'export, le fichier .3MF contiendra déjà cette imprimante, la buse "
+                "et vos réglages : il suffira de l'ouvrir dans UltiMaker Cura, rien à "
+                "configurer de plus."
             )
             self._printer_note.show()
             return
