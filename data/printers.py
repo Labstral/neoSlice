@@ -555,6 +555,14 @@ def _cura_by_model() -> dict:
             "gcode_flavor": e.get("gcode_flavor", ""),
             "quality_definition": e.get("quality_definition", machine_id),
             "extruder_defs": e.get("extruder_defs", [f"{machine_id}_extruder_0"]),
+            # champs 3MF projet (voir tools/extract_cura_printers.py)
+            "name": e.get("name", machine_id),
+            "variants": e.get("variants", {}),
+            "variants_name": e.get("variants_name", "Nozzle"),
+            "has_materials": e.get("has_materials", True),
+            "preferred_material": e.get("preferred_material", "generic_pla"),
+            "preferred_quality_type": e.get("preferred_quality_type", "normal"),
+            "material_diameter": e.get("material_diameter", 2.85),
         }
     return out
 

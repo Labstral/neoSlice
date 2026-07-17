@@ -6,21 +6,25 @@ Cura structure ses profils très différemment de la famille Bambu/Orca :
   - une définition MACHINE (.def.json) hérite (inherits) d'une définition parente
     (souvent une famille "<marque>_base", elle-même héritant de fdmprinter) ;
   - les dimensions/gcode/extrudeur(s) sont dans `overrides` (résolu par héritage) ;
-  - les BUSES disponibles sont des fichiers "variant" séparés
-    (resources/variants/<quality_definition>/<id>_<buse>.inst.cfg) ;
-  - les profils QUALITÉ (couche/vitesse) sont dans resources/quality/<quality_definition>/.
-  - `metadata.visible = false` marque une définition ABSTRAITE (famille/parent),
-    jamais une vraie imprimante sélectionnable → exclue du catalogue.
+  - les BUSES sont des fichiers "variant" séparés (resources/variants/**/*.inst.cfg),
+    rattachés à la machine par le champ `[general] definition` À L'INTÉRIEUR du
+    fichier (PAS par le nom du dossier/fichier — vérifié, contre-intuitif) ;
+  - le DIAMÈTRE de filament vit dans la définition d'EXTRUDEUR
+    (resources/extruders/<id>.def.json, hérite de fdmextruder, défaut 2.85) ;
+  - un projet 3MF valide doit EMBARQUER ces conteneurs (def.json machine,
+    variant .inst.cfg, matériau .xml.fdm_material) — exigences relevées dans
+    ThreeMFWorkspaceReader.preRead (machine_definition_container_count == 1,
+    KeyError si variant/matériau référencé absent de l'archive).
 
-Sortie : data/cura_printers.json — {machine_id: {name, manufacturer, quality_definition,
-width, depth, height, center_is_zero, extruder_count, heated_bed, gcode_flavor,
-nozzles: [0.2, 0.4, ...], extruder_defs: [...]}}
+Sorties :
+  - data/cura_printers.json  — catalogue machines (specs + variants bruts + méta)
+  - data/cura_materials.json — matériaux génériques bruts (generic_*.xml.fdm_material)
 
 Usage : python tools/extract_cura_printers.py
 """
 from __future__ import annotations
+import configparser
 import json
-import re
 from pathlib import Path
 
 _CURA_ROOTS = [
@@ -31,7 +35,9 @@ for _p in sorted(Path(r"C:\Program Files").glob("*Cura*")):
     if _r.exists() and _r not in _CURA_ROOTS:
         _CURA_ROOTS.append(_r)
 
-_OUT = Path(__file__).resolve().parent.parent / "data" / "cura_printers.json"
+_DATA = Path(__file__).resolve().parent.parent / "data"
+_OUT_PRINTERS = _DATA / "cura_printers.json"
+_OUT_MATERIALS = _DATA / "cura_materials.json"
 
 
 def _find_root() -> Path | None:
@@ -85,33 +91,97 @@ def _ov_val(overrides: dict, key: str, default):
     return default
 
 
-def _build_variant_index(resources: Path) -> dict[str, list[float]]:
-    """Index GLOBAL des buses : les fichiers variant sont organisés en dossiers
-    par MARQUE sur le disque, mais Cura les résout par le champ `[general]
-    definition = <machine_id>` À L'INTÉRIEUR du fichier (constaté : le nom du
-    dossier ne correspond ni à l'id machine ni à quality_definition). On scanne
-    donc tous les .inst.cfg récursivement et on groupe par ce champ, pas par
-    chemin ni par nom de fichier."""
-    import configparser
-    index: dict[str, list[float]] = {}
+def _build_variant_index(resources: Path) -> dict[str, dict[str, list]]:
+    """Index GLOBAL des variants BUSE : {definition_id: {nozzle: [{id, name, cfg}…]}}.
+    On garde le CONTENU BRUT du .inst.cfg : il doit être embarqué tel quel dans
+    le 3MF projet (le lecteur Cura exige la présence du conteneur variant dans
+    l'archive quand la pile y fait référence — sinon KeyError dans preRead).
+    Filtres appris à la dure : hardware_type doit être « nozzle » (les variants
+    PLATEAU comme « ultimaker_s5_glass » polluaient l'index) et machine_nozzle_size
+    doit être EXPLICITE (pas de 0.4 par défaut inventé). Plusieurs variants
+    peuvent partager une buse (AA/BB/CC chez UltiMaker) → liste, départagée par
+    machine via preferred_variant_name."""
+    index: dict[str, dict[str, list]] = {}
     vdir = resources / "variants"
     if not vdir.exists():
         return index
     for f in vdir.rglob("*.inst.cfg"):
         cp = configparser.ConfigParser(interpolation=None)
         try:
-            cp.read(f, encoding="utf-8")
+            raw = f.read_text(encoding="utf-8")
+            cp.read_string(raw)
         except Exception:
             continue
         definition = cp.get("general", "definition", fallback=None)
         if not definition:
             continue
+        if cp.get("metadata", "hardware_type", fallback="nozzle") != "nozzle":
+            continue                                    # plateau/verre… pas une buse
+        vid = f.name[: -len(".inst.cfg")]
+        vname = cp.get("general", "name", fallback=vid)
+        size = cp.get("values", "machine_nozzle_size", fallback=None)
+        if size is None:
+            # Les variants UltiMaker (AA 0.4, BB 0.8…) n'ont PAS machine_nozzle_size :
+            # la buse est encodée dans le NOM. Repli : dernier nombre du nom.
+            import re as _re
+            m = _re.search(r"(\d+(?:\.\d+)?)\s*$", vname)
+            if not m:
+                continue
+            size = m.group(1)
         try:
-            nz = float(cp.get("values", "machine_nozzle_size", fallback="0.4"))
+            nz = f"{float(size):g}"
         except ValueError:
             continue
-        index.setdefault(definition, []).append(nz)
-    return {k: sorted(set(v)) for k, v in index.items()}
+        index.setdefault(definition, {}).setdefault(nz, []).append(
+            {"id": vid, "name": vname, "cfg": raw})
+    return index
+
+
+def _choisir_variants(candidats: dict[str, list], preferred_name: str) -> dict[str, dict]:
+    """{nozzle: [candidats]} -> {nozzle: {id, name, cfg}} : le variant préféré de
+    la machine (preferred_variant_name, ex. « AA 0.4 ») gagne sa buse ; sinon le
+    1er par ordre alphabétique (stable, AA avant BB/CC)."""
+    out: dict[str, dict] = {}
+    for nz, lst in candidats.items():
+        lst = sorted(lst, key=lambda v: (v["name"] != preferred_name, v["name"]))
+        out[nz] = lst[0]
+    return out
+
+
+def _extruder_diameter(resources: Path, ext_def_id: str, cache: dict) -> float:
+    """material_diameter de la définition d'extrudeur (chaîne inherits jusqu'à
+    fdmextruder, défaut 2.85). Les machines 1.75 mm l'overrident ici."""
+    if ext_def_id in cache:
+        return cache[ext_def_id]
+    d = 2.85
+    f = resources / "extruders" / f"{ext_def_id}.def.json"
+    raw = _load(f)
+    ov = raw.get("overrides", {})
+    v = ov.get("material_diameter", {})
+    if isinstance(v, dict) and "default_value" in v:
+        d = float(v["default_value"])
+    elif raw.get("inherits") and raw["inherits"] != "fdmextruder":
+        d = _extruder_diameter(resources, raw["inherits"], cache)
+    cache[ext_def_id] = d
+    return d
+
+
+def _extract_materials(resources: Path) -> None:
+    """Matériaux génériques bruts (embarqués dans le 3MF projet : le lecteur exige
+    le .xml.fdm_material dans l'archive pour tout matériau non-« empty »)."""
+    out: dict[str, str] = {}
+    mdir = resources / "materials"
+    if mdir.exists():
+        for f in sorted(mdir.glob("generic_*.xml.fdm_material")):
+            stem = f.name[: -len(".xml.fdm_material")]
+            try:
+                out[stem] = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+    _OUT_MATERIALS.write_text(json.dumps(out, indent=1, ensure_ascii=False),
+                              encoding="utf-8")
+    print(f"{len(out)} matériaux génériques -> {_OUT_MATERIALS} "
+          f"({_OUT_MATERIALS.stat().st_size // 1024} KB)")
 
 
 def main() -> None:
@@ -121,6 +191,7 @@ def main() -> None:
         return
     defs_dir = root / "definitions"
     cache: dict[str, dict] = {}
+    ext_diam_cache: dict[str, float] = {}
     catalogue: dict[str, dict] = {}
     variant_index = _build_variant_index(root)
 
@@ -134,49 +205,53 @@ def main() -> None:
         meta = resolved["metadata"]
         if meta.get("visible") is False:
             continue                                   # définition abstraite (famille/parent)
-        if not meta.get("has_machine_quality", True) and "quality_definition" not in meta:
-            pass                                        # certaines n'ont pas de profil qualité dédié, on garde quand même
         overrides = resolved["overrides"]
         name = _ov_val(overrides, "machine_name", resolved.get("name", machine_id))
-        width = _ov_val(overrides, "machine_width", 200.0)
-        depth = _ov_val(overrides, "machine_depth", 200.0)
-        height = _ov_val(overrides, "machine_height", 200.0)
-        center0 = _ov_val(overrides, "machine_center_is_zero", False)
         extruder_count = int(_ov_val(overrides, "machine_extruder_count", 1))
-        heated_bed = bool(_ov_val(overrides, "machine_heated_bed", False))
-        gcode_flavor = _ov_val(overrides, "machine_gcode_flavor", "RepRap (Marlin/Sprinter)")
-        quality_def = meta.get("quality_definition", machine_id)
-        manufacturer = meta.get("manufacturer", "Autre")
-        nozzle_single = _ov_val(overrides, "machine_nozzle_size", None)
-
-        nozzles = variant_index.get(machine_id, [])
-        if not nozzles:
-            nozzles = [float(nozzle_single)] if nozzle_single is not None else [0.4]
-
-        # ids des définitions d'extrudeur (pour construire un 3MF projet fidèle) :
         trains = meta.get("machine_extruder_trains", {}) or {}
         extruder_defs = [trains.get(str(i), f"{machine_id}_extruder_{i}")
                          for i in range(extruder_count)]
 
+        variants = _choisir_variants(variant_index.get(machine_id, {}),
+                                     meta.get("preferred_variant_name", ""))
+        nozzles = sorted(float(k) for k in variants) if variants else []
+        if not nozzles:
+            single = _ov_val(overrides, "machine_nozzle_size", None)
+            nozzles = [float(single)] if single is not None else [0.4]
+
         catalogue[machine_id] = {
             "name": name,
-            "manufacturer": manufacturer,
-            "quality_definition": quality_def,
-            "width": float(width) if isinstance(width, (int, float)) else 200.0,
-            "depth": float(depth) if isinstance(depth, (int, float)) else 200.0,
-            "height": float(height) if isinstance(height, (int, float)) else 200.0,
-            "center_is_zero": bool(center0),
+            "manufacturer": meta.get("manufacturer", "Autre"),
+            "quality_definition": meta.get("quality_definition", machine_id),
+            "width": float(_ov_val(overrides, "machine_width", 200.0)),
+            "depth": float(_ov_val(overrides, "machine_depth", 200.0)),
+            "height": float(_ov_val(overrides, "machine_height", 200.0)),
+            "center_is_zero": bool(_ov_val(overrides, "machine_center_is_zero", False)),
             "extruder_count": extruder_count,
-            "heated_bed": heated_bed,
-            "gcode_flavor": gcode_flavor,
+            "heated_bed": bool(_ov_val(overrides, "machine_heated_bed", False)),
+            "gcode_flavor": _ov_val(overrides, "machine_gcode_flavor",
+                                    "RepRap (Marlin/Sprinter)"),
             "nozzles": nozzles,
             "extruder_defs": extruder_defs,
+            # ── champs 3MF projet (exigences ThreeMFWorkspaceReader) ────────
+            "variants": variants,                       # {nozzle: {id, cfg brut}}
+            "variants_name": meta.get("variants_name", "Nozzle"),
+            "has_variants": bool(meta.get("has_variants", False)),
+            "has_materials": bool(meta.get("has_materials", True)),
+            "preferred_material": meta.get("preferred_material", "generic_pla"),
+            "preferred_quality_type": meta.get("preferred_quality_type", "normal"),
+            "material_diameter": _extruder_diameter(root, extruder_defs[0],
+                                                    ext_diam_cache),
         }
 
-    _OUT.parent.mkdir(parents=True, exist_ok=True)
-    _OUT.write_text(json.dumps(catalogue, indent=1, ensure_ascii=False), encoding="utf-8")
+    _OUT_PRINTERS.parent.mkdir(parents=True, exist_ok=True)
+    _OUT_PRINTERS.write_text(json.dumps(catalogue, indent=1, ensure_ascii=False),
+                             encoding="utf-8")
     brands = sorted({v["manufacturer"] for v in catalogue.values()})
-    print(f"{len(catalogue)} imprimantes Cura -> {_OUT} ({len(brands)} marques)")
+    print(f"{len(catalogue)} imprimantes Cura -> {_OUT_PRINTERS} "
+          f"({_OUT_PRINTERS.stat().st_size // 1024} KB, {len(brands)} marques)")
+
+    _extract_materials(root)
 
 
 if __name__ == "__main__":

@@ -3,30 +3,33 @@
 Cura structure ses profils TRÈS différemment de la famille Bambu/Orca et de
 PrusaSlicer : pas de gros JSON/INI unique, mais une pile de CONTENEURS (machine
 globale + un conteneur par extrudeur), chacun un fichier INI séparé dans
-« Cura/<id>.<suffixe> » à l'intérieur du 3MF (`.global.cfg`, `.extruder.cfg`,
-`.inst.cfg` pour les surcharges "definition_changes"/"user"). La géométrie,
-elle, est un 3MF **standard** (aucune extension "production" p:UUID contrairement
-à Bambu — Cura ne l'utilise pas).
+« Cura/<id>.<suffixe> » à l'intérieur du 3MF. La géométrie est un 3MF standard
+(sans extension "production" p:UUID — Cura ne l'utilise pas).
 
-Format entièrement reconstitué depuis :
-  - le CODE SOURCE de Cura installé (plugins/3MFWriter, 3MFReader) ;
-  - un VRAI profil machine généré par Cura (AppData/Roaming/cura/5.6/…) pour la
-    structure exacte des conteneurs (ordre, noms de section, valeurs "True"/
-    "False") ;
-  - les définitions officielles (share/cura/resources/definitions/*.def.json)
-    pour les dimensions/g-code/extrudeurs (voir tools/extract_cura_printers.py).
+Format reconstitué depuis le CODE SOURCE du lecteur installé
+(plugins/3MFReader/ThreeMFWorkspaceReader.py) — exigences DURES vérifiées :
+  1. preRead exige EXACTEMENT UN « Cura/<id>.def.json » de type machine dans
+     l'archive (sinon : « pas un projet », import mesh silencieux — vécu) ;
+  2. tout variant/matériau/quality_changes référencé par une pile et non
+     « empty » DOIT être présent dans l'archive (sinon KeyError) ;
+  3. le matériau passe par le .xml.fdm_material embarqué (reverse map id→racine) ;
+  4. les réglages voyagent dans des conteneurs quality_changes nommés (le
+     lecteur les RECRÉE et copie leurs [values] — lignes 88-109 de
+     _processQualityChanges) ; leur metadata quality_type pilote la résolution
+     du profil de base via ContainerTree ;
+  5. Cura/preferences.cfg doit être en version 7 (Preferences.Version) ;
+  6. ordre des conteneurs des piles : 0=user, 1=quality_changes, 2=intent,
+     3=quality, 4=material, 5=variant, 6=definition_changes, 7=definition
+     (cura/Settings/CuraContainerStack._ContainerIndexes).
 
-Stratégie robuste : les réglages neoSlice sont posés dans les conteneurs
-« user » (priorité la PLUS HAUTE dans la pile Cura, gagne quel que soit le
-profil qualité/matériau sélectionné) ; qualité/matériau/buse pointent vers les
-sentinelles universelles de Cura (`empty_quality`/`empty_material`/
-`empty_variant`, présentes dans TOUTE installation) plutôt que de deviner un ID
-de profil précis par imprimante — sans jamais casser le chargement, et les
-valeurs neoSlice s'appliquent de toute façon par-dessus.
+Données machine : data/cura_printers.json + data/cura_materials.json (extraits
+des ressources officielles — tools/extract_cura_printers.py).
 """
 from __future__ import annotations
 
 import configparser
+import json
+import urllib.parse
 import uuid
 import zipfile
 from datetime import date
@@ -40,9 +43,22 @@ from core.parameters.print_config import PrintConfig
 
 _NS_3MF = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 _NS_CURA = "http://software.ultimaker.com/xml/cura/3mf/2015/10"
+_DATA = Path(__file__).resolve().parent.parent.parent / "data"
+_SETTING_VERSION = "22"          # Cura 5.6
+
+# Réglages visibles par défaut (liste standard Cura — relevée d'une install réelle)
+_VISIBLE_SETTINGS = (
+    "layer_height;line_width;wall_thickness;wall_line_count;top_bottom_thickness;"
+    "top_layers;bottom_layers;infill_sparse_density;infill_pattern;"
+    "material_print_temperature;material_bed_temperature;speed_print;speed_wall_0;"
+    "speed_wall_x;speed_infill;speed_topbottom;retraction_enable;cool_fan_enabled;"
+    "cool_fan_speed;support_enable;support_structure;support_angle;adhesion_type;"
+    "brim_width;prime_tower_enable"
+)
 
 # Clés GLOBALES (settable_per_extruder=False dans fdmprinter.def.json) : vivent
-# dans le conteneur "user" de la pile MACHINE. Tout le reste va sur l'extrudeur.
+# dans le conteneur quality_changes GLOBAL. Tout le reste va sur l'extrudeur 0.
+# (Le lecteur re-dispatche de toute façon les clés mal placées — vérifié.)
 _GLOBAL_KEYS = {
     "layer_height", "support_enable", "support_structure", "adhesion_type",
     "material_bed_temperature", "material_bed_temperature_layer_0",
@@ -59,29 +75,49 @@ _ADHESION = {"no_brim": "skirt", "outer_only": "brim", "inner_only": "brim",
 _SEAM = {"aligned": "sharpest_corner", "nearest": "shortest",
          "random": "random", "back": "back"}
 
+# neoSlice filament (base matériau) -> id racine matériau générique Cura.
+_MATERIAL_MAP = {
+    "PLA": "generic_pla", "PETG": "generic_petg", "ABS": "generic_abs",
+    "ASA": "generic_asa", "TPU": "generic_tpu", "PC": "generic_pc",
+    "PA": "generic_nylon", "NYLON": "generic_nylon", "PVA": "generic_pva",
+    "HIPS": "generic_hips", "CPE": "generic_cpe",
+}
+
+
+def _q(name: str) -> str:
+    """Nom de fichier d'un conteneur : id URL-quoté (convention Cura réelle,
+    ex. « UltiMaker+S5.global.cfg » pour l'id « UltiMaker S5 »)."""
+    return urllib.parse.quote_plus(name)
+
 
 def _b(v: bool) -> str:
-    """Bool -> littéral tel que sérialisé par Cura ('True'/'False', pas '1'/'0')."""
     return "True" if v else "False"
 
 
+import functools
+
+
+@functools.lru_cache(maxsize=1)
+def _materials() -> dict:
+    try:
+        return json.loads((_DATA / "cura_materials.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 def _config_to_cura(config: PrintConfig, filament_name: str = "") -> dict:
-    """PrintConfig neoSlice -> {clé Cura: valeur str}, à répartir ensuite entre
-    conteneur machine (clés globales) et conteneur extrudeur (le reste)."""
+    """PrintConfig neoSlice -> {clé Cura: valeur str}."""
     o: dict[str, str] = {}
 
-    # Couches / parois
     o["layer_height"] = f"{config.layer_height}"
     o["layer_height_0"] = f"{config.first_layer_height}"
     o["wall_line_count"] = f"{config.wall_loops}"
     o["top_layers"] = f"{config.top_shell_layers}"
     o["bottom_layers"] = f"{config.bottom_shell_layers}"
 
-    # Remplissage
     o["infill_sparse_density"] = f"{config.infill_density}"
     o["infill_pattern"] = _FILL_PATTERN.get(config.infill_pattern, "grid")
 
-    # Vitesses (mm/s)
     o["speed_wall_0"] = f"{config.outer_wall_speed}"
     o["speed_wall_x"] = f"{config.inner_wall_speed}"
     o["speed_infill"] = f"{config.infill_speed}"
@@ -89,14 +125,12 @@ def _config_to_cura(config: PrintConfig, filament_name: str = "") -> dict:
     o["speed_layer_0"] = f"{config.first_layer_speed}"
     o["speed_print"] = f"{config.inner_wall_speed}"
 
-    # Températures
     o["material_print_temperature"] = f"{config.nozzle_temperature}"
     o["material_print_temperature_layer_0"] = f"{config.nozzle_temperature}"
     o["material_bed_temperature"] = f"{config.bed_temperature}"
     o["material_bed_temperature_layer_0"] = f"{config.bed_temperature}"
 
-    # Ventilation — suit le MATÉRIAU (comme pour PrusaSlicer : un ABS/PA plein
-    # ventilateur délamine entre couches).
+    # Ventilation — suit le MATÉRIAU (un ABS/PA plein ventilateur délamine).
     try:
         from data.filaments import FILAMENTS
         fil = FILAMENTS.get(filament_name, {})
@@ -109,34 +143,27 @@ def _config_to_cura(config: PrintConfig, filament_name: str = "") -> dict:
         o["cool_fan_speed_0"] = "0" if int(fil.get("ventilateur_1ere_couche", 0)) == 0 else \
             f"{int(fil.get('ventilateur_seuil_mini', 35))}"
 
-    # Supports
     has_support = config.support_type != "none"
     o["support_enable"] = _b(has_support)
     o["support_structure"] = "tree" if config.support_type.startswith("tree") else "normal"
-    o["support_angle"] = f"{90 - int(config.support_threshold_angle)}"  # Cura = angle depuis la verticale
-    o["support_infill_rate"] = "15"
+    o["support_angle"] = f"{90 - int(config.support_threshold_angle)}"
     o["support_z_distance"] = f"{config.support_top_z_distance}"
     o["support_top_distance"] = f"{config.support_top_z_distance}"
     o["support_bottom_distance"] = f"{config.support_bottom_z_distance}"
     o["support_xy_distance"] = f"{config.support_object_xy_distance}"
     o["support_pattern"] = _SUPPORT_PATTERN.get(config.support_interface_pattern, "zigzag")
 
-    # Adhérence
     o["adhesion_type"] = _ADHESION.get(config.brim_type, "skirt")
     if config.brim_type != "no_brim":
         o["brim_width"] = f"{max(2.0, config.brim_width)}"
 
-    # Qualité / couture
     o["z_seam_type"] = _SEAM.get(config.seam_position, "sharpest_corner")
     o["retraction_enable"] = _b(True)
     o["material_flow"] = f"{config.bridge_flow * 100:.0f}"
-
     return o
 
 
 def _split_global_extruder(overrides: dict) -> tuple[dict, dict]:
-    """Répartit les clés entre conteneur MACHINE (globales) et EXTRUDEUR (reste) —
-    voir fdmprinter.def.json settable_per_extruder=False pour la liste exacte."""
     glob, ext = {}, {}
     for k, v in overrides.items():
         (glob if k in _GLOBAL_KEYS else ext)[k] = v
@@ -149,8 +176,8 @@ def _write_ini(cp: configparser.ConfigParser) -> str:
     return buf.getvalue()
 
 
-def _container_ini(name: str, definition: str, ctype: str, extra_meta: dict,
-                   values: dict) -> str:
+def _container_ini(cid: str, name: str, definition: str, ctype: str,
+                   extra_meta: dict, values: dict) -> str:
     cp = configparser.ConfigParser(interpolation=None)
     cp.add_section("general")
     cp.set("general", "version", "4")
@@ -158,7 +185,7 @@ def _container_ini(name: str, definition: str, ctype: str, extra_meta: dict,
     cp.set("general", "definition", definition)
     cp.add_section("metadata")
     cp.set("metadata", "type", ctype)
-    cp.set("metadata", "setting_version", "22")
+    cp.set("metadata", "setting_version", _SETTING_VERSION)
     for k, v in extra_meta.items():
         cp.set("metadata", k, str(v))
     cp.add_section("values")
@@ -167,8 +194,72 @@ def _container_ini(name: str, definition: str, ctype: str, extra_meta: dict,
     return _write_ini(cp)
 
 
+def _stack_ini(cid: str, name: str, stype: str, containers: list[str],
+               extra_meta: dict) -> str:
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.add_section("general")
+    cp.set("general", "version", "6")
+    cp.set("general", "name", name)
+    cp.set("general", "id", cid)
+    cp.add_section("metadata")
+    cp.set("metadata", "setting_version", _SETTING_VERSION)
+    cp.set("metadata", "type", stype)
+    for k, v in extra_meta.items():
+        cp.set("metadata", k, str(v))
+    cp.add_section("containers")
+    for i, c in enumerate(containers):
+        cp.set("containers", str(i), c)
+    return _write_ini(cp)
+
+
+def _machine_def_json(machine_id: str, display_name: str) -> str:
+    """def.json machine MINIMAL embarqué. preRead ne le désérialise que si la
+    définition n'est pas déjà dans le registre — toujours présente pour nos
+    machines (extraites de la même install) ; le fichier sert au comptage
+    (machine_definition_container_count == 1) et à l'affichage du nom."""
+    return json.dumps({
+        "name": display_name,
+        "version": 2,
+        "inherits": "fdmprinter",
+        "metadata": {"type": "machine", "visible": True},
+        "settings": {},
+    }, indent=1)
+
+
+def _extruder_def_json(ext_def_id: str) -> str:
+    return json.dumps({
+        "name": "Extruder",
+        "version": 2,
+        "inherits": "fdmextruder",
+        "metadata": {"type": "extruder", "visible": False},
+        "settings": {},
+    }, indent=1)
+
+
+def _pick_material(filament_name: str, machine: dict) -> str | None:
+    """Id racine du matériau générique Cura pour le filament neoSlice, adapté au
+    diamètre machine (variantes _175). None -> empty_material."""
+    if not machine.get("has_materials", True):
+        return None
+    try:
+        from data.filaments import base_materiau
+        base = (base_materiau(filament_name) or "PLA").upper()
+    except Exception:
+        base = "PLA"
+    root = _MATERIAL_MAP.get(base, "generic_pla")
+    mats = _materials()
+    if float(machine.get("material_diameter", 2.85)) < 2.0:
+        for cand in (f"{root}_175", "generic_pla_175"):
+            if cand in mats:
+                return cand
+    if root in mats:
+        return root
+    preferred = machine.get("preferred_material", "generic_pla")
+    return preferred if preferred in mats else None
+
+
 class CuraThreeMFBuilder:
-    """Génère un .3MF Cura valide (projet avec machine + réglages neoSlice)."""
+    """Génère un .3MF UltiMaker Cura valide (projet machine + réglages neoSlice)."""
 
     def build(
         self,
@@ -183,26 +274,45 @@ class CuraThreeMFBuilder:
         from data.printers import cura_machine_for, is_cura_model
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        machine_id = printer_ui_name if is_cura_model(printer_ui_name) else "creality_ender3"
+        if is_cura_model(printer_ui_name):
+            machine_id = printer_ui_name
+        else:
+            logger.error(f"'{printer_ui_name}' n'est pas une imprimante Cura connue — "
+                         "repli creality_ender3 (le 3MF ciblera la MAUVAISE machine)")
+            machine_id = "creality_ender3"
         machine = cura_machine_for(machine_id) or {}
+        display_name = machine.get("name", machine_id)
         width = float(machine.get("width", 200.0))
         depth = float(machine.get("depth", 200.0))
-        n_extruders = max(1, int(machine.get("extruder_count", 1)))
+        n_ext = max(1, int(machine.get("extruder_count", 1)))
         extruder_defs = machine.get("extruder_defs") or [f"{machine_id}_extruder_0"]
+        quality_def = machine.get("quality_definition", machine_id)
+        quality_type = machine.get("preferred_quality_type", "normal")
+
+        # Variant réel pour la buse choisie (repli : buse la plus proche, sinon empty)
+        variants = machine.get("variants", {}) or {}
+        variant = None
+        if variants:
+            key = f"{float(nozzle_diameter_mm):g}"
+            if key not in variants:
+                key = min(variants, key=lambda k: abs(float(k) - float(nozzle_diameter_mm)))
+            variant = variants[key]
+        material_id = _pick_material(filament_ui_name, machine)
 
         overrides = _config_to_cura(config, filament_ui_name)
-        overrides["machine_nozzle_size"] = f"{nozzle_diameter_mm}"
+        if variant is None:
+            pass                                        # sans variant : buse via def_changes
         glob_vals, ext_vals = _split_global_extruder(overrides)
-        if n_extruders > 1:
-            glob_vals["extruders_enabled_count"] = str(n_extruders)
 
-        # Centrage sur le plateau (repère coin, Z posé à 0 — convention 3MF que
-        # le lecteur Cura re-décale lui-même vers son repère centré interne).
+        # Centrage plateau (repère coin 3MF ; le lecteur Cura re-décale de -W/2,-D/2
+        # et ajoute le centre du mesh — équation vérifiée sur les décalages observés).
         bb = mesh.bounds
         tx = width / 2 - (bb[0][0] + bb[1][0]) / 2
         ty = depth / 2 - (bb[0][1] + bb[1][1]) / 2
         tz = -bb[0][2]
 
+        N = display_name                                # nom d'instance machine
+        qc_global_id = "neoSlice_qc_global"
         tmp = output_path.with_suffix(".3mf.tmp")
         try:
             with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -211,30 +321,64 @@ class CuraThreeMFBuilder:
                 zf.writestr("3D/3dmodel.model",
                            self._model_xml(mesh, tx, ty, tz, object_name))
 
-                # ── conteneur MACHINE (pile globale) ────────────────────────
-                machine_name = object_name  # nom d'instance = simple, unique au fichier
-                settings_id = f"{machine_name}_settings"
-                user_id = f"{machine_name}_user"
-                zf.writestr(f"Cura/{settings_id}.inst.cfg", _container_ini(
-                    settings_id, machine_id, "definition_changes", {}, {}))
-                zf.writestr(f"Cura/{user_id}.inst.cfg", _container_ini(
-                    user_id, machine_id, "user", {"machine": machine_name}, glob_vals))
-                zf.writestr(f"Cura/{machine_name}.global.cfg", self._global_stack(
-                    machine_name, machine_id, user_id, settings_id))
+                # ── définitions (exigence dure : 1 def machine dans l'archive) ──
+                zf.writestr(f"Cura/{_q(machine_id)}.def.json",
+                           _machine_def_json(machine_id, display_name))
+                for ed in dict.fromkeys(extruder_defs[:n_ext]):
+                    zf.writestr(f"Cura/{_q(ed)}.def.json", _extruder_def_json(ed))
 
-                # ── conteneur(s) EXTRUDEUR ──────────────────────────────────
-                for i in range(n_extruders):
+                # ── variant + matériau embarqués (exigés si référencés) ────────
+                if variant is not None:
+                    zf.writestr(f"Cura/{_q(variant['id'])}.inst.cfg", variant["cfg"])
+                if material_id is not None:
+                    zf.writestr(f"Cura/{_q(material_id)}.xml.fdm_material",
+                               _materials()[material_id])
+
+                # ── quality_changes « neoSlice » (portent NOS réglages) ────────
+                zf.writestr(f"Cura/{_q(qc_global_id)}.inst.cfg", _container_ini(
+                    qc_global_id, "neoSlice", quality_def, "quality_changes",
+                    {"quality_type": quality_type}, glob_vals))
+
+                # ── pile GLOBALE ───────────────────────────────────────────────
+                settings_id = f"{N}_settings"
+                user_id = f"{N}_user"
+                dc_vals = {"extruders_enabled_count": str(n_ext)} if n_ext > 1 else {}
+                zf.writestr(f"Cura/{_q(settings_id)}.inst.cfg", _container_ini(
+                    settings_id, settings_id, machine_id, "definition_changes", {}, dc_vals))
+                zf.writestr(f"Cura/{_q(user_id)}.inst.cfg", _container_ini(
+                    user_id, user_id, machine_id, "user", {"machine": N}, {}))
+                zf.writestr(f"Cura/{_q(N)}.global.cfg", _stack_ini(
+                    N, N, "machine",
+                    [user_id, qc_global_id, "empty_intent", "empty_quality",
+                     "empty_material", "empty_variant", settings_id, machine_id],
+                    {"group_id": str(uuid.uuid4())}))
+
+                # ── pile(s) EXTRUDEUR ──────────────────────────────────────────
+                for i in range(n_ext):
                     ext_def = extruder_defs[i] if i < len(extruder_defs) else f"{machine_id}_extruder_{i}"
-                    ext_name = f"{machine_name}_extruder_{i}"
-                    e_settings_id = f"{ext_name}_settings"
-                    e_user_id = f"{ext_name}_user"
-                    vals = ext_vals if i == 0 else {}   # une seule matière gérée -> extrudeur 0
-                    zf.writestr(f"Cura/{e_settings_id}.inst.cfg", _container_ini(
-                        e_settings_id, ext_def, "definition_changes", {}, {}))
-                    zf.writestr(f"Cura/{e_user_id}.inst.cfg", _container_ini(
-                        e_user_id, ext_def, "user", {"extruder": ext_name}, vals))
-                    zf.writestr(f"Cura/{ext_name}.extruder.cfg", self._extruder_stack(
-                        ext_name, ext_def, i, e_user_id, e_settings_id))
+                    sid = f"{N}_extruder_{i}"
+                    e_settings = f"{sid}_settings"
+                    e_user = f"{sid}_user"
+                    qc_ext_id = f"neoSlice_qc_ext_{i}"
+                    e_dc_vals: dict = {}
+                    if variant is None and i == 0:
+                        e_dc_vals["machine_nozzle_size"] = f"{nozzle_diameter_mm}"
+                    zf.writestr(f"Cura/{_q(qc_ext_id)}.inst.cfg", _container_ini(
+                        qc_ext_id, "neoSlice", quality_def, "quality_changes",
+                        {"quality_type": quality_type, "position": str(i),
+                         "intent_category": "default"},
+                        ext_vals if i == 0 else {}))
+                    zf.writestr(f"Cura/{_q(e_settings)}.inst.cfg", _container_ini(
+                        e_settings, e_settings, ext_def, "definition_changes", {}, e_dc_vals))
+                    zf.writestr(f"Cura/{_q(e_user)}.inst.cfg", _container_ini(
+                        e_user, e_user, machine_id, "user", {"extruder": sid}, {}))
+                    zf.writestr(f"Cura/{_q(sid)}.extruder.cfg", _stack_ini(
+                        sid, f"Extruder {i + 1}", "extruder_train",
+                        [e_user, qc_ext_id, "empty_intent", "empty_quality",
+                         material_id or "empty_material",
+                         (variant["id"] if variant else "empty_variant"),
+                         e_settings, ext_def],
+                        {"position": str(i), "machine": N}))
 
                 zf.writestr("Cura/preferences.cfg", self._preferences())
                 zf.writestr("Cura/version.ini", self._version_ini())
@@ -244,7 +388,8 @@ class CuraThreeMFBuilder:
             raise
 
         logger.info(f"3MF Cura généré → {output_path} "
-                   f"({output_path.stat().st_size // 1024} KB, machine={machine_id})")
+                   f"({output_path.stat().st_size // 1024} KB, machine={machine_id}, "
+                   f"variant={variant['id'] if variant else '-'}, matériau={material_id or '-'})")
         return output_path
 
     # ── Pièces 3MF standard (géométrie) ─────────────────────────────────────
@@ -302,63 +447,20 @@ class CuraThreeMFBuilder:
         out.append('</model>')
         return "\n".join(out)
 
-    # ── Pièces « projet » Cura (pile de conteneurs) ─────────────────────────
-    @staticmethod
-    def _global_stack(machine_name: str, machine_id: str, user_id: str,
-                      settings_id: str) -> str:
-        cp = configparser.ConfigParser(interpolation=None)
-        cp.add_section("general")
-        cp.set("general", "version", "6")
-        cp.set("general", "name", machine_name)
-        cp.set("general", "id", machine_name)
-        cp.add_section("metadata")
-        cp.set("metadata", "setting_version", "22")
-        cp.set("metadata", "type", "machine")
-        cp.set("metadata", "group_id", str(uuid.uuid4()))
-        cp.add_section("containers")
-        # ordre RÉEL constaté (priorité décroissante) : user > quality_changes >
-        # intent > quality > material > variant > definition_changes > definition.
-        cp.set("containers", "0", user_id)
-        cp.set("containers", "1", "empty_quality_changes")
-        cp.set("containers", "2", "empty_intent")
-        cp.set("containers", "3", "empty_quality")
-        cp.set("containers", "4", "empty_material")
-        cp.set("containers", "5", "empty_variant")
-        cp.set("containers", "6", settings_id)
-        cp.set("containers", "7", machine_id)
-        return _write_ini(cp)
-
-    @staticmethod
-    def _extruder_stack(ext_name: str, ext_def: str, position: int,
-                        user_id: str, settings_id: str) -> str:
-        cp = configparser.ConfigParser(interpolation=None)
-        cp.add_section("general")
-        cp.set("general", "version", "6")
-        cp.set("general", "name", f"Extruder {position + 1}")
-        cp.set("general", "id", ext_name)
-        cp.add_section("metadata")
-        cp.set("metadata", "setting_version", "22")
-        cp.set("metadata", "type", "extruder_train")
-        cp.set("metadata", "position", str(position))
-        cp.set("metadata", "machine", ext_name.rsplit("_extruder_", 1)[0])
-        cp.add_section("containers")
-        cp.set("containers", "0", user_id)
-        cp.set("containers", "1", "empty_quality_changes")
-        cp.set("containers", "2", "empty_intent")
-        cp.set("containers", "3", "empty_quality")
-        cp.set("containers", "4", "empty_material")
-        cp.set("containers", "5", "empty_variant")
-        cp.set("containers", "6", settings_id)
-        cp.set("containers", "7", ext_def)
-        return _write_ini(cp)
-
+    # ── Pièces « projet » Cura ───────────────────────────────────────────────
     @staticmethod
     def _preferences() -> str:
+        """Cura/preferences.cfg — version 7 OBLIGATOIRE (Preferences.Version ;
+        v6 était silencieusement rejeté) + les 4 clés que le writer officiel copie."""
         cp = configparser.ConfigParser(interpolation=None)
         cp.add_section("general")
-        cp.set("general", "version", "6")
-        cp.add_section("values")
-        cp.set("values", "general/visible_settings", "")
+        cp.set("general", "version", "7")
+        cp.set("general", "visible_settings", _VISIBLE_SETTINGS)
+        cp.add_section("cura")
+        cp.set("cura", "active_mode", "1")
+        cp.set("cura", "categories_expanded", "")
+        cp.add_section("metadata")
+        cp.set("metadata", "setting_version", _SETTING_VERSION)
         return _write_ini(cp)
 
     @staticmethod
