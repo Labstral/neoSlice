@@ -65,7 +65,14 @@ def _pre_read_simulation(path: Path) -> dict:
         machine_defs, extruder_defs = [], []
         for did, fname in _archive_ids(cura_files, ".def.json").items():
             d = json.loads(z.read(fname))
+            # Comme Cura : « type » hérité du parent si absent (DefinitionContainer.
+            # deserializeMetadata remonte la chaîne inherits, résolue via le
+            # REGISTRE — fdmextruder → extruder, fdmprinter → machine). Ici on
+            # approxime la chaîne par le nom du parent (suffisant : les parents
+            # d'extrudeurs contiennent tous « extruder »).
             t = d.get("metadata", {}).get("type")
+            if t is None:
+                t = "extruder" if "extruder" in (d.get("inherits") or "") else "machine"
             (machine_defs if t == "machine" else extruder_defs).append(did)
         assert len(machine_defs) == 1, \
             f"preRead exige 1 def machine, trouvé {machine_defs}"
@@ -180,8 +187,18 @@ def test_variant_et_materiau_embarques(tmp_path):
     assert "Cura/generic_petg_175.xml.fdm_material" in names     # matériau 1.75
 
 
-def test_machine_inconnue_replie_avec_erreur_loggee(tmp_path):
-    # Une imprimante non-Cura (ex. Bambu) ne doit pas produire un fichier cassé.
-    path = _build(tmp_path, "X1 Carbon")
-    info = _pre_read_simulation(path)
-    assert info["machine_def_id"] == "creality_ender3"           # repli documenté
+def test_machine_inconnue_leve_une_erreur_claire(tmp_path):
+    # PAS de repli silencieux (cause historique d'un 3MF centré pour la mauvaise
+    # machine) : une imprimante non-Cura doit lever une erreur explicite.
+    with pytest.raises(ValueError, match="catalogue Cura"):
+        _build(tmp_path, "X1 Carbon")
+
+
+def test_def_machine_est_l_original_complet(tmp_path):
+    # Le def.json embarqué doit être l'ORIGINAL des ressources Cura (parité avec
+    # le writer officiel), pas un squelette synthétisé.
+    path = _build(tmp_path, "creality_ender3")
+    with zipfile.ZipFile(path) as z:
+        d = json.loads(z.read("Cura/creality_ender3.def.json"))
+    assert d.get("inherits") == "creality_base"          # l'original hérite de la famille
+    assert "overrides" in d                               # dimensions machine présentes

@@ -199,6 +199,7 @@ def main() -> None:
     print(f"{len(def_files)} définitions trouvées sous {defs_dir}")
     print(f"{len(variant_index)} machines avec buses indexées (variants)")
 
+    extruder_def_raws: dict[str, str] = {}             # dédupliqués (familles partagées)
     for f in def_files:
         machine_id = f.name[: -len(".def.json")]
         resolved = _resolve_chain(defs_dir, machine_id, cache)
@@ -242,14 +243,28 @@ def main() -> None:
             "preferred_quality_type": meta.get("preferred_quality_type", "normal"),
             "material_diameter": _extruder_diameter(root, extruder_defs[0],
                                                     ext_diam_cache),
+            # def.json COMPLET (le writer officiel embarque l'original ; un def
+            # minimal synthétisé est un risque inutile)
+            "def_raw": f.read_text(encoding="utf-8"),
         }
+        for ed in extruder_defs:
+            if ed not in extruder_def_raws:
+                ef = root / "extruders" / f"{ed}.def.json"
+                if ef.exists():
+                    extruder_def_raws[ed] = ef.read_text(encoding="utf-8")
+
+    # Clé réservée (préfixe __) : dictionnaire dédupliqué des def.json d'extrudeur.
+    catalogue["__extruder_defs__"] = extruder_def_raws
 
     _OUT_PRINTERS.parent.mkdir(parents=True, exist_ok=True)
     _OUT_PRINTERS.write_text(json.dumps(catalogue, indent=1, ensure_ascii=False),
                              encoding="utf-8")
-    brands = sorted({v["manufacturer"] for v in catalogue.values()})
-    print(f"{len(catalogue)} imprimantes Cura -> {_OUT_PRINTERS} "
-          f"({_OUT_PRINTERS.stat().st_size // 1024} KB, {len(brands)} marques)")
+    brands = sorted({v["manufacturer"] for k, v in catalogue.items()
+                     if not k.startswith("__")})
+    n_machines = sum(1 for k in catalogue if not k.startswith("__"))
+    print(f"{n_machines} imprimantes Cura ({len(extruder_def_raws)} defs extrudeur) "
+          f"-> {_OUT_PRINTERS} ({_OUT_PRINTERS.stat().st_size // 1024} KB, "
+          f"{len(brands)} marques)")
 
     _extract_materials(root)
 

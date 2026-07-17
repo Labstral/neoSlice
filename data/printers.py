@@ -541,6 +541,8 @@ def _cura_by_model() -> dict:
     """Index : machine_id -> {marque, display, nozzles, ...specs}."""
     out: dict[str, dict] = {}
     for machine_id, e in _cura_catalogue().items():
+        if machine_id.startswith("__"):
+            continue                         # clé réservée (__extruder_defs__…)
         brand = e.get("manufacturer") or "Autre"
         out[machine_id] = {
             "marque": brand,
@@ -563,8 +565,14 @@ def _cura_by_model() -> dict:
             "preferred_material": e.get("preferred_material", "generic_pla"),
             "preferred_quality_type": e.get("preferred_quality_type", "normal"),
             "material_diameter": e.get("material_diameter", 2.85),
+            "def_raw": e.get("def_raw", ""),
         }
     return out
+
+
+def cura_extruder_def_raw(ext_def_id: str) -> str:
+    """def.json COMPLET d'une définition d'extrudeur Cura ('' si inconnu)."""
+    return (_cura_catalogue().get("__extruder_defs__", {}) or {}).get(ext_def_id, "")
 
 
 def cura_brands() -> list[str]:

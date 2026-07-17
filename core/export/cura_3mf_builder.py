@@ -212,11 +212,14 @@ def _stack_ini(cid: str, name: str, stype: str, containers: list[str],
     return _write_ini(cp)
 
 
-def _machine_def_json(machine_id: str, display_name: str) -> str:
-    """def.json machine MINIMAL embarqué. preRead ne le désérialise que si la
-    définition n'est pas déjà dans le registre — toujours présente pour nos
-    machines (extraites de la même install) ; le fichier sert au comptage
-    (machine_definition_container_count == 1) et à l'affichage du nom."""
+def _machine_def_json(machine: dict, machine_id: str, display_name: str) -> str:
+    """def.json machine embarqué — l'ORIGINAL complet (extrait des ressources
+    Cura, comme le fait le writer officiel). Repli minimal si absent du
+    catalogue (le registre de l'utilisateur fournit de toute façon la vraie
+    définition pour nos machines)."""
+    raw = machine.get("def_raw", "")
+    if raw:
+        return raw
     return json.dumps({
         "name": display_name,
         "version": 2,
@@ -227,6 +230,10 @@ def _machine_def_json(machine_id: str, display_name: str) -> str:
 
 
 def _extruder_def_json(ext_def_id: str) -> str:
+    from data.printers import cura_extruder_def_raw
+    raw = cura_extruder_def_raw(ext_def_id)
+    if raw:
+        return raw
     return json.dumps({
         "name": "Extruder",
         "version": 2,
@@ -274,12 +281,15 @@ class CuraThreeMFBuilder:
         from data.printers import cura_machine_for, is_cura_model
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if is_cura_model(printer_ui_name):
-            machine_id = printer_ui_name
-        else:
-            logger.error(f"'{printer_ui_name}' n'est pas une imprimante Cura connue — "
-                         "repli creality_ender3 (le 3MF ciblera la MAUVAISE machine)")
-            machine_id = "creality_ender3"
+        if not is_cura_model(printer_ui_name):
+            # PAS de repli silencieux : c'était la cause d'un 3MF centré pour la
+            # mauvaise machine (Ender-3 235×235 affiché sur un plateau S5). Mieux
+            # vaut une erreur claire dans la barre de statut que ce piège.
+            raise ValueError(
+                f"« {printer_ui_name} » n'est pas une imprimante du catalogue Cura — "
+                "re-sélectionnez votre imprimante à l'étape ① (mode UltiMaker Cura) "
+                "puis validez avant d'exporter.")
+        machine_id = printer_ui_name
         machine = cura_machine_for(machine_id) or {}
         display_name = machine.get("name", machine_id)
         width = float(machine.get("width", 200.0))
@@ -323,9 +333,10 @@ class CuraThreeMFBuilder:
 
                 # ── définitions (exigence dure : 1 def machine dans l'archive) ──
                 zf.writestr(f"Cura/{_q(machine_id)}.def.json",
-                           _machine_def_json(machine_id, display_name))
+                           _machine_def_json(machine, machine_id, display_name))
                 for ed in dict.fromkeys(extruder_defs[:n_ext]):
                     zf.writestr(f"Cura/{_q(ed)}.def.json", _extruder_def_json(ed))
+                zf.writestr("Cura/packages.json", '{"packages": []}')
 
                 # ── variant + matériau embarqués (exigés si référencés) ────────
                 if variant is not None:
