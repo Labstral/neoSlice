@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import configparser
 import json
-import urllib.parse
+
 import uuid
 import zipfile
 from datetime import date
@@ -84,9 +84,21 @@ _MATERIAL_MAP = {
 
 
 def _q(name: str) -> str:
-    """Nom de fichier d'un conteneur : id URL-quoté (convention Cura réelle,
-    ex. « UltiMaker+S5.global.cfg » pour l'id « UltiMaker S5 »)."""
-    return urllib.parse.quote_plus(name)
+    """Nom de fichier d'un conteneur DANS L'ARCHIVE : id BRUT (espaces compris).
+    ATTENTION piège vécu (attrapé par le bot via cura.log, preRead ligne 436) :
+    le dossier AppData de Cura URL-quote ses fichiers (« UltiMaker+S5.global.cfg »)
+    mais le writer 3MF écrit `container.getId()` TEL QUEL et _stripFileToId ne
+    dé-quote PAS → un nom quoté rend la pile irrésoluble (KeyError) → « pas un
+    projet » → import mesh silencieux."""
+    return name
+
+
+def _zip_safe(name: str) -> str:
+    """Nom d'instance sûr pour un chemin zip : certains noms machine contiennent
+    « / » (« Creality Ender-3 / Ender-3 v2 ») → sous-dossier involontaire."""
+    for c in '/\\:*?"<>|':
+        name = name.replace(c, "-")
+    return name
 
 
 def _b(v: bool) -> str:
@@ -310,7 +322,7 @@ class CuraThreeMFBuilder:
         ty = depth / 2 - (bb[0][1] + bb[1][1]) / 2
         tz = -bb[0][2]
 
-        N = display_name                                # nom d'instance machine
+        N = _zip_safe(display_name)                     # nom d'instance machine
         # Nom de profil PAR MACHINE : un nom statique (« neoSlice ») réutilisé sur
         # une AUTRE machine ferait, en stratégie « override », re-remplir les
         # conteneurs existants liés à l'ancienne quality_definition → groupe

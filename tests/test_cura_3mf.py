@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import configparser
 import json
-import urllib.parse
+
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -46,12 +46,14 @@ def _build(tmp_path: Path, machine_id: str, nozzle: float = 0.4,
 
 
 def _archive_ids(names: list[str], suffix: str) -> dict[str, str]:
-    """{id (dé-quoté): nom de fichier} pour un suffixe donné (convention Cura)."""
+    """{id: nom de fichier} pour un suffixe donné. Comme _stripFileToId de Cura :
+    id = nom BRUT sans « Cura/ » ni extension — PAS de dé-quotage (le writer
+    officiel écrit container.getId() tel quel, espaces compris ; un nom quoté
+    rend la pile irrésoluble → bug attrapé par le bot dans cura.log)."""
     out = {}
     for n in names:
         if n.startswith("Cura/") and n.endswith(suffix):
-            stem = n[len("Cura/"):-len(suffix)]
-            out[urllib.parse.unquote_plus(stem)] = n
+            out[n[len("Cura/"):-len(suffix)]] = n
     return out
 
 
