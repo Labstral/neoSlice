@@ -50,8 +50,12 @@ VersionInfoDescription={#AppName} Setup
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
 
-; Mise à jour — ferme neoSlice automatiquement si ouvert
-CloseApplications=yes
+; Mise à jour — ferme neoSlice automatiquement si ouvert.
+; force = si la fermeture gracieuse échoue (process figé/zombie ou en cours de
+; sortie), l'installateur TERMINE de force neoSlice.exe au lieu d'afficher
+; « fermez l'application » et de bloquer. Débloque aussi les utilisateurs déjà
+; coincés dès ce prochain installateur.
+CloseApplications=force
 CloseApplicationsFilter=neoSlice.exe
 RestartApplications=no
 

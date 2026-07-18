@@ -1550,10 +1550,29 @@ class MainWindow(QMainWindow):
             "analysis": getattr(self, "_analysis", None),
         }
 
+    def _hard_quit(self, code: int = 0):
+        """Sortie GARANTIE et immédiate de neoSlice.
+
+        1) tue le serveur Ollama enfant (lancé par Oen via subprocess) : os._exit
+           ne tue pas les enfants → sinon ollama.exe reste orphelin (process
+           fantôme visible dans le gestionnaire des tâches) ;
+        2) os._exit : n'attend AUCUN thread non-daemon. Sans ça, un worker ou le
+           lecteur de flux Ollama maintient neoSlice.exe en vie après la
+           fermeture → l'installateur de mise à jour croit neoSlice ouvert et
+           refuse de s'installer (« fermez neoSlice » alors qu'il est fermé)."""
+        try:
+            import sys as _sys, subprocess as _sp
+            if _sys.platform == "win32":
+                _sp.run(["taskkill", "/F", "/IM", "ollama.exe"],
+                        capture_output=True, creationflags=0x08000000)
+        except Exception:
+            pass
+        import os
+        os._exit(code)
+
     def closeEvent(self, event):
         event.accept()
-        import os
-        os._exit(0)
+        self._hard_quit(0)
 
     # ── Fenêtre ────────────────────────────────────────────────────────────
 
@@ -2800,11 +2819,16 @@ class MainWindow(QMainWindow):
                         install_btn.show()
                         later_btn.setEnabled(True)
                     else:
-                        # Windows : lancer l'installeur et quitter
+                        # Windows : lancer l'installeur puis MOURIR POUR DE BON.
+                        # QApplication.quit() ne suffisait pas (ne tue pas le
+                        # process si un thread non-daemon tourne → l'installateur
+                        # voyait neoSlice.exe encore ouvert). os._exit garantit que
+                        # neoSlice.exe a disparu avant la vérif « app ouverte ? »
+                        # de l'installateur (+ CloseApplications=force côté .iss).
                         status_lbl.setText(_("update.installing"))
                         QTimer.singleShot(600, lambda: (
                             subprocess.Popen([val]),
-                            QApplication.quit()
+                            self._hard_quit(0)
                         ))
                 elif kind == "error":
                     _poll_timer.stop()
