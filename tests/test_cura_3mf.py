@@ -172,11 +172,23 @@ def test_projet_cura_passe_pre_read(tmp_path, machine_id, nozzle):
 
 
 def test_reglages_dans_quality_changes(tmp_path):
+    """TOUS les réglages vivent dans le qc GLOBAL (le lecteur Cura dispatche
+    lui-même vers l'extrudeur 0 via settable_per_extruder — chemin historique
+    fiable) ; les qc par-extrudeur restent VIDES ; nom de profil PAR MACHINE
+    (un nom statique réutilisé sur une autre machine casse la résolution du
+    groupe en stratégie override)."""
     path = _build(tmp_path, "creality_ender3")
     info = _pre_read_simulation(path)
     vals = info["qc_values"]
-    assert vals.get("support_enable") == "True"       # bool format Cura
-    assert "layer_height" in vals                      # clé globale bien placée
+    assert vals.get("support_enable") == "True"        # bool format Cura
+    assert "layer_height" in vals                       # clé globale
+    assert "infill_sparse_density" in vals              # clé extrudeur AUSSI ici
+    assert "infill_pattern" in vals
+    with zipfile.ZipFile(path) as z:
+        cp = configparser.ConfigParser(interpolation=None)
+        cp.read_string(z.read("Cura/neoSlice_qc_ext_0.inst.cfg").decode("utf-8"))
+        assert dict(cp.items("values")) == {}, "qc extrudeur doit être VIDE"
+        assert "Ender-3" in cp.get("general", "name")   # nom par machine
 
 
 def test_variant_et_materiau_embarques(tmp_path):

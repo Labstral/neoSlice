@@ -56,13 +56,12 @@ _VISIBLE_SETTINGS = (
     "brim_width;prime_tower_enable"
 )
 
-# Clés GLOBALES (settable_per_extruder=False dans fdmprinter.def.json) : vivent
-# dans le conteneur quality_changes GLOBAL. Tout le reste va sur l'extrudeur 0.
-# (Le lecteur re-dispatche de toute façon les clés mal placées — vérifié.)
-_GLOBAL_KEYS = {
-    "layer_height", "support_enable", "support_structure", "adhesion_type",
-    "material_bed_temperature", "material_bed_temperature_layer_0",
-}
+# TOUTES les valeurs vont dans le quality_changes GLOBAL : le lecteur Cura
+# re-dispatche lui-même chaque clé (globale → conteneur global, par-extrudeur →
+# conteneur extrudeur 0) avec SA résolution settable_per_extruder
+# (_processQualityChanges lignes 989-993) — chemin historique des vieux profils
+# mono-extrudeur, bien plus fiable que notre propre répartition (l'infill 80 %
+# posé dans le qc par-extrudeur n'était pas appliqué chez le testeur).
 
 _FILL_PATTERN = {
     "grid": "grid", "gyroid": "gyroid", "honeycomb": "cross", "cubic": "cubic",
@@ -161,13 +160,6 @@ def _config_to_cura(config: PrintConfig, filament_name: str = "") -> dict:
     o["retraction_enable"] = _b(True)
     o["material_flow"] = f"{config.bridge_flow * 100:.0f}"
     return o
-
-
-def _split_global_extruder(overrides: dict) -> tuple[dict, dict]:
-    glob, ext = {}, {}
-    for k, v in overrides.items():
-        (glob if k in _GLOBAL_KEYS else ext)[k] = v
-    return glob, ext
 
 
 def _write_ini(cp: configparser.ConfigParser) -> str:
@@ -310,9 +302,6 @@ class CuraThreeMFBuilder:
         material_id = _pick_material(filament_ui_name, machine)
 
         overrides = _config_to_cura(config, filament_ui_name)
-        if variant is None:
-            pass                                        # sans variant : buse via def_changes
-        glob_vals, ext_vals = _split_global_extruder(overrides)
 
         # Centrage plateau (repère coin 3MF ; le lecteur Cura re-décale de -W/2,-D/2
         # et ajoute le centre du mesh — équation vérifiée sur les décalages observés).
@@ -322,6 +311,11 @@ class CuraThreeMFBuilder:
         tz = -bb[0][2]
 
         N = display_name                                # nom d'instance machine
+        # Nom de profil PAR MACHINE : un nom statique (« neoSlice ») réutilisé sur
+        # une AUTRE machine ferait, en stratégie « override », re-remplir les
+        # conteneurs existants liés à l'ancienne quality_definition → groupe
+        # introuvable dans l'arbre de la machine courante → réglages PERDUS.
+        qc_name = f"neoSlice {display_name}"
         qc_global_id = "neoSlice_qc_global"
         tmp = output_path.with_suffix(".3mf.tmp")
         try:
@@ -345,10 +339,10 @@ class CuraThreeMFBuilder:
                     zf.writestr(f"Cura/{_q(material_id)}.xml.fdm_material",
                                _materials()[material_id])
 
-                # ── quality_changes « neoSlice » (portent NOS réglages) ────────
+                # ── quality_changes (portent TOUS nos réglages, cf. dispatch) ──
                 zf.writestr(f"Cura/{_q(qc_global_id)}.inst.cfg", _container_ini(
-                    qc_global_id, "neoSlice", quality_def, "quality_changes",
-                    {"quality_type": quality_type}, glob_vals))
+                    qc_global_id, qc_name, quality_def, "quality_changes",
+                    {"quality_type": quality_type}, overrides))
 
                 # ── pile GLOBALE ───────────────────────────────────────────────
                 settings_id = f"{N}_settings"
@@ -374,11 +368,13 @@ class CuraThreeMFBuilder:
                     e_dc_vals: dict = {}
                     if variant is None and i == 0:
                         e_dc_vals["machine_nozzle_size"] = f"{nozzle_diameter_mm}"
+                    # [values] VIDES : les réglages sont TOUS dans le qc global,
+                    # le lecteur les dispatche lui-même vers l'extrudeur 0
+                    # (_processQualityChanges 989-993, settable_per_extruder).
                     zf.writestr(f"Cura/{_q(qc_ext_id)}.inst.cfg", _container_ini(
-                        qc_ext_id, "neoSlice", quality_def, "quality_changes",
+                        qc_ext_id, qc_name, quality_def, "quality_changes",
                         {"quality_type": quality_type, "position": str(i),
-                         "intent_category": "default"},
-                        ext_vals if i == 0 else {}))
+                         "intent_category": "default"}, {}))
                     zf.writestr(f"Cura/{_q(e_settings)}.inst.cfg", _container_ini(
                         e_settings, e_settings, ext_def, "definition_changes", {}, e_dc_vals))
                     zf.writestr(f"Cura/{_q(e_user)}.inst.cfg", _container_ini(
