@@ -4,7 +4,7 @@
 Chaque module s'installe/se désinstalle librement, comme les extensions d'un
 navigateur ou les plugins d'un slicer :
   🤖 Oen    — assistant IA local (Ollama + Qwen3 8B + base de connaissances)
-  🛠 neoGen — génération d'objets 3D par texte (modèle dédié qwen3:14b)
+  🛠 neoGen — bibliothèque d'objets 3D à personnaliser, prêts à imprimer
 
 La fenêtre Paramètres n'affiche plus qu'un résumé compact + « Gérer les
 modules… » qui ouvre ce dialogue. Ajouter un futur module = une carte de plus

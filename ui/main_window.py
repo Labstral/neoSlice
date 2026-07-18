@@ -573,7 +573,7 @@ class _TopBar(QWidget):
     settings_clicked  = Signal()
     diag_clicked      = Signal()
     cost_clicked      = Signal()
-    neogen_clicked    = Signal()      # bouton neoGen (génération de pièces par texte)
+    neogen_clicked    = Signal()      # bouton neoGen (bibliothèque d'objets à personnaliser)
     pro_clicked       = Signal()      # bouton « neoSlice Pro » (ouvre le paywall)
 
     def __init__(self, parent=None):
@@ -621,7 +621,7 @@ class _TopBar(QWidget):
 
         layout.addStretch()
 
-        # Bouton NEOGEN (génération de pièces 3D par texte, via Oen) — Pro
+        # Bouton NEOGEN (bibliothèque d'objets 3D à personnaliser, prêts à imprimer) — Pro
         self._neogen_btn = QPushButton(_("app.btn_neogen"))
         self._neogen_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
         self._neogen_btn.setFixedHeight(26)
