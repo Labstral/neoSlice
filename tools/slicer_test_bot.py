@@ -333,11 +333,11 @@ _ORCA_SLICERS = {
                "ElegooSlicer", ["ElegooSlicer.conf"], "Elegoo"),
     "anycubic": ("AnycubicSlicerNext.exe", [r"C:\Program Files\AnycubicSlicerNext\AnycubicSlicerNext.exe"],
                  "AnycubicSlicerNext", ["AnycubicSlicerNext.conf"], "Anycubic"),
-    # Snapmaker Orca : neoSlice ne propose PAS d'imprimante Snapmaker pour ce
-    # slicer (catalogue Orca générique) → on teste avec une Creality, réellement
-    # offerte à l'utilisateur en sortie « Snapmaker Orca ».
+    # Snapmaker Orca : neoSlice propose bien les imprimantes Snapmaker (A250/A350/
+    # Artisan/J1/U1 — via la bibliothèque Orca embarquée) → on teste une VRAIE
+    # Snapmaker.
     "snapmaker": ("snapmaker-orca.exe", [r"C:\Program Files\Snapmaker_Orca\snapmaker-orca.exe"],
-                  "Snapmaker_Orca", ["Snapmaker_Orca.conf"], "Creality"),
+                  "Snapmaker_Orca", ["Snapmaker_Orca.conf"], "Snapmaker"),
 }
 
 _ORCA_STRUCT_KEYS = ["layer_height", "sparse_infill_density", "sparse_infill_pattern",
