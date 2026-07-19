@@ -913,14 +913,18 @@ class SettingsDialog(QDialog):
         self._perf_result_lbl.setStyleSheet("background: transparent;")
         self._perf_result_lbl.show()
 
-        # Auto-application du mode d'affichage suggéré (comportement historique)
-        idx = {"full": 0, "balanced": 1, "lite": 2}.get(tier, 0)
-        self._perf_combo.blockSignals(True)
-        self._perf_combo.setCurrentIndex(idx)
-        self._perf_combo.blockSignals(False)
-        PREFS.set("perf_mode", tier)
-        self._perf_desc_lbl.setText(self._perf_mode_desc(tier))
-        self._show_restart_notice()
+        # Auto-application du mode d'affichage suggéré — UNIQUEMENT s'il change.
+        # (Avant : PREFS.set + avis « Redémarrage requis » systématiques, même
+        # quand le test recommandait le mode DÉJÀ actif → redémarrage demandé
+        # pour rien après un simple clic sur « Tester ma configuration ».)
+        if tier != PREFS.get("perf_mode", "full"):
+            idx = {"full": 0, "balanced": 1, "lite": 2}.get(tier, 0)
+            self._perf_combo.blockSignals(True)
+            self._perf_combo.setCurrentIndex(idx)
+            self._perf_combo.blockSignals(False)
+            PREFS.set("perf_mode", tier)
+            self._perf_desc_lbl.setText(self._perf_mode_desc(tier))
+            self._show_restart_notice()
 
     @staticmethod
     def _do_restart():
