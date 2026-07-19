@@ -899,9 +899,10 @@ class SettingsDialog(QDialog):
                     ram=f"{ram:.0f}", avail=f"{avail:.0f}", gpu=gpu_name,
                     disk=f"{disk:.0f}")
                 + "</span>"]
-        for titre, col, ico, verdict in lignes:
+        prim = pal["TEXT_PRIMARY"]        # couleur EXPLICITE : sans elle, les titres
+        for titre, col, ico, verdict in lignes:   # héritaient d'un gris illisible en sombre
             html.append(f'<span style="color:{col};">{ico}</span> '
-                        f'<b>{titre}</b><br/>'
+                        f'<b><span style="color:{prim};">{titre}</span></b><br/>'
                         f'<span style="color:{sec};">&nbsp;&nbsp;&nbsp;{verdict}</span>')
         if 0 < disk < 15.0:
             html.append(f'<span style="color:{A};">'
