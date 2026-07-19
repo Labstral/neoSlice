@@ -55,7 +55,9 @@ PRO_COMING_SOON = False   # LANCEMENT : neoSlice Pro accessible (diagnostic + de
 
 ESSAIS_GRATUITS = 0   # essais gratuits SUPPRIMES (2026-07-08) : le Diagnostic IA est
 #   désormais une fonctionnalité Pro pure (activation requise, plus de version d'essai).
-PRIX_AFFICHE = "$19.99"
+# Hausse annoncée (vidéo) : 29,99 → 79,99 $ à la sortie de cette mise à jour.
+# ⚠ Aligner le prix GUMROAD au même moment que la release (sinon incohérence).
+PRIX_AFFICHE = "$79.99"
 MAX_APPAREILS = 3        # nombre max d'activations (uses Gumroad)
 
 # Page d'achat Gumroad (bouton « Débloquer Pro »).

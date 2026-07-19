@@ -1,6 +1,7 @@
 """Fenêtre paramètres neoSlice — modale, sans chrome OS, thème-aware."""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -23,8 +24,50 @@ from ui.styles.theme import MANAGER as _T, FONT_MAIN
 
 
 class _BenchmarkWorker(QThread):
-    """Benchmark CPU/RAM in background, emits (tier, elapsed_ms, ram_gb)."""
-    result_ready = Signal(str, float, float)
+    """Analyse COMPLÈTE de la configuration, en arrière-plan.
+
+    Ne se limite plus au couple « vitesse CPU + RAM » (qui ne jugeait que
+    l'analyse de pièces) : relève aussi le GPU (+ VRAM si NVIDIA), la RAM
+    disponible et l'espace disque libre — nécessaires pour évaluer les modules
+    gourmands (Oen = modèle 8B ~5 Go, neoGen = modèle ~12B ~9 Go, installés
+    sous ~/.neoslice). Émet un dict complet."""
+    result_ready = Signal(object)
+
+    @staticmethod
+    def _detect_gpu() -> tuple[str, float, bool]:
+        """(nom, vram_gb, dédié). VRAM fiable seulement via nvidia-smi ;
+        sinon nom via CIM et VRAM 0 (les modèles locaux tourneront sur CPU —
+        Ollama sous Windows n'accélère en pratique que sur NVIDIA)."""
+        import subprocess as _sp
+        _NOWIN = 0x08000000 if sys.platform == "win32" else 0
+        try:
+            r = _sp.run(["nvidia-smi", "--query-gpu=name,memory.total",
+                         "--format=csv,noheader,nounits"],
+                        capture_output=True, text=True, timeout=6,
+                        creationflags=_NOWIN)
+            line = (r.stdout or "").strip().splitlines()
+            if r.returncode == 0 and line:
+                nom, mem = line[0].rsplit(",", 1)
+                return nom.strip(), float(mem.strip()) / 1024.0, True
+        except Exception:
+            pass
+        try:
+            if sys.platform == "win32":
+                r = _sp.run(["powershell", "-NoProfile", "-Command",
+                             "(Get-CimInstance Win32_VideoController).Name"],
+                            capture_output=True, text=True, timeout=10,
+                            creationflags=_NOWIN)
+                noms = [n.strip() for n in (r.stdout or "").splitlines()
+                        if n.strip() and "Basic Display" not in n]
+                if noms:
+                    nom = noms[0]
+                    low = nom.lower()
+                    integre = any(k in low for k in (
+                        "intel", "uhd", "iris", "radeon(tm) graphics", "vega"))
+                    return nom, 0.0, not integre
+        except Exception:
+            pass
+        return "", 0.0, False
 
     def run(self):
         reps = 3
@@ -35,10 +78,9 @@ class _BenchmarkWorker(QThread):
             np.dot(a, b)
         elapsed_ms = (time.perf_counter() - t0) * 1000 / reps
 
-        ram_gb = 0.0
+        ram_gb = avail_gb = 0.0
         try:
-            import sys as _sys
-            if _sys.platform == "win32":
+            if sys.platform == "win32":
                 import ctypes
                 class _MEMSTATUS(ctypes.Structure):
                     _fields_ = [
@@ -56,9 +98,21 @@ class _BenchmarkWorker(QThread):
                 ms.dwLength = ctypes.sizeof(_MEMSTATUS)
                 ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(ms))
                 ram_gb = ms.ullTotalPhys / (1024 ** 3)
+                avail_gb = ms.ullAvailPhys / (1024 ** 3)
             else:
                 import psutil
-                ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+                vm = psutil.virtual_memory()
+                ram_gb, avail_gb = vm.total / (1024 ** 3), vm.available / (1024 ** 3)
+        except Exception:
+            pass
+
+        gpu_name, vram_gb, gpu_dedie = self._detect_gpu()
+
+        disk_free_gb = 0.0
+        try:
+            import shutil as _sh
+            from pathlib import Path as _P
+            disk_free_gb = _sh.disk_usage(_P.home()).free / (1024 ** 3)
         except Exception:
             pass
 
@@ -69,7 +123,13 @@ class _BenchmarkWorker(QThread):
         else:
             tier = "lite"
 
-        self.result_ready.emit(tier, elapsed_ms, ram_gb)
+        self.result_ready.emit({
+            "tier": tier, "elapsed_ms": elapsed_ms,
+            "ram_gb": ram_gb, "avail_gb": avail_gb,
+            "cores": os.cpu_count() or 0,
+            "gpu_name": gpu_name, "vram_gb": vram_gb, "gpu_dedie": gpu_dedie,
+            "disk_free_gb": disk_free_gb,
+        })
 
 
 class SettingsDialog(QDialog):
@@ -775,31 +835,84 @@ class SettingsDialog(QDialog):
         self._bench_worker.result_ready.connect(self._on_bench_result)
         self._bench_worker.start()
 
-    def _on_bench_result(self, tier: str, elapsed_ms: float, ram_gb: float):
+    def _on_bench_result(self, info: dict):
+        """Affiche l'analyse COMPLÈTE : un verdict par domaine (pièces, diagnostic
+        photo, Oen, neoGen) + résumé matériel — et plus seulement le mode
+        d'affichage. Les modèles locaux des modules sont ce qui exige le plus
+        (Oen 8B ≈ 5 Go, neoGen ~12B ≈ 9 Go) : c'est dit clairement, avec la
+        raison (GPU/RAM/disque) quand la config n'est pas optimale."""
         self._perf_test_btn.setEnabled(True)
         self._perf_test_btn.setText(_("settings.perf_test_btn"))
 
-        result_key = {
-            "full":     "settings.perf_result_full",
-            "balanced": "settings.perf_result_balanced",
-            "lite":     "settings.perf_result_lite",
-        }.get(tier, "settings.perf_result_full")
-        result_text = _(result_key)
-        if ram_gb > 0:
-            result_text += f"  ({elapsed_ms:.1f} ms · {ram_gb:.1f} GB RAM)"
-
+        tier = info.get("tier", "full")
+        ram, avail = info.get("ram_gb", 0.0), info.get("avail_gb", 0.0)
+        vram, gpu_dedie = info.get("vram_gb", 0.0), info.get("gpu_dedie", False)
+        gpu_name = info.get("gpu_name") or _("settings.cfg_gpu_none")
+        disk = info.get("disk_free_gb", 0.0)
         pal = _T.palette()
-        color = {
-            "full":     pal["TELE_GREEN"],
-            "balanced": pal["AMBER"],
-            "lite":     pal["ERROR_RED"],
-        }.get(tier, pal["TEXT_PRIMARY"])
+        V, A, R = pal["TELE_GREEN"], pal["AMBER"], pal["ERROR_RED"]
 
-        self._perf_result_lbl.setText(result_text)
-        self._perf_result_lbl.setStyleSheet(f"color: {color}; background: transparent;")
+        # ── Verdicts par domaine : (couleur, icône, texte) ───────────────────
+        lignes: list[tuple[str, str, str, str]] = []   # (titre, couleur, icône, verdict)
+
+        piece_txt = _({"full": "settings.perf_result_full",
+                       "balanced": "settings.perf_result_balanced",
+                       "lite": "settings.perf_result_lite"}[tier])
+        piece_col = {"full": V, "balanced": A, "lite": R}[tier]
+        lignes.append((_("settings.cfg_line_pieces"), piece_col,
+                       {"full": "✓", "balanced": "△", "lite": "△"}[tier], piece_txt))
+
+        # Diagnostic IA photo : modèle ONNX léger, tourne partout — juste lent
+        # sur CPU vraiment faible.
+        if tier == "lite":
+            lignes.append((_("settings.cfg_line_diag"), A, "△", _("settings.cfg_diag_slow")))
+        else:
+            lignes.append((_("settings.cfg_line_diag"), V, "✓", _("settings.cfg_diag_ok")))
+
+        # Oen (qwen3:8b ≈ 5 Go) : GPU NVIDIA ≥ 6 Go = rapide ; sinon CPU = lent.
+        if vram >= 6.0:
+            lignes.append((_("settings.cfg_line_oen"), V, "✓",
+                           _("settings.cfg_oen_gpu", vram=f"{vram:.0f}")))
+        elif ram >= 16.0:
+            lignes.append((_("settings.cfg_line_oen"), A, "△", _("settings.cfg_oen_cpu")))
+        elif ram >= 8.0:
+            lignes.append((_("settings.cfg_line_oen"), A, "△",
+                           _("settings.cfg_oen_limit", ram=f"{ram:.0f}")))
+        else:
+            lignes.append((_("settings.cfg_line_oen"), R, "✗", _("settings.cfg_oen_no")))
+
+        # neoGen (modèle local ~12B ≈ 9 Go) : plus lourd qu'Oen.
+        if vram >= 10.0:
+            lignes.append((_("settings.cfg_line_neogen"), V, "✓", _("settings.cfg_neogen_gpu")))
+        elif ram >= 16.0:
+            lignes.append((_("settings.cfg_line_neogen"), A, "△", _("settings.cfg_neogen_cpu")))
+        elif ram >= 12.0:
+            lignes.append((_("settings.cfg_line_neogen"), A, "△",
+                           _("settings.cfg_neogen_limit", ram=f"{ram:.0f}")))
+        else:
+            lignes.append((_("settings.cfg_line_neogen"), R, "✗", _("settings.cfg_neogen_no")))
+
+        # ── Rendu HTML (thème-aware : couleurs de la palette active) ─────────
+        sec = pal["TEXT_SECONDARY"]
+        html = [f'<span style="color:{sec};">'
+                + _("settings.cfg_summary", cores=info.get("cores", 0),
+                    ram=f"{ram:.0f}", avail=f"{avail:.0f}", gpu=gpu_name,
+                    disk=f"{disk:.0f}")
+                + "</span>"]
+        for titre, col, ico, verdict in lignes:
+            html.append(f'<span style="color:{col};">{ico}</span> '
+                        f'<b>{titre}</b><br/>'
+                        f'<span style="color:{sec};">&nbsp;&nbsp;&nbsp;{verdict}</span>')
+        if 0 < disk < 15.0:
+            html.append(f'<span style="color:{A};">'
+                        + _("settings.cfg_disk_warn", disk=f"{disk:.0f}") + "</span>")
+        self._perf_result_lbl.setTextFormat(Qt.TextFormat.RichText)
+        self._perf_result_lbl.setWordWrap(True)
+        self._perf_result_lbl.setText("<br/>".join(html))
+        self._perf_result_lbl.setStyleSheet("background: transparent;")
         self._perf_result_lbl.show()
 
-        # Auto-apply the suggested mode
+        # Auto-application du mode d'affichage suggéré (comportement historique)
         idx = {"full": 0, "balanced": 1, "lite": 2}.get(tier, 0)
         self._perf_combo.blockSignals(True)
         self._perf_combo.setCurrentIndex(idx)
