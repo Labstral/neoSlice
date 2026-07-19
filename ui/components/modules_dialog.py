@@ -277,19 +277,23 @@ class ModulesDialog(QDialog):
         self._neogen_progress.setFixedHeight(16)
         self._neogen_progress.hide()
         v.addWidget(self._neogen_progress)
+        # MÊME disposition que la carte Oen : stretch d'abord → les deux boutons
+        # alignés à DROITE, « Mettre à jour la base » à gauche de « Désinstaller »
+        # (avant : base collé à gauche, désinstaller à droite → incohérent).
         row = QHBoxLayout()
         self._neogen_base_btn = QPushButton(_("neogen.base_update"))
         self._neogen_base_btn.setFont(QFont(FONT_MAIN, 8))
         self._neogen_base_btn.setFixedHeight(26)
         self._neogen_base_btn.setCursor(Qt.PointingHandCursor)
         self._neogen_base_btn.clicked.connect(self._on_neogen_base_btn)
-        row.addWidget(self._neogen_base_btn)
         self._neogen_btn = QPushButton()
         self._neogen_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
         self._neogen_btn.setFixedHeight(26)
         self._neogen_btn.setCursor(Qt.PointingHandCursor)
         self._neogen_btn.clicked.connect(self._on_neogen_btn)
         row.addStretch()
+        row.addWidget(self._neogen_base_btn)
+        row.addSpacing(6)
         row.addWidget(self._neogen_btn)
         v.addLayout(row)
         return f
