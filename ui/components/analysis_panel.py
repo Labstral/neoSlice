@@ -167,6 +167,10 @@ class _StatusDot(QLabel):
 class AnalysisPanel(QWidget):
     """Panneau d'analyse géométrique — jauges NASA compactes."""
 
+    # « Forcer l'analyse complète » : relancer l'analyse en ignorant la décision
+    # Auto/Économique pour la pièce courante (connecté dans main_window).
+    force_full_requested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._last_report = None
@@ -245,6 +249,25 @@ class AnalysisPanel(QWidget):
         self._g_fragility.setToolTip(_("analysis.tip_frag"))
         self._g_support.setToolTip(_("analysis.tip_supp"))
 
+        # ── Avis « analyse allégée » (Auto/Économique) + bouton Forcer ──────
+        self._skip_row = QWidget()
+        self._skip_row.setStyleSheet("background: transparent;")
+        _sk = QHBoxLayout(self._skip_row)
+        _sk.setContentsMargins(2, 0, 2, 0)
+        _sk.setSpacing(8)
+        self._skip_lbl = QLabel("")
+        self._skip_lbl.setWordWrap(True)
+        self._skip_lbl.setFont(QFont(FONT_MAIN, 8))
+        self._skip_btn = QPushButton(_("analysis.force_btn"))
+        self._skip_btn.setFont(QFont(FONT_MAIN, 8))
+        self._skip_btn.setFixedHeight(22)
+        self._skip_btn.setCursor(Qt.PointingHandCursor)
+        self._skip_btn.clicked.connect(self.force_full_requested.emit)
+        _sk.addWidget(self._skip_lbl, 1)
+        _sk.addWidget(self._skip_btn)
+        self._skip_row.hide()
+        root.addWidget(self._skip_row)
+
         # ── Données dimensionnelles ────────────────────────────────────────
         self._geo_box = geo = QWidget()
         geo.setStyleSheet(f"background: {_pi['BG_SURFACE']}; border-radius: 3px;")
@@ -322,13 +345,26 @@ class AnalysisPanel(QWidget):
         self._dot_stl.set_active()
         self._dot_anlys.set_active()
 
-        from core.prefs import PREFS
-        _lite = PREFS.get("perf_mode", "full") == "lite"
-
-        if _lite:
+        # Surplombs sautés ? La RAISON vient du rapport (décision par pièce du
+        # mode Auto, ou mode Économique manuel) — plus d'une lecture de PREFS
+        # déconnectée de ce qui a réellement tourné.
+        _skip = getattr(report, "overhangs_skipped_reason", "")
+        _pal_skip = _T.palette()
+        if _skip:
             self._g_overhangs.set_disabled()
             self._g_support.set_disabled()
+            self._skip_lbl.setText(_("analysis.skip_auto") if _skip == "auto"
+                                   else _("analysis.skip_lite"))
+            self._skip_lbl.setStyleSheet(
+                f"color: {_pal_skip['AMBER']}; background: transparent;")
+            self._skip_btn.setStyleSheet(
+                f"QPushButton {{ background: {_pal_skip['BG_SURFACE']}; "
+                f"color: {_pal_skip['TEXT_PRIMARY']}; "
+                f"border: 1px solid {_pal_skip['INACTIVE']}; "
+                f"border-radius: 4px; padding: 2px 10px; }}")
+            self._skip_row.show()
         else:
+            self._skip_row.hide()
             oh_sev = report.overhang_severity
             # Utiliser le ratio réel de faces détectées (display_mask) si dispo
             # → la jauge reflète exactement ce qu'on voit dans le viewer
@@ -364,9 +400,9 @@ class AnalysisPanel(QWidget):
         faces_str = f"{fc//1000}k" if fc >= 1000 else str(fc)
         self._set_geo("FACES", faces_str, active=True)
 
-        # In lite mode, exclude overhang term from verdict (it's 0 but not meaningful)
+        # Surplombs sautés : exclure leur terme du verdict (0 mais non significatif)
         complexity = report.overall_complexity
-        if _lite:
+        if _skip:
             # Recompute without overhang contribution so verdict is honest
             stab_sev = 1.0 - report.stability_score
             frag_sev_r = getattr(report, "fragility_severity", 1.0 if report.has_fragile_zones else 0.0)
@@ -377,8 +413,8 @@ class AnalysisPanel(QWidget):
         _tg = _apal['TELE_GREEN']; _am = _apal['AMBER']; _er = _apal['ERROR_RED']
         _ab = _apal['ACCENT_BRIGHT']
 
-        if _lite:
-            # Lite mode: always "check before printing" because overhangs unknown
+        if _skip:
+            # Surplombs inconnus → toujours « à vérifier avant impression »
             verdict_text   = _("analysis.verdict_warn")
             verdict_color  = _am
             verdict_bg     = "#1E1800" if _is_dk else "#fdf4ed"
@@ -401,8 +437,10 @@ class AnalysisPanel(QWidget):
 
         rows = []
 
-        if _lite:
-            rows.append(f'<span style="color:{_am};">{_("analysis.lite_mode_warn")}</span>')
+        if _skip:
+            rows.append(f'<span style="color:{_am};">'
+                        + (_("analysis.skip_auto") if _skip == "auto"
+                           else _("analysis.skip_lite")) + '</span>')
         else:
             oh_sev = report.overhang_severity
             # Même calcul que la jauge : ratio de faces display_mask

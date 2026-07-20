@@ -361,11 +361,14 @@ class SettingsDialog(QDialog):
         self._perf_lbl = QLabel(_("settings.perf_mode"))
         self._perf_lbl.setFont(QFont(FONT_MAIN, 9))
         self._perf_combo = QComboBox()
-        self._perf_combo.setFixedWidth(130)
-        self._perf_combo.addItem(_("settings.perf_full"),     "full")
-        self._perf_combo.addItem(_("settings.perf_balanced"), "balanced")
-        self._perf_combo.addItem(_("settings.perf_lite"),     "lite")
-        _perf_idx = {"full": 0, "balanced": 1, "lite": 2}.get(PREFS.get("perf_mode", "full"), 0)
+        self._perf_combo.setFixedWidth(150)
+        self._perf_combo.addItem(_("settings.perf_auto"), "auto")
+        self._perf_combo.addItem(_("settings.perf_full"), "full")
+        self._perf_combo.addItem(_("settings.perf_lite"), "lite")
+        # « balanced » (legacy, anciens utilisateurs) → Auto : il ne différait de
+        # Complet que par le nombre de threads, les mêmes analyses tournaient.
+        _perf_idx = {"auto": 0, "full": 1, "lite": 2,
+                     "balanced": 0}.get(PREFS.get("perf_mode", "auto"), 0)
         self._perf_combo.setCurrentIndex(_perf_idx)
         self._perf_combo.currentIndexChanged.connect(self._on_perf_mode_changed)
         perf_mode_row.addWidget(self._perf_lbl)
@@ -374,7 +377,7 @@ class SettingsDialog(QDialog):
         lay.addLayout(perf_mode_row)
         lay.addSpacing(4)
 
-        self._perf_desc_lbl = QLabel(self._perf_mode_desc(PREFS.get("perf_mode", "full")))
+        self._perf_desc_lbl = QLabel(self._perf_mode_desc(PREFS.get("perf_mode", "auto")))
         self._perf_desc_lbl.setFont(QFont(FONT_MAIN, 8))
         self._perf_desc_lbl.setWordWrap(True)
         lay.addWidget(self._perf_desc_lbl)
@@ -782,17 +785,19 @@ class SettingsDialog(QDialog):
     @staticmethod
     def _perf_mode_desc(mode: str) -> str:
         key = {
+            "auto":     "settings.perf_auto_desc",
+            "balanced": "settings.perf_auto_desc",   # legacy → auto
             "full":     "settings.perf_full_desc",
-            "balanced": "settings.perf_balanced_desc",
             "lite":     "settings.perf_lite_desc",
-        }.get(mode, "settings.perf_full_desc")
+        }.get(mode, "settings.perf_auto_desc")
         return _(key)
 
     def _on_perf_mode_changed(self):
         mode = self._perf_combo.currentData()
         PREFS.set("perf_mode", mode)
         self._perf_desc_lbl.setText(self._perf_mode_desc(mode))
-        self._show_restart_notice()
+        # Pas de redémarrage : la décision est relue à CHAQUE analyse (core/perf)
+        # et le rendu viewer à chaque chargement de pièce.
 
 
     def _on_check_update(self):
@@ -913,18 +918,14 @@ class SettingsDialog(QDialog):
         self._perf_result_lbl.setStyleSheet("background: transparent;")
         self._perf_result_lbl.show()
 
-        # Auto-application du mode d'affichage suggéré — UNIQUEMENT s'il change.
-        # (Avant : PREFS.set + avis « Redémarrage requis » systématiques, même
-        # quand le test recommandait le mode DÉJÀ actif → redémarrage demandé
-        # pour rien après un simple clic sur « Tester ma configuration ».)
-        if tier != PREFS.get("perf_mode", "full"):
-            idx = {"full": 0, "balanced": 1, "lite": 2}.get(tier, 0)
-            self._perf_combo.blockSignals(True)
-            self._perf_combo.setCurrentIndex(idx)
-            self._perf_combo.blockSignals(False)
-            PREFS.set("perf_mode", tier)
-            self._perf_desc_lbl.setText(self._perf_mode_desc(tier))
-            self._show_restart_notice()
+        # Le test N'IMPOSE PLUS de mode : il informe, et rafraîchit la vitesse
+        # machine (bench_ms) qu'utilise le mode Auto pour décider par pièce.
+        # (Avant : le tier était auto-appliqué + avis de redémarrage — absurde
+        # depuis que Auto décide par pièce.)
+        try:
+            PREFS.set("bench_ms", round(float(info.get("elapsed_ms", 0)) or 8.0, 2))
+        except Exception:
+            pass
 
     @staticmethod
     def _do_restart():

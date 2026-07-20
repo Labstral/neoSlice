@@ -14,6 +14,10 @@ class AnalysisReport(BaseModel):
     overhang_severity: float = 0.0       # 0=aucun, 1=critique
     overhang_ratio: float = 0.0          # % de faces en surplomb
     max_overhang_angle: float = 0.0      # angle max détecté (degrés)
+    # ""|"auto"|"lite" — surplombs NON analysés et pourquoi (auto : pièce trop
+    # lourde pour cette machine ; lite : mode Économique manuel). Le panneau
+    # affiche la raison + propose « Forcer l'analyse complète ».
+    overhangs_skipped_reason: str = ""
 
     # Orientation optimale (matrice 4x4 aplatie en liste)
     optimal_rotation: Optional[list[float]] = None

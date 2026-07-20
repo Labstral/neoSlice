@@ -128,7 +128,8 @@ class AnalysisWorker(QObject):
     analysis_complete = Signal(object)
     error = Signal(str)
 
-    def __init__(self, mesh, nozzle_diameter_mm: float = 0.4, is_color_assembly: bool = False):
+    def __init__(self, mesh, nozzle_diameter_mm: float = 0.4, is_color_assembly: bool = False,
+                 force_full: bool = False):
         super().__init__()
         self._mesh = mesh
         self._nozzle_mm = float(nozzle_diameter_mm)
@@ -136,12 +137,14 @@ class AnalysisWorker(QObject):
         # plat → sur le maillage non-manifold (parts qui se chevauchent) l'analyse
         # voit de faux surplombs/régions flottantes. Neutralisés en fin de run.
         self._is_color_assembly = bool(is_color_assembly)
+        # « Forcer l'analyse complète » (bouton du panneau) : ignore la décision
+        # Auto/Économique pour CETTE pièce.
+        self._force_full = bool(force_full)
 
     def run(self):
         try:
             from concurrent.futures import ThreadPoolExecutor
-            from core.prefs import PREFS
-            perf_mode = PREFS.get("perf_mode", "full")
+            from core.perf import decision as _perf_decision
 
             t0 = time.perf_counter()
             report = AnalysisReport()
@@ -154,6 +157,9 @@ class AnalysisWorker(QObject):
             # plusieurs minutes sur 5M+ faces. On bascule vers les fallbacks rapides.
             _FACE_LIMIT = 500_000
             _face_count_raw = len(self._mesh.faces)
+            # Décision de performance PAR PIÈCE (mode Auto) : quelles analyses
+            # tournent pour CE mesh sur CETTE machine (voir core/perf.py).
+            _dec = _perf_decision(_face_count_raw, force_full=self._force_full)
 
             if _face_count_raw > _FACE_LIMIT:
                 logger.warning(
@@ -307,8 +313,8 @@ class AnalysisWorker(QObject):
                             pass
                         return fb
 
-                # ── Dispatch parallèle selon le mode ──────────────────────────
-                n_workers = {"full": 3, "balanced": 2, "lite": 1}[perf_mode]
+                # ── Dispatch parallèle selon la décision par pièce ────────────
+                n_workers = _dec["n_workers"]
                 self.progress.emit(12, "Analyses en cours…")
 
                 # Ticker de progression : les tâches (surplombs + stabilité)
@@ -344,13 +350,15 @@ class AnalysisWorker(QObject):
                 _thp.Thread(target=_tick, daemon=True).start()
                 try:
                     with ThreadPoolExecutor(max_workers=n_workers) as pool:
-                        fut_ov   = pool.submit(_task_overhangs) if perf_mode != "lite" else None
+                        fut_ov   = pool.submit(_task_overhangs) if _dec["overhangs"] else None
                         fut_stab = pool.submit(_task_stability)
 
                         ov, floating = fut_ov.result() if fut_ov else (None, False)
                         lr           = fut_stab.result()
                 finally:
                     _stop_tick.set()
+                if not _dec["overhangs"]:
+                    report.overhangs_skipped_reason = _dec["skip_reason"]
 
             self.progress.emit(72, "Fusion des résultats…")
 
@@ -1757,6 +1765,7 @@ class MainWindow(QMainWindow):
 
         # ── Analyse géométrique ──
         self._analysis_panel = AnalysisPanel()
+        self._analysis_panel.force_full_requested.connect(self._on_force_full_analysis)
         layout.addWidget(self._analysis_panel)
 
         # ── Barre de progression ──
@@ -3062,6 +3071,15 @@ class MainWindow(QMainWindow):
         self._statusbar.set_message(f"Erreur chargement : {msg}", ERROR_RED)
         logger.error(f"STL load error : {msg}")
 
+    def _on_force_full_analysis(self):
+        """« Forcer l'analyse complète » (panneau) : relance l'analyse de la
+        pièce courante en ignorant la décision Auto/Économique — l'utilisateur
+        assume le temps de calcul."""
+        if getattr(self, "_mesh", None) is None:
+            return
+        self._force_full_next = True
+        self._start_analysis()
+
     def _start_analysis(self):
         self._analysis_timeout.stop()
         if self._analysis_thread and self._analysis_thread.isRunning():
@@ -3083,10 +3101,13 @@ class MainWindow(QMainWindow):
         self._intent_selector.set_loading(True)
 
         self._analysis_thread = QThread()
+        _force = bool(getattr(self, "_force_full_next", False))
+        self._force_full_next = False          # one-shot (posé par « Forcer l'analyse »)
         self._analysis_worker = AnalysisWorker(
             self._mesh,
             nozzle_diameter_mm=self._current_nozzle_mm,
             is_color_assembly=bool(getattr(self._threemf_data, "is_color_assembly", False)),
+            force_full=_force,
         )
         self._analysis_worker.moveToThread(self._analysis_thread)
 

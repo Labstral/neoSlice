@@ -2074,12 +2074,9 @@ class Viewer3D(QWidget):
                 "feature_angle": 75.0,
                 "ssao": None,
             },
-            "balanced": {
-                "metallic": 0.10, "roughness": 0.22, "specular": 0.55,
-                "ambient": 0.05,  "diffuse":  0.92,
-                "feature_angle": 30.0,
-                "ssao": dict(radius=1.0, bias=0.008, kernel_size=128, blur=True),
-            },
+            # (ancien profil « balanced » supprimé : il était brillant + SSAO
+            # kernel 128 — un rendu PLUS coûteux que « full » ! balanced/auto
+            # retombent sur « full » via le .get() ci-dessous)
             "lite": {
                 "metallic": 0.00, "roughness": 0.55, "specular": 0.00,
                 "ambient": 0.15,  "diffuse":  0.85,
