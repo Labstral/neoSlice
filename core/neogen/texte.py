@@ -154,15 +154,24 @@ def construire_porte_cle(texte: str = "", longueur_mm: float = LONGUEUR_DEFAUT,
                          ep_socle: float = EP_SOCLE, ep_texte: float = EP_TEXTE,
                          d_trou: float = D_TROU, marge: float = MARGE,
                          grave: bool = False, forme: str = "contour",
-                         police: str | None = None) -> trimesh.Trimesh:
-    """Socle + languette percée + texte en relief (ou gravé) -> un maillage.
+                         police: str | None = None, style: str | None = None,
+                         couleur_objet: str | None = None,
+                         couleur_texte: str | None = None):
+    """Socle + languette percée + texte -> maillage (mono) OU Scene bicolore.
 
     TOUT est paramétrable (c'est ce qu'Oen pilotera) :
-      ep_socle : épaisseur du socle (mm)     ep_texte : hauteur du relief (mm)
+      ep_socle : épaisseur du socle (mm)     ep_texte : hauteur du texte (mm)
       d_trou   : diamètre du trou d'anneau   marge    : socle autour du texte
-      grave    : True = texte CREUSÉ dans le socle au lieu d'être en relief
+      grave    : True = texte CREUSÉ (legacy ; sinon utiliser `style`)
+      style    : "relief" | "grave" | "lisse" (prioritaire sur `grave`)
       forme    : contour (suit les lettres) | rectangle | ovale | rond | etiquette
+      couleur_objet / couleur_texte : si fournis → Scene à 2 corps colorés
+                 (bicolore, 2 slots à l'export).
     """
+    # style prioritaire ; sinon dérivé du flag legacy `grave`
+    style = style if style in ("relief", "grave", "lisse") else ("grave" if grave else "relief")
+    grave = (style == "grave")
+    bicolore = bool(couleur_objet and couleur_texte)
     if ep_socle < 1.2:
         raise ValueError("Socle trop fin (< 1.2 mm) : fragile à l'impression.")
     if grave and ep_texte >= ep_socle - 0.6:
@@ -202,6 +211,13 @@ def construire_porte_cle(texte: str = "", longueur_mm: float = LONGUEUR_DEFAUT,
     # 2) Socle selon la FORME choisie (contour des lettres, ou gabarit).
     texte_2d = unary_union([g for g in mp.geoms])
     socle_2d = _socle_forme(forme, mp.bounds, marge, d_trou, texte_2d)
+
+    # BICOLORE : socle (couleur objet) + texte (couleur texte), 2 corps → 2 slots.
+    if bicolore:
+        from core.neogen import bicolore as _bic
+        return _bic.scene_socle_texte(socle_2d, texte_2d, ep_socle, ep_texte,
+                                      style, couleur_objet, couleur_texte,
+                                      chevauchement=CHEVAUCHEMENT)
 
     solides = []
     if grave:

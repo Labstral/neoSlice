@@ -383,7 +383,21 @@ def _sanitize_strict(project_settings: dict) -> None:
 _SLICER_VOCAB_CACHE: dict[str, set | None] = {}
 # Clés d'identité / méta 3MF toujours conservées même si absentes du vocabulaire.
 _KEEP_ALWAYS = {"printer_settings_id", "print_settings_id", "filament_settings_id",
-                "printer_model", "printer_variant", "nozzle_diameter", "version", "from", "name"}
+                "printer_model", "printer_variant", "nozzle_diameter", "version", "from", "name",
+                "curr_bed_type"}
+
+# curr_bed_type (nom affiché, ex. « Textured PEI Plate ») → code interne écrit dans
+# le bloc <plate> de model_settings.config. C'est CE code que Bambu Studio / Orca
+# lisent réellement pour afficher le plateau d'un plateau (curr_bed_type dans
+# project_settings ne suffit PAS). Codes confirmés dans les ressources OrcaSlicer.
+_BED_TYPE_CODE = {
+    "Textured PEI Plate":  "textured_plate",
+    "Smooth PEI Plate":    "hot_plate",       # = plaque haute température
+    "Cool Plate":          "cool_plate",
+    "Engineering Plate":   "eng_plate",
+    "Textured Cool Plate": "textured_cool_plate",
+}
+_BED_TYPE_CODE_DEFAULT = "textured_plate"
 
 
 def _slicer_vocab(slicer: str) -> set | None:
@@ -752,6 +766,7 @@ class ThreeMFBuilder:
         printer_ui_name: str = "X1 Carbon",
         filament_ui_name: str = "PLA",
         nozzle_diameter_mm: float = 0.4,
+        plate_type: str = "",
     ) -> Path:
         self._template = _find_bambu_template()
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -760,6 +775,7 @@ class ThreeMFBuilder:
             return self._build_native(
                 mesh, config, output_path, object_name,
                 printer_ui_name, filament_ui_name, nozzle_diameter_mm,
+                plate_type,
             )
         else:
             return self._build_fallback(mesh, config, output_path, object_name)
@@ -772,6 +788,7 @@ class ThreeMFBuilder:
         printer_ui_name: str = "X1 Carbon",
         filament_ui_name: str = "PLA",
         nozzle_diameter_mm: float = 0.4,
+        plate_type: str = "",
     ) -> Path:
         """Injecte les paramètres neoSlice dans un 3MF existant sans toucher à la géométrie.
 
@@ -810,6 +827,8 @@ class ThreeMFBuilder:
             _original_ps = dict(self._template or {})
         project_settings = dict(_original_ps)  # base = settings originaux du fichier
         project_settings.update(_config_to_bambu_overrides(config))
+        if plate_type:                          # plateau choisi (voir _build_native)
+            project_settings["curr_bed_type"] = plate_type
 
         _D = nozzle_diameter_mm
         _lw = round(_D + 0.02, 2)
@@ -922,6 +941,7 @@ class ThreeMFBuilder:
         printer_ui_name: str = "X1 Carbon",
         filament_ui_name: str = "PLA",
         nozzle_diameter_mm: float = 0.4,
+        plate_type: str = "",
     ) -> Path:
         obj_uuid = str(uuid.uuid4())
         comp_uuid = str(uuid.uuid4())
@@ -953,6 +973,12 @@ class ThreeMFBuilder:
                 _PRINTER_TEMPLATE_CACHE[bbl_id] = self._template
         project_settings = dict(_PRINTER_TEMPLATE_CACHE[bbl_id])
         project_settings.update(_config_to_bambu_overrides(config))
+
+        # Plateau choisi par l'utilisateur → curr_bed_type (Bambu/Orca). Les clés de
+        # température de plateau sont déjà toutes renseignées (voir _apply_filament_temps),
+        # donc curr_bed_type suffit à faire afficher le bon plateau (cf. règle 3MF plateau).
+        if plate_type:
+            project_settings["curr_bed_type"] = plate_type
 
         # ── Overrides nozzle — valeurs exactes mesurées sur fichiers Bambu Studio réels ──
         # Données extraites de 4 fichiers BS (0.2/0.4/0.6/0.8 mm).
@@ -1030,7 +1056,7 @@ class ThreeMFBuilder:
                 )
                 zf.writestr(
                     "Metadata/model_settings.config",
-                    self._model_settings(len(mesh.faces), object_name),
+                    self._model_settings(len(mesh.faces), object_name, plate_type),
                 )
                 zf.writestr(
                     "Metadata/project_settings.config",
@@ -1193,8 +1219,12 @@ class ThreeMFBuilder:
  </resources>
 </model>"""
 
-    def _model_settings(self, face_count: int, object_name: str) -> str:
+    def _model_settings(self, face_count: int, object_name: str,
+                        plate_type: str = "") -> str:
         # object id="1" : cohérent avec la géométrie inline dans _inline_model.
+        # bed_type du plateau = code interne mappé depuis le plateau choisi (c'est CE
+        # champ que Bambu Studio/Orca lisent pour afficher le plateau).
+        _bed_code = _BED_TYPE_CODE.get(plate_type, _BED_TYPE_CODE_DEFAULT)
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <config>
   <object id="1">
@@ -1217,34 +1247,11 @@ class ThreeMFBuilder:
     <metadata key="plater_id" value="1"/>
     <metadata key="plater_name" value=""/>
     <metadata key="locked" value="false"/>
+    <metadata key="bed_type" value="{_bed_code}"/>
     <metadata key="thumbnail_file" value=""/>
     <model_instance objectid="1" instance_id="0" identify_id="0" plater_id="0" printable="true"/>
   </plate>
 </config>"""
-
-    def _plate_json(self, object_name: str) -> str:
-        data = {
-            "objects": [{"id": "2", "name": object_name}],
-            "bed_type": "textured_plate",
-            "print_sequence": "by_layer",
-            "first_layer_print_sequence": [0],
-            "spiral_mode": False,
-            "timelapse_type": 0,
-            "gcode_file": "",
-        }
-        return json.dumps(data, ensure_ascii=False)
-
-    def _plate_json(self, object_name: str) -> str:
-        data = {
-            "objects": [{"id": "2", "name": object_name}],
-            "bed_type": "textured_plate",
-            "print_sequence": "by_layer",
-            "first_layer_print_sequence": [0],
-            "spiral_mode": False,
-            "timelapse_type": 0,
-            "gcode_file": "",
-        }
-        return json.dumps(data, ensure_ascii=False)
 
     def _slice_info(self) -> str:
         custom = _slicer_branding()["slice_info"]

@@ -49,28 +49,56 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
-    ("🤖 Oen — assistant IA local (Pro)",
+    ("neoGen — générateur d'objets 3D (Pro)",
+     "Le nouveau module phare : une bibliothèque d'objets prêts à imprimer, tous "
+     "personnalisables au millimètre — porte-clés, cadres photo, QR codes 3D en "
+     "deux couleurs, cartes de visite, clips de câble au diamètre exact, joints, "
+     "équerres, vis et écrous, objets pour la restauration, le mariage et la "
+     "boutique. Texte en relief ou gravé, choix de la police et des couleurs : "
+     "chaque pièce est générée sur mesure, étanche et pensée pour sortir sans "
+     "support."),
+    ("Carte de fragilité par pièce",
+     "Quand plusieurs pièces sont sur le plateau, cochez « Fragilité » dans la vue "
+     "3D : chaque pièce se colore selon sa solidité (vert = solide, jaune = un peu "
+     "fragile, rouge = fragile). Vous savez en un coup d'œil quelle pièce renforcer "
+     "avant de lancer l'impression."),
+    ("FlashPrint — 9e slicer compatible",
+     "Sortie vers FlashPrint pour les imprimantes FlashForge, avec dépôt "
+     "automatique du profil d'impression. Le catalogue d'imprimantes et les "
+     "plateaux proposés s'adaptent désormais à chaque machine."),
+    ("Mode performance automatique",
+     "neoSlice choisit seul, pièce par pièce, le meilleur compromis entre vitesse "
+     "d'analyse et précision selon votre machine. Plus rien à régler, et les "
+     "fichiers complexes qui pouvaient bloquer le chargement s'ouvrent maintenant "
+     "en quelques secondes."),
+    ("Autres améliorations v0.1.8",
+     "• Chargement fiable des 3MF complexes (assemblages multi-pièces Bambu).\n"
+     "• Les petites pièces reposent correctement sur le plateau dans la vue 3D.\n"
+     "• Le type de fichier réel (STL, OBJ ou 3MF) est affiché pendant l'analyse.\n"
+     "• Messages d'analyse épurés et progression plus lisible.\n"
+     "• Plages de dimensions élargies sur tous les objets neoGen."),
+    ("Oen — assistant IA local (Pro)",
      "Un modèle Qwen3 tourne directement sur votre machine (hors ligne, privé), "
      "nourri d'une base de connaissances imprimantes toutes marques. Activez le "
      "mode « Réflexion » pour des réponses raisonnées. La base se met à jour depuis "
      "GitHub sans réinstaller l'application."),
-    ("🎨 Export multicouleur (Pro)",
+    ("Export multicouleur (Pro)",
      "Coloriez vos pièces après l'export 3MF, appliquez un filament par slot et "
      "obtenez le grammage par couleur/bobine — le stock est déduit automatiquement "
      "après impression."),
-    ("🖨️ 5 slicers, 80+ marques, 600+ imprimantes",
+    ("Multi-slicers, 80+ marques, 600+ imprimantes",
      "Sortie compatible Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et "
      "ElegooSlicer — le catalogue d'imprimantes s'adapte au slicer choisi. "
      "Nouvelles machines : Flashforge Creator 5 / 5 Pro, Phrozen Arco et gamme "
      "Anycubic Kobra étendue."),
-    ("💎 Version Pro",
+    ("Version Pro",
      "Le Diagnostic IA et Oen deviennent des fonctionnalités Pro ; l'interface "
      "standard reste entièrement gratuite pour optimiser et exporter ses pièces."),
-    ("🔧 Correctif v0.1.7",
+    ("Correctif v0.1.7",
      "• Barre de titre sombre native fiable sous Windows (plus de retour au thème "
      "clair).\n"
      "• Tutoriel enrichi (Oen + export multicouleur), adapté selon Pro/standard."),
-    ("🚀 Nouveautés v0.1.6",
+    ("Nouveautés v0.1.6",
      "• Espace Pro — Gestion d'atelier complète : bobines (stock multi-couleur, "
      "coût/kg, alertes de réappro, liste de courses), devis, factures, clients, "
      "commandes (file de production) et catalogue d'articles — le tout connecté.\n"
@@ -83,40 +111,40 @@ _WHATS_NEW_FR = [
      "• Multi-marques / multi-slicer : Creality, Prusa, Anycubic, Voron… et sortie "
      "vers Bambu Studio, OrcaSlicer ou PrusaSlicer.\n"
      "• Nombreux correctifs d'affichage (barre de titre, fenêtres, listes)."),
-    ("🔧 Correctif v0.1.5.6",
+    ("Correctif v0.1.5.6",
      "• macOS : l'activation Pro et les mises à jour échouaient avec « Pas de "
      "connexion Internet » alors que tout fonctionnait — corrigé (certificats SSL).\n"
      "• Hauteur de couche « rapide » ramenée à 0.24 mm (buse 0.4) et température "
      "PETG ajustée à 250°C.\n"
      "• Import STL/3MF plus fiable sur Mac."),
-    ("🔧 Correctif v0.1.5.5",
+    ("Correctif v0.1.5.5",
      "Correction de l'activation de neoSlice Pro : sur certaines connexions "
      "(réseau lent, antivirus/pare-feu), l'activation pouvait rester bloquée. "
      "Elle se fait désormais en arrière-plan, sans figer la fenêtre, et ne "
      "consomme plus d'activation en cas d'échec réseau."),
-    ("✨ Nouveautés v0.1.5.4",
+    ("Nouveautés v0.1.5.4",
      "• Aperçu miniature de vos fichiers dès l'import (STL / OBJ / 3MF)\n"
      "• Rendu 3D mat, plus agréable et lisible\n"
      "• Génération adaptée aux limites réelles de votre imprimante "
      "(vitesses, débit, températures)\n"
      "• Estimation du poids selon le matériau choisi\n"
      "• Tutoriel bilingue et nombreux fignolages d'interface"),
-    ("⚙️ Correctifs de compatibilité v0.1.5.3",
+    ("Correctifs de compatibilité v0.1.5.3",
      "neoSlice démarre désormais sur davantage de configurations Windows. "
      "Diverses améliorations de compatibilité et de stabilité ont été apportées."),
-    ("⚠️ Correction importante v0.1.5.2",
+    ("Correction importante v0.1.5.2",
      "• Taille des pièces — certaines pièces (entre 5 et 50 mm) étaient agrandies "
      "10× par erreur au chargement. La taille réelle du fichier est désormais "
      "toujours respectée.\n"
      "• Mises à jour plus fiables — le téléchargement est vérifié avant installation "
      "(fini l'erreur « application 16 bits »)."),
-    ("🆕 Import de fichiers 3MF Bambu Studio",
+    ("Import de fichiers 3MF Bambu Studio",
      "Chargez directement vos fichiers .3mf depuis Bambu Studio — neoSlice affiche toutes vos pièces, "
      "respecte la disposition multi-plateau et génère un fichier optimisé qui préserve la structure d'origine."),
-    ("🆕 Barres de fragilité par lot",
+    ("Barres de fragilité par lot",
      "Une barre de fragilité flottante s'affiche au-dessus de chaque groupe de pièces, "
      "visible depuis n'importe quel angle de caméra."),
-    ("🔧 Autres corrections",
+    ("Autres corrections",
      "• Imprimante H2C — bon modèle transmis à Bambu Studio\n"
      "• Imprimante par défaut correctement restaurée au démarrage (A1, A1 Mini, H2C…)\n"
      "• Angle de support minimum corrigé à 30°\n"
@@ -281,7 +309,7 @@ class WelcomeDialog(QDialog):
 
         # ── Quoi de neuf (uniquement après une mise à jour) ───────────────
         if self._show_whats_new:
-            wn_title = QLabel(f"✨  Nouveautés de la v{__version__}")
+            wn_title = QLabel(f"Nouveautés de la v{__version__}")
             wn_title.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
             wn_title.setStyleSheet(f"color: {pal['ACCENT_BRIGHT']}; background: transparent;")
             wn_title.setAlignment(Qt.AlignCenter)
@@ -364,7 +392,7 @@ class WelcomeDialog(QDialog):
             coffee_btn.setIcon(_QIcon(str(_coffee_png)))
             coffee_btn.setIconSize(_QSize(22, 22))
         else:
-            coffee_btn = QPushButton("☕ M'offrir un café")
+            coffee_btn = QPushButton("M'offrir un café")
         coffee_btn.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
         coffee_btn.setFixedHeight(40)
         coffee_btn.setCursor(Qt.PointingHandCursor)
@@ -398,7 +426,7 @@ class WelcomeDialog(QDialog):
         feedback_lay = QVBoxLayout(feedback_box)
         feedback_lay.setContentsMargins(12, 7, 12, 7)
         feedback_lbl = QLabel(
-            f"<b style='color:{pal['ACCENT_BRIGHT']}'>💡  Améliorations continues</b>"
+            f"<b style='color:{pal['ACCENT_BRIGHT']}'>Améliorations continues</b>"
             f"<span style='color:{pal['TEXT_LABEL']}'> — De nouvelles fonctionnalités arrivent "
             "régulièrement. N'hésitez pas à signaler un problème ou à proposer une idée.</span>"
         )

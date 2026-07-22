@@ -26,9 +26,13 @@ try:
         [(0.0, "#C8C4BE"), (0.22, "#FFE000"), (0.55, "#FF4400"), (0.82, "#CC0000"), (1.0, "#880000")])
     _OVERHANG_CMAP_LIGHT = _LSC.from_list("neoslice_oh_lt",
         [(0.0, "#D4D0CA"), (0.22, "#FFE000"), (0.55, "#FF4400"), (0.82, "#CC0000"), (1.0, "#880000")])
+    # Fragilité (thermomap par objet) : vert (solide) → jaune → orange → rouge (fragile)
+    _FRAGILITY_CMAP = _LSC.from_list("neoslice_frag",
+        [(0.0, "#2ECC71"), (0.35, "#F1C40F"), (0.62, "#F39C12"), (1.0, "#E74C3C")])
 except Exception:
     _OVERHANG_CMAP_DARK  = "RdYlGn_r"
     _OVERHANG_CMAP_LIGHT = "RdYlGn_r"
+    _FRAGILITY_CMAP = "RdYlGn_r"
 
 try:
     import trimesh
@@ -238,6 +242,16 @@ class Viewer3D(QWidget):
         if self._glass.isVisible():
             self._glass.close_anim()
             return
+        # Précharger Oen dès l'ouverture (thread démon) : le serveur Ollama démarre et
+        # le modèle se charge en mémoire pendant que l'utilisateur écrit -> plus de
+        # longue attente à la 1re question. Silencieux, l'appel réel réessaie si besoin.
+        try:
+            import threading
+            from core.assistant.engine import AssistantEngine
+            threading.Thread(target=lambda: AssistantEngine.instance().warmup(),
+                             daemon=True).start()
+        except Exception as e:
+            logger.warning(f"Préchauffage Oen impossible : {e}")
         from PySide6.QtCore import QPoint
         s = self._strands
         anchor = s.mapToGlobal(QPoint(s.width() // 2, s.height() // 3)) if s else None
@@ -323,11 +337,13 @@ class Viewer3D(QWidget):
     def _apply_rot_checkbox_style(self):
         pal = _T.palette()
         is_dk = _T.is_dark()
+        # Fond OPAQUE (alpha 255) : superposées au rendu 3D, ces cases laissaient
+        # sinon transparaître l'ancien contenu (params) et un fantôme au resize.
         if is_dk:
-            bg = 'rgba(6,14,26,160)'; col = '#2A5F8A'; hov = '#4A7A9B'
+            bg = 'rgb(10,18,30)'; col = '#7FA8CC'; hov = '#A9C6DE'
             ind_bg = '#060E1A'; ind_br = '#1A3550'
         else:
-            bg = 'rgba(240,242,245,200)'; col = '#555555'; hov = '#333333'
+            bg = 'rgb(240,242,245)'; col = '#555555'; hov = '#333333'
             ind_bg = '#ffffff'; ind_br = '#c0c0c0'
         acc = pal['TELE_GREEN']
         self._rot_checkbox.setStyleSheet(f"""
@@ -351,11 +367,12 @@ class Viewer3D(QWidget):
     def _apply_plate_checkbox_style(self):
         pal = _T.palette()
         is_dk = _T.is_dark()
+        # Fond OPAQUE (cf. _apply_rot_checkbox_style) → pas de fantôme au resize.
         if is_dk:
-            bg = 'rgba(6,14,26,160)'; col = '#2A5F8A'; hov = '#4A7A9B'
+            bg = 'rgb(10,18,30)'; col = '#7FA8CC'; hov = '#A9C6DE'
             ind_bg = '#060E1A'; ind_br = '#1A3550'
         else:
-            bg = 'rgba(240,242,245,200)'; col = '#555555'; hov = '#333333'
+            bg = 'rgb(240,242,245)'; col = '#555555'; hov = '#333333'
             ind_bg = '#ffffff'; ind_br = '#c0c0c0'
         acc = pal['TELE_GREEN']
         self._plate_checkbox.setStyleSheet(f"""
@@ -388,11 +405,162 @@ class Viewer3D(QWidget):
         except Exception:
             pass
 
+    def _apply_frag_checkbox_style(self):
+        # Identique aux autres cases (accent VERT au coché).
+        from PySide6.QtGui import QColor, QPalette
+        pal = _T.palette()
+        is_dk = _T.is_dark()
+        if is_dk:
+            bg = 'rgb(10,18,30)'; bg_qc = QColor(10, 18, 30)
+            col = '#7FA8CC'; hov = '#A9C6DE'
+            ind_bg = '#060E1A'; ind_br = '#1A3550'
+        else:
+            bg = 'rgb(240,242,245)'; bg_qc = QColor(240, 242, 245)
+            col = '#555555'; hov = '#333333'
+            ind_bg = '#ffffff'; ind_br = '#c0c0c0'
+        acc = pal['TELE_GREEN']
+        self._frag_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {col}; background: {bg};
+                spacing: 5px; padding: 2px 6px; border-radius: 3px;
+                outline: none;
+            }}
+            QCheckBox:focus {{ outline: none; }}
+            QCheckBox:hover {{ color: {hov}; }}
+            QCheckBox::indicator {{
+                width: 11px; height: 11px;
+                border: 1px solid {ind_br}; border-radius: 2px;
+                background: {ind_bg};
+            }}
+            QCheckBox::indicator:checked {{
+                background: {acc}; border-color: {acc};
+            }}
+        """)
+        # Remplir TOUT le rectangle (coins compris) avec la couleur de fond : sinon
+        # les coins hors du border-radius laissent voir le décor clair du viewer
+        # derrière la case (coins « blancs » en thème sombre).
+        _p = self._frag_checkbox.palette()
+        _p.setColor(QPalette.Window, bg_qc)
+        self._frag_checkbox.setPalette(_p)
+        self._frag_checkbox.setAutoFillBackground(True)
+
+    def set_fragility_data(self, face_severity, restore_cb=None) -> None:
+        """Fournit la sévérité de fragilité par face et affiche la case à cocher
+        « Fragilité » (décochée par défaut) sans changer la vue courante.
+
+        restore_cb : callable optionnel appelé quand on DÉCOCHE la case, pour
+        rétablir la vue de base (ex. recolorer un objet neoGen avec ses couleurs).
+        Sinon on retombe sur la vue surplombs."""
+        self._fragility_severity = np.asarray(face_severity, dtype=np.float32)
+        self._has_fragility_data = True
+        self._frag_restore_cb = restore_cb
+        if hasattr(self, "_frag_checkbox"):
+            self._frag_checkbox.blockSignals(True)
+            self._frag_checkbox.setChecked(False)
+            self._frag_checkbox.blockSignals(False)
+            # La position/visibilité est gérée par start_auto_rotate / resizeEvent.
+
+    def clear_fragility_data(self) -> None:
+        """Aucune donnée de fragilité par pièce → masque la case et la légende,
+        revient à la vue surplombs si la thermomap était affichée."""
+        self._has_fragility_data = False
+        self._fragility_severity = None
+        self._frag_restore_cb = None
+        if hasattr(self, "_frag_checkbox"):
+            self._frag_checkbox.blockSignals(True)
+            self._frag_checkbox.setChecked(False)
+            self._frag_checkbox.blockSignals(False)
+            self._frag_checkbox.hide()
+        if hasattr(self, "_frag_legend_label"):
+            self._frag_legend_label.hide()
+
+    def _on_frag_toggle(self, state: int):
+        """Bascule entre la vue surplombs (décoché) et la thermomap fragilité (coché)."""
+        if self._plotter is None or self._mesh is None:
+            return
+        try:
+            if state and self._fragility_severity is not None:
+                # Thermomap fragilité — garder la caméra
+                self.colorize_fragility(self._mesh, self._fragility_severity,
+                                        _keep_camera=True)
+            else:
+                # Retour à la vue de BASE : callback dédié si fourni (ex. couleurs
+                # neoGen), sinon surplombs, sinon mesh neutre.
+                _cb = getattr(self, "_frag_restore_cb", None)
+                if _cb is not None:
+                    self._view_mode = "normal"
+                    self._update_frag_legend_visibility()
+                    _cb()
+                elif getattr(self, "_face_colors", None) is not None:
+                    self.colorize_overhangs(self._mesh, self._face_colors,
+                                            _keep_camera=True)
+                    self._update_frag_legend_visibility()
+                else:
+                    self._view_mode = "normal"
+                    self._update_frag_legend_visibility()
+            # Les cases Qt flottent au-dessus du rendu → les remonter
+            self._raise_viewer_checkboxes()
+        except Exception:
+            logger.exception("Bascule thermomap fragilité échouée")
+
+    def _raise_viewer_checkboxes(self):
+        for _cb in (getattr(self, "_frag_checkbox", None),
+                    getattr(self, "_plate_checkbox", None),
+                    getattr(self, "_rot_checkbox", None),
+                    getattr(self, "_frag_legend_label", None)):
+            try:
+                if _cb is not None and _cb.isVisible():
+                    _cb.raise_()
+            except Exception:
+                pass
+
+    def _build_frag_legend_html(self) -> str:
+        """Légende thermomap : 3 niveaux avec pastille colorée (vert/jaune/rouge)."""
+        pal = _T.palette()
+        txt = pal.get("TEXT_SECONDARY", "#888")
+        title = pal.get("TEXT_PRIMARY", txt)
+        def _row(color, label):
+            return (f'<tr><td style="padding-right:5px; color:{color}; '
+                    f'font-size:13px; line-height:13px;">●</td>'
+                    f'<td style="color:{txt};">{label}</td></tr>')
+        return (
+            f'<div style="font-family:sans-serif; font-size:11px;">'
+            f'<div style="color:{title}; font-weight:bold; margin-bottom:2px;">'
+            f'{_("viewer.frag_legend_title")}</div>'
+            f'<table cellspacing="0" cellpadding="0">'
+            f'{_row("#2ECC71", _("viewer.frag_legend_solid"))}'
+            f'{_row("#F1C40F", _("viewer.frag_legend_mid"))}'
+            f'{_row("#E74C3C", _("viewer.frag_legend_high"))}'
+            f'</table></div>'
+        )
+
+    def _update_frag_legend_visibility(self):
+        """Affiche la légende SEULEMENT quand la thermomap est active (case cochée)."""
+        if not hasattr(self, "_frag_legend_label"):
+            return
+        show = (getattr(self, "_view_mode", "normal") == "fragility"
+                and hasattr(self, "_frag_checkbox")
+                and self._frag_checkbox.isChecked())
+        if show:
+            is_dk = _T.is_dark()
+            bg = 'rgba(10,18,30,235)' if is_dk else 'rgba(240,242,245,235)'
+            self._frag_legend_label.setText(self._build_frag_legend_html())
+            self._frag_legend_label.setStyleSheet(
+                f"background: {bg}; border-radius: 4px; padding: 6px 8px;")
+            self._frag_legend_label.adjustSize()
+            self._frag_legend_label.move(10, 10)
+            self._frag_legend_label.show()
+            self._frag_legend_label.raise_()
+        else:
+            self._frag_legend_label.hide()
+
     def refresh_theme(self):
         if hasattr(self, '_rot_checkbox'):
             self._apply_rot_checkbox_style()
         if hasattr(self, '_plate_checkbox'):
             self._apply_plate_checkbox_style()
+        if hasattr(self, '_frag_checkbox'):
+            self._apply_frag_checkbox_style()
         pal = _T.palette()
         self.setStyleSheet(f"background: {pal['VIEWER_BG']};")
         if self._plotter is None:
@@ -436,6 +604,9 @@ class Viewer3D(QWidget):
                 elif getattr(self, "_view_mode", "normal") == "analysis" \
                         and self._face_colors is not None:
                     self.colorize_overhangs(self._mesh, self._face_colors, _keep_camera=True)
+                elif getattr(self, "_view_mode", "normal") == "fragility" \
+                        and getattr(self, "_fragility_severity", None) is not None:
+                    self.colorize_fragility(self._mesh, self._fragility_severity, _keep_camera=True)
                 self._plotter.camera_position = _saved_cam
             except Exception:
                 pass
@@ -465,12 +636,37 @@ class Viewer3D(QWidget):
             cw = max(
                 self._rot_checkbox.sizeHint().width() + 16,
                 self._plate_checkbox.sizeHint().width() + 16,
+                (self._frag_checkbox.sizeHint().width() + 16)
+                if hasattr(self, "_frag_checkbox") else 0,
             )
             self._rot_checkbox.setGeometry(self.width() - cw - 8, self.height() - 30, cw, 22)
             self._plate_checkbox.setGeometry(self.width() - cw - 8, self.height() - 56, cw, 22)
+            # Case Fragilité AU-DESSUS de Plateau (seulement si des données existent)
+            if hasattr(self, "_frag_checkbox") and getattr(self, "_has_fragility_data", False):
+                self._frag_checkbox.setGeometry(self.width() - cw - 8, self.height() - 82, cw, 22)
+            if hasattr(self, "_frag_legend_label") and self._frag_legend_label.isVisible():
+                self._frag_legend_label.move(10, 10)
+            self._rafraichir_apres_deplacement_cases()
         elif hasattr(self, "_rot_checkbox"):
             cw = self._rot_checkbox.sizeHint().width() + 16
             self._rot_checkbox.setGeometry(self.width() - cw - 8, self.height() - 30, cw, 22)
+            self._rafraichir_apres_deplacement_cases()
+
+    def _rafraichir_apres_deplacement_cases(self):
+        """Après avoir déplacé les cases (Plateau / Rotation auto) superposées au
+        rendu 3D, on force un re-rendu VTK : sinon la surface OpenGL garde un
+        FANTÔME des cases à leur ancienne position quand la colonne se redimensionne."""
+        try:
+            if self._plotter is not None:
+                self._plotter.render()
+            for _cb in (getattr(self, "_rot_checkbox", None),
+                        getattr(self, "_plate_checkbox", None),
+                        getattr(self, "_frag_checkbox", None)):
+                if _cb is not None and _cb.isVisible():
+                    _cb.raise_()
+                    _cb.update()
+        except Exception:
+            pass
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -643,8 +839,56 @@ class Viewer3D(QWidget):
             self._orient_widget = w
             self._orient_rep = rep
             self._style_orient_labels()
+            self._garder_distance_gizmo()
         except Exception as e:
             logger.debug(f"cube d'orientation indisponible : {e}")
+
+    def _garder_distance_gizmo(self):
+        """Clic sur un axe du gizmo (X/Y/Z) : réoriente la caméra MAIS garde la
+        distance actuelle (avant, VTK reculait la caméra pour recadrer la scène)."""
+        w = getattr(self, "_orient_widget", None)
+        if w is None or self._plotter is None:
+            return
+
+        # Désactiver l'ANIMATION : sinon VTK anime la caméra sur ~1 s en la
+        # reculant (recadrage), et on ne remet la distance qu'à la fin → « recul
+        # puis retour ». Sans animation, la réorientation est instantanée et la
+        # distance est corrigée dans la foulée → aucun recul visible.
+        for _meth, _arg in (("SetAnimate", False), ("SetAnimatorTotalFrames", 1)):
+            try:
+                getattr(w, _meth)(_arg)
+            except Exception:
+                pass
+
+        def _save(caller=None, ev=None):
+            try:
+                cam = self._plotter.camera
+                p = np.array(cam.position); f = np.array(cam.focal_point)
+                self._gizmo_dist = float(np.linalg.norm(p - f))
+            except Exception:
+                pass
+
+        def _restore(caller=None, ev=None):
+            d0 = getattr(self, "_gizmo_dist", None)
+            if not d0:
+                return
+            try:
+                cam = self._plotter.camera
+                p = np.array(cam.position); f = np.array(cam.focal_point)
+                v = p - f
+                n = float(np.linalg.norm(v))
+                if n > 1e-6:
+                    cam.position = tuple(f + v / n * d0)   # même distance, nouvelle direction
+                    self._plotter.renderer.ResetCameraClippingRange()
+                    self._plotter.render()
+            except Exception:
+                pass
+        try:
+            w.AddObserver("StartInteractionEvent", _save)
+            w.AddObserver("InteractionEvent", _restore)
+            w.AddObserver("EndInteractionEvent", _restore)
+        except Exception:
+            pass
 
     def _style_orient_labels(self):
         """Labels X/Y/Z (dans leurs bulles) lisibles selon le thème : clairs sur
@@ -705,7 +949,27 @@ class Viewer3D(QWidget):
         self._plate_checkbox.hide()
         self._plate_checkbox.stateChanged.connect(self._on_plate_toggle)
 
+        # Case « Fragilité » (thermomap) — au-DESSUS de Plateau. Décochée par
+        # défaut, affichée seulement si des données de fragilité par pièce existent.
+        self._has_fragility_data = False
+        self._fragility_severity = None
+        self._frag_restore_cb = None
+        self._frag_checkbox = QCheckBox(_("viewer.frag_toggle"), self)
+        self._frag_checkbox.setChecked(False)
+        self._frag_checkbox.setFont(QFont(FONT_MAIN, 9))
+        self._apply_frag_checkbox_style()
+        self._frag_checkbox.hide()
+        self._frag_checkbox.stateChanged.connect(self._on_frag_toggle)
+
+        # Légende thermomap (3 niveaux colorés) — coin haut-gauche, masquée par défaut.
+        self._frag_legend_label = QLabel(self)
+        self._frag_legend_label.setTextFormat(Qt.RichText)
+        self._frag_legend_label.hide()
+
     def _on_rot_toggle(self, state: int):
+        # Mémorise le CHOIX de l'utilisateur : s'il coupe la rotation, elle doit
+        # rester coupée après une génération / un rechargement (et inversement).
+        self._rot_user_off = not bool(state)
         if state:  # 2 = Qt.Checked, 0 = Qt.Unchecked
             self._auto_rotate = True
             if self._plotter:
@@ -762,29 +1026,48 @@ class Viewer3D(QWidget):
         from core.prefs import PREFS
         _lite = PREFS.get("perf_mode", "full") == "lite"
 
+        _has_frag = getattr(self, "_has_fragility_data", False)
+        cw_frag = (self._frag_checkbox.sizeHint().width() + 16) if _has_frag else 0
+
         # Plateau checkbox — toujours visible après analyse, quel que soit le mode
         cw_plt = self._plate_checkbox.sizeHint().width() + 16
         if _lite:
-            self._plate_checkbox.setGeometry(self.width() - cw_plt - 8, self.height() - 30, cw_plt, 22)
+            _cwl = max(cw_plt, cw_frag)
+            self._plate_checkbox.setGeometry(self.width() - _cwl - 8, self.height() - 30, _cwl, 22)
             self._plate_checkbox.show()
             self._plate_checkbox.raise_()
+            if _has_frag:
+                self._frag_checkbox.setGeometry(self.width() - _cwl - 8, self.height() - 56, _cwl, 22)
+                self._frag_checkbox.show()
+                self._frag_checkbox.raise_()
             return
 
-        self._auto_rotate = True
+        # Respecte le choix mémorisé : si l'utilisateur a coupé la rotation, on
+        # affiche les cases mais on ne relance PAS la rotation.
+        _actif = not getattr(self, "_rot_user_off", False)
+        self._auto_rotate = _actif
         self._rot_checkbox.setEnabled(True)
         self._rot_checkbox.blockSignals(True)
-        self._rot_checkbox.setChecked(True)
+        self._rot_checkbox.setChecked(_actif)
         self._rot_checkbox.blockSignals(False)
         # Positionne et affiche les checkboxes en bas à droite
         cw_rot = self._rot_checkbox.sizeHint().width() + 16
-        cw = max(cw_rot, cw_plt)
+        cw = max(cw_rot, cw_plt, cw_frag)
         self._rot_checkbox.setGeometry(self.width() - cw - 8, self.height() - 30, cw, 22)
         self._rot_checkbox.show()
         self._rot_checkbox.raise_()
         self._plate_checkbox.setGeometry(self.width() - cw - 8, self.height() - 56, cw, 22)
         self._plate_checkbox.show()
         self._plate_checkbox.raise_()
-        self._rot_timer.start()
+        # Case Fragilité (thermomap) au-DESSUS de Plateau, seulement si données prêtes
+        if _has_frag:
+            self._frag_checkbox.setGeometry(self.width() - cw - 8, self.height() - 82, cw, 22)
+            self._frag_checkbox.show()
+            self._frag_checkbox.raise_()
+        else:
+            self._frag_checkbox.hide()
+        if _actif:
+            self._rot_timer.start()
         self._plotter.installEventFilter(self)
 
     def stop_auto_rotate(self):
@@ -796,6 +1079,10 @@ class Viewer3D(QWidget):
         self._rot_checkbox.blockSignals(False)
         self._rot_checkbox.hide()
         self._plate_checkbox.hide()
+        if hasattr(self, "_frag_checkbox"):
+            self._frag_checkbox.hide()
+        if hasattr(self, "_frag_legend_label"):
+            self._frag_legend_label.hide()
         if self._plotter:
             self._plotter.removeEventFilter(self)
 
@@ -912,8 +1199,13 @@ class Viewer3D(QWidget):
             magnitude = 10.0 ** int(np.floor(np.log10(max(raw, 1e-9))))
             spacing = max(round(raw / magnitude) * magnitude, 5.0)
 
+            # Décalage anti-Z-fighting PROPORTIONNEL à la hauteur de la pièce :
+            # un écart fixe de 0.5-1mm est invisible sur une pièce de 100mm mais
+            # représente ~15% d'une figurine de 6mm → elle semble LÉVITER. On cale
+            # l'écart sur la taille réelle (plafonné aux anciennes valeurs).
+            _gap = getattr(self, "_plate_z_gap", 0.5)
             plate = pv.Plane(
-                center=(cx, cy, -1.0),
+                center=(cx, cy, -2.0 * _gap),
                 direction=(0, 0, 1),
                 i_size=pw,
                 j_size=ph,
@@ -933,11 +1225,11 @@ class Viewer3D(QWidget):
             ny = max(2, round(ph / spacing))
             lines_v = np.linspace(cx - hw, cx + hw, nx + 1)
             lines_h = np.linspace(cy - hh, cy + hh, ny + 1)
-            # Grille nettement SOUS le dessous des pièces (à z=0) : évite que la
-            # grille traverse le bas des pièces selon l'angle (Z-fighting), surtout
-            # avec le polygon-offset VTK actif. 0.5 mm d'écart = séparation franche
-            # sans que les pièces paraissent flotter.
-            _gz = -0.5
+            # Grille juste SOUS le dessous des pièces (à z=0) : évite qu'elle
+            # traverse le bas des pièces selon l'angle (Z-fighting), surtout avec
+            # le polygon-offset VTK actif. Écart proportionnel (cf. _gap plus haut)
+            # pour rester discret sur les petites pièces sans flottement visible.
+            _gz = -_gap
             pts, segs, idx = [], [], 0
             for x in lines_v:
                 pts += [[x, cy - hh, _gz], [x, cy + hh, _gz]]
@@ -973,8 +1265,13 @@ class Viewer3D(QWidget):
                 # Marge adaptative : généreuse pour les petites pièces, serrée pour les grandes
                 margin = max(footprint * 0.3, 60.0)
                 plate_size = max(footprint + margin, 30.0)
+                # Écart plateau/grille sous la pièce ∝ hauteur : discret sur une
+                # figurine de 6mm (~0.12mm), inchangé (0.5mm) dès ~25mm de haut.
+                _zext = float(ext[2])
+                self._plate_z_gap = min(0.5, max(0.03, _zext * 0.02))
             else:
                 plate_size = self._PLATE_SIZE
+                self._plate_z_gap = 0.5
             self._current_plate_size = plate_size
             self._draw_single_plate(0.0, 0.0, plate_size)
         except Exception:
@@ -993,6 +1290,14 @@ class Viewer3D(QWidget):
         try:
             import numpy as _np
             import math as _math
+
+            # Écart plateau/grille ∝ hauteur max des pièces (mêmes bornes que le
+            # mono-plateau) pour éviter la « lévitation » sur de petits objets.
+            try:
+                _hmax = max(float(m.bounding_box.extents[2]) for m in final_meshes)
+                self._plate_z_gap = min(0.5, max(0.03, _hmax * 0.02))
+            except Exception:
+                self._plate_z_gap = 0.5
 
             pos_arr = _np.array(orig_positions, dtype=np.float64)
 
@@ -1150,6 +1455,7 @@ class Viewer3D(QWidget):
         self._pv_mesh_cache = None
         self._face_colors = None
         self._view_mode = "normal"
+        self.clear_fragility_data()   # nouvelle pièce → oublier la fragilité précédente
         # Memoire (object_id -> slot) pour la re-colorisation live par slot
         # (previsualisation des couleurs choisies a l'export).
         self._slot_object_ids = [
@@ -1391,8 +1697,12 @@ class Viewer3D(QWidget):
             return
 
         BAR_W  = 40.0   # largeur totale (mm)
-        BAR_H  = 5.5    # hauteur (mm)
-        LIFT   = 20.0   # hauteur au-dessus de la pièce (mm)
+        BAR_H  = 5.5    # épaisseur de la barre (mm) — fine, style barre de vie
+        LIFT   = 55.0   # hauteur au-dessus de la pièce (mm) — la barre flotte haut
+
+        # Seuil d'affichage : on ne montre une barre QUE si la pièce est vraiment
+        # fragile. En dessous (vert), pas de barre du tout — inutile d'encombrer.
+        SEUIL_AFFICHAGE = 0.30
 
         camera = self._plotter.renderer.GetActiveCamera()
         self._fragility_followers: list = []
@@ -1421,6 +1731,10 @@ class Viewer3D(QWidget):
             top_z = float(b["cz"]) + LIFT
             score = max(0.0, min(1.0, float(b.get("score", 0.0))))
             label = b.get("label", f"Lot {i+1}")
+
+            # Peu de fragilité → aucune barre (uniquement quand il y en a vraiment)
+            if score < SEUIL_AFFICHAGE:
+                continue
 
             fill_color = "#2ECC71" if score < 0.30 else "#F39C12" if score < 0.60 else "#E74C3C"
 
@@ -1491,6 +1805,26 @@ class Viewer3D(QWidget):
                     shape=None, name=f"frag_label_{i}",
                     justification_horizontal="center",
                 )
+
+                # ── Lignes fines de la barre vers la/les pièce(s) LA/LES PLUS
+                # FRAGILE(S) du lot : on voit d'un coup d'œil quelle pièce est en
+                # cause (plusieurs cibles → plusieurs lignes). Repère au bout. ──
+                p_bar = (cx, cy, top_z - BAR_H / 2 - 0.5)
+                for k, t in enumerate(b.get("targets", [])):
+                    try:
+                        p_obj = (float(t["x"]), float(t["y"]), float(t["z"]) + 1.5)
+                        line = pv.Line(p_bar, p_obj)
+                        self._plotter.add_mesh(
+                            line, color=fill_color, line_width=1.0,
+                            name=f"frag_line_{i}_{k}", reset_camera=False,
+                            lighting=False)
+                        # petit repère (sphère) posé sur la pièce visée
+                        pt = pv.Sphere(radius=0.9, center=p_obj)
+                        self._plotter.add_mesh(
+                            pt, color=fill_color, name=f"frag_dot_{i}_{k}",
+                            reset_camera=False, lighting=False)
+                    except Exception:
+                        pass
             except Exception as _e:
                 logger.warning(f"Barre fragilité groupe {i} : {_e}")
 
@@ -1514,9 +1848,10 @@ class Viewer3D(QWidget):
             except Exception:
                 pass
         self._fragility_followers = []
-        # Supprimer les labels
+        # Supprimer les labels, lignes indicatrices et repères
         for name in list(self._plotter.actors.keys()):
-            if name.startswith("frag_label_"):
+            if (name.startswith("frag_label_") or name.startswith("frag_line_")
+                    or name.startswith("frag_dot_")):
                 try:
                     self._plotter.remove_actor(name, render=False)
                 except Exception:
@@ -1550,6 +1885,7 @@ class Viewer3D(QWidget):
         self._pv_mesh_cache = None
         self._face_colors = None
         self._view_mode = "normal"
+        self.clear_fragility_data()   # nouvelle pièce → oublier la fragilité précédente
         self._plotter.clear()
         self._setup_lights()
         self._add_build_plate(mesh)
@@ -1701,6 +2037,84 @@ class Viewer3D(QWidget):
             self.vue_dessus(fus)
             self._install_carte_drag()
         self._plotter.render()
+
+    def apercu_neogen(self, piece, garder_camera: bool = False) -> None:
+        """Aperçu LÉGER d'un objet neoGen à la sélection / au réglage (comme la
+        carte de visite) : affiche la pièce — Scene à corps colorés OU maillage
+        simple — centrée sur le plateau, en vue 3D, SANS analyse ni chargement
+        pipeline. Les couleurs choisies dans le formulaire apparaissent en direct.
+        L'aperçu est REMPLACÉ dès qu'on clique « Générer »."""
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+        import trimesh as _tm
+        if isinstance(piece, _tm.Scene):
+            corps = dict(piece.geometry)
+        elif isinstance(piece, _tm.Trimesh):
+            corps = {"objet": piece}
+        else:
+            return
+        if not corps:
+            return
+        fusion = _tm.util.concatenate(list(corps.values()))
+        # NB : on ne touche PAS self._mesh — l'aperçu est purement visuel et ne doit
+        # pas écraser la pièce chargée dans le pipeline (analyse/export).
+        # 1re fois : on cadre la caméra. Ensuite (changement de couleur / de réglage)
+        # on GARDE la caméra en place — pas de reset gênant à chaque modification.
+        premiere = getattr(self, "_view_mode", "") != "apercu_neogen"
+        _cam_gardee = None
+        if not premiere or garder_camera:
+            try:
+                _cam_gardee = self._plotter.camera_position
+            except Exception:
+                _cam_gardee = None
+        self._view_mode = "apercu_neogen"
+        self._cancel_mesh_prep()
+        self._plotter.clear()
+        self._setup_lights()
+        self._add_build_plate(fusion)
+        b = fusion.bounds
+        off = [-(b[0][0] + b[1][0]) / 2, -(b[0][1] + b[1][1]) / 2, -b[0][2]]
+        for nom, g in corps.items():
+            try:
+                col = g.visual.face_colors[0][:3] / 255.0
+            except Exception:
+                col = (0.82, 0.82, 0.86)          # neutre si pas de couleur
+            pvm = self._trimesh_to_pyvista(g)
+            pvm.translate(off, inplace=True)
+            self._plotter.add_mesh(pvm, color=col, show_edges=False,
+                                   smooth_shading=False, name=f"apercu_{nom}",
+                                   reset_camera=False)
+        try:
+            if premiere and not garder_camera:
+                self._plotter.reset_camera()
+            elif _cam_gardee is not None:
+                self._plotter.camera_position = _cam_gardee   # garder la vue
+        except Exception:
+            pass
+        self._plotter.render()
+
+    def vider_pour_carte(self) -> None:
+        """Vide IMMÉDIATEMENT le viewer à l'ouverture de l'éditeur de carte :
+        l'aperçu de la carte est asynchrone (_planifier_apercu), donc sans ça
+        l'ANCIENNE pièce resterait affichée à gauche pendant qu'on édite la
+        carte à droite → incohérent. On retire tout de suite l'objet en attendant
+        le 1er aperçu coloré. Ne touche pas à _view_mode : afficher_carte doit
+        rester en « première » ouverture pour se réinitialiser proprement."""
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+        try:
+            self._cancel_mesh_prep()
+        except Exception:
+            pass
+        self.stop_auto_rotate()
+        self._mesh = None
+        self._face_colors = None
+        try:
+            self._plotter.clear()
+            self._setup_lights()
+            self._plotter.render()
+        except Exception:
+            pass
 
     def quitter_mode_carte(self) -> None:
         """À appeler quand on ferme l'éditeur de carte : réarme un affichage
@@ -1955,6 +2369,9 @@ class Viewer3D(QWidget):
 
         self._view_mode = "analysis"
         self._face_colors = face_colors
+        # Vue surplombs → la légende thermomap ne doit pas rester affichée.
+        if hasattr(self, "_frag_legend_label"):
+            self._frag_legend_label.hide()
         self._plotter.clear()
         self._setup_lights()
         self._add_build_plate(mesh)
@@ -2003,6 +2420,66 @@ class Viewer3D(QWidget):
             try:
                 _elev = math.radians(25)
                 _far = 1e6
+                self._plotter.camera.position = (0.0, -math.cos(_elev) * _far,
+                                                  math.sin(_elev) * _far)
+                self._plotter.camera.focal_point = (0.0, 0.0, 0.0)
+                self._plotter.camera.up = (0.0, 0.0, 1.0)
+                _pad = float(mesh.bounding_box.extents.max()) * 0.5
+                _pb = pv_mesh.bounds
+                _pv_b = [_pb[0]-_pad, _pb[1]+_pad, _pb[2]-_pad, _pb[3]+_pad,
+                         _pb[4]-_pad*0.2, _pb[5]+_pad*0.5]
+                try:
+                    self._plotter.reset_camera(bounds=_pv_b)
+                except TypeError:
+                    self._plotter.reset_camera()
+                    self._plotter.camera.zoom(2.0)
+                self._plotter.renderer.ResetCameraClippingRange()
+            except Exception:
+                self._plotter.reset_camera()
+        self._plotter.render()
+
+    def colorize_fragility(self, mesh, face_severity: np.ndarray,
+                            _keep_camera: bool = False) -> None:
+        """Thermomap de fragilité PAR OBJET : chaque pièce est teintée selon SA
+        fragilité (vert = solide → rouge = fragile). Plus précis que des barres
+        flottantes et sans encombrement. face_severity : sévérité 0→1 par face."""
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+
+        self._view_mode = "fragility"
+        # Mémorisé pour recréer la vue après un changement de thème (refresh_theme
+        # fait plotter.clear()). Aligné sur le mesh combiné courant.
+        fsev = np.asarray(face_severity, dtype=np.float32)
+        nf = len(mesh.faces)
+        if len(fsev) != nf:
+            if len(fsev) > nf:
+                fsev = fsev[:nf]
+            else:
+                fsev = np.concatenate([fsev, np.zeros(nf - len(fsev), dtype=np.float32)])
+        self._fragility_severity = fsev
+
+        self._plotter.clear()
+        self._setup_lights()
+        self._add_build_plate(mesh)
+        pv_mesh = self._place_on_plate(self._trimesh_to_pyvista(mesh))
+        pv_mesh.cell_data["fragility"] = fsev
+        self._plotter.add_mesh(
+            pv_mesh,
+            scalars="fragility",
+            cmap=_FRAGILITY_CMAP,
+            clim=[0.0, 1.0],
+            show_scalar_bar=False,
+            smooth_shading=False,
+            ambient=0.82, diffuse=0.18, specular=0.0,
+            name="main_mesh",
+        )
+        # Légende (QLabel HTML 3 niveaux colorés) — affichée seulement si la case
+        # « Fragilité » est cochée (c.-à-d. quand la thermomap est réellement active).
+        self._update_frag_legend_visibility()
+
+        if not _keep_camera:
+            try:
+                _elev = math.radians(25); _far = 1e6
                 self._plotter.camera.position = (0.0, -math.cos(_elev) * _far,
                                                   math.sin(_elev) * _far)
                 self._plotter.camera.focal_point = (0.0, 0.0, 0.0)

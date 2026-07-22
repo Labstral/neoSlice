@@ -144,24 +144,36 @@ class _StatusDot(QLabel):
     def __init__(self, label: str, parent=None):
         super().__init__(parent)
         self._label_text = label
+        self._glyph = "○"
+        self._color_key = "INACTIVE"
         self.setFont(QFont(FONT_MONO, 8))
         self.set_inactive()
 
+    def _render(self):
+        self.setText(f"{self._glyph} {self._label_text}")
+        self.setStyleSheet(
+            f"color: {_T.palette()[self._color_key]}; background: transparent;")
+
+    def set_label(self, label: str):
+        """Change le libellé (ex. « STL » → « 3MF ») en gardant l'état courant."""
+        self._label_text = label
+        self._render()
+
     def set_active(self):
-        self.setText(f"● {self._label_text}")
-        self.setStyleSheet(f"color: {_T.palette()['TELE_GREEN']}; background: transparent;")
+        self._glyph, self._color_key = "●", "TELE_GREEN"
+        self._render()
 
     def set_busy(self):
-        self.setText(f"◌ {self._label_text}")
-        self.setStyleSheet(f"color: {_T.palette()['AMBER']}; background: transparent;")
+        self._glyph, self._color_key = "◌", "AMBER"
+        self._render()
 
     def set_inactive(self):
-        self.setText(f"○ {self._label_text}")
-        self.setStyleSheet(f"color: {_T.palette()['INACTIVE']}; background: transparent;")
+        self._glyph, self._color_key = "○", "INACTIVE"
+        self._render()
 
     def set_error(self):
-        self.setText(f"✕ {self._label_text}")
-        self.setStyleSheet(f"color: {_T.palette()['ERROR_RED']}; background: transparent;")
+        self._glyph, self._color_key = "✕", "ERROR_RED"
+        self._render()
 
 
 class AnalysisPanel(QWidget):
@@ -413,27 +425,32 @@ class AnalysisPanel(QWidget):
         _tg = _apal['TELE_GREEN']; _am = _apal['AMBER']; _er = _apal['ERROR_RED']
         _ab = _apal['ACCENT_BRIGHT']
 
+        # Recadrage débutant : VERT = prêt / neoSlice a géré (rassurant) ; ORANGE =
+        # à surveiller ; on n'utilise PLUS de rouge alarmant pour le verdict (une pièce
+        # « adaptée » n'est pas une erreur). Couleurs de palette → OK thèmes clair/sombre.
+        _bg_green = "#0B1E14" if _is_dk else "#eef8f2"
+        _bg_amber = "#1E1800" if _is_dk else "#fdf4ed"
         if _skip:
-            # Surplombs inconnus → toujours « à vérifier avant impression »
-            verdict_text   = _("analysis.verdict_warn")
+            # Surplombs non analysés → seul vrai « à vérifier » du verdict
+            verdict_text   = _("analysis.verdict_skip")
             verdict_color  = _am
-            verdict_bg     = "#1E1800" if _is_dk else "#fdf4ed"
+            verdict_bg     = _bg_amber
             verdict_border = _am
-        elif complexity < 0.25 and not report.support_needed:
-            verdict_text   = _("analysis.verdict_ok")
+        elif complexity < 0.55 or (report.support_needed and complexity < 0.6) \
+                or (complexity < 0.25 and not report.support_needed):
+            # Prêt : soit rien à signaler, soit neoSlice a adapté (brim/supports) → VERT
+            verdict_text   = (_("analysis.verdict_ok")
+                              if complexity < 0.25 and not report.support_needed
+                              else _("analysis.verdict_warn"))
             verdict_color  = _tg
-            verdict_bg     = "#0B1E14" if _is_dk else "#eef8f2"
+            verdict_bg     = _bg_green
             verdict_border = _tg
-        elif complexity < 0.55 or (report.support_needed and complexity < 0.6):
-            verdict_text   = _("analysis.verdict_warn")
-            verdict_color  = _am
-            verdict_bg     = "#1E1800" if _is_dk else "#fdf4ed"
-            verdict_border = _am
         else:
+            # Pièce vraiment exigeante : réglages adaptés, à surveiller → ORANGE (pas rouge)
             verdict_text   = _("analysis.verdict_bad")
-            verdict_color  = _er
-            verdict_bg     = "#200A0A" if _is_dk else "#faefee"
-            verdict_border = _er
+            verdict_color  = _am
+            verdict_bg     = _bg_amber
+            verdict_border = _am
 
         rows = []
 
@@ -455,18 +472,27 @@ class AnalysisPanel(QWidget):
             if _is_tiny:
                 pass  # statut surplombs non affiché, avertissement ci-dessous
             elif has_floating:
-                rows.append(f'<span style="color:{_er};">{_("analysis.status_floating")}</span>')
+                # supports générés → à surveiller, pas une erreur : ORANGE (plus rouge)
+                rows.append(f'<span style="color:{_am};">{_("analysis.status_floating")}</span>')
             elif report.support_needed:
-                rows.append(f'<span style="color:{_er};">{_("analysis.status_supp_req", pct=ovh_pct)}</span>')
+                # neoSlice a AJOUTÉ les supports → rassurant : VERT
+                rows.append(f'<span style="color:{_tg};">{_("analysis.status_supp_req", pct=ovh_pct)}</span>')
             elif oh_sev > 0.15:
+                # surplombs modérés, pas de support auto → à surveiller : ORANGE
                 rows.append(f'<span style="color:{_am};">{_("analysis.status_supp_mod", pct=ovh_pct)}</span>')
             else:
                 rows.append(f'<span style="color:{_tg};">{_("analysis.status_oh_ok")}</span>')
 
+        # Stabilité faible/moyenne → neoSlice a AJOUTÉ un brim → rassurant : VERT
         if report.stability_score < 0.4:
-            rows.append(f'<span style="color:{_er};">{_("analysis.status_stab_low")}</span>')
+            rows.append(f'<span style="color:{_tg};">{_("analysis.status_stab_low")}</span>')
         elif report.stability_score < 0.65:
-            rows.append(f'<span style="color:{_am};">{_("analysis.status_stab_med")}</span>')
+            rows.append(f'<span style="color:{_tg};">{_("analysis.status_stab_med")}</span>')
+        elif report.is_large_flat_part:
+            # Stable MAIS grande surface plate → un brim EST ajouté (anti-warping),
+            # géré par la ligne « surface plate » ci-dessous. Ne pas écrire ici
+            # « pas de brim nécessaire » (contradiction) : juste « Stable ».
+            rows.append(f'<span style="color:{_tg};">{_("analysis.status_stab_ok_flat")}</span>')
         else:
             rows.append(f'<span style="color:{_tg};">{_("analysis.status_stab_ok")}</span>')
 
@@ -479,8 +505,9 @@ class AnalysisPanel(QWidget):
                 + '</span>'
             )
 
+        # Grande surface plate → brim ajouté (mitige le warping) → rassurant : VERT
         if report.is_large_flat_part:
-            rows.append(f'<span style="color:{_am};">{_("analysis.status_flat")}</span>')
+            rows.append(f'<span style="color:{_tg};">{_("analysis.status_flat")}</span>')
 
         if max(report.bounding_box_mm) < 10.0:
             _d = max(report.bounding_box_mm)
@@ -515,7 +542,12 @@ class AnalysisPanel(QWidget):
         self._material_warn.setStyleSheet("background: transparent;")
 
     def set_progress(self, pct: int, msg: str) -> None:
-        """Affiche la progression en temps réel pendant l'analyse."""
+        """Affiche la progression en temps réel pendant l'analyse.
+
+        En haut du viewer on ne montre QUE « analyse en cours » + le %. Le détail
+        des phases (surplombs, stabilité, fragilité…) s'affiche uniquement dans la
+        barre de statut en bas — pas de doublon, pas de message qui défile ici.
+        """
         _pp = _T.palette()
         html = (
             f'<table width="100%" cellpadding="0" cellspacing="0">'
@@ -525,8 +557,6 @@ class AnalysisPanel(QWidget):
             f'<td align="right" style="color:{_pp["ACCENT"]}; font-family:{FONT_MONO}; '
             f'font-size:10pt; font-weight:bold;">{pct}%</td>'
             f'</tr>'
-            f'<tr><td colspan="2" style="color:{_pp["TEXT_SECONDARY"]}; font-family:{FONT_MONO}; '
-            f'font-size:8pt; padding-top:3px;">{msg}</td></tr>'
             f'</table>'
         )
         self._status_block.setText(html)
@@ -573,6 +603,10 @@ class AnalysisPanel(QWidget):
             self._material_warn.setText("")
             self._material_warn.setStyleSheet("background: transparent;")
 
+    def set_file_kind(self, kind: str):
+        """Libellé de l'étape 2 cohérent avec le fichier chargé (STL/OBJ/3MF)."""
+        self._dot_stl.set_label(kind or _("analysis.dot_stl"))
+
     def set_generation_active(self):
         self._dot_gen.set_active()
 
@@ -583,7 +617,13 @@ class AnalysisPanel(QWidget):
         """Passe la jauge fragilité en mode 'analyse indépendante par lot'."""
         self._g_fragility.set_independent_mode(max_score)
 
+    def set_fragility_disabled(self) -> None:
+        """Désactive la jauge fragilité (plateau multi-objets : une valeur globale
+        serait incohérente — la fragilité par pièce se lit via la thermomap)."""
+        self._g_fragility.set_disabled()
+
     def reset(self):
+        self._dot_stl.set_label(_("analysis.dot_stl"))
         self._dot_stl.set_inactive()
         self._dot_anlys.set_inactive()
         self._dot_gen.set_inactive()

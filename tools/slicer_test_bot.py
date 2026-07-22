@@ -470,9 +470,200 @@ class OrcaAdapter:
             _restore_light(backup, self.cfg_dir, self.conf_files)
 
 
+# ══════════════════════════ Adaptateur FlashPrint (FlashForge) ═══════════════
+# Boucle fermée PROFONDE comme Prusa, mais via le MOTEUR CLI embarqué de
+# FlashPrint (engine/ffslicer.exe) : le G-code produit déclare en en-tête les
+# paramètres réellement appliqués (« ;layer_height: 0.2 » …). On traduit notre
+# profil scheme (.fcfg, clés plates [General]) vers le cfg moteur (sections),
+# on tranche la pièce, et on compare clé par clé. Zéro GUI, déterministe.
+_FLASHPRINT_DIR = Path(r"C:\Program Files\FlashForge\FlashPrint 5")
+_FFSLICER = _FLASHPRINT_DIR / "engine" / "ffslicer.exe"
+_FF_DEFAULT_CFG = _FLASHPRINT_DIR / "engine" / "default-fdm.cfg"
+
+# clé scheme (.fcfg) → (section moteur, clé moteur). None = racine du cfg.
+_FP_SCHEME2ENGINE = [
+    ("layerHeight",        None,     "layerHeight"),
+    ("firstLayerHeight",   None,     "firstLayerHeight"),
+    ("baseSpeed",          None,     "baseSpeed"),
+    ("travelSpeed",        None,     "travelSpeed"),
+    ("extruderTemp0",      None,     "rightTemp"),
+    ("platformTemp",       None,     "platTemp"),
+    ("pathWidth",          None,     "pathWidth"),
+    ("shellCnt",           "shell",  "count"),
+    ("shellOuterMaxSpeed", "shell",  "outerMaxSpeed"),
+    ("fillTopSolidCnt",    "infill", "topSolidCnt"),
+    ("fillBottomSolidCnt", "infill", "bottomSolidCnt"),
+    ("fillDensity",        "infill", "density"),
+    ("raftEnable",         "raft",   "enable"),
+]
+
+# en-tête G-code ffslicer → clé scheme correspondante (ce qu'on VÉRIFIE)
+_FP_HEADER_KEYS = {
+    "layer_height":               "layerHeight",
+    "perimeter_shells":           "shellCnt",
+    "top_solid_layers":           "fillTopSolidCnt",
+    "bottom_solid_layers":        "fillBottomSolidCnt",
+    "fill_density":               "fillDensity",         # % côté G-code, 0..1 côté scheme
+    "right_extruder_temperature": "extruderTemp0",
+    "platform_temperature":       "platformTemp",
+    "base_print_speed":           "baseSpeed",
+    "travel_speed":               "travelSpeed",
+}
+
+
+def _parse_gcode_header(text: str) -> dict:
+    """Bloc « ;clé: valeur » en tête du G-code ffslicer."""
+    out = {}
+    for line in text.splitlines()[:60]:
+        m = re.match(r"^;([A-Za-z0-9_]+):\s*(.*)$", line.strip())
+        if m:
+            out[m.group(1)] = m.group(2).strip()
+    return out
+
+
+def _fp_unescape(s: str) -> bytes:
+    out, i = bytearray(), 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and i + 1 < len(s):
+            n = s[i + 1]
+            if n == "x":
+                j, hexd = i + 2, ""
+                while j < len(s) and s[j] in "0123456789abcdefABCDEF" and len(hexd) < 2:
+                    hexd += s[j]; j += 1
+                out.append(int(hexd, 16)); i = j; continue
+            if n == "0":
+                out.append(0); i += 2; continue
+            if n == "\\":
+                out.append(0x5C); i += 2; continue
+            out.append(ord(n)); i += 2; continue
+        out.append(ord(c)); i += 1
+    return bytes(out)
+
+
+def _fp_plainify(prof: dict) -> dict:
+    """Le profil FlashPrint utilisateur encode les flottants en QVariant
+    (`@Variant(\\x..)`). Pour la boucle moteur, on décode ces valeurs en flottants
+    (4 octets de type + float BE) ; les valeurs texte (bool/[]/enum) sont laissées."""
+    import struct as _st
+    out = {}
+    for k, v in prof.items():
+        v = v.strip().strip('"')
+        if v.startswith("@Variant(") and v.endswith(")"):
+            try:
+                b = _fp_unescape(v[len("@Variant("):-1])
+                out[k] = "{:g}".format(_st.unpack(">f", b[4:8])[0])
+                continue
+            except Exception:
+                pass
+        out[k] = v
+    return out
+
+
+class FlashPrintAdapter:
+    id = "flashprint"
+    image = "FlashPrint.exe"
+
+    def exe(self) -> Path | None:
+        """Présence de FlashPrint = moteur CLI disponible (embarqué avec l'app)."""
+        return _FFSLICER if _FFSLICER.exists() else None
+
+    def printer(self) -> str:
+        from data.printers import flashprint_models_for_brand
+        models = [mk for _, mk in flashprint_models_for_brand("Flashforge")]
+        for pref in ("Adventurer 5M", "Adventurer 4", "Guider 3"):
+            for mk in models:
+                if pref in mk:
+                    return mk
+        return models[0] if models else "FlashForge Adventurer 5M"
+
+    def build(self, path: Path, scen: dict) -> str:
+        from core.export.flashprint_builder import FlashPrintBuilder
+        PREFS.set("slicer_output", "flashprint")
+        printer = self.printer()
+        self._builder = FlashPrintBuilder()
+        self._builder.build(
+            mesh=scen["piece"], config=scen["config"], output_path=path,
+            printer_ui_name=printer, filament_ui_name=scen["filament"],
+            nozzle_diameter_mm=scen["nozzle"])
+        self._piece = scen["piece"]
+        return printer
+
+    def structural(self, path: Path) -> tuple[bool, str]:
+        try:
+            with zipfile.ZipFile(path) as z:
+                assert any(n.endswith(".model") for n in z.namelist()), "géométrie absente"
+            fcfg = path.with_suffix(".fcfg")
+            assert fcfg.exists(), ".fcfg absent"
+            prof = _parse_ini_config(fcfg.read_text(encoding="utf-8"))
+            for k in ("layerHeight", "extruderTemp0", "fillDensity", "baseSpeed",
+                      "shellCnt", "raftEnable"):
+                assert k in prof, f"clé {k} absente du profil"
+            assert len(prof) >= 150, f"profil incomplet ({len(prof)} clés)"
+            return True, f"3MF + profil {len(prof)} clés"
+        except Exception as e:
+            return False, f"{type(e).__name__}: {e}"
+
+    def _engine_cfg(self, prof: dict, dest: Path) -> None:
+        """default-fdm.cfg + traduction de NOTRE profil scheme → cfg moteur."""
+        lines = _FF_DEFAULT_CFG.read_text(encoding="utf-8", errors="replace").splitlines()
+        wanted = {}
+        for sk, section, ek in _FP_SCHEME2ENGINE:
+            if sk in prof:
+                wanted[(section, ek)] = prof[sk]
+        out, cur = [], None
+        for l in lines:
+            s = l.strip()
+            if s.startswith("["):
+                cur = s.strip("[]")
+            elif "=" in s and not s.startswith("#"):
+                key = s.split("=")[0].strip()
+                if (cur, key) in wanted:
+                    l = f"{key} = {wanted.pop((cur, key))}"
+            out.append(l)
+        dest.write_text("\n".join(out) + "\n", encoding="utf-8")
+        if wanted:                                   # clé pivot introuvable = bug bot
+            raise RuntimeError(f"clé(s) moteur non trouvée(s): {sorted(wanted)}")
+
+    def run_real(self, path: Path, scen_name: str, backup_unused=None) -> tuple[str, str, dict, str]:
+        """Tranche la pièce via ffslicer avec NOTRE profil traduit → compare
+        l'en-tête du G-code aux valeurs du .fcfg exporté."""
+        prof = _fp_plainify(_parse_ini_config(path.with_suffix(".fcfg").read_text(encoding="utf-8")))
+        stl = _CALIB / f"flashprint_{scen_name}.stl"
+        cfg = _CALIB / f"flashprint_{scen_name}.cfg"
+        gcode = _CALIB / f"flashprint_{scen_name}.g"
+        gcode.unlink(missing_ok=True)
+        self._piece.export(str(stl))
+        self._engine_cfg(prof, cfg)
+        try:
+            r = subprocess.run(
+                [str(_FFSLICER), "--model", f"file:{stl.as_posix()}",
+                 "--config", str(cfg), "--gcode", str(gcode)],
+                capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            return "na", "timeout ffslicer (180s)", {}, ""
+        if not gcode.exists():
+            tail = (r.stdout or r.stderr or "")[-200:]
+            return "echec", f"pas de G-code produit — {tail}", {}, ""
+        header = _parse_gcode_header(gcode.read_text(encoding="utf-8", errors="ignore"))
+        expected, applied = {}, {}
+        for hk, sk in _FP_HEADER_KEYS.items():
+            if sk not in prof or hk not in header:
+                continue
+            exp = prof[sk]
+            if hk == "fill_density":                 # 0.42 (scheme) ↔ « 42% » (G-code)
+                exp = f"{float(exp) * 100:g}"
+            expected[hk] = exp
+            applied[hk] = header[hk]
+        diffs = _compare(expected, applied, list(expected))
+        if diffs:
+            return "echec", f"{len(diffs)}/{len(expected)} clé(s) non appliquée(s)", diffs, ""
+        return "ok", f"tranché ffslicer, {len(expected)} clés vérifiées identiques", {}, ""
+
+
 # ══════════════════════════ Orchestration ════════════════════════════════════
 def _all_adapters() -> dict:
-    ad = {"prusa": PrusaAdapter(), "cura": CuraAdapter()}
+    ad = {"prusa": PrusaAdapter(), "cura": CuraAdapter(), "flashprint": FlashPrintAdapter()}
     for sid in _ORCA_SLICERS:
         ad[sid] = OrcaAdapter(sid)
     return ad

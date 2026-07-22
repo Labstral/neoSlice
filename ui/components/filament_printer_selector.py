@@ -21,6 +21,8 @@ from data.printers import (
     catalogue_brands, models_for_brand, nozzles_for_model, is_catalogue_model,
     prusa_brands, prusa_models_for_brand, prusa_nozzles_for_model, is_prusa_model,
     cura_brands, cura_models_for_brand, cura_nozzles_for_model, is_cura_model,
+    flashprint_brands, flashprint_models_for_brand, flashprint_nozzles_for_model,
+    is_flashprint_model,
     split_popular, split_popular_souple,
 )
 from core.prefs import PREFS
@@ -97,15 +99,18 @@ _BTN_DONE = f"""
 _NOZZLE_SIZES = [0.2, 0.4, 0.6, 0.8]
 _NOZZLE_DEFAULT = 0.4
 
-# Plateaux Bambu Studio / OrcaSlicer (label affiché, valeur curr_bed_type 3MF)
-_PLATES_BAMBU = [
-    ("Textured PEI Plate",                 "Textured PEI Plate"),
-    ("Cool Plate / PLA Plate",             "Cool Plate"),
-    ("Textured Cool Plate",                "Textured Cool Plate"),
-    ("Smooth Cool Plate (H2)",             "Smooth Cool Plate"),
-    ("Smooth PEI Plate / High Temp Plate", "Hot Plate"),
-    ("Engineering Plate",                  "Engineering Plate"),
-    ("Bambu Cool Plate SuperTack",         "Bambu Cool Plate SuperTack"),
+# Types de plateau Bambu/Orca (label affiché, VALEUR = curr_bed_type écrit dans le
+# 3MF). Noms canoniques OrcaSlicer (l'univers réel des profils Orca : 6 types), lus
+# aussi par Bambu Studio pour les communs. La liste MONTRÉE dépend de l'imprimante :
+# ensemble complet MOINS `not_support_bed_type` du modèle (data/bed_types.json).
+# (« Bambu Cool Plate SuperTack » retiré : propre aux Bambu récentes, non déductible
+#  par modèle depuis les profils — l'utilisateur le choisit dans le slicer si besoin.)
+_BED_TYPES_ALL = [
+    ("Textured PEI Plate",      "Textured PEI Plate"),      # défaut universel
+    ("Smooth PEI Plate",        "Smooth PEI Plate"),        # = High Temp (code hot_plate)
+    ("Cool Plate / PLA Plate",  "Cool Plate"),
+    ("Engineering Plate",       "Engineering Plate"),
+    ("Textured Cool Plate",     "Textured Cool Plate"),
 ]
 _PLATE_DEFAULT_BAMBU = "Textured PEI Plate"
 
@@ -118,8 +123,14 @@ _PLATES_PRUSA = [
 ]
 _PLATE_DEFAULT_PRUSA = "Textured PEI Sheet"
 
-# Compat : ancien nom encore référencé ailleurs → pointe sur le catalogue Bambu.
-_PLATES = _PLATES_BAMBU
+# FlashPrint (FlashForge) : pas de notion de type de plateau dans les profils —
+# une seule entrée neutre (le combo reste cohérent, la valeur n'est pas exportée).
+# Libellé « Standard » identique FR/EN (comme les noms de plateaux Bambu/Prusa).
+_PLATES_FLASHPRINT = [("Standard", "standard")]
+_PLATE_DEFAULT_FLASHPRINT = "standard"
+
+# Compat : ancien nom encore référencé ailleurs → ensemble complet Bambu/Orca.
+_PLATES = _BED_TYPES_ALL
 _PLATE_DEFAULT = _PLATE_DEFAULT_BAMBU
 
 
@@ -135,13 +146,32 @@ def _make_combo_shrinkable(combo: QComboBox) -> None:
     combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
 
 
-def _plates_for_slicer(slicer: str) -> tuple[list, str]:
-    """Retourne (liste [(label, valeur), …], valeur par défaut) selon le slicer
-    de sortie. PrusaSlicer a ses propres « sheets » acier ; Bambu et Orca
-    partagent les plateaux Bambu Studio."""
+def _plates_for_printer(slicer: str, printer_key: str = "") -> tuple[list, str]:
+    """Retourne (liste [(label, valeur), …], valeur par défaut) pour un slicer ET
+    une imprimante. Bambu/Orca : ensemble complet des plateaux MOINS ceux que le
+    modèle ne supporte pas (data/bed_types.json, ex. Bambu A1 mini sans Cool Plate),
+    défaut = default_bed_type du modèle. PrusaSlicer : ses « sheets » acier.
+    (Cura/FlashPrint : pas de plateau — géré/masqué par _populate_plates.)"""
     if slicer == "prusa":
         return _PLATES_PRUSA, _PLATE_DEFAULT_PRUSA
-    return _PLATES_BAMBU, _PLATE_DEFAULT_BAMBU
+    if slicer == "flashprint":
+        return _PLATES_FLASHPRINT, _PLATE_DEFAULT_FLASHPRINT
+    from data.printers import printer_bed_info
+    info = printer_bed_info(printer_key or "")
+    ns = set(info.get("not_support", []))
+    plates = [(lbl, val) for (lbl, val) in _BED_TYPES_ALL if val not in ns]
+    if not plates:                                   # garde-fou (ne devrait pas arriver)
+        plates = [_BED_TYPES_ALL[0]]
+    values = [v for _lbl, v in plates]
+    default = info.get("default", _PLATE_DEFAULT_BAMBU)
+    if default not in values:
+        default = values[0]
+    return plates, default
+
+
+def _plates_for_slicer(slicer: str) -> tuple[list, str]:
+    """Compat : plateaux d'un slicer SANS imprimante précise (ensemble complet)."""
+    return _plates_for_printer(slicer, "")
 
 # Combinaisons plateau × filament à signaler à l'utilisateur
 _PLATE_WARNINGS: dict[str, dict[str, str]] = {
@@ -460,6 +490,7 @@ class FilamentPrinterSelector(QWidget):
         self._plate_combo.setEnabled(True)
         self._lbl_plate.setStyleSheet(f"color: {tl}; letter-spacing: 2px; background: transparent;")
         self._on_plate_changed()
+        self._update_compatibility()          # badge « Compatible » : après validation
         self.filament_confirmed.emit()
 
     def _on_plate_changed(self):
@@ -489,6 +520,10 @@ class FilamentPrinterSelector(QWidget):
             brands = cura_brands()
             models = cura_models_for_brand
             groups = []
+        elif slicer == "flashprint":
+            brands = flashprint_brands()
+            models = flashprint_models_for_brand
+            groups = []
         else:
             brands = catalogue_brands(slicer)
             models = lambda b: models_for_brand(b, slicer)
@@ -497,7 +532,14 @@ class FilamentPrinterSelector(QWidget):
                 by_serie.setdefault(data.get("serie", "Autre"), []).append(name)
             bambu = [(name, name) for serie in SERIES_ORDRE
                      for name in by_serie.get(serie, [])]
-            groups = [("Bambu Lab", bambu)]
+            # Groupe « Bambu Lab » UNIQUEMENT pour les slicers qui ciblent vraiment
+            # les Bambu Lab : Bambu Studio (natif) et OrcaSlicer (universel, embarque
+            # le vendor Bambu). Les slicers de FABRICANT (CrealityPrint/ElegooSlicer/
+            # Anycubic/Snapmaker) sont choisis par les possesseurs de CES machines ;
+            # y proposer une Bambu Lab n'a pas de sens ET risque un export cassé (un
+            # fork allégé peut ne pas connaître le preset Bambu -> mauvaise imprimante
+            # au chargement). Le catalogue ne les marque d'ailleurs jamais compatibles.
+            groups = [("Bambu Lab", bambu)] if slicer in ("bambu", "orca") else []
 
         # Cura : comparaison SOUPLE (fabricants suffixés différemment : « Creality3D »,
         # « Ultimaker B.V. » au lieu de « Creality »/« UltiMaker » → l'égalité stricte
@@ -547,6 +589,7 @@ class FilamentPrinterSelector(QWidget):
     def _on_changed(self):
         self._sync_nozzles()
         self._update_printer_note()
+        self._populate_plates()          # les plateaux dépendent de l'imprimante choisie
         self._update_compatibility()
         printer = self.current_printer()
         # Avertissement A2L : affiché dès la sélection (pas seulement à la validation)
@@ -557,6 +600,12 @@ class FilamentPrinterSelector(QWidget):
             self.selection_changed.emit(printer, filament)
 
     def _update_compatibility(self):
+        # Le badge ne s'affiche qu'une fois l'imprimante ET le filament VALIDÉS.
+        # Avant, les combos ont des valeurs par défaut (X1 Carbon / PLA) mais rien
+        # n'est confirmé → « Compatible avec X1 Carbon » était trompeur au démarrage.
+        if not (self._printer_done and self._filament_done):
+            self._compat_badge.setText("")
+            return
         printer_name = self.current_printer()
         filament_name = self.current_filament()
         if not printer_name or not filament_name:
@@ -600,9 +649,29 @@ class FilamentPrinterSelector(QWidget):
 
     def _populate_plates(self) -> None:
         """Remplit le combo de plateaux selon le slicer de sortie (Bambu/Orca ↔
-        Prusa). Conserve le plateau courant s'il existe encore, sinon défaut."""
+        Prusa). Conserve le plateau courant s'il existe encore, sinon défaut.
+        Certains slicers de sortie n'ont PAS de « type de plateau » Bambu et leur
+        builder ignore ce réglage → on masque le sélecteur pour éviter un faux choix :
+          • FlashPrint : plateau fixe par machine, seule la température compte ;
+          • Cura : notion inexistante (adhérence = jupe/bordure/radeau) — son builder
+            ne reçoit jamais plate_type ; afficher les plateaux Bambu était trompeur.
+        (Bambu/Orca et leurs forks — Creality/Elegoo/Anycubic/Snapmaker — comprennent
+        curr_bed_type : le sélecteur reste. PrusaSlicer a ses propres feuilles acier.)"""
         slicer = PREFS.get("slicer_output", "bambu")
-        plates, default = _plates_for_slicer(slicer)
+        _no_plate = slicer in ("flashprint", "cura")
+        self._lbl_plate.setVisible(not _no_plate)
+        self._plate_combo.setVisible(not _no_plate)
+        if _no_plate:
+            if hasattr(self, "_plate_warn_lbl"):     # peut être appelé avant sa création
+                self._plate_warn_lbl.hide()
+            return
+        # Plateaux COHÉRENTS avec l'imprimante choisie (ensemble complet moins les
+        # plateaux non supportés par ce modèle, ex. Bambu A1 mini sans Cool Plate).
+        try:
+            _printer = self.current_printer()
+        except Exception:
+            _printer = ""
+        plates, default = _plates_for_printer(slicer, _printer)
         prev = self._plate_combo.currentData() if self._plate_combo.count() else None
         self._plate_combo.blockSignals(True)
         self._plate_combo.clear()
@@ -635,6 +704,11 @@ class FilamentPrinterSelector(QWidget):
                 "et vos réglages : il suffira de l'ouvrir dans UltiMaker Cura, rien à "
                 "configurer de plus."
             )
+            self._printer_note.show()
+            return
+
+        if slicer == "flashprint" or (key and is_flashprint_model(key)):
+            self._printer_note.setText(_("selector.note_flashprint"))
             self._printer_note.show()
             return
 
@@ -674,6 +748,8 @@ class FilamentPrinterSelector(QWidget):
             sizes = prusa_nozzles_for_model(key) or list(_NOZZLE_SIZES)
         elif key and is_cura_model(key):
             sizes = cura_nozzles_for_model(key) or list(_NOZZLE_SIZES)
+        elif key and is_flashprint_model(key):
+            sizes = flashprint_nozzles_for_model(key) or list(_NOZZLE_SIZES)
         elif key and is_catalogue_model(key):
             sizes = nozzles_for_model(key) or list(_NOZZLE_SIZES)
         else:
@@ -696,7 +772,10 @@ class FilamentPrinterSelector(QWidget):
         """Retourne la valeur du plateau sélectionné (curr_bed_type Bambu/Orca, ou
         « sheet » PrusaSlicer selon le slicer de sortie)."""
         slicer = PREFS.get("slicer_output", "bambu")
-        _, default = _plates_for_slicer(slicer)
+        try:
+            _, default = _plates_for_printer(slicer, self.current_printer())
+        except Exception:
+            _, default = _plates_for_slicer(slicer)
         return self._plate_combo.currentData() or default
 
     def refresh_theme(self):

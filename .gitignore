@@ -60,3 +60,6 @@ _orca_help.txt
 
 # Log de build transitoire
 build_log.txt
+
+# Artefacts de test des bots slicer (sortie ffslicer/CLI)
+result.json

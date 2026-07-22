@@ -52,6 +52,7 @@ _WALL_SEARCH_MAX     = 30.0   # mm — limite haute épaisseur paroi
 _WALL_SEARCH_ITERS   = 12     # itérations de bissection (précision ≈ 0.03 mm)
 _FLOAT_DIST_FACTOR   = 3.0    # × threshold pour détecter les régions flottantes
 _SECTION_TIMEOUT_S   = 8.0    # abandon si la section d'une couche prend trop longtemps
+_MAX_BODIES_FOR_LAYERS = 24   # au-delà : nesting de polygones O(n²) trop coûteux
 
 
 @dataclass
@@ -91,6 +92,35 @@ class LayerSliceResult:
 # ──────────────────────────────────────────────────────────────────────────────
 # API publique
 # ──────────────────────────────────────────────────────────────────────────────
+
+def _quick_multibody_result(mesh: trimesh.Trimesh) -> LayerSliceResult:
+    """Estimation directe (stabilité + fragilité) sans analyse par couches.
+
+    Utilisée pour les assemblages à N pièces disjointes, où le nesting de
+    polygones par couche est prohibitif. Les surplombs sont calculés à part par
+    le worker (analyze_overhangs) : on ne renseigne donc PAS les champs surplomb.
+    """
+    r = LayerSliceResult(fallback_used=False)
+    try:
+        from .stability_analyzer import analyze_stability
+        st = analyze_stability(mesh)
+        r.stability_score        = float(st.score)
+        r.center_of_mass         = st.center_of_mass.tolist()
+        r.brim_recommendation_mm = float(st.brim_recommendation_mm)
+    except Exception as _e:
+        logger.debug(f"stabilité directe (multi-corps) échouée : {_e}")
+        r.stability_score = 0.7
+        r.center_of_mass = mesh.center_mass.tolist()
+    try:
+        from .fragility_detector import detect_fragility
+        fr = detect_fragility(mesh, nozzle_diameter_mm=0.4)
+        r.min_wall_thickness_mm = float(fr.min_thickness_mm)
+        r.fragility_severity    = float(fr.severity)
+        r.has_fragile_zones     = bool(fr.has_fragile_zones)
+    except Exception as _e:
+        logger.debug(f"fragilité directe (multi-corps) échouée : {_e}")
+    return r
+
 
 def analyze_by_layers(
     mesh: trimesh.Trimesh,
@@ -134,6 +164,25 @@ def analyze_by_layers(
         b = mesh.bounds
         r.footprint_area_mm2 = float((b[1][0] - b[0][0]) * (b[1][1] - b[0][1]))
         return r
+
+    # ── Garde multi-corps : assemblage de nombreuses pièces disjointes ─────
+    # Sur un 3MF de N pièces posées sur UN plateau (ex. « Cover Fan Aux.3mf »,
+    # 73 parts), chaque section a ~N polygones distincts. Le calcul de nesting de
+    # trimesh (polygons_full → shapely enclosure_tree) est en O(corps²) sur des
+    # polygones complexes → plusieurs DIZAINES de secondes (voire un gel). Comme
+    # l'analyse par couches n'apporte rien de plus qu'une estimation directe pour
+    # un assemblage à plat, on l'évite et on estime stabilité + fragilité via les
+    # analyseurs directs (rapides, éprouvés). Les surplombs restent gérés à part.
+    try:
+        _bodies = int(mesh.body_count)
+    except Exception:
+        _bodies = 1
+    if _bodies > _MAX_BODIES_FOR_LAYERS:
+        logger.info(
+            f"Analyse par couches ignorée — {_bodies} corps disjoints "
+            f"(nesting O(n²) trop coûteux) → estimation directe."
+        )
+        return _quick_multibody_result(mesh)
 
     # ── Pitch d'analyse : adaptatif selon taille ET complexité du mesh ─────
     # section_multiplane coûte O(faces × couches) → cap agressif sur gros meshes

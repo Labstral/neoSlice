@@ -18,6 +18,7 @@ onnxruntime>=1.18.0
 matplotlib>=3.10           # contours vectoriels des polices (TextPath)
 mapbox_earcut>=1.0         # triangulation des polygones (trimesh extrude)
 manifold3d>=3.0            # unions/différences booléennes étanches
+segno>=1.6                 # QR code 3D (matrice hors-ligne, pur Python, sans dépendance)
 svgelements>=1.9           # import de logos SVG
 opencv-python-headless>=4.10   # vectorisation de logos PNG (contours)
 
@@ -33,6 +34,7 @@ loguru>=0.7.3
 rtree>=1.4.0
 shapely>=2.0.0
 reportlab>=4.0.0
+psutil>=6.0            # RAM/config machine sur macOS/Linux (settings — analyse de configuration)
 pyinstaller>=6.20.0
 
 # Tests (dev uniquement, non embarqué dans le build)

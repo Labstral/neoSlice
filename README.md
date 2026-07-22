@@ -1,22 +1,24 @@
 # neoSlice — AI-Powered 3D Print Optimizer
 
-**neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **5 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et ElegooSlicer — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, Sovol…).
+**neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v0.1.7** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v0.1.8** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
 ## Fonctionnalités
 
-- **5 slicers, 80+ marques, 600+ imprimantes** — le catalogue s'adapte au slicer de sortie choisi
-- **Import STL & 3MF** — chargez vos fichiers directement, y compris les 3MF multi-plateau
-- **Analyse géométrique** — détection des surplombs, fragilité, stabilité par groupe de pièces
-- **Intent en langage naturel** — décrivez votre besoin ("solide", "rapide", "finition") et neoSlice règle tout
+- **9 slicers, 80+ marques, 600+ imprimantes** — le catalogue et les plateaux s'adaptent au slicer et à la machine choisis
+- **Import STL, OBJ & 3MF** — chargez vos fichiers directement, y compris les 3MF multi-plateau et les assemblages complexes
+- **Analyse géométrique** — détection des surplombs, stabilité, fragilité — avec **carte de fragilité par pièce** (chaque pièce colorée selon sa solidité)
+- **Instruction Mission** — choisissez qualité, résistance, vitesse, supports et usage par simples menus : neoSlice traduit vos choix en paramètres optimisés
+- **Mode performance automatique** — le niveau d'analyse s'adapte seul à votre machine et à la complexité de chaque pièce
 - **Génération 3MF** — export prêt à ouvrir dans votre slicer avec tous les paramètres optimisés
+- **neoGen — générateur d'objets 3D** *(Pro)* — bibliothèque d'objets personnalisables au millimètre (porte-clés, cadres photo, QR codes 3D bicolores, cartes de visite, clips de câble, joints, vis et écrous, objets resto/mariage/boutique…), texte en relief ou gravé, générés étanches et sans support
 - **Oen — assistant IA local** *(Pro)* — un modèle Qwen3 tourne sur votre machine (hors ligne, privé), nourri d'une base de connaissances imprimantes ; **mode Réflexion** activable pour des réponses raisonnées
 - **Export multicouleur** *(Pro)* — coloriez vos pièces après export 3MF, appliquez les filaments par slot, et le **stock est déduit automatiquement** après impression
 - **Espace Pro — gestion d'atelier** *(Pro)* — bobines, devis, factures internationales, clients, commandes et catalogue d'articles, tous connectés
-- **Mise à jour automatique** — vérification et installation directement depuis l'application
+- **Mise à jour automatique** — vérification et installation directement depuis l'application ; modules et bases de connaissances mis à jour **sans réinstaller**
 
 ## Plateformes supportées
 
@@ -43,6 +45,14 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v0.1.8
+- **neoGen — générateur d'objets 3D** *(Pro)* : bibliothèque d'objets prêts à imprimer, tous personnalisables au millimètre — porte-clés, cadres photo, QR codes 3D en deux couleurs, cartes de visite, clips de câble au diamètre exact, joints, équerres, vis et écrous, objets pour la restauration, le mariage et la boutique. Texte en relief ou gravé, choix de la police et des couleurs ; pièces générées étanches et pensées pour sortir sans support. Plages de dimensions élargies sur tous les objets.
+- **Carte de fragilité par pièce** : sur un plateau multi-pièces, cochez « Fragilité » dans la vue 3D — chaque pièce se colore selon sa solidité (vert = solide, jaune = un peu fragile, rouge = fragile).
+- **FlashPrint — 9e slicer** : sortie vers FlashPrint (FlashForge) avec dépôt automatique du profil d'impression ; les plateaux proposés s'adaptent désormais à chaque imprimante.
+- **Mode performance automatique** : neoSlice choisit seul, pièce par pièce, le meilleur compromis vitesse/précision selon votre machine.
+- **Fiabilité** : chargement des 3MF complexes (assemblages multi-pièces Bambu) qui pouvaient bloquer indéfiniment ; analyses accélérées sur les maillages denses ; petites pièces correctement posées sur le plateau dans la vue 3D.
+- **Interface** : type de fichier réel affiché (STL/OBJ/3MF), messages d'analyse épurés, progression plus lisible.
 
 ### v0.1.7
 - **Oen — assistant IA local** *(Pro)* : un modèle **Qwen3 8B** tourne directement sur votre machine (hors ligne, privé), expert de l'impression 3D toutes marques avec base de connaissances et recherche sémantique (RAG). Il **réfléchit automatiquement** sur les questions difficiles (indicateur « Oen réfléchit… »), répond **toujours en français**, et peut **consulter votre Espace Pro** (stock, bobines, clients, devis, commandes, factures) pour vous renseigner en direct. Base de connaissances mise à jour depuis GitHub sans réinstaller l'application.

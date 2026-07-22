@@ -392,6 +392,7 @@ class AssistantEngine:
         self._lock = threading.RLock()
         self._server_proc = None
         self._model_ready = False
+        self._warming = False       # un seul préchauffage à la fois (voir warmup)
 
     @classmethod
     def instance(cls) -> "AssistantEngine":
@@ -702,6 +703,41 @@ class AssistantEngine:
         return full, reduced
 
     # ── Inference streaming ───────────────────────────────────────────────────
+    def warmup(self) -> None:
+        """Précharge Oen SANS attendre une question : démarre le serveur Ollama,
+        (re)crée l'alias si besoin, puis charge le modèle en mémoire avec le MÊME
+        num_ctx (16384) que les vraies requêtes — sinon Ollama rechargerait ~5,5 Go
+        du disque au 1er message (changement de contexte = reload). Appelé à
+        l'OUVERTURE de la fenêtre : le temps que l'utilisateur écrive, Oen est prêt.
+        Idempotent et silencieux : toute erreur est avalée (le vrai appel réessaiera).
+        À lancer dans un thread (bloquant : peut prendre quelques secondes)."""
+        with self._lock:
+            if self._warming:
+                return
+            self._warming = True
+        try:
+            if not self.available():
+                return
+            self._ensure_server()
+            self._ensure_model()
+            payload = {
+                "model": MODEL_NAME,
+                "messages": [],          # aucune génération, juste le chargement en RAM/VRAM
+                "stream": False,
+                "keep_alive": "30m",     # même durée que _open_chat -> reste résident
+                "options": {"num_ctx": 16384},
+            }
+            req = urllib.request.Request(
+                BASE + "/api/chat", data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=300):
+                pass
+            logger.info("[Assistant] préchauffage terminé (modèle résident).")
+        except Exception as e:
+            logger.info(f"[Assistant] préchauffage ignoré : {e}")
+        finally:
+            self._warming = False
+
     def stream(self, history: list[dict], model: str | None = None, think: bool = False):
         """history = [{'role':'user'|'assistant','content':str}]. Genere des tuples
         (kind, texte) ou kind vaut 'thinking' (raisonnement Qwen3, si think=True) ou

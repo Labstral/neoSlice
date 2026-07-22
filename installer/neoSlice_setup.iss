@@ -1,9 +1,9 @@
-; Script Inno Setup — neoSlice Installer
+﻿; Script Inno Setup — neoSlice Installer
 ; Généré automatiquement — ne pas modifier manuellement
 ; Pour compiler : ISCC.exe neoSlice_setup.iss
 
 #define AppName      "neoSlice"
-#define AppVersion   "0.1.7"
+#define AppVersion   "0.1.8"
 #define AppPublisher "Emmanuel Percheron"
 #define AppURL       "https://github.com/neoslice"
 #define AppExeName   "neoSlice.exe"

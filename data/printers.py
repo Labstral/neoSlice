@@ -606,3 +606,98 @@ def cura_machine_for(machine_id: str) -> dict:
 
 def is_cura_model(machine_id: str) -> bool:
     return machine_id in _cura_by_model()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Catalogue FlashPrint (sortie « FlashPrint », FlashForge) —
+# data/flashprint_printers.json, extrait du conteneur profile.dat de FlashPrint 5
+# par tools/extract_flashprint_printers.py (machines, buses, matériaux, profils).
+# ──────────────────────────────────────────────────────────────────────────────
+
+@functools.lru_cache(maxsize=1)
+def _flashprint_catalogue() -> dict:
+    try:
+        return json.loads((_DATA_DIR / "flashprint_printers.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _flashprint_display(model_key: str) -> str:
+    """« FlashForge Adventurer 5M » → « Adventurer 5M » (la marque est déjà
+    l'en-tête du menu)."""
+    return model_key.removeprefix("FlashForge ").strip() or model_key
+
+
+@functools.lru_cache(maxsize=1)
+def _flashprint_by_model() -> dict:
+    """Index : model_key → {marque, display, nozzles, bed_size, printable_height,
+    materials{nozzle_str: [répertoires FlashPrint]}, dual_extruder}."""
+    out: dict[str, dict] = {}
+    for model_key, e in (_flashprint_catalogue().get("machines", {}) or {}).items():
+        out[model_key] = {
+            "marque": e.get("brand", "Flashforge"),
+            "display": _flashprint_display(model_key),
+            "nozzles": e.get("nozzles", [0.4]),
+            "bed_size": e.get("bed_size", ""),
+            "printable_height": e.get("printable_height", 0),
+            "materials": e.get("materials", {}),
+            "dual_extruder": e.get("dual_extruder", False),
+            "machine_id": e.get("machine_id", -1),
+        }
+    return out
+
+
+def flashprint_brands() -> list[str]:
+    """Marques du catalogue FlashPrint (une seule : FlashForge)."""
+    return sorted({v["marque"] for v in _flashprint_by_model().values()})
+
+
+def flashprint_models_for_brand(brand: str) -> list[tuple[str, str]]:
+    """[(libellé affiché, model_key)] triés, pour le mode FlashPrint."""
+    items = [(v["display"], mk) for mk, v in _flashprint_by_model().items()
+             if v["marque"] == brand]
+    return sorted(items, key=lambda t: t[0].lower())
+
+
+def flashprint_nozzles_for_model(model_key: str) -> list[float]:
+    return sorted(float(x) for x in
+                  _flashprint_by_model().get(model_key, {}).get("nozzles", [0.4]))
+
+
+def flashprint_machine_for(model_key: str) -> dict:
+    """Specs FlashPrint du modèle (plateau, buses, matériaux, bi-extrudeur)."""
+    return dict(_flashprint_by_model().get(model_key, {}))
+
+
+def is_flashprint_model(model_key: str) -> bool:
+    return model_key in _flashprint_by_model()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Types de plateau PAR imprimante (Bambu/Orca) — data/bed_types.json,
+# extrait des profils OrcaSlicer (default_bed_type + not_support_bed_type) par
+# tools/extract_bed_types.py. Table CREUSE : la plupart des imprimantes n'ont
+# aucune restriction (→ ensemble complet) ; ~7 en ont (ex. Bambu A1 mini).
+# ──────────────────────────────────────────────────────────────────────────────
+
+@functools.lru_cache(maxsize=1)
+def _bed_types_table() -> dict:
+    try:
+        data = json.loads((_DATA_DIR / "bed_types.json").read_text(encoding="utf-8"))
+        return data.get("printers", {})
+    except Exception:
+        return {}
+
+
+def printer_bed_info(printer_key: str) -> dict:
+    """{'default': str, 'not_support': [str, …]} pour une imprimante, {} si aucune
+    donnée (→ le sélecteur montre l'ensemble complet). Les imprimantes TIERCES se
+    recherchent par leur nom de modèle (= clé catalogue, ex. « Artillery M1 Pro ») ;
+    les Bambu natives via « Bambu Lab <modèle> » (alias « Mini » → « mini »)."""
+    bt = _bed_types_table()
+    if not printer_key or not bt:
+        return {}
+    if printer_key in bt:
+        return bt[printer_key]
+    alias = "Bambu Lab " + printer_key.replace(" Mini", " mini")
+    return bt.get(alias, {})

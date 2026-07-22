@@ -100,9 +100,28 @@ class _BenchmarkWorker(QThread):
                 ram_gb = ms.ullTotalPhys / (1024 ** 3)
                 avail_gb = ms.ullAvailPhys / (1024 ** 3)
             else:
-                import psutil
-                vm = psutil.virtual_memory()
-                ram_gb, avail_gb = vm.total / (1024 ** 3), vm.available / (1024 ** 3)
+                try:
+                    import psutil
+                    vm = psutil.virtual_memory()
+                    ram_gb, avail_gb = vm.total / (1024 ** 3), vm.available / (1024 ** 3)
+                except ImportError:
+                    # Repli stdlib (macOS/Linux sans psutil) : sans lui, RAM=0 →
+                    # l'analyse de config affichait à tort « Oen/neoGen impossibles ».
+                    import os as _os
+                    ram_gb = (_os.sysconf("SC_PAGE_SIZE")
+                              * _os.sysconf("SC_PHYS_PAGES")) / (1024 ** 3)
+                    avail_gb = ram_gb * 0.5   # approximation prudente
+                    if sys.platform == "darwin":
+                        try:  # vm_stat : pages libres + inactives = dispo réelle
+                            import subprocess as _sp, re as _re
+                            out = _sp.run(["vm_stat"], capture_output=True,
+                                          text=True, timeout=5).stdout
+                            page = int(_re.search(r"page size of (\d+)", out).group(1))
+                            free = sum(int(_re.search(rf"Pages {k}:\s+(\d+)", out).group(1))
+                                       for k in ("free", "inactive"))
+                            avail_gb = free * page / (1024 ** 3)
+                        except Exception:
+                            pass
         except Exception:
             pass
 
@@ -305,10 +324,11 @@ class SettingsDialog(QDialog):
         self._slicer_combo.addItem(_("settings.slicer_anycubic"), "anycubic")
         self._slicer_combo.addItem(_("settings.slicer_snapmaker"), "snapmaker")
         self._slicer_combo.addItem(_("settings.slicer_cura"), "cura")
+        self._slicer_combo.addItem(_("settings.slicer_flashprint"), "flashprint")
         _saved_slicer = PREFS.get("slicer_output", "bambu")
         _slicer_idx = {"bambu": 0, "orca": 1, "prusa": 2, "creality": 3,
                        "elegoo": 4, "anycubic": 5, "snapmaker": 6,
-                       "cura": 7}.get(_saved_slicer, 0)
+                       "cura": 7, "flashprint": 8}.get(_saved_slicer, 0)
         self._slicer_combo.setCurrentIndex(_slicer_idx)
         self._slicer_combo.currentIndexChanged.connect(self._on_slicer_changed)
         slicer_row.addWidget(self._slicer_lbl)
@@ -713,12 +733,22 @@ class SettingsDialog(QDialog):
         from data.printers import (
             catalogue_brands, models_for_brand,
             prusa_brands, prusa_models_for_brand, split_popular,
+            cura_brands, cura_models_for_brand,
+            flashprint_brands, flashprint_models_for_brand,
         )
         groups: list = [(_("settings.printer_none"), [(_("settings.printer_none"), "")])]
         slicer = PREFS.get("slicer_output", "bambu")
         if slicer == "prusa":
             brands = prusa_brands()
             models = prusa_models_for_brand
+        elif slicer == "cura":
+            # oubli historique : la liste « imprimante par défaut » restait sur le
+            # catalogue Bambu quand la sortie était Cura
+            brands = cura_brands()
+            models = cura_models_for_brand
+        elif slicer == "flashprint":
+            brands = flashprint_brands()
+            models = flashprint_models_for_brand
         else:
             brands = catalogue_brands(slicer)
             models = lambda b: models_for_brand(b, slicer)
@@ -727,7 +757,10 @@ class SettingsDialog(QDialog):
                 by_serie.setdefault(data.get("serie", "Autre"), []).append(name)
             bambu = [(name, name) for serie in SERIES_ORDRE
                      for name in by_serie.get(serie, [])]
-            groups.append(("Bambu Lab", bambu))
+            # Bambu Lab seulement pour Bambu Studio / OrcaSlicer (cf. sélecteur) :
+            # pas de Bambu Lab sous les slicers de fabricant (Creality/Elegoo/…).
+            if slicer in ("bambu", "orca"):
+                groups.append(("Bambu Lab", bambu))
 
         popular, others = split_popular(brands)
         for b in popular:

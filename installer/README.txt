@@ -1,6 +1,6 @@
 ==============================================================================
   neoSlice - AI-Powered 3D Print Optimizer
-  Guide d'installation et de démarrage - v0.1.7
+  Guide d'installation et de démarrage - v0.1.8
 ==============================================================================
   © 2026 Emmanuel Percheron - Tous droits réservés
 
@@ -15,7 +15,7 @@ SOMMAIRE
   5. Premier démarrage
   6. Désinstallation
   7. Questions fréquentes (FAQ)
-  8. Nouveautés v0.1.7
+  8. Nouveautés v0.1.8
   9. Contact et support
 
 
@@ -40,7 +40,7 @@ SOMMAIRE
 2. CONTENU DU PACKAGE
 ------------------------------------------------------------------------------
 
-  neoSlice_Setup_v0.1.7_Windows.exe  ->  Installateur Windows
+  neoSlice_Setup_v0.1.8_Windows.exe  ->  Installateur Windows
   README.txt                       ->  Ce guide
   LICENSE.txt                      ->  Accord de licence utilisateur final
 
@@ -58,7 +58,7 @@ SOMMAIRE
 
   ÉTAPE 2 - Lancer l'installateur
   ---------------------------------
-  Double-cliquez sur : neoSlice_Setup_v0.1.7_Windows.exe
+  Double-cliquez sur : neoSlice_Setup_v0.1.8_Windows.exe
 
   Si Windows affiche "Windows a protégé votre PC" :
     -> Cliquez sur "Informations complémentaires"
@@ -244,10 +244,43 @@ SOMMAIRE
 
 
 ------------------------------------------------------------------------------
-8. NOUVEAUTÉS v0.1.7
+8. NOUVEAUTÉS v0.1.8
 ------------------------------------------------------------------------------
 
-  🤖 OEN - ASSISTANT IA LOCAL (Pro)
+  NEOGEN - GÉNÉRATEUR D'OBJETS 3D (Pro)
+  --------------------------------------
+  * Bibliothèque d'objets prêts à imprimer, tous personnalisables au
+    millimètre : porte-clés, cadres photo, QR codes 3D en deux couleurs,
+    cartes de visite, clips de câble au diamètre exact, joints, équerres,
+    vis et écrous, objets pour la restauration, le mariage et la boutique.
+  * Texte en relief ou gravé, choix de la police et des couleurs.
+  * Chaque pièce est générée étanche et pensée pour sortir sans support.
+
+  CARTE DE FRAGILITÉ PAR PIÈCE
+  -----------------------------
+  * Sur un plateau multi-pièces, cochez "Fragilité" dans la vue 3D :
+    chaque pièce se colore selon sa solidité (vert = solide, jaune = un peu
+    fragile, rouge = fragile).
+
+  FLASHPRINT - 9e SLICER COMPATIBLE
+  ----------------------------------
+  * Sortie vers FlashPrint (FlashForge) avec dépôt automatique du profil
+    d'impression.
+  * Les plateaux proposés s'adaptent désormais à chaque imprimante.
+
+  MODE PERFORMANCE AUTOMATIQUE
+  -----------------------------
+  * neoSlice choisit seul, pièce par pièce, le meilleur compromis entre
+    vitesse d'analyse et précision selon votre machine.
+  * Les fichiers 3MF complexes qui pouvaient bloquer le chargement
+    s'ouvrent maintenant en quelques secondes.
+
+
+------------------------------------------------------------------------------
+RAPPEL - NOUVEAUTÉS v0.1.7
+------------------------------------------------------------------------------
+
+  OEN - ASSISTANT IA LOCAL (Pro)
   ----------------------------------
   * Un modèle Qwen3 tourne directement sur votre machine (hors ligne, privé),
     nourri d'une base de connaissances imprimantes toutes marques.
@@ -255,25 +288,25 @@ SOMMAIRE
   * La base de connaissances se met à jour depuis GitHub sans réinstaller
     l'application.
 
-  🎨 EXPORT MULTICOULEUR (Pro)
+  EXPORT MULTICOULEUR (Pro)
   -----------------------------
   * Coloriez vos pièces après l'export 3MF et appliquez un filament par slot.
   * Obtenez le grammage par couleur/bobine et le stock est déduit
     automatiquement après impression.
 
-  🖨️ 5 SLICERS, 80+ MARQUES, 600+ IMPRIMANTES
+  5 SLICERS, 80+ MARQUES, 600+ IMPRIMANTES
   ---------------------------------------------
   * Sortie compatible Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et
     ElegooSlicer - le catalogue d'imprimantes s'adapte au slicer choisi.
   * Nouvelles machines : Flashforge Creator 5 / 5 Pro, Phrozen Arco et gamme
     Anycubic Kobra étendue.
 
-  💎 VERSION PRO
+  VERSION PRO
   ---------------
   * Le Diagnostic IA et Oen deviennent des fonctionnalités Pro ; l'interface
     standard reste entièrement gratuite pour optimiser et exporter ses pièces.
 
-  🔧 CORRECTIFS
+  CORRECTIFS
   --------------
   * Barre de titre sombre native fiable sous Windows (plus de retour au
     thème clair).

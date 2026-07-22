@@ -5,6 +5,19 @@ import sys as _sys
 _sys.path.insert(0, str(Path('.').resolve()))
 from version import __version__ as _APP_VERSION
 
+# ── Garde-fou version Python (CRITIQUE — même règle que neoslice.spec) ────
+# La v0.1.6 Windows a été cassée par un build mélangeant Python 3.12/3.14
+# (interpréteur ≠ modules natifs VTK → plus de viewer 3D). Cible officielle
+# du projet = Python 3.12, sur TOUTES les plateformes. On refuse de builder
+# avec un autre interpréteur (Codemagic doit épingler 3.12).
+_TARGET = (3, 12)
+if _sys.version_info[:2] != _TARGET:
+    raise SystemExit(
+        f"[neoslice_mac.spec] Build refusé : lancé avec Python "
+        f"{_sys.version_info.major}.{_sys.version_info.minor}, cible = "
+        f"{_TARGET[0]}.{_TARGET[1]}. Utilise un environnement Python 3.12 "
+        f"puis relance `python -m PyInstaller --clean -y neoslice_mac.spec`.")
+
 # ─────────────────────────────────────────────────────────────────
 #  Filtres d'exclusion — réduction maximale de la taille du bundle
 # ─────────────────────────────────────────────────────────────────
@@ -179,6 +192,15 @@ a = Analysis(
         'core.neogen.texte', 'core.neogen.goodies', 'core.neogen.logo',
         'core.neogen.objets', 'core.neogen.formes', 'core.neogen.formes2',
         'core.neogen.catalogue', 'core.neogen.libre', 'core.neogen.installation',
+        'core.neogen.qrcode_3d', 'segno',
+        # CRITIQUE : le catalogue charge ces modules via importlib.import_module
+        # (chaîne dynamique) → PyInstaller ne les voit PAS. Sans eux, générer un
+        # objet resto/mariage/boutique ou une lithophanie plante dans le build.
+        'core.neogen.formes3', 'core.neogen.pro_resto', 'core.neogen.pro_mariage',
+        'core.neogen.pro_boutique', 'core.neogen.relief_photo',
+        'core.neogen.bicolore', 'core.neogen.carte_visite',
+        # RAM macOS/Linux (analyse de configuration dans les réglages)
+        'psutil',
         'mapbox_earcut', 'manifold3d', 'svgelements', 'cv2',
         'matplotlib.textpath', 'matplotlib.font_manager',
     ],

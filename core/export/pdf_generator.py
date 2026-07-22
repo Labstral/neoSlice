@@ -43,6 +43,16 @@ _PLATE_BED_TEMPS: dict[str, dict[str, tuple[int, int]]] = {
         "TPU": (40, 40),   # 35~45°C
         "TPE": (40, 40),   # non listé — estimé
     },
+    "Smooth PEI Plate": {                            # nom OrcaSlicer de la Smooth PEI / High Temp
+        "PLA": (60, 60),
+        "PETG": (70, 70),
+        "ABS": (100, 100),
+        "ASA": (100, 100),
+        "Nylon": (100, 100),
+        "PC": (100, 100),
+        "TPU": (40, 40),
+        "TPE": (40, 40),
+    },
     "Engineering Plate": {                           # source : fiche Bambu Engineering
         "PLA": (60, 60),   # 45~60°C
         "PETG": (80, 80),  # 60~80°C (haut de plage)
@@ -79,6 +89,7 @@ _PLATE_DISPLAY: dict[str, str] = {
     "Textured Cool Plate":         "Textured Cool Plate",
     "Smooth Cool Plate":           "Smooth Cool Plate (H2)",
     "Hot Plate":                   "Smooth PEI / High Temp Plate",
+    "Smooth PEI Plate":            "Smooth PEI / High Temp Plate",
     "Engineering Plate":           "Engineering Plate",
     "Bambu Cool Plate SuperTack":  "Bambu Cool Plate SuperTack",
     # « Sheets » acier PrusaSlicer (slicer de sortie = Prusa)

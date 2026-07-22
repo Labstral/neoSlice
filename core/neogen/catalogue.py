@@ -14,13 +14,15 @@ Structure d'une entrée :
     params: [(id, fr, en, min, max, defaut, pas)],
     flags:  [(id, fr, en, defaut)],
     choix:  [(id, fr, en, [(valeur, fr, en), ...], defaut)],
+    couleurs: [(id, fr, en, hex_defaut)]  -> sélecteurs de couleur (objet, texte…) ;
+              le builder reçoit couleur_<id> et renvoie une Scene à corps colorés,
     construire: fonction(params: dict) -> Trimesh | Scene
 """
 from __future__ import annotations
 
 # Domaines (ordre d'affichage dans le menu)
 DOMAINES = [
-    ("perso",   "Personnalisation", "Personalization"),
+    ("perso",   "Accessoires & cadeaux", "Accessories & gifts"),
     ("maison",  "Maison & rangement", "Home & storage"),
     ("cuisine", "Cuisine", "Kitchen"),
     ("bureau",  "Bureau & tech", "Desk & tech"),
@@ -35,10 +37,10 @@ DOMAINES = [
 
 
 def _e(id, fr, en, domaine, construire, texte="aucun", image=False,
-       params=(), flags=(), choix=()):
+       params=(), flags=(), choix=(), couleurs=()):
     return {"id": id, "fr": fr, "en": en, "domaine": domaine, "texte": texte,
             "image": image, "params": list(params), "flags": list(flags),
-            "choix": list(choix), "construire": construire}
+            "choix": list(choix), "couleurs": list(couleurs), "construire": construire}
 
 
 # ── Constructeurs (imports paresseux : le catalogue se charge instantanément) ─
@@ -46,29 +48,40 @@ def _b_porte_cle(p):
     from core.neogen.texte import construire_porte_cle
     return construire_porte_cle(p.get("texte", ""), p.get("longueur", 50),
                                 ep_socle=p.get("socle", 3.0), ep_texte=p.get("relief", 1.6),
-                                d_trou=p.get("trou", 4.5), grave=p.get("grave", False),
+                                d_trou=p.get("trou", 4.5),
+                                style=p.get("style"), grave=p.get("grave", False),
                                 forme=p.get("forme", "contour"),
-                                police=p.get("police"))
+                                police=p.get("police"),
+                                couleur_objet=p.get("couleur_objet"),
+                                couleur_texte=p.get("couleur_texte"))
+
+def _bicol(p):
+    """Kwargs bicolore/style communs (menu relief/gravé/lisse + 2 couleurs)."""
+    return dict(style=p.get("style"),
+                couleur_objet=p.get("couleur_objet"),
+                couleur_texte=p.get("couleur_texte"))
 
 def _b_badge(p):
     from core.neogen.goodies import badge
     return badge(p.get("texte", ""), p.get("diametre", 40), grave=p.get("grave", False),
-                 trou=4.5 if p.get("accroche") else 0.0, police=p.get("police"))
+                 trou=4.5 if p.get("accroche") else 0.0, police=p.get("police"), **_bicol(p))
 
 def _b_sousverre(p):
     from core.neogen.goodies import sous_verre
-    return sous_verre(p.get("texte", ""), p.get("diametre", 90), police=p.get("police"))
+    return sous_verre(p.get("texte", ""), p.get("diametre", 90), police=p.get("police"),
+                      couleur_objet=p.get("couleur_objet"),
+                      couleur_texte=p.get("couleur_texte"))
 
 def _b_plaque(p):
     from core.neogen.goodies import plaque
     return plaque(p.get("texte", ""), p.get("largeur", 0), grave=p.get("grave", False),
-                  vis=p.get("vis", False), police=p.get("police"))
+                  vis=p.get("vis", False), police=p.get("police"), **_bicol(p))
 
 def _b_magnet(p):
     from core.neogen.goodies import magnet
     return magnet(p.get("texte", ""), p.get("diametre", 35),
                   d_aimant=p.get("aimant_d", 10.2), prof_aimant=p.get("aimant_p", 2.0),
-                  police=p.get("police"))
+                  police=p.get("police"), **_bicol(p))
 
 def _b_vase(p):
     from core.neogen.objets import vase
@@ -82,7 +95,7 @@ def _b_boite(p):
 
 def _b_support_tel(p):
     from core.neogen.objets import support_tel
-    return support_tel(p.get("largeur", 70))
+    return support_tel(p.get("largeur", 70), hauteur=p.get("hauteur", 92))
 
 def _b_de(p):
     from core.neogen.objets import de_a_jouer
@@ -90,13 +103,21 @@ def _b_de(p):
 
 def _b_logo(p):
     from core.neogen import logo as L
+    from core.neogen.bicolore import _hex_rgba
     from pathlib import Path
     src = Path(p["image"])
+    # 1 seule couche = SILHOUETTE du logo → objet bicolore simple (socle + logo),
+    # bien plus clair que « quantifier l'image en N couleurs ».
     couches = (L.charger_svg(str(src)) if src.suffix.lower() == ".svg"
-               else L.charger_png(str(src), int(p.get("couleurs", 3))))
+               else L.charger_png(str(src), 1))
     couches = L._normaliser(couches, p.get("largeur", 40))
     scene, _f = L.construire(couches, p.get("forme", "badge"),
                              p.get("diametre", 0) or 0, 0, 3.0, 1.2)
+    # Couleurs choisies : socle = couleur objet, logo = couleur logo.
+    c_obj = _hex_rgba(p.get("couleur_objet", "#3B82F6"))
+    c_logo = _hex_rgba(p.get("couleur_logo", "#111111"))
+    for nom, g in scene.geometry.items():
+        g.visual.face_colors = c_obj if nom == "socle" else c_logo
     return scene
 
 
@@ -106,6 +127,16 @@ def _b_vis(p):
     if p.get("ecrou"):
         return formes3.boulon(taille, p.get("longueur", 30))
     return formes3.vis_hex(taille, p.get("longueur", 30))
+
+
+def _b_qrcode(p):
+    from core.neogen.qrcode_3d import qr_3d
+    return qr_3d(p.get("texte", ""), taille=p.get("taille", 70),
+                 variante=p.get("variante", "plat_trous"),
+                 epaisseur=p.get("epaisseur", 2.0),
+                 style=p.get("style", "relief"),
+                 couleur_fond=p.get("couleur_fond", "#F2F2F2"),
+                 couleur_module=p.get("couleur_modules", "#111111"))
 
 
 def _f(mod, nom):
@@ -121,24 +152,81 @@ def _f(mod, nom):
 
 
 # ═════════════════════════════════ CATALOGUE ════════════════════════════════
-_P = lambda *a: a   # (id, fr, en, min, max, defaut, pas)
+# Élargissement CENTRAL des plages de mesures : on donne plus de marge (plus
+# petit ET plus grand) sur les DIMENSIONS et les ÉPAISSEURS de chaque objet,
+# sans toucher aux comptages, aux jeux/ajustements, aux angles/positions ni aux
+# paires Ø intérieur/extérieur (qui deviennent incohérentes si on les élargit à
+# l'aveugle). Le défaut reste toujours dans les bornes.
+_DIM_NAMES = {
+    "longueur", "largeur", "hauteur", "taille", "diametre", "profondeur",
+    "base", "saillie", "entraxe", "hauteur_photo", "largeur_photo",
+    "d_cable", "d_trou_panneau", "ep_panneau",
+}
+_THICK_NAMES = {"epaisseur", "ep", "section", "socle", "rebord", "bord"}
+
+
+def _arrondi(v):
+    v = float(v)
+    if v >= 20:
+        return round(v / 5.0) * 5
+    if v >= 5:
+        return float(round(v))
+    return round(v, 1)
+
+
+def _P(pid, fr, en, mn, mx, default, pas, mnf=8):   # (id, fr, en, min, max, defaut, pas)
+    # mnf = plancher du mini après élargissement (relevé pour les objets qui ont
+    # un mini géométrique dur, ex. porte-clé : < ~22 mm impossible avec le trou).
+    if pid in _DIM_NAMES:
+        # On va surtout plus GRAND (×1.8) ; on descend un peu (×0.7) sans casser
+        # les petits objets à texte (porte-clé, tirette…).
+        mn = min(mn, max(_arrondi(mn * 0.7), mnf))
+        mx = max(mx, _arrondi(mx * 1.8))
+    elif pid in _THICK_NAMES:
+        # Épaisseurs : on n'abaisse PAS le mini (paroi trop fine / socle < 1.2 mm
+        # = pièce fragile refusée par les builders) ; on relève juste le maxi.
+        mx = max(mx, _arrondi(mx * 1.6))
+    # Le défaut doit rester valide dans les nouvelles bornes.
+    mn = min(mn, default)
+    mx = max(mx, default)
+    return (pid, fr, en, mn, mx, default, pas)
 _FORMES3 = [("rond", "Rond", "Round"), ("carre", "Carré", "Square"),
             ("hexagone", "Hexagonal", "Hexagonal")]
 
 CATALOGUE = [
     # ── Personnalisation ──
+    _e("qrcode", "QR code (menu, lien…)", "QR code (menu, link…)", "perso", _b_qrcode,
+       texte="lien",
+       params=[_P("taille", "Taille (carré)", "Size (square)", 50, 150, 70, 5),
+               _P("epaisseur", "Épaisseur", "Thickness", 1.5, 6.0, 2.0, 0.5)],
+       choix=[("variante", "Format", "Format",
+               [("plat_trous", "À plat + trous à visser", "Flat + screw holes"),
+                ("plat", "À plat sans trous", "Flat, no holes"),
+                ("presentoir", "Présentoir incliné", "Tilted stand"),
+                ("porte_cle", "Porte-clé", "Keychain")], "plat_trous"),
+              ("style", "Modules", "Modules",
+               [("relief", "En relief", "Raised"),
+                ("creuse", "Creusés", "Engraved"),
+                ("lisse", "Lisses", "Flush")], "relief")],
+       couleurs=[("fond", "Couleur plaque", "Plate color", "#F2F2F2"),
+                 ("modules", "Couleur modules", "Modules color", "#111111")]),
     _e("porte_cle", "Porte-clé", "Keychain", "perso", _b_porte_cle, texte="optionnel",
-       params=[_P("longueur", "Longueur", "Length", 25, 120, 50, 1),
+       params=[_P("longueur", "Longueur", "Length", 25, 120, 50, 1, mnf=25),
                _P("trou", "Trou (ø)", "Hole (ø)", 2, 12, 4.5, 0.5),
                _P("relief", "Hauteur texte", "Text height", 0.4, 4, 1.6, 0.2),
                _P("socle", "Épaisseur socle", "Base thickness", 1.5, 8, 3, 0.5)],
-       flags=[("grave", "Texte gravé", "Engraved text", False)],
-       choix=[("forme", "Style", "Style",
+       choix=[("forme", "Forme", "Shape",
                [("contour", "Suit les lettres", "Follows the letters"),
                 ("rectangle", "Rectangle", "Rectangle"),
                 ("ovale", "Ovale", "Oval"),
                 ("rond", "Rond", "Round"),
-                ("etiquette", "Étiquette", "Tag")], "contour")]),
+                ("etiquette", "Étiquette", "Tag")], "contour"),
+              ("style", "Texte", "Text",
+               [("relief", "En relief", "Raised"),
+                ("grave", "Gravé", "Engraved"),
+                ("lisse", "Lisse", "Flush")], "relief")],
+       couleurs=[("objet", "Couleur objet", "Object color", "#3B82F6"),
+                 ("texte", "Couleur texte", "Text color", "#FFFFFF")]),
     _e("badge", "Badge", "Badge", "perso", _b_badge, texte="optionnel",
        params=[_P("diametre", "Diamètre", "Diameter", 20, 120, 40, 1)],
        flags=[("grave", "Texte gravé", "Engraved text", False),
@@ -165,17 +253,23 @@ CATALOGUE = [
                [("lithophanie", "Lithophanie (rétro-éclairée)", "Lithophane (backlit)"),
                 ("relief", "Relief décoratif", "Decorative relief")], "lithophanie")]),
     _e("logo", "Logo 3D (image)", "3D logo (image)", "perso", _b_logo, image=True,
-       params=[_P("largeur", "Taille du logo", "Logo size", 15, 150, 40, 5),
-               _P("couleurs", "Couleurs (PNG)", "Colors (PNG)", 2, 4, 3, 1)],
+       params=[_P("largeur", "Taille du logo", "Logo size", 15, 150, 40, 5)],
        choix=[("forme", "Support", "Base",
                [("badge", "Badge rond", "Round badge"),
                 ("plaque", "Plaque", "Plate"),
-                ("silhouette", "Silhouette", "Outline")], "badge")]),
+                ("silhouette", "Silhouette", "Outline")], "badge")],
+       couleurs=[("objet", "Couleur objet", "Object color", "#3B82F6"),
+                 ("logo", "Couleur logo", "Logo color", "#111111")]),
     _e("marque_page", "Marque-page", "Bookmark", "perso", _f("formes", "marque_page"),
        texte="optionnel",
        params=[_P("longueur", "Longueur", "Length", 80, 220, 140, 5),
                _P("largeur", "Largeur", "Width", 20, 60, 35, 1),
-               _P("ep", "Épaisseur", "Thickness", 0.8, 3.2, 1.6, 0.2)]),
+               _P("ep", "Épaisseur", "Thickness", 0.8, 3.2, 1.6, 0.2),
+               _P("pos_x", "Position texte X", "Text position X", -60, 60, 0, 1),
+               _P("pos_y", "Position texte Y", "Text position Y", -100, 100, 0, 1)],
+       choix=[("orientation", "Sens du texte", "Text direction",
+               [("perpendiculaire", "Perpendiculaire", "Perpendicular"),
+                ("parallele", "Parallèle", "Parallel")], "perpendiculaire")]),
     _e("tire_fermeture", "Tirette de zip", "Zipper pull", "perso",
        _f("formes2", "tire_fermeture"), texte="optionnel",
        params=[_P("longueur", "Longueur", "Length", 20, 60, 30, 1)]),
@@ -200,7 +294,7 @@ CATALOGUE = [
                _P("largeur", "Largeur", "Width", 50, 180, 90, 5),
                _P("hauteur", "Hauteur", "Height", 25, 100, 50, 5)]),
     _e("plateau", "Plateau vide-poche", "Catch-all tray", "maison",
-       _f("formes", "plateau"), texte="optionnel",
+       _f("formes", "plateau"),
        params=[_P("longueur", "Longueur", "Length", 100, 300, 200, 5),
                _P("largeur", "Largeur", "Width", 80, 220, 140, 5),
                _P("rebord", "Rebord", "Rim", 6, 30, 12, 1)]),
@@ -225,9 +319,15 @@ CATALOGUE = [
                _P("hauteur", "Hauteur", "Height", 20, 45, 30, 1)]),
     _e("pied_meuble", "Pied de meuble", "Furniture foot", "maison",
        _f("formes", "pied_meuble"),
-       params=[_P("d_bas", "Ø base", "Base ø", 25, 80, 45, 1),
-               _P("d_haut", "Ø sommet", "Top ø", 15, 60, 30, 1),
-               _P("hauteur", "Hauteur", "Height", 15, 100, 40, 1)]),
+       params=[_P("d_bas", "Ø / côté base", "Base ø / side", 25, 80, 45, 1),
+               _P("d_haut", "Ø sommet (conique)", "Top ø (cone)", 15, 60, 30, 1),
+               _P("hauteur", "Hauteur", "Height", 15, 120, 40, 1),
+               _P("trou_d", "Ø trou sommet", "Top hole ø", 0, 30, 0, 0.5),
+               _P("trou_prof", "Profondeur trou", "Hole depth", 0, 60, 0, 1)],
+       choix=[("forme", "Forme", "Shape",
+               [("conique", "Conique", "Tapered"),
+                ("cylindrique", "Cylindrique", "Cylindrical"),
+                ("carre", "Carré", "Square")], "conique")]),
     _e("separateur_tiroir", "Séparateur de tiroir", "Drawer divider", "maison",
        _f("formes", "separateur_tiroir"),
        params=[_P("longueur", "Longueur", "Length", 80, 300, 150, 5),
@@ -246,8 +346,11 @@ CATALOGUE = [
     _e("dessous_de_plat", "Dessous-de-plat", "Trivet", "cuisine",
        _f("formes", "dessous_de_plat"),
        params=[_P("taille", "Taille", "Size", 100, 240, 160, 5)],
-       flags=[("ajoure", "Motif nid d'abeille", "Honeycomb pattern", True)],
-       choix=[("forme", "Forme", "Shape", _FORMES3, "rond")]),
+       choix=[("forme", "Forme", "Shape", _FORMES3, "rond"),
+              ("motif", "Motif", "Pattern",
+               [("nid_abeille", "Nid d'abeille", "Honeycomb"),
+                ("rond", "Trous ronds", "Round holes"),
+                ("plein", "Plein", "Solid")], "nid_abeille")]),
     _e("repose_cuillere", "Repose-cuillère", "Spoon rest", "cuisine",
        _f("formes", "repose_cuillere"),
        params=[_P("longueur", "Longueur", "Length", 150, 280, 220, 5),
@@ -255,14 +358,18 @@ CATALOGUE = [
     _e("rond_serviette", "Rond de serviette", "Napkin ring", "cuisine",
        _f("formes", "rond_serviette"), texte="optionnel",
        params=[_P("diametre", "Diamètre", "Diameter", 35, 60, 45, 1),
-               _P("largeur", "Largeur", "Width", 20, 45, 30, 1)]),
+               _P("largeur", "Largeur", "Width", 20, 45, 30, 1),
+               _P("pos_z", "Hauteur du texte", "Text height pos", -15, 15, 0, 1),
+               _P("angle", "Rotation du texte", "Text rotation", -180, 180, 0, 5)]),
     _e("coquetier", "Coquetier", "Egg cup", "cuisine",
        _f("formes", "coquetier"),
        params=[_P("hauteur", "Hauteur", "Height", 35, 65, 45, 1)]),
     _e("gobelet", "Gobelet / pot droit", "Cup / straight pot", "cuisine",
        _f("formes", "gobelet"), texte="optionnel",
        params=[_P("diametre", "Diamètre", "Diameter", 50, 110, 70, 5),
-               _P("hauteur", "Hauteur", "Height", 50, 150, 90, 5)]),
+               _P("hauteur", "Hauteur", "Height", 50, 150, 90, 5),
+               _P("pos_z", "Hauteur du texte", "Text height pos", -60, 60, 0, 2),
+               _P("angle", "Rotation du texte", "Text rotation", -180, 180, 0, 5)]),
     _e("entonnoir", "Entonnoir", "Funnel", "cuisine",
        _f("formes", "entonnoir"),
        params=[_P("d_haut", "Ø entrée", "Inlet ø", 40, 140, 80, 5),
@@ -274,31 +381,24 @@ CATALOGUE = [
        choix=[("forme", "Forme", "Shape",
                [("coeur", "Cœur", "Heart"), ("etoile", "Étoile", "Star"),
                 ("rond", "Rond", "Round"), ("carre", "Carré", "Square")], "coeur")]),
-    _e("oeuf_pied", "Présentoir sur pied", "Pedestal stand", "cuisine",
+    _e("oeuf_pied", "Coupe", "Footed cup", "cuisine",
        _f("formes2", "oeuf_pied"),
        params=[_P("hauteur", "Hauteur", "Height", 40, 90, 55, 1)]),
-    _e("cuillere", "Cuillère", "Spoon", "cuisine", _f("formes3", "cuillere"),
-       params=[_P("longueur", "Longueur", "Length", 120, 250, 180, 5),
-               _P("largeur", "Largeur cuvette", "Bowl width", 30, 60, 42, 1)]),
-    _e("fourchette", "Fourchette", "Fork", "cuisine", _f("formes3", "fourchette"),
-       params=[_P("longueur", "Longueur", "Length", 120, 250, 185, 5),
-               _P("largeur_tete", "Largeur tête", "Head width", 20, 36, 27, 1)]),
-    _e("couteau", "Couteau de table", "Table knife", "cuisine",
-       _f("formes3", "couteau"),
-       params=[_P("longueur", "Longueur", "Length", 120, 250, 190, 5)]),
 
     # ── Bureau & tech ──
     _e("pot_crayons", "Pot à crayons", "Pencil holder", "bureau",
-       _f("formes", "pot_crayons"), texte="optionnel",
+       _f("formes", "pot_crayons"),
        params=[_P("diametre", "Taille", "Size", 55, 120, 80, 5),
                _P("hauteur", "Hauteur", "Height", 60, 140, 100, 5)],
        flags=[("compartiments", "Séparateur en croix", "Cross divider", False)],
        choix=[("forme", "Forme", "Shape", _FORMES3, "hexagone")]),
-    _e("support_tel", "Support téléphone", "Phone stand", "bureau", _b_support_tel,
-       params=[_P("largeur", "Largeur", "Width", 40, 140, 70, 5)]),
+    _e("support_tel", "Support téléphone / tablette", "Phone / tablet stand", "bureau", _b_support_tel,
+       params=[_P("largeur", "Largeur", "Width", 40, 220, 70, 5),
+               _P("hauteur", "Hauteur dossier", "Back height", 60, 180, 92, 5)]),
     _e("porte_cartes", "Porte-cartes de visite", "Business card holder", "bureau",
        _f("formes", "porte_cartes"),
-       params=[_P("largeur", "Largeur", "Width", 70, 140, 100, 5)]),
+       params=[_P("largeur", "Largeur", "Width", 70, 140, 100, 5),
+               _P("fente", "Largeur de la fente", "Slot width", 1.4, 6, 2.5, 0.1)]),
     _e("clip_cable", "Clip de câble", "Cable clip", "bureau",
        _f("formes", "clip_cable"),
        params=[_P("d_cable", "Ø câble", "Cable ø", 3, 12, 5, 0.5)],
@@ -331,7 +431,9 @@ CATALOGUE = [
     _e("etiquette_plante", "Étiquette de plantation", "Plant label", "sdb",
        _f("formes", "etiquette_plante"), texte="optionnel",
        params=[_P("longueur", "Longueur", "Length", 80, 200, 120, 5),
-               _P("largeur", "Largeur", "Width", 15, 35, 22, 1)]),
+               _P("largeur", "Largeur", "Width", 15, 35, 22, 1),
+               _P("pos_x", "Position texte X", "Text position X", -30, 30, 0, 1),
+               _P("pos_y", "Position texte Y", "Text position Y", -50, 50, 0, 1)]),
     _e("gobelet_sdb", "Gobelet brosses à dents", "Toothbrush cup", "sdb",
        _f("formes", "gobelet"),
        params=[_P("diametre", "Diamètre", "Diameter", 55, 100, 75, 5),
@@ -404,6 +506,14 @@ CATALOGUE = [
        _f("formes", "organiseur_forets"),
        params=[_P("rangees", "Rangées", "Rows", 2, 5, 3, 1),
                _P("colonnes", "Colonnes", "Columns", 4, 14, 8, 1)]),
+    _e("joint", "Joint (plat / torique)", "Gasket (flat / O-ring)", "atelier",
+       _f("formes", "joint"),
+       params=[_P("d_ext", "Ø extérieur", "Outer ø", 6, 120, 30, 1),
+               _P("d_int", "Ø intérieur", "Inner ø", 3, 110, 20, 1),
+               _P("epaisseur", "Épaisseur", "Thickness", 1, 20, 3, 0.5)],
+       choix=[("type_joint", "Type", "Type",
+               [("plat", "Joint plat", "Flat gasket"),
+                ("torique", "Joint torique", "O-ring")], "plat")]),
     # Visserie : filetage ISO généré en maillage (M6+ uniquement — en dessous,
     # le filetage FDM buse 0.4 n'est pas fiable : on ne le propose pas).
     _e("vis", "Vis à tête hex (M6–M12)", "Hex bolt (M6–M12)", "atelier", _b_vis,
@@ -426,26 +536,25 @@ CATALOGUE = [
     _e("chevalet", "Chevalet « Réservé »", "“Reserved” sign", "resto",
        _f("pro_resto", "chevalet"), texte="optionnel",
        params=[_P("largeur", "Largeur", "Width", 60, 140, 95, 5),
-               _P("hauteur", "Hauteur", "Height", 35, 90, 55, 5)],
-       flags=[("grave", "Texte gravé", "Engraved text", False)]),
+               _P("hauteur", "Hauteur", "Height", 35, 90, 55, 5),
+               _P("taille_police", "Taille du texte (0 = auto)", "Text size (0 = auto)", 0, 40, 0, 1)]),
     _e("porte_menu", "Porte-menu (fente)", "Menu holder (slot)", "resto",
        _f("pro_resto", "porte_menu"),
        params=[_P("largeur", "Largeur", "Width", 70, 160, 100, 5),
-               _P("hauteur", "Hauteur", "Height", 30, 70, 45, 5)]),
-    _e("porte_addition", "Porte-addition", "Bill presenter", "resto",
+               _P("hauteur", "Hauteur", "Height", 30, 70, 45, 5),
+               _P("epaisseur_fente", "Largeur de la fente", "Slot width", 3, 14, 6, 0.5)]),
+    _e("porte_addition", "Porte-addition (plateau)", "Bill tray", "resto",
        _f("pro_resto", "porte_addition"),
-       params=[_P("largeur", "Largeur", "Width", 70, 130, 95, 5),
-               _P("hauteur", "Hauteur", "Height", 45, 90, 60, 5)]),
-    _e("marque_place", "Marque-place", "Place card", "resto",
-       _f("pro_resto", "marque_place"), texte="optionnel",
-       params=[_P("largeur", "Largeur", "Width", 50, 100, 70, 5),
-               _P("hauteur", "Hauteur", "Height", 18, 45, 26, 2)],
-       flags=[("grave", "Texte gravé", "Engraved text", False)]),
+       params=[_P("largeur", "Largeur", "Width", 90, 200, 130, 5),
+               _P("hauteur", "Longueur", "Length", 60, 160, 90, 5),
+               _P("rebord", "Rebord", "Rim", 3, 15, 6, 1)]),
     _e("porte_couverts", "Bac à couverts", "Cutlery caddy", "resto",
        _f("pro_resto", "porte_couverts"),
        params=[_P("longueur", "Longueur", "Length", 120, 250, 180, 10),
-               _P("largeur", "Largeur", "Width", 40, 90, 55, 5),
-               _P("hauteur", "Hauteur", "Height", 30, 70, 45, 5)]),
+               _P("largeur", "Largeur", "Width", 40, 120, 55, 5),
+               _P("hauteur", "Hauteur", "Height", 30, 70, 45, 5),
+               _P("colonnes", "Cases en longueur", "Columns", 1, 8, 2, 1),
+               _P("rangees", "Cases en largeur", "Rows", 1, 4, 1, 1)]),
 
     # ── Mariage & événementiel ──
     _e("porte_alliances", "Porte-alliances (cœur)", "Ring holder (heart)", "mariage",
@@ -494,25 +603,57 @@ CATALOGUE = [
        params=[_P("longueur", "Longueur", "Length", 120, 240, 170, 10),
                _P("largeur", "Largeur", "Width", 60, 130, 90, 5),
                _P("hauteur", "Hauteur", "Height", 40, 80, 55, 5)]),
-    _e("porte_cartes", "Porte-cartes de visite", "Card holder", "commerce",
-       _f("pro_boutique", "porte_cartes"),
-       params=[_P("largeur", "Largeur", "Width", 70, 130, 95, 5),
-               _P("hauteur", "Hauteur", "Height", 30, 60, 40, 5)]),
-    _e("etiquette_prix", "Étiquette-prix", "Price tag stand", "commerce",
-       _f("pro_boutique", "etiquette_prix"), texte="optionnel",
-       params=[_P("largeur", "Largeur", "Width", 40, 90, 55, 5),
-               _P("hauteur", "Hauteur", "Height", 20, 45, 30, 2)],
-       flags=[("grave", "Texte gravé", "Engraved text", False)]),
 ]
 
-# Réglage « relief / gravure » (hauteur du texte en relief OU profondeur de
-# gravure) AUTO-injecté dans toute entrée à texte qui n'a pas déjà un tel
-# paramètre — l'utilisateur peut ainsi ajuster le texte sur TOUS les objets.
+# ── Cohérence du TEXTE sur les objets (AUTO-injecté) ────────────────────────
+# Objets dont le texte EST l'objet lui-même (chiffres / lettres 3D dressés) :
+# ni « hauteur du texte » ni menu relief/gravé/lisse n'ont de sens → on les
+# purge de tout réglage de texte stylisé.
+_TEXTE_EST_OBJET = {"numero_table", "lettre_3d", "numero_maison"}
+# Objets à texte-SUR-SURFACE convertis au bicolore + menu relief/gravé/lisse.
+# (cadre_photo = 2 corps mécaniques, coeur_marque_place = post-fusion, sous_verre =
+#  gravé fonctionnel pour la pose du verre → restent hors menu pour l'instant.)
+_BICOLORE_STYLE = {
+    "porte_cle", "badge", "plaque", "magnet", "chevalet", "etiquette_plante",
+    "marque_page", "ornement_etoile", "coeur_deco", "trophee", "jeton",
+    "socle_figurine", "tire_fermeture", "panneau_bienvenue",
+    "coeur_marque_place",
+}
+_STYLE_CHOIX = ("style", "Texte", "Text",
+                [("relief", "En relief", "Raised"),
+                 ("grave", "Gravé", "Engraved"),
+                 ("lisse", "Lisse", "Flush")], "relief")
+_COULEURS_TEXTE = [("objet", "Couleur objet", "Object color", "#3B82F6"),
+                   ("texte", "Couleur texte", "Text color", "#FFFFFF")]
+# Bicolore SANS menu de style (le style est imposé par la fonction : sous-verre =
+# toujours gravé pour garder une surface plane sous le verre).
+_BICOLORE_COULEUR_SEULE = {"sousverre", "rond_serviette", "gobelet"}
 for _e_txt in CATALOGUE:
-    if _e_txt["texte"] != "aucun" and not any(
-            pp[0] in ("relief", "ep_texte") for pp in _e_txt["params"]):
+    if _e_txt["texte"] in ("aucun", "lien"):
+        continue
+    if _e_txt["id"] in _TEXTE_EST_OBJET:
+        # purge : pas de hauteur de relief, pas de flag gravé (le chiffre EST l'objet)
+        _e_txt["params"] = [pp for pp in _e_txt["params"]
+                            if pp[0] not in ("relief", "ep_texte")]
+        _e_txt["flags"] = [f for f in _e_txt["flags"] if f[0] != "grave"]
+        continue
+    # « Hauteur du texte » (relief) OU « Profondeur » (gravé) — le libellé exact est
+    # piloté par le menu de style dans le formulaire ; un SEUL paramètre, un seul nom.
+    if not any(pp[0] in ("relief", "ep_texte") for pp in _e_txt["params"]):
         _e_txt["params"].append(
-            _P("relief", "Relief / gravure", "Relief / engraving", 0.3, 4.0, 1.2, 0.1))
+            _P("relief", "Hauteur du texte", "Text height", 0.3, 4.0, 1.2, 0.1))
+    if _e_txt["id"] in _BICOLORE_STYLE:
+        # menu relief/gravé/lisse + 2 couleurs ; retire la case « gravé » (doublon)
+        _e_txt["flags"] = [f for f in _e_txt["flags"] if f[0] != "grave"]
+        if not any(c[0] == "style" for c in _e_txt["choix"]):
+            _e_txt["choix"].append(_STYLE_CHOIX)
+        if not _e_txt["couleurs"]:
+            _e_txt["couleurs"] = list(_COULEURS_TEXTE)
+    elif _e_txt["id"] in _BICOLORE_COULEUR_SEULE:
+        # 2 couleurs sans menu de style (style imposé par la fonction)
+        _e_txt["flags"] = [f for f in _e_txt["flags"] if f[0] != "grave"]
+        if not _e_txt["couleurs"]:
+            _e_txt["couleurs"] = list(_COULEURS_TEXTE)
 
 # Index rapide par id
 PAR_ID = {e["id"]: e for e in CATALOGUE}
@@ -523,6 +664,8 @@ PAR_ID = {e["id"]: e for e in CATALOGUE}
 # tombe ainsi sur l'objet le plus proche de la BIBLIOTHÈQUE (l'intelligence est
 # ici, dans des objets validés, pas dans un modèle qui génère du code).
 _SYNONYMES: dict[str, str] = {
+    "qrcode": "qr code flashcode flash lien url site menu restaurant carte wifi "
+              "scanner scan contact vcard adresse",
     "porte_cle": "porteclef breloque trousseau cles initiale prenom",
     "badge": "medaille pin pins insigne broche",
     "plaque": "panneau ecriteau enseigne pancarte porte nom",
@@ -543,14 +686,12 @@ _SYNONYMES: dict[str, str] = {
     "pot_fleur": "plante fleur jardiniere cache pot",
     "lettre_3d": "lettre initiale alphabet caractere",
     "numero_maison": "numero maison porte adresse rue boite lettres",
-    "cuillere": "couvert doser dosette",
-    "fourchette": "couvert",
-    "couteau": "couvert tartiner",
     "vis": "visserie boulon filetage fixation",
     "ecrou": "visserie boulon filetage",
     "crochet_mural": "crochet accroche mur porte manteau patere",
     "poignee_meuble": "poignee meuble tiroir placard porte",
     "equerre": "equerre fixation angle support etagere",
+    "joint": "joint etancheite plat torique oring o-ring rondelle caoutchouc bague",
     "cadre_photo": "cadre photo portrait souvenir",
     "porte_savon": "savon salle bain douche",
     "dessous_de_plat": "dessous plat chaud cuisine table",
@@ -569,7 +710,6 @@ _SYNONYMES: dict[str, str] = {
     "chevalet": "chevalet reserve reserved tente pancarte panneau menu jour ardoise",
     "porte_menu": "porte menu carte support fente restaurant",
     "porte_addition": "porte addition note ticket presentoir cheque paiement restaurant",
-    "marque_place": "marque place nom invite convive table nominatif",
     "porte_couverts": "bac couverts serviettes caisson compartiment restaurant table",
     # mariage & événementiel
     "porte_alliances": "porte alliances bagues anneaux mariage coussin coeur ceremonie",
@@ -583,7 +723,6 @@ _SYNONYMES: dict[str, str] = {
     "presentoir_bijoux": "presentoir bijoux colliers bracelets boucles arche portique boutique",
     "organiseur_bureau": "organiseur bureau rangement stylos crayons trombones bac compartiment",
     "porte_cartes": "porte cartes visite presentoir comptoir boutique accueil",
-    "etiquette_prix": "etiquette prix tarif rayon marche vitrine pancarte",
 }
 # index normalisé id -> ensemble de mots-clés (nom FR + EN + synonymes)
 _INDEX_RECHERCHE: dict[str, set] = {}
@@ -642,9 +781,15 @@ def construire(entree_id: str, params: dict):
     for (cid, _fr, _en, options, defaut) in e["choix"]:
         val = params.get(cid, defaut)
         p[cid] = val if any(val == o[0] for o in options) else defaut
+    for (cid, _fr, _en, hexd) in e.get("couleurs", []):     # couleur_<id> (bicolore)
+        v = params.get(f"couleur_{cid}", hexd)
+        p[f"couleur_{cid}"] = str(v) if v else hexd
     if e["texte"] != "aucun":
-        t = str(params.get("texte", "") or "").strip()[:40]
-        if e["texte"] == "requis" and not t:
+        # mode « lien » (URL, ex. QR) : requis + limite plus haute (pas 40 car.)
+        _is_lien = (e["texte"] == "lien")
+        _maxlen = 512 if _is_lien else 40
+        t = str(params.get("texte", "") or "").strip()[:_maxlen]
+        if e["texte"] in ("requis", "lien") and not t:
             raise ValueError("texte requis")
         p["texte"] = t
         if params.get("police"):
@@ -681,11 +826,29 @@ def construire(entree_id: str, params: dict):
         _g.ESPACEMENT_ACTIF = None
 
 
-def generer_fichier(entree_id: str, params: dict):
-    """Construit et exporte vers ~/.neoslice/neogen/. Renvoie le Path a charger."""
+def est_multicouleur(piece) -> bool:
+    """True si `piece` est une Scene à ≥2 corps de couleurs de face DISTINCTES
+    (objet bicolore : QR, texte objet+texte…) → route multicouleur (2 slots à
+    l'export, aperçu des couleurs dans la fenêtre d'export)."""
+    import trimesh
+    if not isinstance(piece, trimesh.Scene) or len(piece.geometry) < 2:
+        return False
+    cols = set()
+    for g in piece.geometry.values():
+        try:
+            cols.add(tuple(int(x) for x in g.visual.face_colors[0][:3]))
+        except Exception:
+            pass
+    return len(cols) >= 2
+
+
+def generer_fichier(entree_id: str, params: dict, piece=None):
+    """Construit et exporte vers ~/.neoslice/neogen/. Renvoie le Path a charger.
+    `piece` : géométrie déjà construite (évite de reconstruire) — optionnel."""
     import trimesh
     from core.neogen.pilote import DOSSIER_SORTIES, _slug
-    piece = construire(entree_id, params)
+    if piece is None:
+        piece = construire(entree_id, params)
     DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
     suffixe = _slug(str(params.get("texte", "")))[:20]
     nom = entree_id

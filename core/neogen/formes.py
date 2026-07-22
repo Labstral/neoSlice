@@ -117,38 +117,75 @@ def _revolution_fermee(profil_rz: list, sections: int = 96) -> trimesh.Trimesh:
 
 def _texte_sur(piece: trimesh.Trimesh, emp: Polygon, texte: str, z_haut: float,
                grave: bool, hauteur_relief: float = 1.2,
-               marge_ratio: float = 0.7, police: str | None = None) -> trimesh.Trimesh:
-    """Ajoute un texte relief/gravé sur la face supérieure plane d'une pièce.
-    Le texte est PARFAITEMENT CENTRÉ sur la zone `emp` (translation vers son
-    centre — sans elle, toute zone décalée de l'origine décalait le texte)."""
+               marge_ratio: float = 0.7, police: str | None = None,
+               style: str | None = None, couleur_objet: str | None = None,
+               couleur_texte: str | None = None, rot_texte: float = 0.0,
+               dx: float = 0.0, dy: float = 0.0):
+    """Ajoute un texte sur la face supérieure plane d'une pièce. Le texte est
+    centré sur la zone `emp` (puis décalé de dx/dy et tourné de rot_texte°).
+
+    style : "relief" | "grave" | "lisse" (prioritaire sur le flag legacy `grave`).
+    couleur_objet / couleur_texte : si fournis → Scene à 2 corps colorés (bicolore).
+    rot_texte : rotation du texte en degrés (90 = parallèle à la longueur).
+    dx / dy   : décalage du texte sur les axes X / Y (mm).
+    """
     if not texte or not texte.strip():
         return piece
     from core.neogen import goodies as _g
     if _g.RELIEF_ACTIF is not None:              # réglage utilisateur « de session »
         hauteur_relief = max(0.3, float(_g.RELIEF_ACTIF))
+    style = style if style in ("relief", "grave", "lisse") else ("grave" if grave else "relief")
+    bicolore = bool(couleur_objet and couleur_texte)
     minx, miny, maxx, maxy = emp.bounds
-    txt = ajuster_dans(texte_multilignes(texte, police=police),
-                       (maxx - minx) * marge_ratio, (maxy - miny) * marge_ratio)
-    txt = translate(txt, xoff=(minx + maxx) / 2.0, yoff=(miny + maxy) / 2.0)
+    # zone disponible : dimensions ÉCHANGÉES si le texte est tourné à ±90° (il court
+    # alors dans l'autre sens → il peut être bien plus grand).
+    larg_fit = (maxx - minx) * marge_ratio
+    haut_fit = (maxy - miny) * marge_ratio
+    if int(round(rot_texte)) % 180 == 90:
+        larg_fit, haut_fit = haut_fit, larg_fit
+    txt = ajuster_dans(texte_multilignes(texte, police=police), larg_fit, haut_fit)
+    if rot_texte:
+        txt = shp_rotate(txt, rot_texte, origin=(0, 0))     # texte centré en (0,0)
+    txt = translate(txt, xoff=(minx + maxx) / 2.0 + dx,
+                    yoff=(miny + maxy) / 2.0 + dy)
     txt_u = unary_union(list(txt.geoms))
-    if grave:
-        # gravure = on retire une fine tranche sup et on repose la tranche évidée
-        prof = min(hauteur_relief, z_haut - 0.6)   # jamais traversant
-        outil = union_solides(_extruder(txt_u, prof + 1.0, z_haut - prof))
-        return trimesh.boolean.difference([piece, outil], engine="manifold")
-    relief = union_solides(_extruder(txt_u, hauteur_relief + CHEV, z_haut - CHEV))
-    return union_solides([piece, relief])
+
+    if not bicolore:
+        if style == "grave":
+            prof = min(hauteur_relief, z_haut - 0.6)   # jamais traversant
+            outil = union_solides(_extruder(txt_u, prof + 1.0, z_haut - prof))
+            return trimesh.boolean.difference([piece, outil], engine="manifold")
+        if style == "lisse":
+            return piece                               # mono lisse = invisible : rien
+        relief = union_solides(_extruder(txt_u, hauteur_relief + CHEV, z_haut - CHEV))
+        return union_solides([piece, relief])
+
+    # ── BICOLORE : corps « objet » + corps « texte » colorés ──────────────────
+    from core.neogen.bicolore import scene as _bic_scene
+    if style == "relief":
+        objet = piece
+        texte_body = union_solides(_extruder(txt_u, hauteur_relief + CHEV, z_haut - CHEV))
+    else:
+        prof = min(max(hauteur_relief, 0.8), z_haut - 0.6)
+        outil = union_solides(_extruder(txt_u, prof + 2.0, z_haut - prof))
+        objet = trimesh.boolean.difference([piece, outil], engine="manifold")
+        h = prof - (0.6 if style == "grave" else 0.0)   # sillon si gravé, affleurant si lisse
+        texte_body = union_solides(_extruder(txt_u, max(0.4, h), z_haut - prof))
+    return _bic_scene(objet, texte_body, couleur_objet, couleur_texte)
 
 
 # ═══════════════════════════════ CUISINE / MAISON ═══════════════════════════
 def dessous_de_plat(forme: str = "rond", taille: float = 160, ep: float = 6,
-                    ajoure: bool = True) -> trimesh.Trimesh:
-    """Dessous-de-plat épais, option motif nid d'abeille ajouré (économie de
-    matière + esthétique). Les alvéoles sont des hexagones traversants."""
+                    ajoure: bool = True, motif: str = "nid_abeille") -> trimesh.Trimesh:
+    """Dessous-de-plat épais. `motif` : nid_abeille (hexagones), rond (trous ronds)
+    ou plein (sans ajour). Les alvéoles sont traversantes (économie + esthétique)."""
+    motif = motif if motif in ("nid_abeille", "rond", "plein") else "nid_abeille"
+    if not ajoure:
+        motif = "plein"
     emp = _empreinte(forme, taille)
     plaque = emp
-    if ajoure:
-        pas, r_hex = 16.0, 6.2
+    if motif != "plein":
+        pas, r_alv = 16.0, 6.2
         zone = emp.buffer(-8, join_style=1)
         trous = []
         minx, miny, maxx, maxy = zone.bounds
@@ -157,10 +194,10 @@ def dessous_de_plat(forme: str = "rond", taille: float = 160, ep: float = 6,
         while y <= maxy:
             x = minx + (pas / 2 if j % 2 else 0)
             while x <= maxx:
-                h = _empreinte("hexagone", r_hex * 2)
-                h = translate(h, xoff=x, yoff=y)
-                if zone.contains(h):
-                    trous.append(h)
+                alv = _empreinte("rond" if motif == "rond" else "hexagone", r_alv * 2)
+                alv = translate(alv, xoff=x, yoff=y)
+                if zone.contains(alv):
+                    trous.append(alv)
                 x += pas
             y += pas * 0.866
             j += 1
@@ -190,20 +227,40 @@ def repose_cuillere(longueur: float = 220, largeur: float = 90) -> trimesh.Trime
 
 
 def rond_serviette(diametre: float = 45, largeur: float = 30, ep: float = 2.4,
-                   texte: str = "", grave: bool = False) -> trimesh.Trimesh:
-    """Anneau de serviette, texte relief/gravé sur le pourtour ? Non : posé à
-    plat, texte sur le CHANT supérieur (bande plate ajoutée)."""
-    ext = Point(0, 0).buffer(diametre / 2 + ep, resolution=96)
+                   texte: str = "", grave: bool = False, style: str | None = None,
+                   couleur_objet: str | None = None, couleur_texte: str | None = None,
+                   pos_z: float = 0.0, angle: float = 0.0):
+    """Anneau de serviette : le texte ÉPOUSE le pourtour cylindrique (enroulé sur
+    la surface, plus de rectangle plat à côté). `pos_z` monte/descend le texte,
+    `angle` le fait tourner autour de l'anneau."""
+    R_ext = diametre / 2 + ep
+    ext = Point(0, 0).buffer(R_ext, resolution=96)
     anneau = ext.difference(Point(0, 0).buffer(diametre / 2, resolution=96))
-    piece = union_solides(_extruder(anneau, largeur))
-    if texte:
-        # méplat porte-texte sur le devant
-        plat = box(-diametre * 0.32, -diametre / 2 - ep - 1.6,
-                   diametre * 0.32, -diametre / 2 + 1)
-        socle = union_solides(_extruder(plat, largeur))
-        piece = union_solides([piece, socle])
-        emp = box(-diametre * 0.32, -diametre / 2 - ep - 1.6, diametre * 0.32, -diametre / 2)
-        piece = _texte_sur(piece, emp, texte, largeur, grave, 1.0)
+    base = union_solides(_extruder(anneau, largeur))
+    if not (texte or "").strip():
+        base.apply_translation(-base.bounds[0])
+        return base
+    from core.neogen.goodies import RELIEF_ACTIF
+    from core.neogen import bicolore as _bic
+    arc_max = 2 * np.pi * R_ext * 0.55            # texte ≤ ~55 % du tour
+    mp = ajuster_dans(texte_multilignes(str(texte)), arc_max, largeur * 0.5)
+    mnx, mny, mxx, mxy = mp.bounds
+    mp = translate(mp, xoff=-(mnx + mxx) / 2, yoff=-(mny + mxy) / 2)
+    text_2d = unary_union(list(mp.geoms))
+    relief = 1.0 if RELIEF_ACTIF is None else max(0.4, float(RELIEF_ACTIF))
+    txt = _bic.texte_cylindrique(text_2d, R_ext, relief)
+    txt.apply_translation([0, 0, largeur / 2 + pos_z])
+    if angle:
+        txt.apply_transform(trimesh.transformations.rotation_matrix(
+            np.radians(angle), [0, 0, 1]))
+    if couleur_objet and couleur_texte:
+        s = _bic.scene(base, txt, couleur_objet, couleur_texte)
+        fus = trimesh.util.concatenate(list(s.geometry.values()))
+        off = -fus.bounds[0]
+        for g in s.geometry.values():
+            g.apply_translation(off)
+        return s
+    piece = union_solides([base, txt])
     piece.apply_translation(-piece.bounds[0])
     return piece
 
@@ -221,16 +278,39 @@ def coquetier(hauteur: float = 45, texte: str = "", grave: bool = True) -> trime
 
 
 def gobelet(diametre: float = 70, hauteur: float = 90, texte: str = "",
-            grave: bool = False) -> trimesh.Trimesh:
-    """Gobelet / pot droit (pot à brosses à dents, à pinceaux…)."""
-    piece = _recipient(_empreinte("rond", diametre), hauteur, 2.4, 3.0)
-    if texte:
-        # texte en relief sur la paroi = risqué ; on grave le FOND ? Non —
-        # bande porte-texte verticale à plat sur le devant :
-        emp = box(-diametre * 0.35, -diametre / 2 - 1.4, diametre * 0.35, -diametre / 2 + 1)
-        bande = union_solides(_extruder(emp, min(hauteur * 0.35, 30)))
-        piece = union_solides([piece, bande])
-        piece = _texte_sur(piece, emp, texte, min(hauteur * 0.35, 30), grave, 1.0)
+            grave: bool = False, style: str | None = None,
+            couleur_objet: str | None = None, couleur_texte: str | None = None,
+            pos_z: float = 0.0, angle: float = 0.0):
+    """Gobelet / pot droit (pot à brosses à dents, à pinceaux…). Le texte ÉPOUSE la
+    paroi cylindrique (enroulé, plus de bande plate). `pos_z` monte/descend le texte,
+    `angle` le fait tourner autour du pot."""
+    R = diametre / 2.0
+    base = _recipient(_empreinte("rond", diametre), hauteur, 2.4, 3.0)
+    if not (texte or "").strip():
+        base.apply_translation(-base.bounds[0])
+        return base
+    from core.neogen.goodies import RELIEF_ACTIF
+    from core.neogen import bicolore as _bic
+    arc_max = 2 * np.pi * R * 0.5                  # texte ≤ ~50 % du tour
+    h_txt = min(hauteur * 0.4, diametre * 0.6)
+    mp = ajuster_dans(texte_multilignes(str(texte)), arc_max, h_txt)
+    mnx, mny, mxx, mxy = mp.bounds
+    mp = translate(mp, xoff=-(mnx + mxx) / 2, yoff=-(mny + mxy) / 2)
+    text_2d = unary_union(list(mp.geoms))
+    relief = 1.0 if RELIEF_ACTIF is None else max(0.4, float(RELIEF_ACTIF))
+    txt = _bic.texte_cylindrique(text_2d, R, relief)
+    txt.apply_translation([0, 0, hauteur * 0.5 + pos_z])
+    if angle:
+        txt.apply_transform(trimesh.transformations.rotation_matrix(
+            np.radians(angle), [0, 0, 1]))
+    if couleur_objet and couleur_texte:
+        s = _bic.scene(base, txt, couleur_objet, couleur_texte)
+        fus = trimesh.util.concatenate(list(s.geometry.values()))
+        off = -fus.bounds[0]
+        for g in s.geometry.values():
+            g.apply_translation(off)
+        return s
+    piece = union_solides([base, txt])
     piece.apply_translation(-piece.bounds[0])
     return piece
 
@@ -306,12 +386,15 @@ def bac_empilable(longueur: float = 120, largeur: float = 90,
 
 
 def plateau(longueur: float = 200, largeur: float = 140, rebord: float = 12,
-            texte: str = "", grave: bool = True) -> trimesh.Trimesh:
+            texte: str = "", grave: bool = True, style: str | None = None,
+            couleur_objet: str | None = None, couleur_texte: str | None = None):
     """Plateau / vide-poche à rebord, option texte gravé au fond."""
     emp = _empreinte("rect", longueur, largeur)
     piece = _recipient(emp, rebord + 3, 2.4, 3.0)
     if texte:
-        piece = _texte_sur(piece, emp.buffer(-8), texte, 3.0, True, 0.8, 0.6)
+        piece = _texte_sur(piece, emp.buffer(-8), texte, 3.0, grave, 0.8, 0.6,
+                           style=style, couleur_objet=couleur_objet,
+                           couleur_texte=couleur_texte)
     return piece
 
 
@@ -364,10 +447,26 @@ def butee_porte(diametre: float = 40, hauteur: float = 25) -> trimesh.Trimesh:
                                (diametre / 2 - hauteur * 0.55, hauteur)])
 
 
-def pied_meuble(d_bas: float = 45, d_haut: float = 30,
-                hauteur: float = 40) -> trimesh.Trimesh:
-    """Pied / rehausse de meuble tronconique plein."""
-    return _revolution_fermee([(d_bas / 2, 0), (d_haut / 2, hauteur)])
+def pied_meuble(d_bas: float = 45, d_haut: float = 30, hauteur: float = 40,
+                forme: str = "conique", trou_d: float = 0.0,
+                trou_prof: float = 0.0) -> trimesh.Trimesh:
+    """Pied / rehausse de meuble. `forme` : conique (tronconique d_bas→d_haut),
+    cylindrique (droit ø d_bas) ou carre (prisme carré côté d_bas). Trou au SOMMET
+    (`trou_d` diamètre, `trou_prof` profondeur ; 0 = pas de trou) pour visser/emboîter."""
+    if forme == "carre":
+        c = box(-d_bas / 2, -d_bas / 2, d_bas / 2, d_bas / 2)
+        piece = union_solides(_extruder(c, hauteur))
+    elif forme == "cylindrique":
+        piece = _revolution_fermee([(d_bas / 2, 0), (d_bas / 2, hauteur)])
+    else:  # conique
+        piece = _revolution_fermee([(d_bas / 2, 0), (d_haut / 2, hauteur)])
+    if trou_d > 0 and trou_prof > 0:
+        prof = min(trou_prof, hauteur - 2)            # laisse au moins 2 mm de fond
+        trou = trimesh.creation.cylinder(radius=trou_d / 2, height=prof + 2, sections=48)
+        trou.apply_translation((0, 0, hauteur - prof / 2 + 1))   # débouche au sommet
+        piece = trimesh.boolean.difference([piece, trou], engine="manifold")
+    piece.apply_translation(-piece.bounds[0])
+    return piece
 
 
 def separateur_tiroir(longueur: float = 150, hauteur: float = 60,
@@ -407,7 +506,14 @@ def cadre_photo(largeur_photo: float = 100, hauteur_photo: float = 150,
                          h_poche - CHEV)                          # face avant
     cadre = union_solides(solides)
     if texte:
-        bande = box(-lp2, -(hp2 + bord), lp2, -(hp2 + 2))
+        # Bande de texte CENTRÉE sur la bordure basse VISIBLE : de l'arête
+        # extérieure (y_ext) jusqu'au bord de la fenêtre (y_fen). Avant, la bande
+        # ne couvrait que la moitié EXTERNE de la bordure → texte trop bas.
+        y_ext = -(hp2 + bord)        # arête extérieure basse du cadre
+        y_fen = -(hp2 - 4)           # bord bas de la fenêtre (ouverture)
+        cy = (y_ext + y_fen) / 2.0   # centre vertical de la bordure basse
+        hb = bord - 2.0              # hauteur de bande (taille de texte conservée)
+        bande = box(-lp2, cy - hb / 2.0, lp2, cy + hb / 2.0)
         cadre = _texte_sur(cadre, bande, texte, h_poche + ep_avant, grave, 0.8, 0.8)
     cadre.apply_translation(-cadre.bounds[0])
 
@@ -473,10 +579,11 @@ def pot_fleur(diametre: float = 110, hauteur: float = 100, drainage: bool = True
 
 
 def etiquette_plante(longueur: float = 120, largeur: float = 22,
-                     texte: str = "Basilic", grave: bool = True) -> trimesh.Trimesh:
-    """Étiquette de plantation : piquet pointu + zone texte. Le texte est
-    posé dans le TIERS HAUT de la palette (loin de la pointe qui va en
-    terre — avant il était centré et finissait près du sol)."""
+                     texte: str = "Basilic", grave: bool = True, style: str | None = None,
+                     couleur_objet: str | None = None, couleur_texte: str | None = None,
+                     pos_x: float = 0.0, pos_y: float = 0.0):
+    """Étiquette de plantation : piquet pointu + zone texte (tiers haut, loin de la
+    pointe). `pos_x` / `pos_y` décalent le texte."""
     ep = 2.4
     zone = box(-largeur / 2, 0, largeur / 2, longueur * 0.45)
     pointe = Polygon([(-largeur / 2, 0), (largeur / 2, 0), (0, -longueur * 0.55)])
@@ -484,7 +591,9 @@ def etiquette_plante(longueur: float = 120, largeur: float = 22,
     piece = union_solides(_extruder(emp, ep))
     if texte:
         zone_txt = box(-largeur / 2, longueur * 0.18, largeur / 2, longueur * 0.43)
-        piece = _texte_sur(piece, zone_txt, texte, ep, grave, 0.8, 0.85)
+        piece = _texte_sur(piece, zone_txt, texte, ep, grave, 0.8, 0.85,
+                           style=style, couleur_objet=couleur_objet,
+                           couleur_texte=couleur_texte, dx=pos_x, dy=pos_y)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
@@ -492,7 +601,8 @@ def etiquette_plante(longueur: float = 120, largeur: float = 22,
 # ═══════════════════════════════ BUREAU / TECH ══════════════════════════════
 def pot_crayons(forme: str = "hexagone", diametre: float = 80,
                 hauteur: float = 100, compartiments: bool = False,
-                texte: str = "", grave: bool = False) -> trimesh.Trimesh:
+                texte: str = "", grave: bool = False, style: str | None = None,
+                couleur_objet: str | None = None, couleur_texte: str | None = None):
     """Pot à crayons (rond/carré/hexagonal), option séparateur en croix."""
     emp = _empreinte(forme, diametre)
     piece = _recipient(emp, hauteur, 2.0, 3.0)
@@ -506,23 +616,25 @@ def pot_crayons(forme: str = "hexagone", diametre: float = 80,
         emp_b = box(-diametre * 0.32, -diametre / 2 - 1.4, diametre * 0.32, -diametre / 2 + 1)
         bande = union_solides(_extruder(emp_b, min(hauteur * 0.3, 26)))
         piece = union_solides([piece, bande])
-        piece = _texte_sur(piece, emp_b, texte, min(hauteur * 0.3, 26), grave, 1.0)
+        piece = _texte_sur(piece, emp_b, texte, min(hauteur * 0.3, 26), grave, 1.0,
+                           style=style, couleur_objet=couleur_objet,
+                           couleur_texte=couleur_texte)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
 
-def porte_cartes(largeur: float = 100) -> trimesh.Trimesh:
-    """Porte-cartes de visite : socle + rainure inclinée (15°)."""
-    prof, h = 45.0, 22.0
-    base = box(0, 0, prof, 6)
-    fente = shp_rotate(box(prof * 0.45, 2, prof * 0.45 + 3.2, h + 10), -15,
-                       origin=(prof * 0.45, 2))
-    dossier = shp_rotate(box(prof * 0.45 + 3.2, 2, prof * 0.45 + 8, h),
-                         -15, origin=(prof * 0.45, 2))
-    prof_2d = unary_union([base, dossier,
-                           shp_rotate(box(prof * 0.45 - 5, 2, prof * 0.45, h * 0.55),
-                                      -15, origin=(prof * 0.45, 2))])
-    prof_2d = prof_2d.buffer(1, join_style=1).buffer(-1, join_style=1)
+def porte_cartes(largeur: float = 100, fente: float = 2.5) -> trimesh.Trimesh:
+    """Porte-cartes de visite : socle mince + rainure inclinée (15°) CENTRÉE, dont
+    la largeur (`fente`) est réglable. Muret avant + dossier fins de part et d'autre."""
+    prof, h = 44.0, 20.0
+    xc = prof / 2.0                               # rainure CENTRÉE sur la profondeur
+    fente = max(1.4, min(float(fente), 6.0))
+    x_front, x_back = xc - fente / 2.0, xc + fente / 2.0
+    base = box(0, 0, prof, 5)
+    dossier = shp_rotate(box(x_back, 2, x_back + 4.0, h), -15, origin=(xc, 2))
+    muret = shp_rotate(box(x_front - 4.0, 2, x_front, h * 0.5), -15, origin=(xc, 2))
+    prof_2d = unary_union([base, dossier, muret])
+    prof_2d = prof_2d.buffer(0.8, join_style=1).buffer(-0.8, join_style=1)
     piece = union_solides(_extruder(prof_2d, largeur))
     piece.apply_transform(trimesh.transformations.rotation_matrix(np.radians(90), [1, 0, 0]))
     piece.apply_translation(-piece.bounds[0])
@@ -530,30 +642,91 @@ def porte_cartes(largeur: float = 100) -> trimesh.Trimesh:
 
 
 def marque_page(longueur: float = 140, largeur: float = 35, ep: float = 1.6,
-                texte: str = "", grave: bool = True) -> trimesh.Trimesh:
-    """Marque-page fin à coin arrondi, texte gravé — épaisseur réglable."""
+                texte: str = "", grave: bool = True, style: str | None = None,
+                couleur_objet: str | None = None, couleur_texte: str | None = None,
+                orientation: str = "perpendiculaire", pos_x: float = 0.0,
+                pos_y: float = 0.0):
+    """Marque-page fin à coin arrondi, texte relief/gravé/lisse.
+    orientation : « perpendiculaire » (par défaut) ou « parallele » (texte le long
+    de la longueur) ; pos_x / pos_y décalent le texte sur les deux axes."""
     ep = min(3.2, max(0.8, ep))
     emp = _empreinte("rect", largeur, longueur)
     piece = union_solides(_extruder(emp, ep))
     if texte:
-        piece = _texte_sur(piece, emp, texte, ep, grave, min(0.6, ep * 0.35), 0.8)
+        rot = 90.0 if orientation == "parallele" else 0.0
+        piece = _texte_sur(piece, emp, texte, ep, grave, min(0.6, ep * 0.35), 0.8,
+                           style=style, couleur_objet=couleur_objet,
+                           couleur_texte=couleur_texte, rot_texte=rot,
+                           dx=pos_x, dy=pos_y)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
 
 def clip_cable(d_cable: float = 5, vis: bool = True) -> trimesh.Trimesh:
-    """Clip de câble en C + patte de vis (imprimé à plat)."""
-    r = d_cable / 2 + 0.3
-    ext = Point(0, r + 2).buffer(r + 2.2, resolution=64)
-    intr = Point(0, r + 2).buffer(r, resolution=64)
-    ouverture = box(-r * 0.7, r + 2, r * 0.7, r * 2 + 8)
-    c = ext.difference(intr).difference(ouverture)
-    patte = box(r + 1, 0, r + 12, 4.5)
-    base = box(-r - 2.2, 0, r + 12, 2.2)
-    prof = unary_union([c, patte, base]).buffer(0.8, join_style=1).buffer(-0.8, join_style=1)
+    """Clip de câble type SELLE (saddle clamp), comme les modèles du commerce.
+
+    Un socle plat (posé sur le plateau) surmonté d'une ARCHE demi-cylindrique qui
+    enjambe le câble : le câble court PARALLÈLE au plateau, passe dans le tunnel de
+    l'arche et repose sur le socle. Deux variantes :
+      - vis=False  → « Tape » : socle symétrique sans trou (fixation adhésive) ;
+      - vis=True   → « Screw » : le socle porte une patte laterale avec un trou de
+                     vis VERTICAL pour le fixer sur un support.
+    La taille est le diamètre du câble (ex. 4, 5, 6, 8, 10 mm). Un seul corps plein.
+    """
+    rot = trimesh.transformations.rotation_matrix
+    r_cab = d_cable / 2.0
+    r_in  = r_cab + 0.4                          # jeu autour du câble
+    wall  = max(1.8, d_cable * 0.30)             # épaisseur de l'arche
+    r_out = r_in + wall
+    w     = max(3.8, d_cable * 0.55)             # largeur de la bande (arche) le long du câble (X)
+    r_trou = 1.9                                 # rayon du trou de vis (≈ vis M3.5)
+    # Le SOCLE est au moins assez large en X pour loger le trou de vis avec de la
+    # matière autour (sinon, sur un petit clip, Ø trou ≈ largeur bande → il tranche
+    # la patte en deux). L'arche, elle, reste une bande fine (largeur w).
+    base_w = max(w, 2 * r_trou + 3.6)
+    base_t = 2.2                                 # épaisseur du socle
+    z_c   = base_t + r_in                        # centre du tunnel → sol = dessus du socle
+    flange = 4.5                                 # débord du socle (surface d'appui/adhésif)
+    tab    = 9.0                                 # patte du trou de vis (côté +Y)
+
+    # ── Socle : arche centrée en y=0 ; côté +Y allongé (patte + trou) si vis ──
+    y_neg = r_out + flange
+    y_pos = (r_out + flange + tab) if vis else (r_out + flange)
+    Ly = y_neg + y_pos
+    yc = (y_pos - y_neg) / 2.0                    # recentre le socle sur l'arche
+    socle = trimesh.creation.box((base_w, Ly, base_t))
+    socle.apply_translation((0, yc, base_t / 2.0))
+
+    # ── Arche : cylindre plein (r_out) + pilier de liaison, fusionnés au socle ──
+    arche = trimesh.creation.cylinder(radius=r_out, height=w, sections=72)
+    arche.apply_transform(rot(np.radians(90), [0, 1, 0]))       # axe → X (le long du câble)
+    arche.apply_translation((0, 0, z_c))
+    # Pilier plein du plateau jusqu'au centre du tunnel : garantit une jonction
+    # SOLIDE arche↔socle a toutes les tailles (sinon, petit câble → arche qui
+    # n'effleure le socle qu'en un mince liseré → boolean laisse un éclat détaché).
+    pilier = trimesh.creation.box((w, 2 * r_out, z_c))
+    pilier.apply_translation((0, 0, z_c / 2.0))
+    solide = union_solides([socle, pilier, arche])
+
+    negs = []
+    # Tunnel du câble (traverse l'arche le long de X)
+    tunnel = trimesh.creation.cylinder(radius=r_in, height=w + 2, sections=72)
+    tunnel.apply_transform(rot(np.radians(90), [0, 1, 0]))
+    tunnel.apply_translation((0, 0, z_c))
+    negs.append(tunnel)
+    # Base plane : couper tout ce qui descend sous le plateau (l'arche pleine deborde
+    # sous le socle pour les gros diametres) → dessous plat, imprimable a plat.
+    sous = trimesh.creation.box((base_w * 3, Ly * 3, 20.0))
+    sous.apply_translation((0, yc, -10.0))
+    negs.append(sous)
     if vis:
-        prof = prof.difference(Point(r + 7, 2.4).buffer(1.8, resolution=32))
-    piece = union_solides(_extruder(prof, 10))
+        # Trou de vis VERTICAL dans la patte laterale
+        y_trou = r_out + flange + tab / 2.0 + 1.0
+        trou = trimesh.creation.cylinder(radius=r_trou, height=base_t + 4, sections=32)
+        trou.apply_translation((0, y_trou, base_t / 2.0))
+        negs.append(trou)
+
+    piece = trimesh.boolean.difference([solide] + negs, engine="manifold")
     piece.apply_translation(-piece.bounds[0])
     return piece
 
@@ -627,6 +800,31 @@ def rondelle(d_ext: float = 24, d_int: float = 8, ep: float = 3) -> trimesh.Trim
 
 def entretoise(d_ext: float = 12, d_int: float = 5, hauteur: float = 15) -> trimesh.Trimesh:
     return rondelle(d_ext, d_int, hauteur)
+
+
+def joint(type_joint: str = "plat", d_ext: float = 30, d_int: float = 20,
+          epaisseur: float = 3) -> trimesh.Trimesh:
+    """Joint d'étanchéité. `type_joint` :
+      • plat    : anneau plat (Ø ext / Ø int, épaisseur = hauteur extrudée) ;
+      • torique : O-ring (section arrondie ; Ø ext / int donnent l'anneau,
+                  épaisseur = hauteur du cordon, section aplatie si ≠ diamètre).
+    """
+    d_ext = max(d_ext, d_int + 1.0)
+    if type_joint == "torique":
+        R = (d_ext + d_int) / 4.0                 # rayon de la ligne médiane
+        r_rad = max(0.6, (d_ext - d_int) / 4.0)   # demi-largeur radiale du cordon
+        tor = trimesh.creation.torus(R, r_rad, major_sections=96, minor_sections=32)
+        vsemi = max(0.6, float(epaisseur) / 2.0)  # demi-hauteur verticale (aplatit)
+        if abs(vsemi - r_rad) > 1e-3:
+            tor.apply_scale([1.0, 1.0, vsemi / r_rad])
+        tor.apply_translation(-tor.bounds[0] * [0, 0, 1])   # posé sur z=0
+        return tor
+    # plat : anneau extrudé
+    ext = Point(0, 0).buffer(d_ext / 2, resolution=96)
+    anneau = ext.difference(Point(0, 0).buffer(d_int / 2, resolution=96))
+    piece = union_solides(_extruder(anneau, float(epaisseur)))
+    piece.apply_translation(-piece.bounds[0])
+    return piece
 
 
 def protege_coin(taille: float = 40, ep: float = 3) -> trimesh.Trimesh:

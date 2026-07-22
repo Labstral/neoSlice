@@ -1,0 +1,164 @@
+{
+ "_source": "OrcaSlicer resources/profiles (default_bed_type + not_support_bed_type)",
+ "_universe": [
+  "Cool Plate",
+  "Engineering Plate",
+  "Smooth Cool Plate",
+  "Smooth PEI Plate",
+  "Textured Cool Plate",
+  "Textured PEI Plate"
+ ],
+ "printers": {
+  "Anycubic Kobra 3 Max": {
+   "default": "Textured PEI Plate"
+  },
+  "Artillery M1 Pro": {
+   "default": "Textured PEI Plate",
+   "not_support": [
+    "Engineering Plate",
+    "Textured Cool Plate",
+    "Smooth PEI Plate"
+   ]
+  },
+  "Bambu Lab A1": {
+   "default": "Textured PEI Plate"
+  },
+  "Bambu Lab A1 mini": {
+   "default": "Textured PEI Plate",
+   "not_support": [
+    "Smooth Cool Plate",
+    "Engineering Plate"
+   ]
+  },
+  "Bambu Lab H2D": {
+   "default": "Textured PEI Plate",
+   "not_support": [
+    "Smooth Cool Plate",
+    "Textured Cool Plate"
+   ]
+  },
+  "Bambu Lab H2D Pro": {
+   "default": "Textured PEI Plate",
+   "not_support": [
+    "Smooth Cool Plate",
+    "Textured Cool Plate"
+   ]
+  },
+  "Bambu Lab H2S": {
+   "default": "Textured PEI Plate",
+   "not_support": [
+    "Smooth Cool Plate",
+    "Textured Cool Plate"
+   ]
+  },
+  "Bambu Lab P1P": {
+   "default": "Textured PEI Plate"
+  },
+  "Bambu Lab P1S": {
+   "default": "Textured PEI Plate"
+  },
+  "Bambu Lab P2S": {
+   "default": "Textured PEI Plate",
+   "not_support": [
+    "Smooth Cool Plate",
+    "Textured Cool Plate"
+   ]
+  },
+  "Bambu Lab X1": {
+   "default": "Textured PEI Plate"
+  },
+  "Bambu Lab X1 Carbon": {
+   "default": "Textured PEI Plate"
+  },
+  "Bambu Lab X1E": {
+   "default": "Textured PEI Plate"
+  },
+  "Bambu Lab X2D": {
+   "default": "Textured PEI Plate",
+   "not_support": [
+    "Cool Plate"
+   ]
+  },
+  "Creality Ender-3 V4": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality Ender-5 Max": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality Hi": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K1": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K1 Max": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K1 Max_CFS-C": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K1 SE": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K1 SE_CFS-C": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K1C": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K1C_CFS-C": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K1_CFS-C": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K2": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K2 Plus": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K2 Pro": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality K2 SE": {
+   "default": "Textured PEI Plate"
+  },
+  "Creality SPARKX i7": {
+   "default": "Textured PEI Plate"
+  },
+  "Flashforge Adventurer 3 Series": {
+   "default": "Textured PEI Plate"
+  },
+  "Flashforge Adventurer 5M": {
+   "default": "Textured PEI Plate"
+  },
+  "Flashforge Adventurer 5M Pro": {
+   "default": "Textured PEI Plate"
+  },
+  "OpenEYE Peacock V2": {
+   "default": "Textured PEI Plate"
+  },
+  "OpenEYE Peacock V2 0.2 nozzle": {
+   "default": "Textured PEI Plate"
+  },
+  "OpenEYE Peacock V2 0.4 nozzle": {
+   "default": "Textured PEI Plate"
+  },
+  "OpenEYE Peacock V2 0.6 nozzle": {
+   "default": "Textured PEI Plate"
+  },
+  "OpenEYE Peacock V2 0.8 nozzle": {
+   "default": "Textured PEI Plate"
+  },
+  "Snapmaker U1 (0.4 nozzle)": {
+   "default": "Textured PEI Plate"
+  },
+  "fdm_U1": {
+   "default": "Textured PEI Plate"
+  },
+  "fdm_openeye_common": {
+   "default": "Textured PEI Plate"
+  }
+ }
+}

@@ -49,13 +49,11 @@ def _est_g(config, vol_cm3: float, area_cm2: float) -> float:
         return 0.0
 
 
-def from_carte(spec, config) -> ColorBreakdown:
-    """Répartition couleur d'une CARTE DE VISITE : un slot par couleur choisie
-    (volume estimé depuis les corps de la scène). Sert à afficher les slots dans
-    la fenêtre d'export neoSlice même si l'aperçu est une carte fusionnée."""
+def from_scene(scene, config) -> ColorBreakdown:
+    """Répartition couleur d'une Scene trimesh bicolore (carte, QR, texte…) : un
+    slot par couleur de face présente, volume estimé depuis les corps. Sert à
+    afficher les slots dans la fenêtre d'export même si l'aperçu est fusionné."""
     from collections import OrderedDict
-    from core.neogen.carte_visite import construire
-    scene, _couleurs = construire(spec)
     vol_by_colour: "OrderedDict[str, float]" = OrderedDict()
     for _nom, g in scene.geometry.items():
         try:
@@ -73,6 +71,13 @@ def from_carte(spec, config) -> ColorBreakdown:
     if len(slots) <= 1:
         return ColorBreakdown("single", round(total_g, 1), slots, approximate=False)
     return ColorBreakdown("multiobject", round(total_g, 1), slots, approximate=False)
+
+
+def from_carte(spec, config) -> ColorBreakdown:
+    """Répartition couleur d'une CARTE DE VISITE (construit la scène puis délègue)."""
+    from core.neogen.carte_visite import construire
+    scene, _couleurs = construire(spec)
+    return from_scene(scene, config)
 
 
 def compute(threemf_data, mesh, analysis, config) -> ColorBreakdown:

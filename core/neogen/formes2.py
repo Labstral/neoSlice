@@ -47,7 +47,8 @@ def _coeur_2d(taille: float) -> Polygon:
 
 def ornement_etoile(diametre: float = 80, branches: int = 5, ep: float = 4,
                     suspension: bool = True, texte: str = "",
-                    grave: bool = True) -> trimesh.Trimesh:
+                    grave: bool = True, style: str | None = None,
+                    couleur_objet: str | None = None, couleur_texte: str | None = None):
     """Étoile déco (sapin, guirlande) avec ŒILLET de suspension renforcé
     (anneau fusionné au sommet — le trou nu dans la pointe fine la
     détachait)."""
@@ -59,13 +60,15 @@ def ornement_etoile(diametre: float = 80, branches: int = 5, ep: float = 4,
         emp = emp.difference(centre.buffer(1.9, resolution=32))
     piece = union_solides(_extruder(emp, ep))
     if texte:
-        piece = _texte_sur(piece, _empreinte("rond", diametre * 0.45), texte, ep, grave, 0.8)
+        piece = _texte_sur(piece, _empreinte("rond", diametre * 0.45), texte, ep, grave, 0.8,
+                           style=style, couleur_objet=couleur_objet, couleur_texte=couleur_texte)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
 
 def coeur_deco(taille: float = 70, ep: float = 5, suspension: bool = False,
-               texte: str = "", grave: bool = False) -> trimesh.Trimesh:
+               texte: str = "", grave: bool = False, style: str | None = None,
+               couleur_objet: str | None = None, couleur_texte: str | None = None):
     """Cœur déco / cadeau, texte relief ou gravé. Suspension = ŒILLET posé
     AU-DESSUS de l'échancrure et relié par un pont (l'ancien trou tombait
     DANS l'échancrure entre les lobes : il ne perçait rien)."""
@@ -78,7 +81,8 @@ def coeur_deco(taille: float = 70, ep: float = 5, suspension: bool = False,
         emp = emp.difference(centre.buffer(1.9, resolution=32))
     piece = union_solides(_extruder(emp, ep))
     if texte:
-        piece = _texte_sur(piece, _empreinte("rond", taille * 0.5), texte, ep, grave, 1.0)
+        piece = _texte_sur(piece, _empreinte("rond", taille * 0.5), texte, ep, grave, 1.0,
+                           style=style, couleur_objet=couleur_objet, couleur_texte=couleur_texte)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
@@ -111,7 +115,9 @@ def numero_maison(texte: str = "12", hauteur: float = 120,
     return piece
 
 
-def trophee(hauteur: float = 120, texte: str = "", grave: bool = False) -> trimesh.Trimesh:
+def trophee(hauteur: float = 120, texte: str = "", grave: bool = False,
+            style: str | None = None, couleur_objet: str | None = None,
+            couleur_texte: str | None = None):
     """Trophée coupe (révolution) sur socle À DEUX ÉTAGES : le texte est
     gravé/en relief sur la MARCHE AVANT de l'étage bas — large et lisible
     (l'ancienne bande de 2.6 mm rendait le texte illisible, en bloc)."""
@@ -130,14 +136,16 @@ def trophee(hauteur: float = 120, texte: str = "", grave: bool = False) -> trime
     if texte:
         # marche avant de l'étage bas : y de -0.23h (bord) à -0.17h (étage haut)
         zone = box(-h * 0.20, -h * 0.225, h * 0.20, -h * 0.178)
-        piece = _texte_sur(piece, zone, texte, h_bas, grave, 0.8, 0.9)
+        piece = _texte_sur(piece, zone, texte, h_bas, grave, 0.8, 0.9,
+                           style=style, couleur_objet=couleur_objet, couleur_texte=couleur_texte)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
 
 # ═══════════════════════════════ JEUX / LOISIRS ═════════════════════════════
 def jeton(diametre: float = 40, ep: float = 3.6, texte: str = "",
-          grave: bool = True) -> trimesh.Trimesh:
+          grave: bool = True, style: str | None = None,
+          couleur_objet: str | None = None, couleur_texte: str | None = None):
     """Jeton (poker, caddie) : disque + anneau décoratif en léger relief."""
     emp = _empreinte("rond", diametre)
     solides = _extruder(emp, ep - 0.8)
@@ -148,13 +156,15 @@ def jeton(diametre: float = 40, ep: float = 3.6, texte: str = "",
     solides += _extruder(haut, 0.8 + CHEV, ep - 0.8 - CHEV)
     piece = union_solides(solides)
     if texte:
-        piece = _texte_sur(piece, _empreinte("rond", diametre * 0.62), texte, ep, grave, 0.8)
+        piece = _texte_sur(piece, _empreinte("rond", diametre * 0.62), texte, ep, grave, 0.8,
+                           style=style, couleur_objet=couleur_objet, couleur_texte=couleur_texte)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
 
 def socle_figurine(forme: str = "rond", diametre: float = 60, hauteur: float = 8,
-                   texte: str = "", grave: bool = True) -> trimesh.Trimesh:
+                   texte: str = "", grave: bool = True, style: str | None = None,
+                   couleur_objet: str | None = None, couleur_texte: str | None = None):
     """Socle de figurine à base élargie, texte sur le bandeau avant."""
     emp = _empreinte(forme, diametre)
     solides = _extruder(emp.buffer(2, join_style=1), hauteur * 0.4)
@@ -163,7 +173,8 @@ def socle_figurine(forme: str = "rond", diametre: float = 60, hauteur: float = 8
     if texte:
         bande = box(-diametre * 0.35, -diametre / 2 - 2, diametre * 0.35,
                     -diametre / 2 + diametre * 0.2)
-        piece = _texte_sur(piece, bande, texte, hauteur, grave, 0.8, 0.85)
+        piece = _texte_sur(piece, bande, texte, hauteur, grave, 0.8, 0.85,
+                           style=style, couleur_objet=couleur_objet, couleur_texte=couleur_texte)
     piece.apply_translation(-piece.bounds[0])
     return piece
 
@@ -210,7 +221,8 @@ def emporte_piece(forme: str = "coeur", taille: float = 70) -> trimesh.Trimesh:
     return piece
 
 
-def tire_fermeture(longueur: float = 30, texte: str = "") -> trimesh.Trimesh:
+def tire_fermeture(longueur: float = 30, texte: str = "", style: str | None = None,
+                   couleur_objet: str | None = None, couleur_texte: str | None = None):
     """Tirette de fermeture éclair (zipper pull) avec trou d'attache."""
     emp = _empreinte("rect", longueur, longueur * 0.45)
     minx, miny, maxx, maxy = emp.bounds
@@ -218,7 +230,8 @@ def tire_fermeture(longueur: float = 30, texte: str = "") -> trimesh.Trimesh:
     piece = union_solides(_extruder(emp, 2.4))
     if texte:
         zone = box(minx + 8, miny, maxx - 2, maxy)
-        piece = _texte_sur(piece, zone, texte, 2.4, True, 0.6, 0.8)
+        piece = _texte_sur(piece, zone, texte, 2.4, True, 0.6, 0.8,
+                           style=style, couleur_objet=couleur_objet, couleur_texte=couleur_texte)
     piece.apply_translation(-piece.bounds[0])
     return piece
 

@@ -119,7 +119,11 @@ def porte_cartes(largeur: float = 95, hauteur: float = 40) -> trimesh.Trimesh:
 
 # ═══════════════════════════ ÉTIQUETTE-PRIX ════════════════════════════════
 def etiquette_prix(texte: str = "9,90 €", largeur: float = 55, hauteur: float = 30,
-                   grave: bool = False, police: str | None = None) -> trimesh.Trimesh:
+                   grave: bool = False, police: str | None = None, style: str | None = None,
+                   taille_police: float = 0.0, couleur_objet: str | None = None,
+                   couleur_texte: str | None = None):
     """Petite étiquette-prix DEBOUT (rayon, marché, vitrine) : pancarte
-    verticale à texte sur socle."""
-    return _pancarte_debout(texte, largeur, hauteur, 3.0, 16.0, grave, police)
+    verticale à texte sur socle. Bicolore + style relief/gravé/lisse."""
+    return _pancarte_debout(texte, largeur, hauteur, 3.0, 16.0, grave, police,
+                            style=style, taille_police=taille_police,
+                            couleur_objet=couleur_objet, couleur_texte=couleur_texte)

@@ -20,11 +20,11 @@ from pathlib import Path
 import trimesh
 
 
-def _bodies_par_couleur(spec):
-    """[(mesh, hex), …] : un corps fusionné par couleur (ordre = ordre des slots)."""
-    from core.neogen.carte_visite import construire
-    scene, couleurs = construire(spec)
-    # regrouper les géométries de la scène par couleur visuelle
+def _bodies_from_scene(scene, couleurs):
+    """[(mesh, hex), …] : un corps fusionné par couleur, à partir d'une Scene
+    trimesh dont chaque géométrie porte une couleur de face. `couleurs` fixe
+    l'ORDRE des slots (les couleurs non listées sont ajoutées après). Cœur
+    partagé entre la carte de visite et tout objet neoGen bicolore (QR, texte…)."""
     corps: dict[str, list] = {}
     for _nom, g in scene.geometry.items():
         try:
@@ -34,13 +34,20 @@ def _bodies_par_couleur(spec):
             hexa = "#FFFFFF"
         corps.setdefault(hexa, []).append(g)
     out = []
-    for hexa in couleurs:                       # respecte l'ordre socle → éléments
+    for hexa in (couleurs or []):               # respecte l'ordre socle → éléments
         gs = corps.pop(hexa, None)
         if gs:
             out.append((trimesh.util.concatenate(gs) if len(gs) > 1 else gs[0], hexa))
     for hexa, gs in corps.items():              # couleurs restantes éventuelles
         out.append((trimesh.util.concatenate(gs) if len(gs) > 1 else gs[0], hexa))
     return out
+
+
+def _bodies_par_couleur(spec):
+    """[(mesh, hex), …] pour une CarteSpec (construit la scène puis regroupe)."""
+    from core.neogen.carte_visite import construire
+    scene, couleurs = construire(spec)
+    return _bodies_from_scene(scene, couleurs)
 
 
 def _mesh_xml(mesh, indent="    ") -> tuple[str, str]:
@@ -51,7 +58,7 @@ def _mesh_xml(mesh, indent="    ") -> tuple[str, str]:
     return v, t
 
 
-def _build_multi_model(bodies, base_model_xml: str) -> str:
+def _build_multi_model(bodies, base_model_xml: str, nom: str = "Objet") -> str:
     """3dmodel.model multi-objets : chaque corps = un <object> nommé « couleur_i »
     (trimesh renomme la géométrie d'après ce name au rechargement → l'ID de part
     de model_settings.config peut le retrouver). Assemblés en UN objet imprimable."""
@@ -76,7 +83,7 @@ def _build_multi_model(bodies, base_model_xml: str) -> str:
         comps.append(
             f'    <component p:path="/3D/Objects/object_1.model" objectid="{eid}" '
             f'p:UUID="{uuid.uuid4()}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>')
-    assembly = (f'  <object id="100" p:UUID="{uuid.uuid4()}" type="model" name="Carte de visite">\n'
+    assembly = (f'  <object id="100" p:UUID="{uuid.uuid4()}" type="model" name="{nom}">\n'
                 '   <components>\n' + "\n".join(comps) + '\n   </components>\n  </object>')
     return (f'{ns}\n {meta_xml}\n <resources>\n' + assembly + '\n </resources>\n'
             + f' <build p:UUID="{uuid.uuid4()}">\n'
@@ -198,21 +205,41 @@ def _appliquer_config_multi(project_settings: dict, couleurs: list[str]) -> None
 def build_carte_multicouleur(spec, config, output_path: Path,
                              printer_ui_name: str, filament_ui_name: str,
                              nozzle_diameter_mm: float) -> Path:
-    """Construit le 3MF multicouleur final selon le slicer de sortie sélectionné."""
+    """Construit le 3MF multicouleur final d'une CARTE DE VISITE."""
+    bodies = _bodies_par_couleur(spec)
+    return build_multicouleur_bodies(bodies, config, output_path, printer_ui_name,
+                                      filament_ui_name, nozzle_diameter_mm,
+                                      nom="Carte de visite")
+
+
+def build_multicouleur(scene, couleurs, config, output_path: Path,
+                       printer_ui_name: str, filament_ui_name: str,
+                       nozzle_diameter_mm: float, nom: str = "Objet") -> Path:
+    """3MF multicouleur pour N'IMPORTE QUEL objet neoGen bicolore (QR, texte…) :
+    une Scene trimesh dont les corps portent des couleurs de face. `couleurs`
+    fixe l'ordre des slots. Même sortie multi-slots que la carte de visite."""
+    bodies = _bodies_from_scene(scene, couleurs)
+    return build_multicouleur_bodies(bodies, config, output_path, printer_ui_name,
+                                      filament_ui_name, nozzle_diameter_mm, nom=nom)
+
+
+def build_multicouleur_bodies(bodies, config, output_path: Path,
+                              printer_ui_name: str, filament_ui_name: str,
+                              nozzle_diameter_mm: float, nom: str = "Objet") -> Path:
+    """Cœur commun : liste [(mesh, hex)] → 3MF multi-slots selon le slicer de sortie."""
     from core.prefs import PREFS
     slicer = PREFS.get("slicer_output", "bambu")
-    bodies = _bodies_par_couleur(spec)
     couleurs = [hexa for _m, hexa in bodies]
     combined = trimesh.util.concatenate([m for m, _ in bodies])
 
     if slicer == "prusa":
-        return _build_prusa(spec, config, output_path, printer_ui_name,
+        return _build_prusa(nom, config, output_path, printer_ui_name,
                             filament_ui_name, nozzle_diameter_mm, bodies, couleurs, combined)
 
     # Famille Bambu/Orca : 3MF mono-objet valide, puis patch multi-objets + palette
     from core.export.tmf_builder import ThreeMFBuilder
     tmp = output_path.with_suffix(".mono.3mf")
-    ThreeMFBuilder().build(combined, config, tmp, object_name="Carte de visite",
+    ThreeMFBuilder().build(combined, config, tmp, object_name=nom,
                            printer_ui_name=printer_ui_name,
                            filament_ui_name=filament_ui_name,
                            nozzle_diameter_mm=nozzle_diameter_mm)
@@ -224,7 +251,7 @@ def build_carte_multicouleur(spec, config, output_path: Path,
     _appliquer_config_multi(ps, couleurs)
     data["3D/Objects/object_1.model"] = _external_objects_model(bodies).encode("utf-8")
     data["3D/_rels/3dmodel.model.rels"] = _rels_objets().encode("utf-8")
-    data["3D/3dmodel.model"] = _build_multi_model(bodies, base_model).encode("utf-8")
+    data["3D/3dmodel.model"] = _build_multi_model(bodies, base_model, nom).encode("utf-8")
     data["Metadata/model_settings.config"] = _build_multi_settings(bodies).encode("utf-8")
     data["Metadata/project_settings.config"] = json.dumps(ps, indent=4, ensure_ascii=False).encode("utf-8")
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as z:
@@ -265,7 +292,7 @@ def _prusa_add_colors(pc: str, couleurs: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _build_prusa(spec, config, output_path, printer_ui_name, filament_ui_name,
+def _build_prusa(nom, config, output_path, printer_ui_name, filament_ui_name,
                  nozzle_diameter_mm, bodies, couleurs, combined) -> Path:
     """PrusaSlicer : 3MF Prusa mono-objet valide, puis on remplace le volume unique
     par N volumes (une plage de triangles par couleur) assignés à un extrudeur, et
@@ -285,7 +312,7 @@ def _build_prusa(spec, config, output_path, printer_ui_name, filament_ui_name,
     with zipfile.ZipFile(output_path) as z:
         data = {n: z.read(n) for n in z.namelist()}
     data["Metadata/Slic3r_PE_model.config"] = _prusa_model_config_multi(
-        ranges, "Carte de visite").encode("utf-8")
+        ranges, nom).encode("utf-8")
     pc = data["Metadata/Slic3r_PE.config"].decode("utf-8")
     data["Metadata/Slic3r_PE.config"] = _prusa_add_colors(pc, couleurs).encode("utf-8")
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as z:

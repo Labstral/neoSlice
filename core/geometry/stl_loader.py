@@ -34,6 +34,129 @@ def _estimate_stl_faces(path: Path) -> int:
     return 0
 
 
+# Espace de noms 3MF « core »
+_3MF_NS = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
+
+# Au-delà de ce coût (nb composants externes × octets du/des .model référencés),
+# le loader 3MF de trimesh devient pathologique (il relit TOUT le .model externe
+# UNE FOIS PAR COMPOSANT) → on bascule sur notre chargement dédié. En dessous,
+# trimesh gère très bien : on ne dévie pas (zéro risque pour les cas validés).
+_SPLIT_3MF_COST_THRESHOLD = 120_000_000
+
+
+def _read_mesh_fast(mesh_el) -> tuple[np.ndarray, np.ndarray]:
+    """Lit vertices/triangles d'un <mesh> 3MF en une passe (np.fromstring)."""
+    verts = mesh_el.find(f"{_3MF_NS}vertices")
+    tris = mesh_el.find(f"{_3MF_NS}triangles")
+    if verts is None or tris is None:
+        return np.empty((0, 3)), np.empty((0, 3), dtype=np.int64)
+    vs = " ".join(f"{v.get('x')} {v.get('y')} {v.get('z')}" for v in verts)
+    v_arr = np.fromstring(vs, dtype=np.float64, sep=" ").reshape((-1, 3))
+    fs = " ".join(f"{t.get('v1')} {t.get('v2')} {t.get('v3')}" for t in tris)
+    f_arr = np.fromstring(fs, dtype=np.int64, sep=" ").reshape((-1, 3))
+    return v_arr, f_arr
+
+
+def _fast_load_split_3mf(path: Path) -> "trimesh.Scene | None":
+    """Charge un 3MF Bambu « split-model » sans le bug O(composants × fichier).
+
+    Motif Bambu : le modèle principal (3dmodel.model) contient des <component>
+    qui référencent des sous-objets d'un .model EXTERNE (Objects/object_1.model)
+    via p:path + objectid. trimesh relit l'INTÉGRALITÉ du .model externe pour
+    CHAQUE composant → sur 73 composants × 17 MB, le chargement ne finit jamais.
+
+    Ici on relit chaque .model externe UNE seule fois, puis on assemble une
+    trimesh.Scene correcte (géométrie par objectid + transform de chaque
+    instance = build_item ∘ component). Retourne None si le motif est absent ou
+    peu coûteux (→ on laisse le chemin trimesh normal, éprouvé sur les cas validés).
+    """
+    try:
+        from lxml import etree
+        from trimesh.exchange.threemf import _attrib_to_transform
+    except Exception:
+        return None
+    try:
+        if not zipfile.is_zipfile(path):
+            return None
+        with zipfile.ZipFile(path) as zf:
+            names = set(zf.namelist())
+            if "3D/3dmodel.model" not in names:
+                return None
+            root = etree.fromstring(zf.read("3D/3dmodel.model"))
+
+            # 1) Recenser les composants qui référencent un .model EXTERNE
+            ext_refs = []  # (parent_obj_id, sub_objid, transform_4x4, zippath)
+            for obj in root.iter(f"{_3MF_NS}object"):
+                comps = obj.find(f"{_3MF_NS}components")
+                if comps is None:
+                    continue
+                for c in comps.iter(f"{_3MF_NS}component"):
+                    zp = next((v.strip("/") for k, v in c.attrib.items()
+                               if k.endswith("path")), None)
+                    sub_id = c.attrib.get("objectid")
+                    if zp and sub_id:
+                        ext_refs.append((obj.get("id"), sub_id,
+                                         _attrib_to_transform(c.attrib), zp))
+            if not ext_refs:
+                return None  # pas le motif split-model → trimesh normal
+
+            # 2) Filtre coût : ne dévier que si trimesh serait pathologique
+            ext_paths = {zp for *_, zp in ext_refs}
+            ext_bytes = sum(zf.getinfo(p).file_size for p in ext_paths if p in names)
+            cost = len(ext_refs) * ext_bytes
+            if cost < _SPLIT_3MF_COST_THRESHOLD:
+                return None
+            logger.info(
+                f"[3MF] motif split-model coûteux (composants={len(ext_refs)}, "
+                f"externe={ext_bytes // 1024} KB, coût={cost:,}) → chargement rapide dédié"
+            )
+
+            # 3) Parser chaque .model externe UNE fois : {zippath: {objid: (v, f)}}
+            geom_cache: dict[str, dict[str, tuple]] = {}
+            for zp in ext_paths:
+                if zp not in names:
+                    continue
+                sub: dict[str, tuple] = {}
+                sroot = etree.fromstring(zf.read(zp))
+                for so in sroot.iter(f"{_3MF_NS}object"):
+                    m = so.find(f"{_3MF_NS}mesh")
+                    if m is None:
+                        continue
+                    v, f = _read_mesh_fast(m)
+                    if len(v) and len(f):
+                        sub[so.get("id")] = (v, f)
+                geom_cache[zp] = sub
+
+            # 4) Transforms des build items (objet top-level → monde)
+            build_tf: dict[str, np.ndarray] = {}
+            build = root.find(f"{_3MF_NS}build")
+            if build is not None:
+                for it in build.iter(f"{_3MF_NS}item"):
+                    build_tf[it.attrib.get("objectid")] = _attrib_to_transform(it.attrib)
+
+            # 5) Assembler la Scene : une géométrie par objectid + transform monde
+            scene = trimesh.Scene()
+            for parent_id, sub_id, comp_tf, zp in ext_refs:
+                vf = geom_cache.get(zp, {}).get(sub_id)
+                if vf is None:
+                    continue
+                v, f = vf
+                mesh = trimesh.Trimesh(vertices=v, faces=f, process=False)
+                bt = build_tf.get(parent_id)
+                world_tf = comp_tf if bt is None else np.dot(bt, comp_tf)
+                # geom_name = objectid → matche part_id de model_settings.config
+                # (et _part_geom_by_id) dans _parse_threemf_multiobject.
+                scene.add_geometry(mesh, geom_name=str(sub_id),
+                                   node_name=str(sub_id), transform=world_tf)
+            if not scene.geometry:
+                return None
+            logger.info(f"[3MF] chargement rapide split-model : {len(scene.geometry)} géométries")
+            return scene
+    except Exception as e:
+        logger.warning(f"[3MF] chargement rapide split-model échoué ({e!r}) — repli trimesh")
+        return None
+
+
 def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData | None:
     """Parse un 3MF Bambu multi-objets et retourne ThreeMFData si multi-objets.
 
@@ -607,10 +730,34 @@ def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
     if _is_3mf:
         # Charger avec process=False si fichier très grand (évite le crash mémoire sur 40M faces)
         _load_kwargs = {"process": False} if _skip_process else {}
-        raw = trimesh.load(str(path), **_load_kwargs)
-        # Tentative de parse multi-objets avant la fusion
+        # Motif Bambu « split-model » (composants → .model externe) : trimesh relit
+        # le .model UNE FOIS PAR COMPOSANT → hang sur les gros assemblages
+        # (ex. « Cover Fan Aux.3mf », 73 composants × 17 MB). On charge nous-mêmes ;
+        # None = motif absent/peu coûteux → chemin trimesh normal inchangé.
+        raw = None
+        try:
+            raw = _fast_load_split_3mf(path)
+        except Exception as _fe:
+            logger.warning(f"[3MF] _fast_load_split_3mf a levé ({_fe!r}) — repli trimesh")
+            raw = None
+        try:
+            if raw is None:
+                raw = trimesh.load(str(path), **_load_kwargs)
+        except Exception as _le:
+            # Certains 3MF (Bambu .gcode.3mf, graphe de scène incomplet) font échouer
+            # le chargement en Scene par trimesh — typiquement KeyError 'world'. On
+            # se rabat alors sur un chargement en MAILLAGE UNIQUE (force=mesh), qui
+            # ignore le graphe de scène et récupère quand même la géométrie.
+            logger.warning(f"Chargement 3MF en Scene échoué ({_le!r}) — repli force=mesh")
+            raw = trimesh.load(str(path), force="mesh", **_load_kwargs)
+        # Tentative de parse multi-objets avant la fusion (protégée : un graphe de
+        # scène cassé ne doit pas faire échouer TOUT le chargement).
         if isinstance(raw, trimesh.Scene) and len(raw.geometry) >= 1:
-            threemf = _parse_threemf_multiobject(path, raw)
+            try:
+                threemf = _parse_threemf_multiobject(path, raw)
+            except Exception as _pe:
+                logger.warning(f"Parse 3MF multi-objets échoué ({_pe!r}) — fusion standard")
+                threemf = None
             if threemf is not None:
                 logger.info(f"3MF multi-objets chargé : {threemf.summary()}")
                 return threemf

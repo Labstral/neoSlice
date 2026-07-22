@@ -187,30 +187,57 @@ RELIEF_ACTIF: float | None = None
 
 def socle_avec_texte(socle_2d, texte_2d, ep_socle: float, ep_texte: float,
                      grave: bool, poche_2d=None, prof_poche: float = 0.0,
-                     recentrer: bool = True) -> trimesh.Trimesh:
-    """Assemble : socle (avec éventuelle POCHE creusée au DOS) + texte relief/gravé.
-    Tout en tranches 2D extrudées -> pas de booléens 3D, toujours étanche."""
+                     recentrer: bool = True, style: str | None = None,
+                     couleur_objet: str | None = None,
+                     couleur_texte: str | None = None):
+    """Assemble : socle (avec éventuelle POCHE creusée au DOS) + texte.
+    Tout en tranches 2D extrudées -> pas de booléens 3D, toujours étanche.
+
+    style : "relief" | "grave" | "lisse" (prioritaire sur le flag legacy `grave`).
+    couleur_objet / couleur_texte : si fournis → Scene à 2 corps colorés (bicolore,
+    2 slots à l'export) ; sinon maillage fusionné mono-couleur (compat)."""
     if RELIEF_ACTIF is not None:
         ep_texte = max(0.3, float(RELIEF_ACTIF))       # réglage utilisateur
-    solides = []
+    style = style if style in ("relief", "grave", "lisse") else ("grave" if grave else "relief")
+    grave = (style == "grave")
+    bicolore = bool(couleur_objet and couleur_texte)
+    from core.neogen.geo_utils import union_solides
+
+    # socle (+ poche éventuelle au dos) = corps « objet » ; texte = corps « texte »
+    socle_solides, texte_solides = [], []
     z0 = 0.0
     if poche_2d is not None and prof_poche > 0:
-        # tranche du bas percée de la poche (ouverte vers le dessous)
-        bas = socle_2d.difference(poche_2d)
-        solides += _extruder(bas, prof_poche + CHEVAUCHEMENT, 0)
+        bas = socle_2d.difference(poche_2d)            # tranche du bas percée (poche au dos)
+        socle_solides += _extruder(bas, prof_poche + CHEVAUCHEMENT, 0)
         z0 = prof_poche
-    if grave:
-        ep_grav = min(ep_texte, ep_socle - z0 - 0.8)
-        solides += _extruder(socle_2d, ep_socle - z0 - ep_grav, z0)          # cœur plein
-        haut = socle_2d.difference(texte_2d)
-        solides += _extruder(haut, ep_grav + CHEVAUCHEMENT,
-                             ep_socle - ep_grav - CHEVAUCHEMENT)             # surface gravée
+    if style == "relief":
+        socle_solides += _extruder(socle_2d, ep_socle - z0, z0)              # socle plein
+        texte_solides += _extruder(texte_2d, ep_texte + CHEVAUCHEMENT,
+                                   ep_socle - CHEVAUCHEMENT)                 # relief
     else:
-        solides += _extruder(socle_2d, ep_socle - z0, z0)                    # socle plein
-        solides += _extruder(texte_2d, ep_texte + CHEVAUCHEMENT,
-                             ep_socle - CHEVAUCHEMENT)                       # relief
-    from core.neogen.geo_utils import union_solides
-    piece = union_solides(solides)   # union RÉELLE : zéro face interne (faux surplombs)
+        # grave / lisse : le socle porte des alvéoles là où va le texte
+        ep_t = min(ep_texte, ep_socle - z0 - 0.4)
+        z_base = ep_socle - ep_t
+        socle_solides += _extruder(socle_2d, z_base - z0, z0)               # dalle
+        socle_solides += _extruder(socle_2d.difference(texte_2d), ep_t, z_base)  # grille
+        h_txt = ep_t - (0.6 if style == "grave" else 0.0)                   # sillon si gravé
+        texte_solides += _extruder(texte_2d, max(0.4, h_txt), z_base)
+
+    if bicolore:
+        from core.neogen import bicolore as _bic
+        socle = union_solides(socle_solides)
+        texte = (union_solides(texte_solides) if len(texte_solides) > 1
+                 else texte_solides[0])
+        s = _bic.scene(socle, texte, couleur_objet, couleur_texte)
+        if recentrer:
+            import trimesh as _tm
+            fus = _tm.util.concatenate(list(s.geometry.values()))
+            off = -fus.bounds[0]
+            for g in s.geometry.values():
+                g.apply_translation(off)
+        return s
+
+    piece = union_solides(socle_solides + texte_solides)   # mono : union réelle
     if recentrer:
         piece.apply_translation(-piece.bounds[0])
     return piece
@@ -218,8 +245,9 @@ def socle_avec_texte(socle_2d, texte_2d, ep_socle: float, ep_texte: float,
 
 # ── Formes ────────────────────────────────────────────────────────────────────
 def badge(texte: str = "", diametre: float = 40, ep: float = 3, ep_texte: float = 1.2,
-          grave: bool = False, trou: float = 0.0,
-          police: str | None = None) -> trimesh.Trimesh:
+          grave: bool = False, trou: float = 0.0, police: str | None = None,
+          style: str | None = None, couleur_objet: str | None = None,
+          couleur_texte: str | None = None):
     """Pastille ronde, texte centré ; trou d'accroche en haut si demandé."""
     disque = Point(0, 0).buffer(diametre / 2, resolution=96)
     if trou > 0:
@@ -236,14 +264,20 @@ def badge(texte: str = "", diametre: float = 40, ep: float = 3, ep_texte: float 
         return piece
     txt = ajuster_dans(texte_multilignes(texte, police=police), diametre * 0.74, haut_max)
     txt = translate(txt, yoff=dec_y)
-    return socle_avec_texte(disque, unary_union(list(txt.geoms)), ep, ep_texte, grave)
+    return socle_avec_texte(disque, unary_union(list(txt.geoms)), ep, ep_texte, grave,
+                            style=style, couleur_objet=couleur_objet,
+                            couleur_texte=couleur_texte)
 
 
 def sous_verre(texte: str = "", diametre: float = 90, ep: float = 3.6,
                rebord: float = 1.2, ep_texte: float = 0.8,
-               police: str | None = None) -> trimesh.Trimesh:
+               police: str | None = None, couleur_objet: str | None = None,
+               couleur_texte: str | None = None):
     """Sous-verre : disque + rebord périphérique surélevé, texte GRAVÉ au centre
-    (surface plate = pose du verre, gravure = pas d'accroc)."""
+    (surface plate = pose du verre, gravure = pas d'accroc). Toujours GRAVÉ (le
+    relief ferait osciller le verre) mais BICOLORE possible (2 couleurs)."""
+    import trimesh as _tm
+    bicolore = bool(couleur_objet and couleur_texte)
     disque = Point(0, 0).buffer(diametre / 2, resolution=128)
     if (texte or "").strip():
         txt = ajuster_dans(texte_multilignes(texte, police=police),
@@ -251,22 +285,37 @@ def sous_verre(texte: str = "", diametre: float = 90, ep: float = 3.6,
         # recentrer=False : repère centré en (0,0) pour aligner le rebord,
         # puis on recentre le TOUT à la fin.
         piece = socle_avec_texte(disque, unary_union(list(txt.geoms)), ep, ep_texte,
-                                 grave=True, recentrer=False)
+                                 grave=True, recentrer=False, style="grave",
+                                 couleur_objet=couleur_objet, couleur_texte=couleur_texte)
     else:
         piece = union_solides(_extruder(disque, ep))
     if rebord > 0:  # anneau surélevé (extrusion séparée posée dessus)
         ext = Point(0, 0).buffer(diametre / 2, resolution=128)
         intr = Point(0, 0).buffer(diametre / 2 - 3.0, resolution=128)
         anneau = ext.difference(intr)
-        piece = union_solides([piece] + _extruder(anneau, rebord + CHEVAUCHEMENT,
-                                                  ep - CHEVAUCHEMENT))
+        rebord_solides = _extruder(anneau, rebord + CHEVAUCHEMENT, ep - CHEVAUCHEMENT)
+        if bicolore and isinstance(piece, _tm.Scene):
+            # rebord = même couleur que l'objet : on l'ajoute au corps « objet »
+            from core.neogen import bicolore as _bic
+            objet_g = union_solides([piece.geometry["objet"]] + rebord_solides)
+            piece = _bic.scene(objet_g, piece.geometry["texte"],
+                               couleur_objet, couleur_texte)
+        else:
+            piece = union_solides([piece] + rebord_solides)
+    if isinstance(piece, _tm.Scene):
+        fus = _tm.util.concatenate(list(piece.geometry.values()))
+        off = -fus.bounds[0]
+        for g in piece.geometry.values():
+            g.apply_translation(off)
+        return piece
     piece.apply_translation(-piece.bounds[0])
     return piece
 
 
 def plaque(texte: str = "", largeur: float = 0, hauteur: float = 0, ep: float = 3,
            ep_texte: float = 1.5, grave: bool = False, vis: bool = False,
-           police: str | None = None) -> trimesh.Trimesh:
+           police: str | None = None, style: str | None = None,
+           couleur_objet: str | None = None, couleur_texte: str | None = None):
     """Plaque rectangulaire arrondie, texte multi-lignes (optionnel) ; vis en option."""
     avec_texte = bool((texte or "").strip())
     if avec_texte:
@@ -295,12 +344,15 @@ def plaque(texte: str = "", largeur: float = 0, hauteur: float = 0, ep: float = 
         return piece
     zone_l = largeur - 2 * marge - (12 if vis else 0)
     txt = ajuster_dans(txt, zone_l, hauteur - 2 * marge)
-    return socle_avec_texte(base, unary_union(list(txt.geoms)), ep, ep_texte, grave)
+    return socle_avec_texte(base, unary_union(list(txt.geoms)), ep, ep_texte, grave,
+                            style=style, couleur_objet=couleur_objet,
+                            couleur_texte=couleur_texte)
 
 
 def magnet(texte: str = "", diametre: float = 35, ep: float = 4, ep_texte: float = 1.2,
            grave: bool = False, d_aimant: float = 10.2, prof_aimant: float = 2.0,
-           police: str | None = None) -> trimesh.Trimesh:
+           police: str | None = None, style: str | None = None,
+           couleur_objet: str | None = None, couleur_texte: str | None = None):
     """Pastille avec LOGEMENT d'aimant creusé au dos (aimant collé/inséré)."""
     if prof_aimant >= ep - 1.0:
         raise ValueError("Logement trop profond pour l'épaisseur (min 1 mm de paroi).")
@@ -312,4 +364,6 @@ def magnet(texte: str = "", diametre: float = 35, ep: float = 4, ep_texte: float
     txt = ajuster_dans(texte_multilignes(texte, police=police),
                        diametre * 0.74, diametre * 0.52)
     return socle_avec_texte(disque, unary_union(list(txt.geoms)), ep, ep_texte,
-                            grave, poche_2d=poche, prof_poche=prof_aimant)
+                            grave, poche_2d=poche, prof_poche=prof_aimant,
+                            style=style, couleur_objet=couleur_objet,
+                            couleur_texte=couleur_texte)

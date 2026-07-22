@@ -36,10 +36,69 @@ def _fr_en(fr: str, en: str) -> str:
     return fr if lang() == "fr" else en
 
 
+class _ColorButton(QPushButton):
+    """Pastille de couleur : affiche le hex sur fond coloré, ouvre un sélecteur au
+    clic et mémorise le choix. Lisible en thème clair ET sombre (le texte passe en
+    noir/blanc selon la luminance de la couleur, jamais illisible)."""
+
+    changed = Signal()          # couleur modifiée → rafraîchir l'aperçu
+
+    def __init__(self, hex_defaut: str, parent=None):
+        super().__init__(parent)
+        self.hex = (hex_defaut or "#CCCCCC").upper()
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(26)
+        self._refresh()
+        self.clicked.connect(self._pick)
+
+    def _refresh(self):
+        try:
+            r, g, b = (int(self.hex[1:3], 16), int(self.hex[3:5], 16),
+                       int(self.hex[5:7], 16))
+            lum = 0.299 * r + 0.587 * g + 0.114 * b
+        except Exception:
+            lum = 200
+        fg = "#000000" if lum > 140 else "#FFFFFF"
+        self.setText(self.hex)
+        self.setStyleSheet(
+            f"QPushButton {{ background: {self.hex}; color: {fg};"
+            " border: 1px solid rgba(128,128,128,0.7); border-radius: 6px;"
+            " padding: 3px 10px; font-size: 8pt; font-weight: bold; }}")
+
+    def _pick(self):
+        from PySide6.QtWidgets import QColorDialog
+        from PySide6.QtGui import QColor
+        # Dialogue NON natif + feuille de style au thème neoSlice : sinon il s'affiche
+        # avec la palette Qt (sombre) et devient illisible en thème clair.
+        dlg = QColorDialog(QColor(self.hex), self)
+        dlg.setOption(QColorDialog.ColorDialogOption.DontUseNativeDialog, True)
+        dlg.setWindowTitle(_("neogen.pick_color"))
+        pal = _THEME.palette()
+        dlg.setStyleSheet(f"""
+            QColorDialog, QColorDialog QWidget {{ background: {pal['BG_PANEL']};
+                color: {pal['TEXT_PRIMARY']}; }}
+            QLabel {{ color: {pal['TEXT_PRIMARY']}; background: transparent; }}
+            QLineEdit, QSpinBox {{ background: {pal['BG_SURFACE']};
+                color: {pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']};
+                border-radius: 3px; padding: 2px 4px; }}
+            QPushButton {{ background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
+                border: 1px solid {pal['INACTIVE']}; border-radius: 4px;
+                padding: 4px 12px; }}
+            QPushButton:hover {{ border-color: {PRO_CYAN}; }}
+        """)
+        if dlg.exec() and dlg.currentColor().isValid():
+            self.hex = dlg.currentColor().name().upper()
+            self._refresh()
+            self.changed.emit()
+
+
 # ═══════════════════════════════ Workers ════════════════════════════════════
 class _CatalogueWorker(QThread):
-    """Construit un objet du catalogue (géométrie seule — pas de modèle IA)."""
-    fini = Signal(object)
+    """Construit un objet du catalogue (géométrie seule — pas de modèle IA).
+    Objet BICOLORE (Scene à corps colorés) → `fini_multi` (route multicouleur,
+    2 slots à l'export) ; sinon fichier normal via `fini`."""
+    fini = Signal(object)                 # Path (objet mono-couleur)
+    fini_multi = Signal(object, str)      # (scene, entree_id) — objet bicolore
     erreur = Signal(str)
 
     def __init__(self, entree_id: str, params: dict):
@@ -48,10 +107,31 @@ class _CatalogueWorker(QThread):
 
     def run(self):
         try:
-            from core.neogen.catalogue import generer_fichier
-            self.fini.emit(generer_fichier(self._id, self._params))
+            from core.neogen.catalogue import construire, est_multicouleur, generer_fichier
+            piece = construire(self._id, self._params)
+            if est_multicouleur(piece):
+                self.fini_multi.emit(piece, self._id)
+            else:
+                self.fini.emit(generer_fichier(self._id, self._params, piece=piece))
         except Exception as exc:
             self.erreur.emit(str(exc))
+
+
+class _ApercuWorker(QThread):
+    """Construit un objet du catalogue pour l'APERÇU en direct (sélection / réglage).
+    Best-effort : en cas d'erreur (texte requis manquant…) on n'émet rien."""
+    pret = Signal(object)
+
+    def __init__(self, entree_id: str, params: dict):
+        super().__init__()
+        self._id, self._params = entree_id, params
+
+    def run(self):
+        try:
+            from core.neogen.catalogue import construire
+            self.pret.emit(construire(self._id, self._params))
+        except Exception:
+            pass
 
 
 class _RechercheWorker(QThread):
@@ -99,6 +179,8 @@ class NeoGenPanel(QWidget):
     """Contenu neoGen pour la colonne de droite (~400 px de large)."""
 
     piece_ready = Signal(object)     # Path — branché sur le pipeline fichier déposé
+    objet_multicouleur = Signal(object, str)  # (scene, entree_id) — objet bicolore
+    apercu_objet = Signal(object)    # aperçu direct (piece Scene/Trimesh) à la sélection
     close_requested = Signal()       # ✕ -> revenir aux paramètres générés
     ouvrir_carte = Signal()          # « Carte de visite » sélectionnée dans Perso
 
@@ -154,10 +236,15 @@ class NeoGenPanel(QWidget):
             QTabBar::tab:selected {{ color: {self._pal['TEXT_PRIMARY']};
                                      border-bottom: 2px solid {self._pal['ACCENT_BRIGHT']}; }}
         """)
+        # _ready : évite d'émettre ouvrir_carte pendant la CONSTRUCTION (avant que
+        # main_window ait connecté le signal, et alors qu'on est sur l'onglet Recherche).
+        self._ready = False
         self._tabs.addTab(self._onglet_bibliotheque(), _("neogen.tab_library"))
         self._tabs.insertTab(0, self._onglet_libre(), _("neogen.tab_search"))
         self._tabs.setCurrentIndex(0)
+        self._tabs.currentChanged.connect(self._on_tab_change)
         lay.addWidget(self._tabs, 1)
+        self._ready = True
 
         self._statut = QLabel("")
         self._statut.setWordWrap(True)
@@ -193,19 +280,26 @@ class NeoGenPanel(QWidget):
         combo = getattr(self, "_combo_objet", None)
         if not champs or combo is None:
             return
-        # 1) capturer les valeurs courantes
+        # 1) capturer les valeurs courantes. try/except : un widget dont l'objet C++
+        # a déjà été supprimé (double refresh de thème, formulaire vidé) lève
+        # RuntimeError → on l'ignore au lieu de planter.
         vals = {}
         for k, w in list(champs.items()):
-            if k == "__image":
-                vals[k] = w                       # chemin (str)
-            elif isinstance(w, QLineEdit):
-                vals[k] = ("text", w.text())
-            elif isinstance(w, QDoubleSpinBox):
-                vals[k] = ("val", w.value())
-            elif isinstance(w, QComboBox):
-                vals[k] = ("data", w.currentData())
-            elif isinstance(w, QCheckBox):
-                vals[k] = ("chk", w.isChecked())
+            try:
+                if k == "__image":
+                    vals[k] = w                       # chemin (str)
+                elif isinstance(w, QLineEdit):
+                    vals[k] = ("text", w.text())
+                elif isinstance(w, _ColorButton):
+                    vals[k] = ("hex", w.hex)
+                elif isinstance(w, QDoubleSpinBox):
+                    vals[k] = ("val", w.value())
+                elif isinstance(w, QComboBox):
+                    vals[k] = ("data", w.currentData())
+                elif isinstance(w, QCheckBox):
+                    vals[k] = ("chk", w.isChecked())
+            except RuntimeError:
+                continue
         # 2) reconstruire le formulaire (utilise self._pal mis à jour)
         self._choisir_objet(combo.currentIndex())
         # 3) restaurer les valeurs
@@ -225,6 +319,9 @@ class NeoGenPanel(QWidget):
             try:
                 if kind == "text":
                     w.setText(val)
+                elif kind == "hex":
+                    w.hex = val
+                    w._refresh()
                 elif kind == "val":
                     w.setValue(float(val))
                 elif kind == "data":
@@ -377,14 +474,60 @@ class NeoGenPanel(QWidget):
 
     def _choisir_objet(self, idx: int):
         didx = self._combo_domaine.currentIndex()
-        while self._form_lay.count():
-            it = self._form_lay.takeAt(0)
-            if it.widget():
-                it.widget().deleteLater()
+        self._vider_formulaire()
         if didx < 0 or idx < 0 or idx >= len(self._donnees[didx][1]):
             return
-        self._form_lay.addWidget(
-            self._construire_formulaire(self._donnees[didx][1][idx]))
+        e = self._donnees[didx][1][idx]
+        if e["id"] == "carte_visite":
+            # Carte de visite INLINE : main_window crée/câble le panneau carte et
+            # l'insère dans le formulaire (embed_carte) — comme les autres objets,
+            # dans la colonne, avec les onglets Rechercher/Bibliothèque au-dessus.
+            # On n'émet PAS pendant la construction (signal pas encore connecté, et
+            # onglet Recherche actif) : c'est _on_tab_change qui déclenche au besoin.
+            if self._ready:
+                self.ouvrir_carte.emit()
+            return
+        self._form_lay.addWidget(self._construire_formulaire(e))
+        self._relier_apercu(self._champs_courant)      # aperçu en direct (réglages)
+        self._planifier_apercu_objet()                 # aperçu immédiat à la sélection
+
+    def _on_tab_change(self, idx: int) -> None:
+        """Passage sur l'onglet Bibliothèque avec la carte sélectionnée → l'embarquer
+        (couvre le cas où la carte est l'objet par défaut, jamais re-sélectionné)."""
+        if not getattr(self, "_ready", False):
+            return
+        onglet = self._tabs.tabText(idx).lower()
+        if _("neogen.tab_library").lower() not in onglet:
+            return
+        didx = self._combo_domaine.currentIndex()
+        oidx = self._combo_objet.currentIndex()
+        if 0 <= didx < len(self._donnees) and 0 <= oidx < len(self._donnees[didx][1]):
+            if self._donnees[didx][1][oidx]["id"] == "carte_visite" \
+                    and getattr(self, "_carte_embedded", None) is None:
+                self.ouvrir_carte.emit()
+
+    def _vider_formulaire(self) -> None:
+        """Vide le formulaire, mais DÉTACHE (sans détruire) la carte embarquée que
+        main_window réutilise d'un affichage à l'autre."""
+        while self._form_lay.count():
+            it = self._form_lay.takeAt(0)
+            w = it.widget()
+            if w is None:
+                continue
+            if w is getattr(self, "_carte_embedded", None):
+                w.setParent(None)          # détacher sans détruire
+            else:
+                w.deleteLater()
+        self._carte_embedded = None
+
+    def embed_carte(self, panel) -> None:
+        """Insère le panneau carte (créé/câblé par main_window) dans le formulaire,
+        sous les onglets Rechercher/Bibliothèque."""
+        self._vider_formulaire()
+        self._carte_embedded = panel
+        panel.setParent(self._form_holder)
+        self._form_lay.addWidget(panel)
+        panel.show()
 
     def _construire_formulaire(self, e: dict) -> QWidget:
         pal = self._pal
@@ -393,29 +536,8 @@ class NeoGenPanel(QWidget):
         v = QVBoxLayout(w)
         v.setContentsMargins(2, 2, 2, 0)
 
-        # cas spécial : la carte de visite a son PROPRE éditeur (multi-éléments,
-        # couleurs) -> un bouton l'ouvre dans la colonne de droite
-        if e["id"] == "carte_visite":
-            info = QLabel(_("carte.pitch"))
-            info.setWordWrap(True)
-            info.setStyleSheet(
-                f"color: {pal['TEXT_LABEL']}; background: transparent; font-size: 9pt;")
-            v.addWidget(info)
-            btn = QPushButton(_("carte.open_editor"))
-            btn.setMinimumHeight(34)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(f"""
-                QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {PRO_CYAN}, stop:1 {PRO_VIOLET});
-                    color: #ffffff; border: none; border-radius: 6px;
-                    padding: 0 14px; font-weight: bold; }}
-            """)
-            btn.clicked.connect(self.ouvrir_carte)
-            v.addSpacing(4)
-            v.addWidget(btn)
-            v.addStretch()
-            return w
-
+        # (la carte de visite est désormais EMBARQUÉE inline par _choisir_objet →
+        #  embed_carte ; plus de bouton « Ouvrir l'éditeur ».)
         form = QFormLayout()
         form.setSpacing(6)
         champs: dict = {}
@@ -453,18 +575,22 @@ class NeoGenPanel(QWidget):
             QCheckBox::indicator:checked {{ background: {PRO_CYAN};
                 border-color: {PRO_CYAN}; }}
         """
+        param_rows = {}                              # pid -> (label, spinbox) pour pilotage
         for (pid, pfr, pen, mini, maxi, defaut, pas) in e["params"]:
             sp = QDoubleSpinBox()
             sp.setRange(mini, maxi)
             sp.setValue(defaut)
             sp.setSingleStep(pas)
             sp.setDecimals(1 if pas < 1 else 0)
-            sp.setSuffix(" mm" if pid not in ("cases_x", "cases_y", "rangees",
-                                              "colonnes", "branches", "ondulations",
-                                              "couleurs") else "")
+            sp.setSuffix("°" if pid == "angle" else
+                         (" mm" if pid not in ("cases_x", "cases_y", "rangees",
+                                               "colonnes", "branches", "ondulations",
+                                               "couleurs") else ""))
             sp.setStyleSheet(style_champ)
-            form.addRow(_lbl(_fr_en(pfr, pen)), sp)
+            _lbl_p = _lbl(_fr_en(pfr, pen))
+            form.addRow(_lbl_p, sp)
             champs[pid] = sp
+            param_rows[pid] = (_lbl_p, sp)
         for (cid, cfr, cen, options, defaut) in e["choix"]:
             cb = QComboBox()
             tips = {}
@@ -488,6 +614,25 @@ class NeoGenPanel(QWidget):
                 form.addRow("", desc)
                 cb.currentIndexChanged.connect(
                     lambda _ix, _c=cb, _l=desc, _t=tips: _l.setText(_t.get(_c.currentData(), "")))
+        # Menu STYLE de texte (relief / gravé / lisse) : pilote le LIBELLÉ et la
+        # VISIBILITÉ du champ de valeur — « Hauteur du texte » en relief,
+        # « Profondeur » en gravé, champ MASQUÉ en lisse (rien à régler). Un seul
+        # nom, une seule logique, partout.
+        _style_cb = champs.get("style")
+        _relief_row = param_rows.get("relief") or param_rows.get("ep_texte")
+        if _style_cb is not None and _relief_row is not None:
+            _rl, _rs = _relief_row
+
+            def _sync_style(_ix=0, _cb=_style_cb, _lab=_rl, _sp=_rs):
+                st = _cb.currentData()
+                vis = (st != "lisse")
+                _lab.setVisible(vis)
+                _sp.setVisible(vis)
+                if vis:
+                    _lab.setText(_("neogen.text_depth") if st == "grave"
+                                 else _("neogen.text_height"))
+            _style_cb.currentIndexChanged.connect(_sync_style)
+            _sync_style()
         for (fid, ffr, fen, defaut) in e["flags"]:
             ch = QCheckBox(_fr_en(ffr, fen))
             ch.setChecked(defaut)
@@ -495,39 +640,57 @@ class NeoGenPanel(QWidget):
             ch.setStyleSheet(style_check)
             form.addRow("", ch)
             champs[fid] = ch
+        # Sélecteurs de COULEUR (objet, texte…) → objet bicolore : 2 slots à l'export
+        for (cid, cfr, cen, hexd) in e.get("couleurs", []):
+            btn_c = _ColorButton(hexd)
+            form.addRow(_lbl(_fr_en(cfr, cen)), btn_c)
+            champs[f"couleur_{cid}"] = btn_c
         if e["texte"] != "aucun":
+            # mode « lien » (URL, ex. QR code) : champ simple SANS police / espacement /
+            # relief-gravure — ces réglages ne veulent rien dire pour une adresse web.
+            _is_lien = (e["texte"] == "lien")
             le = QLineEdit()
-            le.setPlaceholderText(_("neogen.text_placeholder")
-                                  + (" *" if e["texte"] == "requis" else ""))
+            if _is_lien:
+                le.setPlaceholderText(_("neogen.link_placeholder"))
+                form.addRow(_lbl(_("neogen.link_label")), le)
+            else:
+                le.setPlaceholderText(_("neogen.text_placeholder")
+                                      + (" *" if e["texte"] == "requis" else ""))
+                form.addRow(_lbl(_("neogen.text_label")), le)
             le.setStyleSheet(style_champ)
-            form.addRow(_lbl(_("neogen.text_label")), le)
             champs["texte"] = le
-            cb_pol = QComboBox()
-            cb_pol.addItem(_("neogen.font_default"), None)
-            try:
-                from core.neogen.catalogue import polices_disponibles
-                for fam in polices_disponibles():
-                    cb_pol.addItem(fam, fam)
-            except Exception:
-                pass
-            cb_pol.setStyleSheet(style_champ)
-            form.addRow(_lbl(_("neogen.font_label")), cb_pol)
-            champs["police"] = cb_pol
-            sp_esp = QDoubleSpinBox()
-            sp_esp.setRange(0.0, 10.0)
-            sp_esp.setValue(0.0)
-            sp_esp.setSingleStep(0.5)
-            sp_esp.setDecimals(1)
-            sp_esp.setSuffix(" mm")
-            sp_esp.setStyleSheet(style_champ)
-            form.addRow(_lbl(_("neogen.spacing_label")), sp_esp)
-            champs["espacement"] = sp_esp
-            if not any(f[0] == "grave" for f in e["flags"]):
-                ch = QCheckBox(_("neogen.engraved"))
-                ch.setCursor(Qt.PointingHandCursor)
-                ch.setStyleSheet(style_check)
-                form.addRow("", ch)
-                champs["grave"] = ch
+            # Police / espacement / relief-gravure : uniquement pour du VRAI texte
+            # (pas pour un lien/URL).
+            if not _is_lien:
+                cb_pol = QComboBox()
+                cb_pol.addItem(_("neogen.font_default"), None)
+                try:
+                    from core.neogen.catalogue import polices_disponibles
+                    for fam in polices_disponibles():
+                        cb_pol.addItem(fam, fam)
+                except Exception:
+                    pass
+                cb_pol.setStyleSheet(style_champ)
+                form.addRow(_lbl(_("neogen.font_label")), cb_pol)
+                champs["police"] = cb_pol
+                sp_esp = QDoubleSpinBox()
+                sp_esp.setRange(0.0, 10.0)
+                sp_esp.setValue(0.0)
+                sp_esp.setSingleStep(0.5)
+                sp_esp.setDecimals(1)
+                sp_esp.setSuffix(" mm")
+                sp_esp.setStyleSheet(style_champ)
+                form.addRow(_lbl(_("neogen.spacing_label")), sp_esp)
+                champs["espacement"] = sp_esp
+                # Pas de case « gravé » si un menu de STYLE (relief/gravé/lisse) est
+                # déjà présent (sinon doublon contradictoire).
+                _has_style = any(c[0] == "style" for c in e["choix"])
+                if not any(f[0] == "grave" for f in e["flags"]) and not _has_style:
+                    ch = QCheckBox(_("neogen.engraved"))
+                    ch.setCursor(Qt.PointingHandCursor)
+                    ch.setStyleSheet(style_check)
+                    form.addRow("", ch)
+                    champs["grave"] = ch
         if e["image"]:
             # bouton PLEINE LARGEUR, même style visible que « Joindre un
             # logo » de la Création libre (avant : QPushButton sans style,
@@ -559,6 +722,7 @@ class NeoGenPanel(QWidget):
                     lbl_img.setText(fm.elidedText(Path(chemin).name,
                                                   Qt.ElideMiddle, 330))
                     champs["__image"] = chemin
+                    self._planifier_apercu_objet()   # aperçu direct dès l'image chargée
             btn_img.clicked.connect(_pick)
             v.addLayout(form)
             v.addSpacing(2)
@@ -645,19 +809,71 @@ class NeoGenPanel(QWidget):
         if pret:
             self._generer_catalogue(e, champs, self._btn_cat)
 
-    def _generer_catalogue(self, e: dict, champs: dict, btn: QPushButton):
+    @staticmethod
+    def _collecter_params(champs: dict) -> dict:
+        """Lit les valeurs courantes du formulaire → dict de paramètres."""
         params = {}
         for k, wdg in champs.items():
             if k == "__image":
                 params["image"] = wdg
             elif isinstance(wdg, QDoubleSpinBox):
                 params[k] = wdg.value()
+            elif isinstance(wdg, _ColorButton):
+                params[k] = wdg.hex
             elif isinstance(wdg, QComboBox):
                 params[k] = wdg.currentData()
             elif isinstance(wdg, QCheckBox):
                 params[k] = wdg.isChecked()
             elif isinstance(wdg, QLineEdit):
                 params[k] = wdg.text().strip()
+        return params
+
+    # ── Aperçu direct (comme la carte de visite) ──────────────────────────────
+    def _relier_apercu(self, champs: dict) -> None:
+        """Branche TOUS les widgets du formulaire sur l'aperçu en direct : dès qu'on
+        change une dimension, une couleur, le style… le viewer se met à jour."""
+        for wdg in champs.values():
+            if isinstance(wdg, QDoubleSpinBox):
+                wdg.valueChanged.connect(self._planifier_apercu_objet)
+            elif isinstance(wdg, _ColorButton):
+                wdg.changed.connect(self._planifier_apercu_objet)
+            elif isinstance(wdg, QComboBox):
+                wdg.currentIndexChanged.connect(self._planifier_apercu_objet)
+            elif isinstance(wdg, QCheckBox):
+                wdg.toggled.connect(self._planifier_apercu_objet)
+            elif isinstance(wdg, QLineEdit):
+                wdg.textChanged.connect(self._planifier_apercu_objet)
+
+    def _planifier_apercu_objet(self, *args) -> None:
+        """Débounce : regroupe les changements rapides avant de regénérer l'aperçu."""
+        if not getattr(self, "_ready", False):
+            return
+        if not hasattr(self, "_apercu_timer"):
+            from PySide6.QtCore import QTimer
+            self._apercu_timer = QTimer(self)
+            self._apercu_timer.setSingleShot(True)
+            self._apercu_timer.timeout.connect(self._lancer_apercu)
+        self._apercu_timer.start(250)
+
+    def _lancer_apercu(self) -> None:
+        e = getattr(self, "_entree_courante", None)
+        champs = getattr(self, "_champs_courant", None)
+        if not e or champs is None or getattr(self, "_carte_embedded", None) is not None:
+            return
+        params = self._collecter_params(champs)
+        # texte manquant → placeholder pour voir la forme ET les 2 couleurs (l'objet
+        # est bicolore dès qu'il porte du texte). Se met à jour dès qu'on tape.
+        if e["texte"] != "aucun" and not params.get("texte"):
+            params["texte"] = ("https://neoslice-ai.com" if e["texte"] == "lien"
+                               else "Texte")
+        if e["image"] and not params.get("image"):
+            return                       # pas d'image → pas d'aperçu (lithophanie…)
+        self._apercu_worker = _ApercuWorker(e["id"], params)
+        self._apercu_worker.pret.connect(self.apercu_objet)
+        self._apercu_worker.start()
+
+    def _generer_catalogue(self, e: dict, champs: dict, btn: QPushButton):
+        params = self._collecter_params(champs)
         if e["texte"] == "requis" and not params.get("texte"):
             self._statut.setText("⚠ " + _("neogen.text_required"))
             return
@@ -668,6 +884,7 @@ class NeoGenPanel(QWidget):
         self._statut.setText("⚙ " + _("neogen.building"))
         self._worker = _CatalogueWorker(e["id"], params)
         self._worker.fini.connect(self._sur_fini)
+        self._worker.fini_multi.connect(self._sur_fini_multi)
         self._worker.erreur.connect(self._sur_erreur)
         self._worker.start()
 
@@ -693,6 +910,14 @@ class NeoGenPanel(QWidget):
             self._btn_cat.setEnabled(True)
         self._statut.setText("✓ " + _("neogen.loaded_adjust_form"))
         self.piece_ready.emit(Path(chemin))
+
+    def _sur_fini_multi(self, scene, entree_id: str):
+        """Objet BICOLORE généré : route multicouleur (aperçu couleurs + 2 slots
+        conservés à l'export). Le panneau reste — on ajuste, on regénère."""
+        if hasattr(self, "_btn_cat"):
+            self._btn_cat.setEnabled(True)
+        self._statut.setText("✓ " + _("neogen.loaded_adjust_form"))
+        self.objet_multicouleur.emit(scene, entree_id)
 
     def _sur_erreur(self, msg: str):
         if hasattr(self, "_btn_cat"):

@@ -499,6 +499,10 @@ class CartePanel(QWidget):
             f"{pal['TEXT_PRIMARY']}; }}")
         bx.clicked.connect(self.close_requested)
         entete.addWidget(bx)
+        # En-tête (titre + ✕) masquable : inutile quand la carte est EMBARQUÉE dans
+        # la colonne neoGen (le combo affiche déjà « Carte de visite », pas de fermeture).
+        self._titre_lbl = titre
+        self._btn_x = bx
         root.addLayout(entete)
 
         # carte : format + couleur de base
@@ -756,6 +760,14 @@ class CartePanel(QWidget):
                                        f'Model "{nom}" deleted'))
         except Exception as exc:
             self.set_statut("⚠ " + str(exc)[:80])
+
+    def set_embedded(self, on: bool) -> None:
+        """Mode EMBARQUÉ (carte affichée dans la colonne neoGen sous les onglets) :
+        masque l'en-tête (titre + ✕) redondant. Hors mode embarqué, tout s'affiche."""
+        if hasattr(self, "_titre_lbl"):
+            self._titre_lbl.setVisible(not on)
+        if hasattr(self, "_btn_x"):
+            self._btn_x.setVisible(not on)
 
     def _planifier_apercu(self):
         self._debounce.start()

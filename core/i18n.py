@@ -59,6 +59,8 @@ _FR: dict[str, str] = {
     "neogen.free_failed":   "Je n'ai pas réussi à construire cette pièce — essayez de reformuler plus simplement (formes, dimensions).",
     "neogen.free_done":     "pièce créée sur mesure",
     "neogen.text_label":    "Texte",
+    "neogen.link_label":    "Lien",
+    "neogen.link_placeholder": "https://votre-site.fr/menu",
     "neogen.attach_photo":  "Joindre une photo (PNG / JPG)",
     "neogen.modify_btn":    "Modifier la pièce",
     "neogen.base_update":   "Mettre à jour la base",
@@ -67,6 +69,9 @@ _FR: dict[str, str] = {
     "neogen.base_done":     "Base {v} installée : {n} nouvelles recettes validées.",
     "neogen.font_label":    "Police",
     "neogen.spacing_label": "Espacement",
+    "neogen.pick_color":    "Choisir une couleur",
+    "neogen.text_height":   "Hauteur du texte",
+    "neogen.text_depth":    "Profondeur du texte",
     "neogen.tip.lithophanie": "À rétro-éclairer (lampe/veilleuse derrière) : le foncé devient épais, le clair fin. Plaque translucide, à imprimer en filament blanc/clair.",
     "neogen.tip.relief":    "À regarder directement (tableau, plaque déco) : le clair ressort en relief sur un socle plein. N'importe quelle couleur de filament.",
     "neogen.font_default":  "(par défaut)",
@@ -143,6 +148,7 @@ _FR: dict[str, str] = {
     "export.btn_anycubic":      "  Ouvrir dans Anycubic Slicer",
     "export.btn_snapmaker":     "  Ouvrir dans Snapmaker Orca",
     "export.btn_cura":          "  Ouvrir dans UltiMaker Cura",
+    "export.btn_flashprint":    "  Ouvrir dans FlashPrint",
     "export.btn_pdf":           "  Fiche filament PDF",
     "export.btn_close":         "Fermer",
 
@@ -178,18 +184,20 @@ _FR: dict[str, str] = {
     "analysis.orient_btn":  "↻  Appliquer l'orientation recommandée",
     "analysis.progress_init": "Initialisation...",
     "analysis.verdict_ok":  "✓  PRÊT À IMPRIMER",
-    "analysis.verdict_warn":"⚠  CONFIGURATION ADAPTÉE — CONTRÔLER DANS VOTRE SLICER",
-    "analysis.verdict_bad": "⛔  PIÈCE COMPLEXE — ATTENTION",
+    "analysis.verdict_warn":"✓  PRÊT — neoSlice a adapté les réglages pour vous",
+    "analysis.verdict_bad": "⚠  PIÈCE DÉLICATE — réglages adaptés, gardez un œil dessus",
+    "analysis.verdict_skip":"⚠  À VÉRIFIER — surplombs non analysés",
 
-    "analysis.status_floating":   "⛔ Régions flottantes — supports générés automatiquement",
-    "analysis.status_supp_req":   "⚠ Supports requis ({pct:.1f}% surplombs)",
-    "analysis.status_supp_mod":   "⚠ Surplombs modérés ({pct:.1f}%) — vérifier supports",
+    "analysis.status_floating":   "⚠ Géométrie flottante — supports générés, vérifiez le rendu",
+    "analysis.status_supp_req":   "✓ Supports ajoutés automatiquement ({pct:.1f}% de surplombs)",
+    "analysis.status_supp_mod":   "⚠ Quelques surplombs ({pct:.1f}%) — surveillez le résultat",
     "analysis.status_oh_ok":      "✓ Pas de surplombs significatifs",
-    "analysis.status_stab_low":   "⚠ Stabilité faible — brim ajouté à la configuration",
-    "analysis.status_stab_med":   "⚠ Stabilité modérée — brim conseillé",
-    "analysis.status_stab_ok":    "✓ Stable — brim non nécessaire",
-    "analysis.status_frag":       "⚠ Parois fines — min {min_t} mm (rec. {rec_t} mm)",
-    "analysis.status_flat":       "⚠ Pièce plate — risque warping",
+    "analysis.status_stab_low":   "✓ Brim ajouté pour l'adhérence (pièce peu stable)",
+    "analysis.status_stab_med":   "✓ Brim ajouté (stabilité moyenne)",
+    "analysis.status_stab_ok":    "✓ Stable — pas de brim nécessaire",
+    "analysis.status_stab_ok_flat": "✓ Stable",
+    "analysis.status_frag":       "⚠ Parois fines — min {min_t} mm (idéal ≥ {rec_t} mm)",
+    "analysis.status_flat":       "✓ Grande surface plate — brim ajouté (limite le warping)",
     "analysis.status_orient":     "↻ Orientation optimale : {label} (+{imp:.0f}%)",
     "analysis.orient_apply_fmt":  "↻  Appliquer — {label}  (+{imp:.0f}%)",
     "analysis.loading_label":     "◌  ANALYSE EN COURS",
@@ -231,6 +239,11 @@ _FR: dict[str, str] = {
     "viewer.orient_reset":      "↩  Réinitialiser l'orientation",
     "viewer.loading_orient":    "OPTIMISATION DE L'ORIENTATION...",
     "viewer.loading_analysis":  "ANALYSE DE LA PIÈCE EN COURS...",
+    "viewer.frag_toggle":       "Fragilité",
+    "viewer.frag_legend_title": "Fragilité par pièce :",
+    "viewer.frag_legend_solid": "solide",
+    "viewer.frag_legend_mid":   "un peu fragile",
+    "viewer.frag_legend_high":  "fragile",
 
     # ── IntentSelector ────────────────────────────────────────────────────────
     # Groupes
@@ -505,6 +518,23 @@ _FR: dict[str, str] = {
     "settings.slicer_anycubic": "Anycubic Slicer",
     "settings.slicer_snapmaker": "Snapmaker Orca",
     "settings.slicer_cura":     "UltiMaker Cura",
+    "settings.slicer_flashprint": "FlashPrint",
+    "selector.note_flashprint": "ⓘ À l'export, neoSlice dépose vos réglages directement "
+                                "dans FlashPrint sous forme de profil « neoSlice … ». "
+                                "Dans la fenêtre de tranchage (mode expert), choisissez "
+                                "Matériau « Materiau personnalisé » puis ce profil.",
+    "export.flashprint_profile_ok": "Profil « {name} » ajouté à FlashPrint. Ouvrez le 3MF "
+                                    "→ Commencer le tranchage → mode expert → Type Matériau "
+                                    "« Materiau personnalisé » → Profil de tranche « {name} » "
+                                    "→ Tranche.",
+    "export.flashprint_profile_fcfg": "Profil enregistré à côté du 3MF ({name}.fcfg). Dans "
+                                      "la fenêtre de tranchage (mode expert), cliquez "
+                                      "« Importer » et choisissez ce fichier, puis "
+                                      "sélectionnez-le comme Profil de tranche.",
+    "export.flashprint_supports": "Supports souhaités : dans FlashPrint, cliquez sur "
+                                  "Supports → Auto avant de trancher (FlashPrint les "
+                                  "génère dans la scène, un profil ne peut pas les "
+                                  "activer).",
     "settings.orient_suggest":  "Suggérer l'orientation optimale",
     "settings.sec_export":      "EXPORT",
     "settings.folder_ph":       "Dossier Téléchargements (par défaut)",
@@ -1378,6 +1408,8 @@ _EN: dict[str, str] = {
     "neogen.free_failed":   "I could not build this part — try rephrasing more simply (shapes, dimensions).",
     "neogen.free_done":     "custom part created",
     "neogen.text_label":    "Text",
+    "neogen.link_label":    "Link",
+    "neogen.link_placeholder": "https://your-site.com/menu",
     "neogen.attach_photo":  "Attach a photo (PNG / JPG)",
     "neogen.modify_btn":    "Modify the part",
     "neogen.base_update":   "Update object library",
@@ -1386,6 +1418,9 @@ _EN: dict[str, str] = {
     "neogen.base_done":     "Base {v} installed: {n} new validated recipes.",
     "neogen.font_label":    "Font",
     "neogen.spacing_label": "Letter spacing",
+    "neogen.pick_color":    "Pick a color",
+    "neogen.text_height":   "Text height",
+    "neogen.text_depth":    "Text depth",
     "neogen.tip.lithophanie": "To be backlit (lamp/night-light behind): dark = thick, light = thin. Translucent plate, print in white/light filament.",
     "neogen.tip.relief":    "To be viewed directly (picture, decorative plate): light areas rise as relief on a solid base. Any filament colour.",
     "neogen.font_default":  "(default)",
@@ -1463,6 +1498,7 @@ _EN: dict[str, str] = {
     "export.btn_anycubic":      "  Open in Anycubic Slicer",
     "export.btn_snapmaker":     "  Open in Snapmaker Orca",
     "export.btn_cura":          "  Open in UltiMaker Cura",
+    "export.btn_flashprint":    "  Open in FlashPrint",
     "export.btn_pdf":           "  Filament PDF sheet",
     "export.btn_close":         "Close",
 
@@ -1498,18 +1534,20 @@ _EN: dict[str, str] = {
     "analysis.orient_btn":  "↻  Apply recommended orientation",
     "analysis.progress_init": "Initializing...",
     "analysis.verdict_ok":  "✓  READY TO PRINT",
-    "analysis.verdict_warn":"⚠  CONFIGURATION ADAPTED — CHECK IN YOUR SLICER",
-    "analysis.verdict_bad": "⛔  COMPLEX PART — CAUTION",
+    "analysis.verdict_warn":"✓  READY — neoSlice adapted the settings for you",
+    "analysis.verdict_bad": "⚠  DELICATE PART — settings adapted, keep an eye on it",
+    "analysis.verdict_skip":"⚠  TO CHECK — overhangs not analysed",
 
-    "analysis.status_floating":   "⛔ Floating regions — supports generated automatically",
-    "analysis.status_supp_req":   "⚠ Supports required ({pct:.1f}% overhangs)",
-    "analysis.status_supp_mod":   "⚠ Moderate overhangs ({pct:.1f}%) — check supports",
+    "analysis.status_floating":   "⚠ Floating geometry — supports generated, check the result",
+    "analysis.status_supp_req":   "✓ Supports added automatically ({pct:.1f}% overhangs)",
+    "analysis.status_supp_mod":   "⚠ Some overhangs ({pct:.1f}%) — keep an eye on the result",
     "analysis.status_oh_ok":      "✓ No significant overhangs",
-    "analysis.status_stab_low":   "⚠ Low stability — brim added to configuration",
-    "analysis.status_stab_med":   "⚠ Moderate stability — brim advised",
-    "analysis.status_stab_ok":    "✓ Stable — brim not needed",
-    "analysis.status_frag":       "⚠ Thin walls — min {min_t} mm (rec. {rec_t} mm)",
-    "analysis.status_flat":       "⚠ Flat part — warping risk",
+    "analysis.status_stab_low":   "✓ Brim added for adhesion (part not very stable)",
+    "analysis.status_stab_med":   "✓ Brim added (moderate stability)",
+    "analysis.status_stab_ok":    "✓ Stable — no brim needed",
+    "analysis.status_stab_ok_flat": "✓ Stable",
+    "analysis.status_frag":       "⚠ Thin walls — min {min_t} mm (ideally ≥ {rec_t} mm)",
+    "analysis.status_flat":       "✓ Large flat surface — brim added (limits warping)",
     "analysis.status_orient":     "↻ Optimal orientation: {label} (+{imp:.0f}%)",
     "analysis.orient_apply_fmt":  "↻  Apply — {label}  (+{imp:.0f}%)",
     "analysis.loading_label":     "◌  ANALYZING",
@@ -1551,6 +1589,11 @@ _EN: dict[str, str] = {
     "viewer.orient_reset":      "↩  Reset orientation",
     "viewer.loading_orient":    "OPTIMIZING ORIENTATION...",
     "viewer.loading_analysis":  "ANALYZING PART...",
+    "viewer.frag_toggle":       "Fragility",
+    "viewer.frag_legend_title": "Fragility per part:",
+    "viewer.frag_legend_solid": "solid",
+    "viewer.frag_legend_mid":   "a bit fragile",
+    "viewer.frag_legend_high":  "fragile",
 
     # ── IntentSelector ────────────────────────────────────────────────────────
     "intent.group_quality":     "QUALITY",
@@ -1811,6 +1854,20 @@ _EN: dict[str, str] = {
     "settings.slicer_anycubic": "Anycubic Slicer",
     "settings.slicer_snapmaker": "Snapmaker Orca",
     "settings.slicer_cura":     "UltiMaker Cura",
+    "settings.slicer_flashprint": "FlashPrint",
+    "selector.note_flashprint": "ⓘ On export, neoSlice saves your settings straight "
+                                "into FlashPrint as a \"neoSlice …\" profile. In the "
+                                "slice window (expert mode), choose Material \"Custom "
+                                "material\" then that profile.",
+    "export.flashprint_profile_ok": "Profile \"{name}\" added to FlashPrint. Open the 3MF "
+                                    "→ Start slicing → expert mode → Material \"Custom "
+                                    "material\" → Slice profile \"{name}\" → Slice.",
+    "export.flashprint_profile_fcfg": "Profile saved next to the 3MF ({name}.fcfg). In the "
+                                      "slice window (expert mode), click \"Import\" and "
+                                      "pick this file, then select it as the slice profile.",
+    "export.flashprint_supports": "Supports wanted: in FlashPrint, click Supports → "
+                                  "Auto before slicing (FlashPrint generates them in "
+                                  "the scene — a profile cannot enable them).",
     "settings.orient_suggest":  "Suggest optimal orientation",
     "settings.sec_export":      "EXPORT",
     "settings.folder_ph":       "Downloads folder (default)",

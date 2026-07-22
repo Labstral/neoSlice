@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import trimesh
+from loguru import logger
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components as _scipy_cc
 
@@ -38,6 +39,18 @@ class OverhangResult:
     critical_face_mask: np.ndarray # masque booléen par face (filtré — pour métriques)
     has_floating_regions: bool     # composant mesh sans contact plateau
     display_mask: np.ndarray = None  # masque brut sans filtre pont — pour la visu couleur
+
+
+def _has_fast_ray_engine(mesh: trimesh.Trimesh) -> bool:
+    """True si trimesh dispose du moteur de rayons natif (embree/pyembree).
+
+    Sans lui, mesh.contains() retombe sur ray_triangle (pur-Python) — des
+    ordres de grandeur plus lent, à éviter sur les gros meshes denses.
+    """
+    try:
+        return "embree" in type(mesh.ray).__module__.lower()
+    except Exception:
+        return False
 
 
 def analyze_overhangs(
@@ -99,6 +112,44 @@ def analyze_overhangs(
     )
     disp_init = disp_init & ~on_plate
     mask     = mask     & ~on_plate
+
+    # ── 3bis. Faces SUPPORTÉES / internes ────────────────────────────────────
+    # Une face orientée vers le bas qui a de la MATIÈRE directement en dessous
+    # n'est PAS un vrai surplomb : dessous d'un module de QR posé sur sa plaque,
+    # faces internes d'un objet BICOLORE fusionné (texte + socle), etc. On sonde
+    # un point juste sous chaque candidate : s'il est DANS le solide → on l'exclut.
+    _cand = disp_init | mask
+    if _cand.any():
+        _idx = np.where(_cand)[0]
+        # mesh.contains() lance un rayon par sonde et le teste contre la
+        # géométrie : le coût ≈ (nb de sondes) × (faces traversées). Sur un
+        # mesh DENSE et organique (ex. figurine 112k faces, 14k faces orientées
+        # vers le bas) SANS moteur de rayons rapide (embree), ça représente des
+        # milliards d'opérations en pur-Python → l'analyse FREEZE plusieurs
+        # minutes. On borne donc le travail : au-delà du budget, on saute cette
+        # exclusion. Surcompter quelques surplombs internes est SANS danger
+        # (au pire un peu plus de supports, jamais moins) — un freeze, si.
+        # Avec un moteur natif (embree) on lance toujours : c'est rapide même
+        # sur des millions de rayons. Sans lui (ray_triangle pur-Python), on
+        # borne le travail pour ne jamais figer l'analyse.
+        _fast_ray = _has_fast_ray_engine(mesh)
+        _budget = 12_000_000
+        if _fast_ray or _idx.size * len(mesh.faces) <= _budget:
+            try:
+                _probes = face_centroids[_idx] + np.array([0.0, 0.0, -0.2])
+                _inside = mesh.contains(_probes)
+                _supported = np.zeros(len(_cand), dtype=bool)
+                _supported[_idx[np.asarray(_inside, dtype=bool)]] = True
+                disp_init = disp_init & ~_supported
+                mask      = mask      & ~_supported
+            except Exception:
+                pass
+        else:
+            logger.info(
+                f"Exclusion faces supportées ignorée — coût {_idx.size}×"
+                f"{len(mesh.faces)} au-dessus du budget (moteur rayons "
+                f"{'rapide' if _fast_ray else 'lent'})"
+            )
 
     # ── 4-6. Clustering scipy + filtre surface + ponts ───────────────────────
     # display_mask : filtre angulaire brut uniquement — pas de filtre pont/cluster.
@@ -298,8 +349,25 @@ def _detect_floating_regions(mesh: trimesh.Trimesh) -> bool:
     if len(components) <= 1:
         return False
 
-    for comp in components:
-        if float(comp.bounds[0][2]) > z_min + tol:
+    bounds = [c.bounds for c in components]
+    for i, cb in enumerate(bounds):
+        if float(cb[0][2]) <= z_min + tol:
+            continue                      # touche le plateau → posé
+        # Composant SURÉLEVÉ : n'est flottant QUE s'il n'est pas SUPPORTÉ par un
+        # autre corps directement en dessous. Cas typique : le texte/relief d'un
+        # objet BICOLORE est un corps séparé posé SUR le socle (il le chevauche)
+        # → surélevé mais parfaitement supporté, donc PAS flottant.
+        supported = False
+        for j, ob in enumerate(bounds):
+            if j == i:
+                continue
+            xy_overlap = (ob[0][0] <= cb[1][0] + tol and ob[1][0] >= cb[0][0] - tol and
+                          ob[0][1] <= cb[1][1] + tol and ob[1][1] >= cb[0][1] - tol)
+            # l'autre corps monte au moins jusqu'au bas du composant surélevé
+            if xy_overlap and float(ob[1][2]) >= float(cb[0][2]) - tol:
+                supported = True
+                break
+        if not supported:
             return True
 
     return False

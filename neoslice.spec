@@ -201,6 +201,13 @@ a = Analysis(
         'core.neogen.texte', 'core.neogen.goodies', 'core.neogen.logo',
         'core.neogen.objets', 'core.neogen.formes', 'core.neogen.formes2',
         'core.neogen.catalogue', 'core.neogen.libre', 'core.neogen.installation',
+        'core.neogen.qrcode_3d', 'segno',
+        # CRITIQUE : le catalogue charge ces modules via importlib.import_module
+        # (chaîne dynamique) → PyInstaller ne les voit PAS. Sans eux, générer un
+        # objet resto/mariage/boutique ou une lithophanie plante dans le build.
+        'core.neogen.formes3', 'core.neogen.pro_resto', 'core.neogen.pro_mariage',
+        'core.neogen.pro_boutique', 'core.neogen.relief_photo',
+        'core.neogen.bicolore', 'core.neogen.carte_visite',
         'mapbox_earcut', 'manifold3d', 'svgelements', 'cv2',
         'matplotlib.textpath', 'matplotlib.font_manager',
         'lxml.etree',

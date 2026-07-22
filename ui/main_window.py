@@ -45,6 +45,11 @@ from core.i18n import _
 from core.prefs import PREFS
 
 
+# Thermomap de fragilité : au-delà de ce nombre de pièces, on n'évalue pas la
+# fragilité pièce par pièce (coût de detect_fragility sur le thread principal).
+_MAX_FRAG_BARS_OBJECTS = 40
+
+
 # ── Alertes matériau × géométrie ─────────────────────────────────────────
 
 def _compute_material_warnings(
@@ -343,8 +348,13 @@ class AnalysisWorker(QObject):
                         else:
                             step = _rnd.choice((4, 5, 7))         # saut occasionnel
                         p = min(66, p + step)
+                        # Label MONOTONE : on avance de phase en phase au fil du %,
+                        # jamais en arrière ni en boucle. Chaque phase s'affiche une
+                        # seule fois, dans l'ordre (fini le _rnd.choice qui bouclait).
+                        _idx = min(len(_labels) - 1,
+                                   int((p - 12) / 54.0 * len(_labels)))
                         try:
-                            self.progress.emit(p, _rnd.choice(_labels))
+                            self.progress.emit(p, _labels[_idx])
                         except Exception:
                             break
                 _thp.Thread(target=_tick, daemon=True).start()
@@ -1370,8 +1380,10 @@ _SLICER_EXES = {
         "anycubic": [r"C:\Program Files\AnycubicSlicerNext\AnycubicSlicerNext.exe"],
         "snapmaker": [r"C:\Program Files\Snapmaker_Orca\snapmaker-orca.exe"],
         "cura": _CURA_EXES,
+        "flashprint": [r"C:\Program Files\FlashForge\FlashPrint 5\FlashPrint.exe",
+                       r"C:\Program Files (x86)\FlashForge\FlashPrint 5\FlashPrint.exe"],
     },
-    "darwin": {  # ouverts via `open -a <AppName>`
+    "darwin": {  # ouverts via `open -a <AppName>` (noms essayés dans l'ordre)
         "bambu": ["BambuStudio"],
         "orca":  ["OrcaSlicer"],
         "prusa": ["PrusaSlicer"],
@@ -1380,6 +1392,7 @@ _SLICER_EXES = {
         "anycubic": ["AnycubicSlicerNext"],
         "snapmaker": ["Snapmaker Orca"],
         "cura": ["UltiMaker Cura"],
+        "flashprint": ["FlashPrint 5", "FlashPrint"],
     },
 }
 
@@ -1397,10 +1410,10 @@ def _open_3mf_in_slicer(path: str, slicer: str) -> None:
             _os.startfile(path)            # repli : appli associée au .3mf
         elif _sys.platform == "darwin":
             apps = _SLICER_EXES["darwin"].get(slicer, [])
-            if apps:
-                _sp.run(["open", "-a", apps[0], path], check=False)
-            else:
-                _sp.run(["open", path], check=False)
+            for app in apps:                  # plusieurs noms de bundle possibles
+                if _sp.run(["open", "-a", app, path], check=False).returncode == 0:
+                    return
+            _sp.run(["open", path], check=False)
         else:
             _sp.run(["xdg-open", path], check=False)
     except Exception:
@@ -1423,7 +1436,8 @@ def _slicer_name() -> str:
               "elegoo": "settings.slicer_elegoo",
               "anycubic": "settings.slicer_anycubic",
               "snapmaker": "settings.slicer_snapmaker",
-              "cura": "settings.slicer_cura"}.get(sl, "settings.slicer_bambu"))
+              "cura": "settings.slicer_cura",
+              "flashprint": "settings.slicer_flashprint"}.get(sl, "settings.slicer_bambu"))
 
 
 def _coffee_icon():
@@ -1861,7 +1875,9 @@ class MainWindow(QMainWindow):
                      and self._right_scroll.widget() is _panel)
             neuf = NeoGenPanel()
             neuf.importer_etat(etat)
-            neuf.piece_ready.connect(self._on_stl_dropped)
+            neuf.piece_ready.connect(self._charger_objet_neogen_mono)
+            neuf.objet_multicouleur.connect(self._charger_objet_multicouleur)
+            neuf.apercu_objet.connect(self._apercu_neogen)
             neuf.close_requested.connect(self._show_params_panel)
             if actif:
                 self._right_scroll.takeWidget()
@@ -1956,11 +1972,29 @@ class MainWindow(QMainWindow):
         panneau neoGen : le viewer reste visible en entier pendant qu'on crée
         et qu'on itère sur une pièce. Instance réutilisée -> le contexte de
         modification (pièce en cours) survit aux allers-retours."""
+        # ── Gating Pro (défense en profondeur) ──────────────────────────────
+        # neoGen est une fonctionnalité Pro. Le bouton est déjà masqué hors Pro,
+        # mais on VERROUILLE aussi ici : aucun chemin (raccourci, carte, appel
+        # interne) ne doit ouvrir neoGen sans licence Pro. Non-Pro → paywall.
+        from core import licensing
+        if not licensing.est_pro():
+            self._viewer.masquer_sphere_pour_modal(True)
+            try:
+                from ui.components.paywall_dialog import PaywallDialog
+                PaywallDialog(self).exec()
+            finally:
+                self._viewer.masquer_sphere_pour_modal(False)
+            if not licensing.est_pro():
+                return
+            self._topbar.refresh_pro()
+
         from ui.components.neogen_dialog import NeoGenPanel
         panel = getattr(self, "_neogen_panel", None)
         if panel is None:
             panel = NeoGenPanel()
-            panel.piece_ready.connect(self._on_stl_dropped)
+            panel.piece_ready.connect(self._charger_objet_neogen_mono)
+            panel.objet_multicouleur.connect(self._charger_objet_multicouleur)
+            panel.apercu_objet.connect(self._apercu_neogen)
             panel.close_requested.connect(self._show_params_panel)
             panel.ouvrir_carte.connect(self._open_carte)   # depuis Personnalisation
             self._neogen_panel = panel
@@ -1973,10 +2007,13 @@ class MainWindow(QMainWindow):
         self._topbar.set_new_enabled(True)     # « Nouvelle pièce » actif dans neoGen
         if hasattr(panel, "refresh_theme"):
             panel.refresh_theme()              # thème courant (titres/onglets)
+        if hasattr(panel, "_planifier_apercu_objet"):
+            panel._planifier_apercu_objet()    # aperçu de l'objet courant à l'ouverture
 
     def _open_carte(self):
-        """Bascule la colonne de droite vers le personnalisateur de carte de
-        visite + met le viewer en VUE DE DESSUS sur la carte (à plat)."""
+        """Carte de visite EMBARQUÉE inline dans la colonne neoGen (sous les onglets
+        Rechercher/Bibliothèque) + viewer en vue de dessus sur la carte (à plat).
+        Le panneau carte est créé/câblé une fois puis réutilisé."""
         from ui.components.carte_visite_panel import CartePanel
         panel = getattr(self, "_carte_panel", None)
         if panel is None:
@@ -1990,16 +2027,13 @@ class MainWindow(QMainWindow):
             self._viewer.element_selectionne.connect(panel.surligner_element)
             # touche Suppr sur un élément sélectionné -> le supprimer
             self._viewer.element_suppr_demande.connect(panel.supprimer_element)
-            # fermeture (✕) : revenir au panneau neoGen (la carte vient de
-            # Personnalisation), pas aux paramètres
-            panel.close_requested.connect(self._open_neogen_depuis_carte)
             self._carte_panel = panel
-        # « Ouvrir l'éditeur » doit TOUJOURS afficher l'éditeur (jamais rester
-        # sans effet). Si déjà affiché, on se contente de rafraîchir l'aperçu.
-        if self._right_scroll.widget() is not panel:
-            self._right_scroll.takeWidget()
-            self._right_scroll.setWidget(panel)
-            self._right_scroll.setFixedWidth(400)
+        panel.set_embedded(True)               # masque en-tête (titre + ✕) : inline
+        # Embarquer dans le panneau neoGen (garde les onglets visibles). neoGen est
+        # forcément affiché (la carte est sélectionnée depuis sa Bibliothèque).
+        neogen = getattr(self, "_neogen_panel", None)
+        if neogen is not None:
+            neogen.embed_carte(panel)
         self._topbar.set_new_enabled(True)     # « Nouvelle pièce » actif sur la carte
         panel.refresh_theme()                  # thème courant (évite labels invisibles)
         # Ré-initialisation PROPRE du viewer en mode carte : sans ça, si le
@@ -2008,6 +2042,10 @@ class MainWindow(QMainWindow):
         # ré-affichage → « rien ne se passe » au 2e « Ouvrir l'éditeur ».
         try:
             self._viewer.quitter_mode_carte()
+            # Retirer TOUT DE SUITE l'ancien objet de la colonne de gauche :
+            # l'aperçu de la carte arrive de façon asynchrone, sans ça on verrait
+            # l'ancienne pièce pendant qu'on édite la carte (incohérent).
+            self._viewer.vider_pour_carte()
         except Exception:
             pass
         panel._planifier_apercu()              # (re)génère l'aperçu courant
@@ -2071,19 +2109,101 @@ class MainWindow(QMainWindow):
             if panel:
                 panel.set_statut("⚠ " + _("carte.export_err", msg=str(exc)[:80]))
             return
-        # Quitter l'éditeur de carte + rendre la colonne aux paramètres, puis
-        # charger la pièce dans le pipeline normal (analyse, intention, export).
+        # Charger la carte dans le pipeline normal (analyse, intention, export) MAIS
+        # GARDER le panneau neoGen (éditeur de carte) visible : la colonne ne bascule
+        # aux paramètres qu'en générant la config (bouton bas de la colonne gauche).
         try:
             self._viewer.quitter_mode_carte()
         except Exception:
             pass
-        self._show_params_panel()
         self._on_stl_dropped(Path(chemin))
+        self._reafficher_neogen_apres_generation()
         # APRÈS _on_stl_dropped (qui remet _carte_export_spec à None) : mémorise la
         # spec colorée pour que l'export final reconstruise le multicouleur.
         self._carte_export_spec = carte_spec
         if panel:
             panel.set_statut("✓ " + _("carte.dans_scene"))
+
+    def _charger_objet_multicouleur(self, scene, entree_id: str):
+        """Objet neoGen BICOLORE (QR, texte objet+texte…) : on charge l'aperçu
+        FUSIONNÉ dans le pipeline normal (analyse, paramètres, export) puis on
+        mémorise la scène colorée. L'export reconstruit alors un vrai 3MF à
+        2 slots (build_multicouleur) et la fenêtre d'export affiche les 2 couleurs
+        (from_scene). Même mécanique que la carte de visite."""
+        import copy
+        import tempfile
+        import trimesh
+        from core.neogen.catalogue import PAR_ID
+        try:
+            bodies = list(scene.geometry.values())
+            fused = trimesh.util.concatenate(bodies)
+            tmp = Path(tempfile.gettempdir()) / f"neogen_{entree_id}.stl"
+            fused.export(tmp)
+        except Exception:
+            logger.exception("Préparation objet bicolore échouée")
+            return
+        e = PAR_ID.get(entree_id, {})
+        nom = e.get("fr", entree_id)
+        couleurs = []                               # ordre des corps (fond → texte/modules)
+        for g in bodies:
+            try:
+                c = g.visual.face_colors[0][:3]
+                couleurs.append("#{:02X}{:02X}{:02X}".format(
+                    int(c[0]), int(c[1]), int(c[2])))
+            except Exception:
+                pass
+        # NE PAS fermer le panneau neoGen : on garde le formulaire visible pour
+        # itérer sur l'objet (modifier + regénérer) sans le rouvrir. La colonne
+        # ne bascule aux paramètres que lorsqu'on valide l'intention (à gauche).
+        self._on_stl_dropped(tmp)                   # remet _neogen_scene à None…
+        self._neogen_scene = (copy.deepcopy(scene), couleurs, nom)   # …puis on mémorise
+        self._reafficher_neogen_apres_generation()
+
+    def _recolorer_viewer_si_multicouleur(self):
+        """Après l'analyse d'un objet neoGen/carte bicolore, remet ses COULEURS dans
+        le viewer (le pipeline affiche sinon un mesh gris + surplombs). Ne touche ni
+        l'analyse ni l'export : ceux-ci utilisent _neogen_scene / _carte_export_spec
+        et la fenêtre de couleurs (from_scene / from_carte)."""
+        try:
+            ng = getattr(self, "_neogen_scene", None)
+            if ng is not None:
+                self._viewer.apercu_neogen(ng[0], garder_camera=True)
+                return
+            cs = getattr(self, "_carte_export_spec", None)
+            if cs is not None:
+                from core.neogen.carte_visite import construire as _construire_carte
+                scene, _cs = _construire_carte(cs)
+                self._viewer.apercu_neogen(scene, garder_camera=True)
+        except Exception:
+            logger.debug("recolorisation viewer multicouleur ignorée", exc_info=True)
+
+    def _apercu_neogen(self, piece):
+        """Aperçu direct d'un objet neoGen (sélection / réglage) dans le viewer —
+        comme la carte de visite. Purement visuel : n'entre pas dans le pipeline
+        (l'analyse et l'export ne se font qu'après « Générer »)."""
+        try:
+            self._viewer.apercu_neogen(piece)
+        except Exception:
+            logger.debug("aperçu neoGen ignoré", exc_info=True)
+
+    def _charger_objet_neogen_mono(self, path):
+        """Objet neoGen MONO-couleur généré : charge dans le pipeline MAIS garde le
+        panneau neoGen ouvert (itération sans rouvrir)."""
+        self._on_stl_dropped(Path(path))
+        self._reafficher_neogen_apres_generation()
+
+    def _reafficher_neogen_apres_generation(self):
+        """Après une génération neoGen, GARDE (ou redonne) le panneau neoGen comme
+        widget visible de la colonne de droite : on peut ainsi modifier l'objet et
+        le regénérer sans rouvrir neoGen (demande d'Emmanuel)."""
+        panel = getattr(self, "_neogen_panel", None)
+        if panel is None or not hasattr(self, "_right_scroll"):
+            return
+        if self._right_scroll.widget() is not panel:
+            self._right_scroll.takeWidget()
+            self._right_scroll.setWidget(panel)
+            self._right_scroll.setFixedWidth(400)
+        self._topbar.set_new_enabled(True)
 
     def _show_params_panel(self):
         """Rend la colonne de droite aux paramètres générés (état normal)."""
@@ -2337,11 +2457,16 @@ class MainWindow(QMainWindow):
                 return False
             from core.export.color_breakdown import compute as _compute_breakdown
             _carte_spec = getattr(self, "_carte_export_spec", None)
+            _ng_scene = getattr(self, "_neogen_scene", None)
             if _carte_spec is not None:
                 # Carte : un slot par couleur choisie (l'aperçu est fusionné, donc
                 # _threemf_data ne porte pas les slots).
                 from core.export.color_breakdown import from_carte as _bd_carte
                 breakdown = _bd_carte(_carte_spec, config)
+            elif _ng_scene is not None:
+                # Objet neoGen bicolore (QR, texte…) : un slot par couleur de la scène.
+                from core.export.color_breakdown import from_scene as _bd_scene
+                breakdown = _bd_scene(_ng_scene[0], config)
             else:
                 breakdown = _compute_breakdown(self._threemf_data, self._mesh, a, config)
             if breakdown.total_g <= 0:
@@ -2971,9 +3096,13 @@ class MainWindow(QMainWindow):
         self._current_config = None
         self._current_selection = None
         self._carte_export_spec = None   # tout nouveau fichier annule le mode carte multicouleur
+        self._neogen_scene = None        # …et le mode objet neoGen bicolore (QR, texte…)
         try:
             self._params_preview.reset()
             self._analysis_panel.reset()
+            # APRÈS reset() (qui remet le libellé à « STL ») : afficher le type
+            # réel du fichier chargé (STL / OBJ / 3MF) dans l'étape 2.
+            self._analysis_panel.set_file_kind(path.suffix.lstrip(".").upper())
         except Exception:
             pass
 
@@ -3157,10 +3286,59 @@ class MainWindow(QMainWindow):
         self._intent_selector.auto_select_from_analysis(report)
 
         _is_multipart = self._threemf_data is not None and self._threemf_data.object_count > 1
+
+        # ── Vue par défaut = SURPLOMBS ; fragilité par objet = optionnelle ───
+        # La coloration surplombs reste la vue de BASE. Pour un plateau multi-objets
+        # (hors assemblage couleur), on PRÉPARE en plus la thermomap de fragilité
+        # (chaque pièce teintée selon SA fragilité) et on affiche une case à cocher
+        # dans le viewer : l'utilisateur bascule entre surplombs et fragilité.
+        # Ainsi on ne masque JAMAIS les surplombs sans action explicite.
+        # Assemblage COULEUR (slot_count > 1) = 1 objet physique en N parts → exclu.
+        # Dès qu'un objet comporte PLUSIEURS parties distinctes, on prépare la
+        # thermomap de fragilité et on affiche la case à cocher — quelle que soit
+        # la SOURCE des parties (fichier 3MF multi-objets, objet neoGen bicolore,
+        # objet neoGen mono-couleur ou STL avec des corps séparés). Le bouton
+        # apparaît même si rien n'est très fragile (couleurs alors surtout vertes) :
+        # c'est le SEUL accès à la fragilité par pièce quand la jauge est neutralisée.
+        # Exclu : les assemblages COULEUR 3MF (slot>1 = 1 objet physique superposé).
+        _is_color_asm = (self._threemf_data is not None
+                         and self._threemf_data.slot_count > 1)
+        _ng_scene = getattr(self, "_neogen_scene", None)
+        _frag_sev = None
+        _frag_restore = None
+        try:
+            if _is_color_asm:
+                pass  # 1 objet physique multicolore → pas de thermomap par « partie »
+            elif _is_multipart:                          # 3MF multi-objets
+                _s, _mx = self._build_multipart_fragility_severity()
+                if _mx >= 0.0:
+                    _frag_sev = _s
+            elif _ng_scene is not None:                  # objet neoGen bicolore
+                _s, _mx, _n = self._build_neogen_fragility_severity()
+                if _s is not None:
+                    _frag_sev = _s
+                    _frag_restore = self._recolorer_viewer_si_multicouleur
+            else:                                        # mesh unique à corps séparés
+                _s, _mx = self._build_bodysplit_fragility_severity()
+                if _s is not None:
+                    _frag_sev = _s
+        except Exception:
+            logger.exception("Préparation thermomap fragilité échouée")
+            _frag_sev = None
+
+        if _frag_sev is not None:
+            # Case « Fragilité » (décochée par défaut) + jauge FRAGILITÉ neutralisée
+            # (une valeur globale serait incohérente entre parties de fragilités
+            # différentes ; la lecture se fait par pièce via la thermomap).
+            self._viewer.set_fragility_data(_frag_sev, restore_cb=_frag_restore)
+            self._analysis_panel.set_fragility_disabled()
+        else:
+            self._viewer.clear_fragility_data()
+
         # Pour les 3MF multi-objets : toujours coloriser — l'analyse du mesh combiné
         # sous-estime les surplombs (plate_tol trop grande car z_height = hauteur de la plus
         # grande pièce, excluant les surplombs des petites pièces).
-        if _is_multipart or report.overhang_severity > 0.0 or report.support_needed or report.overhang_ratio > 0.0:
+        if (_is_multipart or report.overhang_severity > 0.0 or report.support_needed or report.overhang_ratio > 0.0):
             try:
                 if _is_multipart:
                     colors = self._build_multipart_overhang_colors()
@@ -3189,12 +3367,13 @@ class MainWindow(QMainWindow):
 
         self._viewer.start_auto_rotate()
 
-        # Barres de fragilité flottantes pour les 3MF multi-groupes
-        if self._threemf_data is not None and self._threemf_data.plate_count > 1:
-            try:
-                self._show_fragility_bars_multipart()
-            except Exception:
-                logger.exception("Barres fragilité multipart échouées")
+        # Objet neoGen / carte MULTICOULEUR : réafficher les COULEURS choisies dans
+        # le viewer (au lieu du gris + surplombs) — l'analyse et l'export restent
+        # intacts (ils s'appuient sur _neogen_scene / _carte_export_spec).
+        self._recolorer_viewer_si_multicouleur()
+
+        # (La fragilité par objet est désormais montrée par la THERMOMAP ci-dessus
+        # — chaque pièce teintée selon sa fragilité — au lieu de barres flottantes.)
 
         oh_pct = report.overhang_severity * 100
         oh_tag = _("status.oh_tag", pct=oh_pct) if oh_pct > 0.1 else ""
@@ -3270,88 +3449,127 @@ class MainWindow(QMainWindow):
 
         return np.vstack(all_colors) if all_colors else np.zeros((len(self._mesh.faces), 4), dtype=np.uint8)
 
-    def _show_fragility_bars_multipart(self) -> None:
-        """Calcule la fragilité par groupe de pièces et affiche les barres flottantes."""
-        import math, numpy as np
+    def _build_multipart_fragility_severity(self):
+        """Sévérité de fragilité PAR FACE (uniforme par objet) pour la thermomap.
+
+        Chaque objet est évalué séparément (detect_fragility) ; toutes ses faces
+        reçoivent sa sévérité. L'alignement des faces sur le mesh combiné du viewer
+        suit EXACTEMENT `_build_multipart_overhang_colors` (correction viewer_fc).
+        Retourne (severity_par_face, max_severity). max=-1 si non calculable/coûteux.
+        """
         from core.geometry.fragility_detector import detect_fragility
+
+        td = self._threemf_data
+        if td is None or not td.objects:
+            return np.zeros(len(self._mesh.faces), dtype=np.float32), -1.0
+        # Trop d'objets → coût de detect_fragility par pièce prohibitif (main thread)
+        if len(td.objects) > _MAX_FRAG_BARS_OBJECTS:
+            return np.zeros(len(self._mesh.faces), dtype=np.float32), -1.0
+
+        _nz = float(getattr(self, "_current_nozzle_diameter", 0.4))
+        _raw_fc = [len(o.mesh.faces) for o in td.objects]
+        _min_fc = min(_raw_fc) if _raw_fc else 0
+
+        blocks = []
+        max_sev = 0.0
+        for obj in td.objects:
+            orig_fc = len(obj.mesh.faces)
+            dev = abs(orig_fc - _min_fc) / max(_min_fc, 1) if _min_fc > 0 else 0
+            viewer_fc = _min_fc if (dev > 0 and dev < 0.05) else orig_fc
+            try:
+                m = obj.mesh.copy()
+                if not np.allclose(obj.transform, np.eye(4)):
+                    m.apply_transform(obj.transform)
+                m.apply_translation([0.0, 0.0, -float(m.bounds[0][2])])
+                sev = float(detect_fragility(m, nozzle_diameter_mm=_nz).severity)
+            except Exception:
+                sev = 0.0
+            max_sev = max(max_sev, sev)
+            blocks.append(np.full(viewer_fc, sev, dtype=np.float32))
+
+        sev_arr = np.concatenate(blocks) if blocks else np.zeros(0, dtype=np.float32)
+        n = len(self._mesh.faces)
+        if len(sev_arr) != n:
+            if len(sev_arr) > n:
+                sev_arr = sev_arr[:n]
+            else:
+                sev_arr = np.concatenate(
+                    [sev_arr, np.zeros(n - len(sev_arr), dtype=np.float32)])
+        return sev_arr, max_sev
+
+    def _build_neogen_fragility_severity(self):
+        """Sévérité de fragilité PAR PARTIE d'un objet neoGen (socle, texte,
+        modules…). L'objet est chargé FUSIONNÉ ; l'ordre des faces suit la
+        concaténation des corps de la scène (préservé par load_stl). Alignement
+        STRICT sur self._mesh (sinon on abandonne, aucune coloration erronée).
+        Retourne (severity, max_sev, n_parts) ; severity=None si non applicable."""
         import trimesh as _trimesh
-
-        td  = self._threemf_data
-        objs = td.objects
-
-        # ── Grouper les objets par grille spatiale (même algo que _add_multipart_plates) ──
-        orig_pos = [[float(o.transform[0, 3]), float(o.transform[1, 3])] for o in objs]
-
-        groups: dict[tuple, list[int]] = {}
-        for grid in (256, 300, 350, 400, 500):
-            groups = {}
-            for i, (x, y) in enumerate(orig_pos):
-                key = (math.floor(x / grid), math.floor(y / grid))
-                groups.setdefault(key, []).append(i)
-            if len(groups) == td.plate_count:
-                break
-
-        if len(groups) < 2:
-            return  # pas assez de groupes pour les barres
-
-        # Transforms Bambu appliqués — pour le calcul de fragilité (espace absolu)
-        transformed = []
-        for o in objs:
-            m = o.mesh.copy()
-            if not np.allclose(o.transform, np.eye(4)):
-                m.apply_transform(o.transform)
-            transformed.append(m)
-
-        # Centres viewer-space précalculés par le viewer lors du rendu (post-arrange + centrage)
-        _viewer_obj_bounds = getattr(self._viewer, "_object_viewer_bounds", [])
-
-        bars = []
-        for pid, (tile, idxs) in enumerate(groups.items()):
-            # Mesh du groupe (transforms Bambu appliqués, positions absolues)
-            group_meshes = [transformed[i] for i in idxs]
-            group_combined = _trimesh.util.concatenate(group_meshes)
-
-            # Fragilité — normaliser Z_min → 0
+        from core.geometry.fragility_detector import detect_fragility
+        ng = getattr(self, "_neogen_scene", None)
+        if ng is None or self._mesh is None:
+            return None, -1.0, 0
+        try:
+            bodies = [g for g in ng[0].geometry.values()
+                      if isinstance(g, _trimesh.Trimesh)]
+        except Exception:
+            return None, -1.0, 0
+        if len(bodies) < 2:
+            return None, -1.0, len(bodies)
+        _nz = float(getattr(self, "_current_nozzle_diameter", 0.4))
+        blocks, max_sev = [], 0.0
+        for b in bodies:
             try:
-                nozzle_d = float(getattr(self, "_current_nozzle_diameter", 0.4))
-                group_combined.apply_translation(
-                    [0.0, 0.0, -float(group_combined.bounds[0][2])]
-                )
-                fr = detect_fragility(group_combined, nozzle_diameter_mm=nozzle_d)
-                score = float(fr.severity)
+                bb = b.copy()
+                bb.apply_translation([0.0, 0.0, -float(bb.bounds[0][2])])
+                sev = float(detect_fragility(bb, nozzle_diameter_mm=_nz).severity)
             except Exception:
-                score = 0.0
+                sev = 0.0
+            max_sev = max(max_sev, sev)
+            blocks.append(np.full(len(b.faces), sev, dtype=np.float32))
+        sev_arr = np.concatenate(blocks)
+        if len(sev_arr) != len(self._mesh.faces):
+            logger.info(
+                f"[neoGen frag] faces {len(sev_arr)} ≠ mesh {len(self._mesh.faces)} "
+                f"→ thermomap par partie ignorée (alignement non garanti)")
+            return None, -1.0, len(bodies)
+        return sev_arr, max_sev, len(bodies)
 
-            # Position viewer-space : centroïde des bounds des objets du groupe.
-            # _object_viewer_bounds est stocké par le viewer après arrange + centrage global,
-            # ce qui garantit l'alignement parfait avec les acteurs affichés.
+    def _build_bodysplit_fragility_severity(self):
+        """Sévérité par CORPS DISJOINT d'un mesh unique — pour TOUT objet à
+        plusieurs pièces séparées : neoGen mono-couleur (boîte + couvercle,
+        supports, jeux de pièces…), STL/OBJ externes multi-pièces. Chaque
+        composante connexe = une partie ; alignement par indices de faces
+        d'origine (donc exact, même si l'ordre change). Retourne (severity, max)
+        ou (None, -1) si non applicable (< 2 corps, trop de corps, mesh énorme)."""
+        from trimesh.graph import connected_components
+        from core.geometry.fragility_detector import detect_fragility
+        m = self._mesh
+        if m is None:
+            return None, -1.0
+        nf = len(m.faces)
+        if nf == 0 or nf > 250_000:      # coût de detect_fragility par corps
+            return None, -1.0
+        try:
+            comps = [np.asarray(c) for c
+                     in connected_components(m.face_adjacency, nodes=np.arange(nf))
+                     if len(c) > 0]
+        except Exception:
+            return None, -1.0
+        if len(comps) < 2 or len(comps) > _MAX_FRAG_BARS_OBJECTS:
+            return None, -1.0
+        _nz = float(getattr(self, "_current_nozzle_diameter", 0.4))
+        sev = np.zeros(nf, dtype=np.float32)
+        max_sev = 0.0
+        for idx in comps:
             try:
-                valid = [_viewer_obj_bounds[i] for i in idxs if i < len(_viewer_obj_bounds)]
-                if not valid:
-                    raise ValueError("no viewer bounds for group")
-                # Barycentre de l'union des bounds — correct même si le groupe
-                # mélange objets de tailles très différentes (ex: boîte + sphère)
-                cx = (min(v["xmin"] for v in valid) + max(v["xmax"] for v in valid)) / 2
-                cy = (min(v["ymin"] for v in valid) + max(v["ymax"] for v in valid)) / 2
-                cz = max(v["cz"] for v in valid)
+                sub = m.submesh([idx], append=True)
+                sub.apply_translation([0.0, 0.0, -float(sub.bounds[0][2])])
+                s = float(detect_fragility(sub, nozzle_diameter_mm=_nz).severity)
             except Exception:
-                b = group_combined.bounds
-                cx = (float(b[0][0]) + float(b[1][0])) / 2
-                cy = (float(b[0][1]) + float(b[1][1])) / 2
-                cz = float(b[1][2])
-
-            bars.append({
-                "cx": cx, "cy": cy, "cz": cz,
-                "score": score,
-                "label": "Fragilité",
-            })
-
-        self._viewer.show_fragility_bars(bars)
-
-        # Mettre à jour la jauge principale — mode "indépendant par lot"
-        max_score = max((b["score"] for b in bars), default=0.0)
-        if hasattr(self, "_analysis_panel"):
-            self._analysis_panel.set_fragility_independent(max_score)
+                s = 0.0
+            max_sev = max(max_sev, s)
+            sev[idx] = s
+        return sev, max_sev
 
     def _on_analysis_error(self, message: str):
         self._analysis_timeout.stop()
@@ -3521,6 +3739,24 @@ class MainWindow(QMainWindow):
                     self._statusbar.set_message(_("status.export_ok_warn", msg=result_msg), AMBER)
                 return
 
+            # OBJET neoGen BICOLORE (QR, texte objet+texte…) : vrai 3MF à 2 slots
+            # (un corps par couleur), au format du slicer de sortie choisi.
+            _ng_scene = getattr(self, "_neogen_scene", None)
+            if _ng_scene is not None:
+                from core.export.carte_multicouleur import build_multicouleur
+                _scene, _couleurs, _nom = _ng_scene
+                path = build_multicouleur(
+                    _scene, _couleurs, config, Path(output_path),
+                    self._current_printer, self._current_filament, nozzle_mm, nom=_nom)
+                logger.info(f"3MF objet bicolore exporté : {path}")
+                selection = getattr(self, "_current_selection", None)
+                self._show_success_dialog(config, selection, path)
+                if ok:
+                    self._statusbar.set_message(_("status.export_ok"), TELE_GREEN)
+                else:
+                    self._statusbar.set_message(_("status.export_ok_warn", msg=result_msg), AMBER)
+                return
+
             # Pour les 3MF en entrée : injecter les paramètres dans le fichier original.
             # NE PAS reconstruire le 3MF depuis zéro — ça perd la structure (modifier_part,
             # components, metadata) et les Generic-Cubes deviennent des solides dans BS.
@@ -3531,6 +3767,8 @@ class MainWindow(QMainWindow):
 
             from core.prefs import PREFS as _PREFS
             from data.printers import is_catalogue_model as _is_cat_model
+            # plateau choisi (curr_bed_type Bambu/Orca) — cohérent avec l'imprimante
+            _plate = self._filament_selector.current_plate_type()
             if _PREFS.get("slicer_output", "bambu") == "prusa":
                 # Sortie PrusaSlicer : format 3MF différent → toujours reconstruire depuis le mesh
                 from core.export.prusa_3mf_builder import PrusaThreeMFBuilder
@@ -3554,6 +3792,24 @@ class MainWindow(QMainWindow):
                     filament_ui_name=self._current_filament,
                     nozzle_diameter_mm=nozzle_mm,
                 )
+            elif _PREFS.get("slicer_output", "bambu") == "flashprint":
+                # Sortie FlashPrint (FlashForge) : 3MF géométrie + profil de réglages
+                # déposé directement dans ~/.FlashPrint5 (+ .fcfg de secours à côté).
+                from core.export.flashprint_builder import FlashPrintBuilder
+                _fpb = FlashPrintBuilder()
+                path = _fpb.build(
+                    mesh=self._mesh,
+                    config=config,
+                    output_path=Path(output_path),
+                    printer_ui_name=self._current_printer,
+                    filament_ui_name=self._current_filament,
+                    nozzle_diameter_mm=nozzle_mm,
+                )
+                # consommé par le dialogue de succès (profil déposé ou .fcfg)
+                self._flashprint_export_info = {
+                    "name": _fpb.last_profile_name,
+                    "installed": _fpb.last_profile_installed,
+                }
             elif _is_3mf_input and not _is_cat_model(self._current_printer):
                 # Injecter dans le 3MF source UNIQUEMENT pour une Bambu Lab : le 3MF
                 # source est alors cohérent. Pour une imprimante du CATALOGUE
@@ -3568,6 +3824,7 @@ class MainWindow(QMainWindow):
                     printer_ui_name=self._current_printer,
                     filament_ui_name=self._current_filament,
                     nozzle_diameter_mm=nozzle_mm,
+                    plate_type=_plate,
                 )
             else:
                 path = self._tmf_builder.build(
@@ -3577,6 +3834,7 @@ class MainWindow(QMainWindow):
                     printer_ui_name=self._current_printer,
                     filament_ui_name=self._current_filament,
                     nozzle_diameter_mm=nozzle_mm,
+                    plate_type=_plate,
                 )
             logger.info(f"3MF exporté : {path}")
 
@@ -3634,17 +3892,29 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(_sep())
 
-        # ── Action requise ──
-        action_lbl = QLabel("⚠   ACTION REQUISE DANS BAMBU STUDIO")
+        # ── Action requise (adaptée au slicer de sortie choisi) ──
+        from core.prefs import PREFS as _PREFS_dlg
+        _slicer_out = _PREFS_dlg.get("slicer_output", "bambu")
+        action_lbl = QLabel(f"⚠   ACTION REQUISE DANS {_slicer_name().upper()}")
         action_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         action_lbl.setStyleSheet(f"color: {_dp['AMBER']};")
         layout.addWidget(action_lbl)
 
-        info = QLabel(
-            "Les paramètres d'impression (qualité, vitesse, supports…) sont intégrés dans le 3MF.<br>"
-            "Les paramètres du <b>filament</b> (températures, ventilation, débit) doivent être "
-            "configurés manuellement dans Bambu Studio."
-        )
+        if _slicer_out == "flashprint":
+            _fp = getattr(self, "_flashprint_export_info", {}) or {}
+            _fp_name = _fp.get("name", "neoSlice")
+            _parts = [_("export.flashprint_profile_ok", name=_fp_name)
+                      if _fp.get("installed")
+                      else _("export.flashprint_profile_fcfg", name=Path(str(tmf_path or "piece")).stem)]
+            if getattr(config, "support_type", "none") != "none":
+                _parts.append("<b>" + _("export.flashprint_supports") + "</b>")
+            info = QLabel("<br>".join(_parts))
+        else:
+            info = QLabel(
+                "Les paramètres d'impression (qualité, vitesse, supports…) sont intégrés dans le 3MF.<br>"
+                "Les paramètres du <b>filament</b> (températures, ventilation, débit) doivent être "
+                "configurés manuellement dans le slicer."
+            )
         info.setFont(QFont(FONT_MAIN, 9))
         info.setTextFormat(Qt.RichText)
         info.setStyleSheet(f"color: {_dp['TEXT_SECONDARY']};")
@@ -3822,7 +4092,8 @@ class MainWindow(QMainWindow):
                          "elegoo": "export.btn_elegoo",
                          "anycubic": "export.btn_anycubic",
                          "snapmaker": "export.btn_snapmaker",
-                         "cura": "export.btn_cura"}.get(_slicer_sel, "export.btn_bambu")
+                         "cura": "export.btn_cura",
+                         "flashprint": "export.btn_flashprint"}.get(_slicer_sel, "export.btn_bambu")
         btn_bambu = QPushButton(_(_btn_open_key))
         btn_bambu.setIcon(_make_printer_icon())
         btn_bambu.setIconSize(QSize(18, 18))

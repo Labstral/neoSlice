@@ -1,0 +1,1046 @@
+{
+ "_source": "FlashPrint canonical export (exported_canon.fcfg), machine Adventurer 3 Pro 2 PLA",
+ "custom_order": [
+  "machineId",
+  "nozzleSize",
+  "profileName",
+  "materialName0",
+  "materialName1",
+  "materialDensity0",
+  "materialDensity1"
+ ],
+ "custom": {
+  "machineId": {
+   "type": "plain",
+   "raw": "30"
+  },
+  "nozzleSize": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\xcc\\xcc\\xcd)"
+  },
+  "profileName": {
+   "type": "plain",
+   "raw": "exported_canon"
+  },
+  "materialName0": {
+   "type": "plain",
+   "raw": "Flashforge-PLA-1"
+  },
+  "materialName1": {
+   "type": "plain",
+   "raw": ""
+  },
+  "materialDensity0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x9e\\xb8R)"
+  },
+  "materialDensity1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  }
+ },
+ "general_order": [
+  "extruderTemp0",
+  "extruderTemp1",
+  "platformTemp",
+  "chamberTemp",
+  "chamberPreheatTime",
+  "layerTempsEnable",
+  "layerExtruderTemps0",
+  "layerExtruderTemps1",
+  "layerPlatTemps",
+  "layerChamberTemps",
+  "layerLHeightsEnable",
+  "layerHeight",
+  "firstLayerHeight",
+  "layerLHeights",
+  "baseSpeed",
+  "travelSpeed",
+  "minSpeed",
+  "firstLayerMaxSpeed",
+  "firstLayerMaxTravelSpeed",
+  "firstFewLayerCnt",
+  "firstFewLayerMaxSpeed",
+  "overhangSpeedEnable",
+  "overhangSpeedShell75",
+  "overhangSpeedShell50",
+  "overhangSpeedShell25",
+  "overhangSpeedShell10",
+  "overhangSpeedInfill",
+  "accelerationGeneral",
+  "accelerationOuterShell",
+  "accelerationInnerShell",
+  "accelerationSolidInfill",
+  "accelerationSparseInfill",
+  "accelerationTravel",
+  "retractLen0",
+  "retractLen1",
+  "retractInSpeed0",
+  "retractInSpeed1",
+  "retractOutSpeed0",
+  "retractOutSpeed1",
+  "retractOverExtrudeLen0",
+  "retractOverExtrudeLen1",
+  "retractCrossOutlineOnly",
+  "retractLenE0",
+  "retractLenE1",
+  "retractInSpeedE0",
+  "retractInSpeedE1",
+  "retractOutSpeedE0",
+  "retractOutSpeedE1",
+  "retractOverExtrudeLenE0",
+  "retractOverExtrudeLenE1",
+  "shellCnt",
+  "shellMaxOverlapRatio",
+  "shellOuterSpeedRatio",
+  "shellOuterMaxSpeed",
+  "shellVisibleInnerSpeedRatio",
+  "shellVisibleInnerMaxSpeed",
+  "shellInvisibleInnerSpeedRatio",
+  "shellInvisibleInnerMaxSpeed",
+  "shellPrintOrder",
+  "shellStartPosMode",
+  "shellStartPosClosestX0",
+  "shellStartPosClosestY0",
+  "shellStartPosClosestX1",
+  "shellStartPosClosestY1",
+  "shellAlterableStartPos",
+  "shellStartAccEnable",
+  "shellStartAccDist",
+  "fillTopSolidCnt",
+  "fillBottomSolidCnt",
+  "fillDensity",
+  "fillPattern",
+  "fillStartAngle",
+  "fillCrossAngle",
+  "fillOverlapShellRatio",
+  "fillSolidSpeedRatio",
+  "fillSparseSpeedRatio",
+  "fillSoildOnSparseSpeedRatio",
+  "fillSolidCombineCnt",
+  "fillSparseCombineCnt",
+  "fillMinCombineLayerArea",
+  "fillInsideSolidInterval",
+  "fillInsideSolidCnt",
+  "fillLayerDensityEnable",
+  "fillLayerDensitys",
+  "vaseMode",
+  "fillSmallAreaEnable",
+  "fillSmallAreaThreashold",
+  "fillSmallAreaWidth",
+  "fillSmallAreaDensity",
+  "supportLineSpeedRatio",
+  "supportLineShellMaxSpeed",
+  "supportLineInfillMaxSpeed",
+  "supportLineSpaceXy",
+  "supportLineSpaceZ",
+  "supportLineSpaceRaft",
+  "supportLinePattern",
+  "supportLinePathDensity",
+  "supportLinePathSpace",
+  "supportLinePathAngle",
+  "supportLineThickness",
+  "supportLineTopSolidCnt",
+  "supportLineTopSolidDensity",
+  "supportLineHorzExpansion",
+  "supportLineWithOutline",
+  "supportLineRaftCnt",
+  "supportLineRaftDensity",
+  "supportTreeSpeedRatio",
+  "supportTreeSpaceXy",
+  "supportTreeShellCnt",
+  "supportTreeAutoZHop",
+  "raftEnable",
+  "raftExtruderType",
+  "raftMargin",
+  "raftAboveLift",
+  "raftAboveExtrusionRatio",
+  "raftAboveMaxSpeed",
+  "raftBottomHeight",
+  "raftBottomPathWidth",
+  "raftBottomDensity",
+  "raftBottomSpeed",
+  "raftMiddleHeight",
+  "raftMiddleCnt",
+  "raftMiddlePathWidth",
+  "raftMiddleDensity",
+  "raftMiddleSpeed",
+  "raftTopHeight",
+  "raftTopCnt",
+  "raftTopPathWidth",
+  "raftTopSpeed",
+  "raftTopAngleBetweenModel",
+  "preExtrudeEnable",
+  "preExtrudeMargin",
+  "preExtrudeLen",
+  "preExtrudeSpeed",
+  "wallEnable",
+  "wallShellCnt",
+  "wallMargin",
+  "wallSpeed",
+  "wallGenInner",
+  "brimMode",
+  "brimMaxContactArea",
+  "brimExtruderType",
+  "brimMargin",
+  "brimSpaceToModel",
+  "brimLayerCnt",
+  "brimSpeed",
+  "brimGenInner",
+  "primeTowerSpeed",
+  "decelerateAreaThreshold",
+  "delayAreaThreshold",
+  "delayMaxTime",
+  "fanMode0",
+  "fanMode1",
+  "fanSpeed0",
+  "fanSpeed1",
+  "fanLayerSpeedsEnable0",
+  "fanLayerSpeedsEnable1",
+  "fanLayerSpeeds0",
+  "fanLayerSpeeds1",
+  "extraFanMode",
+  "extraFanSpeed",
+  "auxFanSpeed",
+  "auxFanLayerSpeedsEnable",
+  "auxFanLayerSpeeds",
+  "idleExtruderTempEnable",
+  "idleExtruderTempCoolingTemp0",
+  "idleExtruderTempCoolingTemp1",
+  "idleExtruderTempHeatAheadOfTime",
+  "bridgeEnable",
+  "bridgeAreaThreshold",
+  "bridgeSpeedRatio",
+  "extrusionRatio",
+  "firstExtrusionRatio",
+  "pathWidth",
+  "pathPrecision",
+  "ironingEnable",
+  "fuzzyEnable",
+  "fuzzyOutsideOnly",
+  "fuzzyThickness",
+  "fuzzyPointDist",
+  "voltageX",
+  "voltageY",
+  "voltageZ",
+  "voltageE0",
+  "voltageE1",
+  "linearAdvanceK0",
+  "linearAdvanceK1",
+  "maxVolumeSpeed",
+  "shrinkageOffsetX",
+  "shrinkageOffsetY",
+  "shrinkageOffsetZ",
+  "offsetEnable",
+  "offsetOuter",
+  "offsetInner",
+  "zTranslate",
+  "zHopMode",
+  "zHopHeight",
+  "zHopMinDist",
+  "layerPauses",
+  "sequentialPrinting"
+ ],
+ "general": {
+  "extruderTemp0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43\\x61\\0\\0)"
+  },
+  "extruderTemp1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43R\\0\\0)"
+  },
+  "platformTemp": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42H\\0\\0)"
+  },
+  "chamberTemp": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "chamberPreheatTime": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "layerTempsEnable": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "layerExtruderTemps0": {
+   "type": "plain",
+   "raw": "[]"
+  },
+  "layerExtruderTemps1": {
+   "type": "plain",
+   "raw": "[]"
+  },
+  "layerPlatTemps": {
+   "type": "plain",
+   "raw": "[]"
+  },
+  "layerChamberTemps": {
+   "type": "plain",
+   "raw": "[]"
+  },
+  "layerLHeightsEnable": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "layerHeight": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>L\\xcc\\xcd)"
+  },
+  "firstLayerHeight": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>L\\xcc\\xcd)"
+  },
+  "layerLHeights": {
+   "type": "plain",
+   "raw": "[]"
+  },
+  "baseSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43H\\0\\0)"
+  },
+  "travelSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43H\\0\\0)"
+  },
+  "minSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41 \\0\\0)"
+  },
+  "firstLayerMaxSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\f\\0\\0)"
+  },
+  "firstLayerMaxTravelSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43\\x16\\0\\0)"
+  },
+  "firstFewLayerCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "firstFewLayerMaxSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42 \\0\\0)"
+  },
+  "overhangSpeedEnable": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "overhangSpeedShell75": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42H\\0\\0)"
+  },
+  "overhangSpeedShell50": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xa0\\0\\0)"
+  },
+  "overhangSpeedShell25": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xc8\\0\\0)"
+  },
+  "overhangSpeedShell10": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43\\x16\\0\\0)"
+  },
+  "overhangSpeedInfill": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xc8\\0\\0)"
+  },
+  "accelerationGeneral": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x46\\x1c@\\0)"
+  },
+  "accelerationOuterShell": {
+   "type": "variant",
+   "raw": "\"@Variant(\\0\\0\\0\\x87\\x45;\\x80\\0)\""
+  },
+  "accelerationInnerShell": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x45\\x9c@\\0)"
+  },
+  "accelerationSolidInfill": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x45\\xfa\\0\\0)"
+  },
+  "accelerationSparseInfill": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x46\\x1c@\\0)"
+  },
+  "accelerationTravel": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x45\\xfa\\0\\0)"
+  },
+  "retractLen0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\xa0\\0\\0)"
+  },
+  "retractLen1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\xa0\\0\\0)"
+  },
+  "retractInSpeed0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xf0\\0\\0)"
+  },
+  "retractInSpeed1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xc8\\0\\0)"
+  },
+  "retractOutSpeed0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xf0\\0\\0)"
+  },
+  "retractOutSpeed1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xc8\\0\\0)"
+  },
+  "retractOverExtrudeLen0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "retractOverExtrudeLen1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "retractCrossOutlineOnly": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "retractLenE0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\x80\\0\\0)"
+  },
+  "retractLenE1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\xa0\\0\\0)"
+  },
+  "retractInSpeedE0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xc8\\0\\0)"
+  },
+  "retractInSpeedE1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xc8\\0\\0)"
+  },
+  "retractOutSpeedE0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xc8\\0\\0)"
+  },
+  "retractOutSpeedE1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xc8\\0\\0)"
+  },
+  "retractOverExtrudeLenE0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "retractOverExtrudeLenE1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "shellCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\0\\0\\0)"
+  },
+  "shellMaxOverlapRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x99\\x99\\x9a)"
+  },
+  "shellOuterSpeedRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x99\\x99\\x9a)"
+  },
+  "shellOuterMaxSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42H\\0\\0)"
+  },
+  "shellVisibleInnerSpeedRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x19\\x99\\x9a)"
+  },
+  "shellVisibleInnerMaxSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xc8\\0\\0)"
+  },
+  "shellInvisibleInnerSpeedRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "shellInvisibleInnerMaxSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43H\\0\\0)"
+  },
+  "shellPrintOrder": {
+   "type": "plain",
+   "raw": "0"
+  },
+  "shellStartPosMode": {
+   "type": "plain",
+   "raw": "1"
+  },
+  "shellStartPosClosestX0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x44z\\0\\0)"
+  },
+  "shellStartPosClosestY0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x46\\x1c@\\0)"
+  },
+  "shellStartPosClosestX1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x46\\x1c@\\0)"
+  },
+  "shellStartPosClosestY1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\xc2\\xc8\\0\\0)"
+  },
+  "shellAlterableStartPos": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "shellStartAccEnable": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "shellStartAccDist": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42H\\0\\0)"
+  },
+  "fillTopSolidCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\x80\\0\\0)"
+  },
+  "fillBottomSolidCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\0\\0\\0)"
+  },
+  "fillDensity": {
+   "type": "variant",
+   "raw": "\"@Variant(\\0\\0\\0\\x87=\\xf5\\xc2\\x8f)\""
+  },
+  "fillPattern": {
+   "type": "plain",
+   "raw": "2"
+  },
+  "fillStartAngle": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\x34\\0\\0)"
+  },
+  "fillCrossAngle": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xb4\\0\\0)"
+  },
+  "fillOverlapShellRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x19\\x99\\x9a)"
+  },
+  "fillSolidSpeedRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x99\\x99\\x9a)"
+  },
+  "fillSparseSpeedRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "fillSoildOnSparseSpeedRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x99\\x99\\x9a)"
+  },
+  "fillSolidCombineCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "fillSparseCombineCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "fillMinCombineLayerArea": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43\\x16\\0\\0)"
+  },
+  "fillInsideSolidInterval": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "fillInsideSolidCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "fillLayerDensityEnable": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "fillLayerDensitys": {
+   "type": "plain",
+   "raw": "[]"
+  },
+  "vaseMode": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "fillSmallAreaEnable": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "fillSmallAreaThreashold": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xc8\\0\\0)"
+  },
+  "fillSmallAreaWidth": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "fillSmallAreaDensity": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\0\\0\\0)"
+  },
+  "supportLineSpeedRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x99\\x99\\x9a)"
+  },
+  "supportLineShellMaxSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42H\\0\\0)"
+  },
+  "supportLineInfillMaxSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42H\\0\\0)"
+  },
+  "supportLineSpaceXy": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\xb3\\x33\\x33)"
+  },
+  "supportLineSpaceZ": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>aG\\xae)"
+  },
+  "supportLineSpaceRaft": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x19\\x99\\x9a)"
+  },
+  "supportLinePattern": {
+   "type": "plain",
+   "raw": "0"
+  },
+  "supportLinePathDensity": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>L\\xcc\\xcd)"
+  },
+  "supportLinePathSpace": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\0\\0\\0)"
+  },
+  "supportLinePathAngle": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\x34\\0\\0)"
+  },
+  "supportLineThickness": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\f\\xcc\\xcd)"
+  },
+  "supportLineTopSolidCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "supportLineTopSolidDensity": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "supportLineHorzExpansion": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "supportLineWithOutline": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "supportLineRaftCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "supportLineRaftDensity": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "supportTreeSpeedRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x19\\x99\\x9a)"
+  },
+  "supportTreeSpaceXy": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>L\\xcc\\xcd)"
+  },
+  "supportTreeShellCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@@\\0\\0)"
+  },
+  "supportTreeAutoZHop": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "raftEnable": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "raftExtruderType": {
+   "type": "plain",
+   "raw": "0"
+  },
+  "raftMargin": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\xa0\\0\\0)"
+  },
+  "raftAboveLift": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>L\\xcc\\xcd)"
+  },
+  "raftAboveExtrusionRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "raftAboveMaxSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41p\\0\\0)"
+  },
+  "raftBottomHeight": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\xcc\\xcc\\xcd)"
+  },
+  "raftBottomPathWidth": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\xcc\\xcc\\xcd)"
+  },
+  "raftBottomDensity": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\xcc\\xcc\\xcd)"
+  },
+  "raftBottomSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\0\\0\\0)"
+  },
+  "raftMiddleHeight": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\xcc\\xcc\\xcd)"
+  },
+  "raftMiddleCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "raftMiddlePathWidth": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\xcc\\xcc\\xcd)"
+  },
+  "raftMiddleDensity": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x99\\x99\\x9a)"
+  },
+  "raftMiddleSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xf0\\0\\0)"
+  },
+  "raftTopHeight": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x80\\0\\0)"
+  },
+  "raftTopCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@@\\0\\0)"
+  },
+  "raftTopPathWidth": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\xcc\\xcc\\xcd)"
+  },
+  "raftTopSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42p\\0\\0)"
+  },
+  "raftTopAngleBetweenModel": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xb4\\0\\0)"
+  },
+  "preExtrudeEnable": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "preExtrudeMargin": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\xa0\\0\\0)"
+  },
+  "preExtrudeLen": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xf0\\0\\0)"
+  },
+  "preExtrudeSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xa0\\0\\0)"
+  },
+  "wallEnable": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "wallShellCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\0\\0\\0)"
+  },
+  "wallMargin": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@ \\0\\0)"
+  },
+  "wallSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xf0\\0\\0)"
+  },
+  "wallGenInner": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "brimMode": {
+   "type": "plain",
+   "raw": "1"
+  },
+  "brimMaxContactArea": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43H\\0\\0)"
+  },
+  "brimExtruderType": {
+   "type": "plain",
+   "raw": "0"
+  },
+  "brimMargin": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87@\\xa0\\0\\0)"
+  },
+  "brimSpaceToModel": {
+   "type": "variant",
+   "raw": "\"@Variant(\\0\\0\\0\\x87=\\xcc\\xcc\\xcd)\""
+  },
+  "brimLayerCnt": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "brimSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xf0\\0\\0)"
+  },
+  "brimGenInner": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "primeTowerSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42 \\0\\0)"
+  },
+  "decelerateAreaThreshold": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42H\\0\\0)"
+  },
+  "delayAreaThreshold": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "delayMaxTime": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\xc0\\0\\0)"
+  },
+  "fanMode0": {
+   "type": "plain",
+   "raw": "0"
+  },
+  "fanMode1": {
+   "type": "plain",
+   "raw": "0"
+  },
+  "fanSpeed0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xc8\\0\\0)"
+  },
+  "fanSpeed1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xc8\\0\\0)"
+  },
+  "fanLayerSpeedsEnable0": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "fanLayerSpeedsEnable1": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "fanLayerSpeeds0": {
+   "type": "plain",
+   "raw": "[]"
+  },
+  "fanLayerSpeeds1": {
+   "type": "plain",
+   "raw": "[]"
+  },
+  "extraFanMode": {
+   "type": "plain",
+   "raw": "0"
+  },
+  "extraFanSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42H\\0\\0)"
+  },
+  "auxFanSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xc8\\0\\0)"
+  },
+  "auxFanLayerSpeedsEnable": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "auxFanLayerSpeeds": {
+   "type": "plain",
+   "raw": "[]"
+  },
+  "idleExtruderTempEnable": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "idleExtruderTempCoolingTemp0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43\\x34\\0\\0)"
+  },
+  "idleExtruderTempCoolingTemp1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x43\\x34\\0\\0)"
+  },
+  "idleExtruderTempHeatAheadOfTime": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xf0\\0\\0)"
+  },
+  "bridgeEnable": {
+   "type": "plain",
+   "raw": "true"
+  },
+  "bridgeAreaThreshold": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41p\\0\\0)"
+  },
+  "bridgeSpeedRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\0\\0\\0)"
+  },
+  "extrusionRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?xQ\\xec)"
+  },
+  "firstExtrusionRatio": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?s33)"
+  },
+  "pathWidth": {
+   "type": "variant",
+   "raw": "\"@Variant(\\0\\0\\0\\x87>\\xd7\\n=)\""
+  },
+  "pathPrecision": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x80\\0\\0)"
+  },
+  "ironingEnable": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "fuzzyEnable": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "fuzzyOutsideOnly": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "fuzzyThickness": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>\\x99\\x99\\x9a)"
+  },
+  "fuzzyPointDist": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?L\\xcc\\xcd)"
+  },
+  "voltageX": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xc8\\0\\0)"
+  },
+  "voltageY": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xc8\\0\\0)"
+  },
+  "voltageZ": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42 \\0\\0)"
+  },
+  "voltageE0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xc8\\0\\0)"
+  },
+  "voltageE1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x42\\xc8\\0\\0)"
+  },
+  "linearAdvanceK0": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "linearAdvanceK1": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "maxVolumeSpeed": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\x41\\xa0\\0\\0)"
+  },
+  "shrinkageOffsetX": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "shrinkageOffsetY": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "shrinkageOffsetZ": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "offsetEnable": {
+   "type": "plain",
+   "raw": "false"
+  },
+  "offsetOuter": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "offsetInner": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "zTranslate": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87\\0\\0\\0\\0)"
+  },
+  "zHopMode": {
+   "type": "plain",
+   "raw": "2"
+  },
+  "zHopHeight": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87>L\\xcc\\xcd)"
+  },
+  "zHopMinDist": {
+   "type": "variant",
+   "raw": "@Variant(\\0\\0\\0\\x87?\\x80\\0\\0)"
+  },
+  "layerPauses": {
+   "type": "plain",
+   "raw": "[]"
+  },
+  "sequentialPrinting": {
+   "type": "plain",
+   "raw": "false"
+  }
+ }
+}

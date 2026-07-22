@@ -111,14 +111,16 @@ def boite(diametre: float = 50, hauteur: float = 30, paroi: float = 2.0,
 
 
 # ── SUPPORT DE TÉLÉPHONE : profil incliné extrudé ────────────────────────────
-def support_tel(largeur: float = 70, angle_deg: float = 65, ep: float = 8) -> trimesh.Trimesh:
-    """Support téléphone SIMPLE : dossier en coin dont la face avant est une
-    RAMPE DROITE sur toute sa longueur (le téléphone s'y appuie), petite lèvre
-    de retenue à l'avant et cuvette où repose le bas du téléphone. Aucune fente,
-    aucune collerette : un seul profil convexe, imprimable posé sur sa base."""
+def support_tel(largeur: float = 70, angle_deg: float = 65, ep: float = 8,
+                hauteur: float = 92) -> trimesh.Trimesh:
+    """Support téléphone / TABLETTE : dossier en coin dont la face avant est une
+    RAMPE DROITE sur toute sa longueur (l'appareil s'y appuie), petite lèvre
+    de retenue à l'avant et cuvette où repose le bas. Aucune fente, aucune
+    collerette : un seul profil convexe, imprimable posé sur sa base. `largeur`
+    et `hauteur` du dossier réglables (tablette = plus large / plus haut)."""
     a = np.radians(angle_deg)
     cot = 1.0 / np.tan(a)                      # recul horizontal par mm de hauteur
-    h = 92.0                                   # hauteur du dossier
+    h = float(hauteur)                         # hauteur du dossier
     y_cuv = 6.0                                # fond de la cuvette d'appui
     x_lip0, x_lip1 = 0.0, 8.0                  # lèvre de retenue (avant)
     h_lip = 15.0

@@ -31,8 +31,9 @@ BARRE DU HAUT
 COLONNE DE GAUCHE (le deroule de travail, en 3 etapes numerotees)
 - Etape 1 - "Configuration" : on choisit l'imprimante, le filament et le diametre de
   buse.
-- Etape 2 - "Import STL" : zone de glisser-deposer du fichier (STL/3MF), avec rappel
-  du dernier fichier ouvert.
+- Etape 2 - "Import STL / OBJ / 3MF" : zone de glisser-deposer du fichier
+  (formats STL, OBJ ou 3MF), avec rappel du dernier fichier ouvert. Le fil d'etat en
+  haut du centre affiche le TYPE reel du fichier charge (STL, OBJ ou 3MF).
 - Etape 3 - "Instruction Mission" : ce n'est PAS un champ de texte libre. C'est un
   SELECTEUR par CHOIX, organise en groupes depliables (accordeons) ; dans chaque groupe
   on choisit UNE seule option (un clic selectionne, un reclic deselectionne). Groupes et
@@ -60,9 +61,29 @@ COLONNE DE GAUCHE (le deroule de travail, en 3 etapes numerotees)
   de regler ces valeurs a la main, et ne parle ni de nivellement, ni d'un autre slicer ici.
 
 COLONNE DU CENTRE
-- En haut : le panneau d'ANALYSE geometrique (surplombs, stabilite, fragilite,
-  besoin de supports).
-- En dessous : la VUE 3D de l'objet.
+- En haut : le panneau d'ANALYSE geometrique. Un fil d'etat montre l'etape en cours
+  (SYSTEME, puis le TYPE du fichier : STL/OBJ/3MF, puis ANALYSE, puis GENERATION).
+  En dessous, quatre jauges : SURPLOMBS, STABILITE, FRAGILITE et VOL. SUPPORT, les cotes
+  de la piece (X, Y, Z, volume, nombre de faces) et des conseils courts (supports
+  ajoutes, brim ajoute pour l'adherence, parois fines, grande surface plate...).
+- En dessous : la VUE 3D de l'objet, pose sur le plateau.
+- Par DEFAUT, la vue 3D colore les SURPLOMBS : les zones orientees vers le bas qui
+  auront besoin de supports apparaissent en orange/rouge, le reste en clair.
+- EN BAS A DROITE de la vue 3D, des cases a cocher (de bas en haut : "Rotation auto",
+  "Plateau", et parfois "Fragilite") :
+    - "Plateau" : afficher ou masquer le plateau de construction.
+    - "Rotation auto" : faire tourner l'objet automatiquement.
+    - "Fragilite" : n'APPARAIT QUE s'il y a PLUSIEURS pieces sur le plateau et qu'au
+      moins une est fragile. DECOCHEE par defaut. Une fois COCHEE, la vue passe en
+      "carte de fragilite" (thermomap) : CHAQUE piece est coloree selon SA propre
+      fragilite -> vert = solide, jaune = un peu fragile, rouge = fragile (une legende
+      a trois niveaux s'affiche en haut a gauche de la vue). On la decoche pour revenir
+      a la vue des surplombs. C'est le moyen de voir, piece par piece, laquelle est
+      fragile quand un meme plateau en contient plusieurs.
+- La jauge FRAGILITE du panneau d'analyse est DESACTIVEE (affiche "DESACTIVE") quand il
+  y a PLUSIEURS pieces sur le plateau (une seule valeur globale serait trompeuse car
+  chaque piece a sa propre fragilite) : la fragilite se lit alors piece par piece via la
+  case "Fragilite" ci-dessus. Avec une SEULE piece, la jauge FRAGILITE est normale.
 - La SPHERE de l'assistant IA (moi) flotte en BAS A GAUCHE de la vue 3D : on clique
   dessus pour ouvrir cette fenetre de discussion.
 
