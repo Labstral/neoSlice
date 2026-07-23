@@ -686,12 +686,12 @@ def clip_cable(d_cable: float = 5, vis: bool = True) -> trimesh.Trimesh:
     base_w = max(w, 2 * r_trou + 3.6)
     base_t = 2.2                                 # épaisseur du socle
     z_c   = base_t + r_in                        # centre du tunnel → sol = dessus du socle
-    flange = 4.5                                 # débord du socle (surface d'appui/adhésif)
-    tab    = 9.0                                 # patte du trou de vis (côté +Y)
+    flange = 2.5                                 # petit débord du socle (adhésif / rigidité)
+    tab    = 8.0                                 # patte du trou de vis (côté +Y), compacte
 
     # ── Socle : arche centrée en y=0 ; côté +Y allongé (patte + trou) si vis ──
     y_neg = r_out + flange
-    y_pos = (r_out + flange + tab) if vis else (r_out + flange)
+    y_pos = (r_out + tab) if vis else (r_out + flange)
     Ly = y_neg + y_pos
     yc = (y_pos - y_neg) / 2.0                    # recentre le socle sur l'arche
     socle = trimesh.creation.box((base_w, Ly, base_t))
@@ -728,8 +728,9 @@ def clip_cable(d_cable: float = 5, vis: bool = True) -> trimesh.Trimesh:
     sous.apply_translation((0, yc, -10.0))
     negs.append(sous)
     if vis:
-        # Trou de vis VERTICAL dans la patte laterale
-        y_trou = r_out + flange + tab / 2.0 + 1.0
+        # Trou de vis VERTICAL CENTRÉ dans la patte (marges égales des 2 côtés,
+        # près de l'arche plutôt que collé au bord extérieur).
+        y_trou = r_out + tab / 2.0
         trou = trimesh.creation.cylinder(radius=r_trou, height=base_t + 4, sections=32)
         trou.apply_translation((0, y_trou, base_t / 2.0))
         negs.append(trou)
