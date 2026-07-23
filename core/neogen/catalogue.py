@@ -655,6 +655,36 @@ for _e_txt in CATALOGUE:
         if not _e_txt["couleurs"]:
             _e_txt["couleurs"] = list(_COULEURS_TEXTE)
 
+# ── Objets AJOUTÉS/CORRIGÉS PAR MISE À JOUR (sans rebuild) ──────────────────
+# Chargés depuis la base téléchargeable ~/.neoslice/neogen/objets_extra.json
+# (voir objets_module.py + maj.py). Un objet de même id REMPLACE le natif ;
+# sinon il s'ajoute. On garde une PHOTO des objets natifs pour pouvoir recharger
+# à chaud après « Mettre à jour la base », sans redémarrer.
+_CATALOGUE_NATIF = list(CATALOGUE)
+_SYNO_MODULE: dict[str, str] = {}
+
+
+def _fusionner_objets_module() -> None:
+    """(Re)fusionne les objets de la base téléchargeable sur les objets natifs."""
+    _SYNO_MODULE.clear()
+    CATALOGUE[:] = list(_CATALOGUE_NATIF)
+    try:
+        from core.neogen.objets_module import entrees_catalogue as _dl
+        objs = _dl()
+    except Exception:
+        objs = []
+    for _obj in objs:
+        _idx = next((k for k, e in enumerate(CATALOGUE) if e["id"] == _obj["id"]), None)
+        if _idx is not None:
+            CATALOGUE[_idx] = _obj                 # corrige un objet natif
+        else:
+            CATALOGUE.append(_obj)                 # nouvel objet
+        if _obj.get("_synonymes"):
+            _SYNO_MODULE[_obj["id"]] = _obj["_synonymes"]
+
+
+_fusionner_objets_module()
+
 # Index rapide par id
 PAR_ID = {e["id"]: e for e in CATALOGUE}
 
@@ -740,11 +770,26 @@ def _mots_norm(txt: str) -> set:
 
 def _construire_index() -> None:
     for e in CATALOGUE:
-        mots = _mots_norm(e["fr"]) | _mots_norm(e["en"]) | _mots_norm(_SYNONYMES.get(e["id"], ""))
+        # synonymes : table native, complétée par ceux des objets de la base
+        # téléchargeable (_SYNO_MODULE) — la recherche trouve donc aussi ces objets.
+        syn = _SYNONYMES.get(e["id"], "") + " " + _SYNO_MODULE.get(e["id"], "")
+        mots = _mots_norm(e["fr"]) | _mots_norm(e["en"]) | _mots_norm(syn)
         _INDEX_RECHERCHE[e["id"]] = mots
 
 
 _construire_index()
+
+
+def recharger_objets_module() -> int:
+    """Recharge à CHAUD les objets de la base téléchargeable (après « Mettre à
+    jour la base ») SANS redémarrer : re-fusionne sur les natifs et reconstruit
+    tous les index. Renvoie le nombre d'objets issus d'une mise à jour."""
+    global PAR_ID
+    _fusionner_objets_module()
+    PAR_ID = {e["id"]: e for e in CATALOGUE}
+    _INDEX_RECHERCHE.clear()
+    _construire_index()
+    return sum(1 for e in CATALOGUE if e.get("_module"))
 
 
 def rechercher(phrase: str) -> str | None:

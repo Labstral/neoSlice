@@ -63,3 +63,6 @@ build_log.txt
 
 # Artefacts de test des bots slicer (sortie ffslicer/CLI)
 result.json
+
+# Artefacts générés (base d'objets neoGen à téléverser sur les assets)
+tools/out/

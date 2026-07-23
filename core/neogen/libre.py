@@ -577,11 +577,16 @@ _INTERDIT = re.compile(
     r"\b(import|exec|eval|open|getattr|setattr|globals|locals|compile|input)\b|__")
 
 
-def executer_sandbox(code: str) -> trimesh.Trimesh:
+def executer_sandbox(code: str, params: dict | None = None) -> trimesh.Trimesh:
     if _INTERDIT.search(code):
         raise ValueError("mot-cle interdit dans le script")
     espace = {"__builtins__": {}}
     espace.update(API)
+    if params:
+        # Valeurs des PARAMÈTRES d'un objet de la base téléchargeable : elles
+        # deviennent des variables du script (ex. diametre, hauteur, texte).
+        # Ce sont des nombres/chaînes, jamais du code — le namespace reste clos.
+        espace.update(params)
     exec(compile(code, "<neogen-libre>", "exec"), espace)   # noqa: S102 — clos
     piece = espace.get("piece")
     if piece is None:

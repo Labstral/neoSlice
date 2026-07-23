@@ -96,20 +96,39 @@ class _NeoGenUninstallWorker(QThread):
 
 
 class _NeoGenBaseWorker(QThread):
-    """Met a jour la BASE D'OBJETS de neoGen (cookbook distant, valide en
-    sandbox recette par recette avant installation — voir core/neogen/maj.py)."""
-    done = Signal(str)          # "" = deja a jour, sinon "version|acceptees"
+    """Met a jour la BASE de neoGen (SANS rebuild) : d'abord les OBJETS de la
+    bibliotheque (nouveaux objets reglables + corrections d'objets existants),
+    puis le cookbook d'aide a la creation libre. Chaque element distant est
+    valide en sandbox + verificateur avant installation (voir core/neogen/maj.py).
+    Les nouveaux objets sont rechargés A CHAUD (aucun redemarrage)."""
+    done = Signal(str)          # "" = deja a jour, sinon "version|objets_ajoutes"
     failed = Signal(str)
 
     def run(self):
         try:
             from core.neogen import maj
-            manifest = maj.verifier_maj()
-            if not manifest:
-                self.done.emit("")
-                return
-            n, _ecartees = maj.appliquer(manifest)
-            self.done.emit(f"{manifest['version']}|{n}")
+            version, n_objets, change = "", 0, False
+
+            # 1) OBJETS de la bibliotheque (ce qui apparait dans le menu neoGen)
+            m_obj = maj.verifier_maj_objets()
+            if m_obj:
+                n_objets, _ecartes = maj.appliquer_objets(m_obj)
+                version = m_obj.get("version", "")
+                change = True
+                try:                                   # recharge a chaud le catalogue
+                    from core.neogen import catalogue as _C
+                    _C.recharger_objets_module()
+                except Exception:
+                    pass
+
+            # 2) Cookbook (aide a la creation libre)
+            m_cb = maj.verifier_maj()
+            if m_cb:
+                maj.appliquer(m_cb)
+                version = version or m_cb.get("version", "")
+                change = True
+
+            self.done.emit(f"{version}|{n_objets}" if change else "")
         except Exception as e:
             self.failed.emit(str(e))
 

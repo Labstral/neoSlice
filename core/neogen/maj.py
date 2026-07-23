@@ -104,3 +104,76 @@ def charger_extra() -> list[tuple[str, str, str]]:
                 for r in data.get("recettes", [])]
     except Exception:
         return []
+
+
+# ═══════════════════ OBJETS COMPLETS de la bibliothèque (sans rebuild) ══════
+# En plus du cookbook (aide à la création libre), on met à jour la BIBLIOTHÈQUE
+# elle-même : des objets neoGen complets (avec formulaire de réglages) qui
+# apparaissent dans le menu et la recherche. Même canal, mêmes garanties.
+OBJETS_URL = f"{ASSET_BASE_URL}/neogen_objets.json"
+
+
+def _fichier_objets() -> Path:
+    from core.neogen.objets_module import FICHIER_LOCAL as _F
+    return _F
+
+
+def _version_objets_locale() -> str | None:
+    try:
+        return json.loads(_fichier_objets().read_text(encoding="utf-8")).get("version")
+    except Exception:
+        return None
+
+
+def verifier_maj_objets() -> dict | None:
+    """Télécharge la liste d'objets ; renvoie le manifest s'il est PLUS RÉCENT
+    que la version locale, sinon None. Jamais d'exception (hors-ligne-safe)."""
+    try:
+        req = urllib.request.Request(OBJETS_URL, headers={"User-Agent": "neoSlice"})
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        if not isinstance(data.get("objets"), list) or not data.get("version"):
+            return None
+        if data["version"] == _version_objets_locale():
+            return None
+        return data
+    except Exception as exc:
+        logger.debug(f"neoGen maj objets : {exc}")
+        return None
+
+
+def appliquer_objets(manifest: dict, progress_cb=None) -> tuple[int, int]:
+    """VALIDE chaque objet (sandbox + vérificateur, params par défaut) puis écrit
+    atomiquement les seuls objets prouvés sains. Renvoie (acceptés, écartés).
+    Du code distant n'atteint JAMAIS l'utilisateur sans être prouvé imprimable."""
+    from core.neogen import libre as L
+    from core.neogen.objets_module import _defauts, FICHIER_LOCAL
+    valides, ecartes = [], 0
+    objets = manifest.get("objets", [])
+    for i, obj in enumerate(objets):
+        if progress_cb:
+            progress_cb(f"{i + 1}/{len(objets)}", (i + 1) / max(1, len(objets)))
+        try:
+            if not obj.get("id") or not obj.get("code"):
+                ecartes += 1
+                continue
+            ns = _defauts(obj)
+            if obj.get("texte", "aucun") != "aucun":
+                ns["texte"] = "Test"
+            piece = L.poser_au_sol(L.executer_sandbox(str(obj["code"]), ns))
+            if L.verifier(piece) is None:
+                valides.append(obj)
+            else:
+                ecartes += 1
+        except Exception:
+            ecartes += 1
+    FICHIER_LOCAL.parent.mkdir(parents=True, exist_ok=True)
+    tmp = FICHIER_LOCAL.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"version": manifest["version"],
+                               "notes": manifest.get("notes", ""),
+                               "objets": valides},
+                              ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, FICHIER_LOCAL)
+    logger.info(f"neoGen objets {manifest['version']} : "
+                f"{len(valides)} objets, {ecartes} écartés")
+    return len(valides), ecartes
