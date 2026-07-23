@@ -807,8 +807,24 @@ def rondelle(d_ext: float = 24, d_int: float = 8, ep: float = 3) -> trimesh.Trim
     return piece
 
 
-def entretoise(d_ext: float = 12, d_int: float = 5, hauteur: float = 15) -> trimesh.Trimesh:
-    return rondelle(d_ext, d_int, hauteur)
+def entretoise(d_ext: float = 12, d_int: float = 5, hauteur: float = 15,
+               forme: str = "rond") -> trimesh.Trimesh:
+    """Entretoise (spacer) debout, trou central traversant. `forme` :
+      • rond      : tube cylindrique ;
+      • hexagonal : corps hexagonal (Ø ext = distance SUR PLATS, prise à la clé).
+    """
+    if str(forme) != "hexagonal":
+        return rondelle(d_ext, d_int, hauteur)
+    d_ext = max(float(d_ext), float(d_int) + 1.5)
+    d_int = min(float(d_int), d_ext - 1.5)           # toujours une paroi
+    r_circ = (d_ext / 2.0) / np.cos(np.radians(30))  # Ø sur plats → rayon circonscrit
+    corps = trimesh.creation.cylinder(radius=r_circ, height=hauteur, sections=6)
+    corps.apply_translation((0, 0, hauteur / 2.0))
+    trou = trimesh.creation.cylinder(radius=d_int / 2.0, height=hauteur + 4, sections=64)
+    trou.apply_translation((0, 0, hauteur / 2.0))
+    piece = trimesh.boolean.difference([corps, trou], engine="manifold")
+    piece.apply_translation(-piece.bounds[0])
+    return piece
 
 
 def joint(type_joint: str = "plat", d_ext: float = 30, d_int: float = 20,

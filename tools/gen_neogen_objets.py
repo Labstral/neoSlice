@@ -30,27 +30,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-VERSION = "2026-07-23"
-NOTES = "Objets d'atelier : entretoise hexagonale, passe-fil de bureau."
+VERSION = "2026-07-23b"
+NOTES = "Passe-fil de bureau. (L'hexagonal est désormais une option de l'entretoise native.)"
 
 # ── Objets à publier ────────────────────────────────────────────────────────
 OBJETS = [
-    {
-        "id": "entretoise_hex",
-        "fr": "Entretoise hexagonale", "en": "Hex standoff",
-        "domaine": "atelier", "texte": "aucun",
-        "synonymes": "entretoise standoff colonnette plot ecarteur hexagonale visserie",
-        "params": [
-            ["diametre", "Diamètre (sur plats)", "Diameter (across flats)", 8, 40, 18, 1],
-            ["hauteur", "Hauteur", "Height", 4, 60, 20, 1],
-            ["d_trou", "Ø trou traversant", "Through hole ø", 2, 20, 6, 0.5],
-        ],
-        "code": (
-            "corps = prisme(6, diametre, hauteur)\n"
-            "trou = deplacer(cylindre(d_trou, hauteur + 4), 0, 0, -2)\n"
-            "piece = poser_au_sol(percer(corps, trou))"
-        ),
-    },
     {
         "id": "passe_fil_bureau",
         "fr": "Passe-fil de bureau", "en": "Desk cable grommet",
