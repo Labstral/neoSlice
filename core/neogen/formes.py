@@ -714,6 +714,14 @@ def clip_cable(d_cable: float = 5, vis: bool = True) -> trimesh.Trimesh:
     tunnel.apply_transform(rot(np.radians(90), [0, 1, 0]))
     tunnel.apply_translation((0, 0, z_c))
     negs.append(tunnel)
+    # OUVERTURE D'INSERTION (essentielle — comme les clips du commerce) : fente
+    # verticale du sommet de l'arche jusqu'au tunnel, PLUS ÉTROITE que le câble
+    # (≈ 75 % du Ø) → le câble se CLIPSE par le dessus et reste retenu. Sans elle,
+    # l'anneau est fermé et il faudrait enfiler le câble par le bout — inutilisable.
+    fw = max(1.6, d_cable * 0.75)
+    fente = trimesh.creation.box((w + 2, fw, r_out + 2))
+    fente.apply_translation((0, 0, z_c + (r_out + 2) / 2.0))
+    negs.append(fente)
     # Base plane : couper tout ce qui descend sous le plateau (l'arche pleine deborde
     # sous le socle pour les gros diametres) → dessous plat, imprimable a plat.
     sous = trimesh.creation.box((base_w * 3, Ly * 3, 20.0))
