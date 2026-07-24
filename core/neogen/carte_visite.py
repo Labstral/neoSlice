@@ -22,6 +22,8 @@ from shapely.affinity import translate as _tr
 from shapely.geometry import Point, Polygon, MultiPolygon, box
 from shapely.ops import unary_union
 
+from loguru import logger
+
 from core.neogen.goodies import _extruder, texte_multilignes, CHEVAUCHEMENT
 from core.neogen.geo_utils import union_solides
 
@@ -39,7 +41,8 @@ class ElementTexte:
     align_v: str = "milieu"                   # haut | milieu | bas
     dx: float = 0.0
     dy: float = 0.0
-    relief: float = 0.6
+    relief: float = 0.6                        # hauteur (relief) ou profondeur (gravé)
+    mode: str = "relief"                       # relief | grave | lisse
     couleur: str = "#111111"
     type: str = "texte"
 
@@ -187,37 +190,96 @@ def _socle_2d(spec: CarteSpec) -> Polygon:
     return rect.buffer(-r, join_style=1).buffer(r, join_style=1)   # coins ronds
 
 
-def construire(spec: CarteSpec):
-    """Construit la carte -> (trimesh.Scene multi-corps, liste ordonnée des
-    couleurs). Corps 0 = socle (couleur de base) ; puis un corps par couleur
-    d'élément (fusion des reliefs de cette couleur). Chaque corps porte sa
-    couleur visuelle (aperçu viewer)."""
-    socle = _socle_2d(spec)
-    base = union_solides(_extruder(socle, spec.ep))
-    base.visual.face_colors = _hex_rgba(spec.couleur_base)
+def _geoms(mp):
+    return mp.geoms if isinstance(mp, MultiPolygon) else [mp]
 
-    # regrouper les reliefs par couleur (ordre de première apparition)
-    par_couleur: dict[str, list] = {}
-    for el in spec.elements:
+
+def _prof_decoupe(mode: str, r: float, ep: float) -> float:
+    """Profondeur du creux à retirer du socle (gravé) ou épaisseur de la couche
+    couleur affleurante (lisse). Jamais traversant : on laisse >= 0.4 mm de fond."""
+    if mode == "grave":
+        return max(0.3, min(float(r), ep - 0.4))
+    # lisse : couche couleur fine, affleurant le dessus
+    return max(0.4, min(0.8, ep - 0.4))
+
+
+def _corps_couleur(g, mode: str, r: float, ep: float, cut_ok: bool) -> list:
+    """Solides colorés d'un footprint selon le mode.
+    - relief : texte SURÉLEVÉ (posé sur le socle, chevauche pour souder).
+    - lisse  : couche couleur AFFLEURANTE (le socle est creusé en dessous).
+    - gravé  : fond coloré AU FOND du creux (le socle est creusé en dessous).
+    Si la découpe du socle a échoué (cut_ok=False), on retombe sur du relief
+    (toujours valide et visible) pour lisse/gravé."""
+    if mode == "relief" or not cut_ok:
+        return _extruder(g, max(0.3, float(r)) + CHEV, ep - CHEV)
+    if mode == "lisse":
+        t = _prof_decoupe("lisse", r, ep)
+        return _extruder(g, t, ep - t)                 # affleurant : z = [ep-t, ep]
+    d = _prof_decoupe("grave", r, ep)                  # gravé
+    f = min(0.6, d)
+    return _extruder(g, f, ep - d)                     # fond coloré : z = [ep-d, ep-d+f]
+
+
+def _placer_elements(spec: CarteSpec):
+    """Retourne (elements_placés, prismes_de_découpe).
+    elements_placés = [(index, mp, mode, r, couleur), ...] ;
+    prismes_de_découpe = solides à retirer du socle (modes gravé + lisse)."""
+    placs, decoupes = [], []
+    for i, el in enumerate(spec.elements):
         mp = _forme_element(el, spec)
         if mp is None:
             continue
         mp = _placer(mp, spec, el)
         if mp.is_empty:
             continue
-        par_couleur.setdefault(el.couleur, []).append((mp, el.relief))
+        mode = getattr(el, "mode", "relief")
+        r = max(0.3, float(getattr(el, "relief", 0.6)))
+        placs.append((i, mp, mode, r, el.couleur))
+        if mode in ("grave", "lisse"):
+            prof = _prof_decoupe(mode, r, spec.ep)
+            for g in _geoms(mp):
+                if g.area > 0:
+                    decoupes += _extruder(g, prof + CHEV, spec.ep - prof)
+    return placs, decoupes
+
+
+def _socle_creuse(spec: CarteSpec, decoupes: list):
+    """Socle extrudé, creusé des prismes gravé/lisse (booléen unique + repli).
+    Retourne (socle_mesh, cut_ok)."""
+    base = union_solides(_extruder(_socle_2d(spec), spec.ep))
+    cut_ok = False
+    if decoupes:
+        try:
+            trou = union_solides(decoupes)
+            res = trimesh.boolean.difference([base, trou], engine="manifold")
+            if res is not None and len(res.faces) and res.is_watertight:
+                base, cut_ok = res, True
+        except Exception:
+            logger.warning("Carte : découpe gravé/lisse échouée → repli en relief")
+    base.visual.face_colors = _hex_rgba(spec.couleur_base)
+    return base, cut_ok
+
+
+def construire(spec: CarteSpec):
+    """Construit la carte -> (trimesh.Scene multi-corps, liste ordonnée des
+    couleurs). Corps 0 = socle (couleur de base, creusé pour gravé/lisse) ; puis
+    un corps par couleur d'élément. Chaque corps porte sa couleur visuelle."""
+    placs, decoupes = _placer_elements(spec)
+    base, cut_ok = _socle_creuse(spec, decoupes)
+
+    par_couleur: dict[str, list] = {}
+    for _i, mp, mode, r, coul in placs:
+        par_couleur.setdefault(coul, []).append((mp, mode, r))
 
     scene = trimesh.Scene()
     scene.add_geometry(base, node_name="socle", geom_name="socle")
     couleurs = [spec.couleur_base]
     for i, (coul, items) in enumerate(par_couleur.items()):
         solides = []
-        for mp, relief in items:
-            r = max(0.3, float(relief))
-            for g in (mp.geoms if isinstance(mp, MultiPolygon) else [mp]):
+        for mp, mode, r in items:
+            for g in _geoms(mp):
                 if g.area > 0:
-                    # relief posé SUR le socle (chevauche pour souder)
-                    solides += _extruder(g, r + CHEV, spec.ep - CHEV)
+                    solides += _corps_couleur(g, mode, r, spec.ep, cut_ok)
         if not solides:
             continue
         corps = union_solides(solides)
@@ -230,29 +292,21 @@ def construire(spec: CarteSpec):
 
 
 def construire_apercu(spec: CarteSpec):
-    """Aperçu ÉDITEUR : socle + UN corps par ÉLÉMENT (non fusionnés par couleur),
-    nommés « socle » et « el_<i> » (<i> = index dans spec.elements). Permet au
-    viewer de mettre à jour/piquer/déplacer chaque élément indépendamment (drag),
-    sans reconstruire toute la scène (pas de clignotement). L'EXPORT continue
-    d'utiliser construire() (fusion par couleur = slots de filament)."""
+    """Aperçu ÉDITEUR : socle (creusé pour gravé/lisse) + UN corps par ÉLÉMENT,
+    nommés « socle » et « el_<i> ». Permet au viewer de déplacer chaque élément
+    indépendamment. L'EXPORT utilise construire() (fusion par couleur = slots)."""
+    placs, decoupes = _placer_elements(spec)
+    base, cut_ok = _socle_creuse(spec, decoupes)
+
     scene = trimesh.Scene()
-    base = union_solides(_extruder(_socle_2d(spec), spec.ep))
-    base.visual.face_colors = _hex_rgba(spec.couleur_base)
     scene.add_geometry(base, node_name="socle", geom_name="socle")
-    for i, el in enumerate(spec.elements):
-        mp = _forme_element(el, spec)
-        if mp is None:
-            continue
-        mp = _placer(mp, spec, el)
-        if mp.is_empty:
-            continue
-        r = max(0.3, float(el.relief))
-        solides = [m for g in (mp.geoms if isinstance(mp, MultiPolygon) else [mp])
-                   if g.area > 0 for m in _extruder(g, r + CHEV, spec.ep - CHEV)]
+    for i, mp, mode, r, coul in placs:
+        solides = [m for g in _geoms(mp) if g.area > 0
+                   for m in _corps_couleur(g, mode, r, spec.ep, cut_ok)]
         if not solides:
             continue
         corps = union_solides(solides)
-        corps.visual.face_colors = _hex_rgba(el.couleur)
+        corps.visual.face_colors = _hex_rgba(coul)
         scene.add_geometry(corps, node_name=f"el_{i}", geom_name=f"el_{i}")
     return scene
 

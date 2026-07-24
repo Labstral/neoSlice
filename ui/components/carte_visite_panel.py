@@ -30,6 +30,10 @@ _ALIGN_V = [("haut", "Haut", "Top"), ("milieu", "Milieu", "Middle"),
             ("bas", "Bas", "Bottom")]
 _ORIENT = [("horizontal", "Horizontal", "Horizontal"),
            ("vertical", "Vertical", "Vertical")]
+# Style de texte : relief (surélevé) / gravé (creusé) / lisse (à plat, affleurant)
+_MODE = [("relief", "Relief", "Raised"),
+         ("grave", "Gravé", "Engraved"),
+         ("lisse", "Lisse (à plat)", "Flat")]
 
 
 def _fr(fr, en):
@@ -265,15 +269,27 @@ class _ElementEditor(QFrame):
         form.addRow(_lbl(_fr("Vertical", "Vertical")), self.cb_av)
         row_off = QHBoxLayout()
         row_off.setSpacing(4)
-        self.sp_dx = self._spin(-60, 60, 0.0, 0.5, champ, " mm")
-        self.sp_dy = self._spin(-40, 40, 0.0, 0.5, champ, " mm")
+        # Unité (mm) dans le LIBELLÉ, pas en suffixe : deux spins côte à côte,
+        # le suffixe « mm » débordait et masquait les chiffres (voir retour testeur).
+        self.sp_dx = self._spin(-60, 60, 0.0, 0.5, champ)
+        self.sp_dy = self._spin(-40, 40, 0.0, 0.5, champ)
         for s in (self.sp_dx, self.sp_dy):
-            s.setMaximumWidth(76)               # deux côte à côte -> rentre
+            s.setMaximumWidth(80)               # deux côte à côte -> rentre
         row_off.addWidget(self.sp_dx)
         row_off.addWidget(self.sp_dy)
-        form.addRow(_lbl(_fr("Décalage X / Y", "Offset X / Y")), row_off)
+        form.addRow(_lbl(_fr("Décalage X / Y (mm)", "Offset X / Y (mm)")), row_off)
         self.sp_relief = self._spin(0.3, 1.5, 0.6, 0.1, champ, " mm")
-        form.addRow(_lbl(_fr("Relief", "Relief")), self.sp_relief)
+        if self.type_el == "texte":
+            # Style relief / gravé / lisse + libellé dynamique du champ magnitude.
+            self._form = form
+            self.cb_mode = self._combo(_MODE, "relief", champ)
+            self.cb_mode.currentIndexChanged.connect(self._maj_mode)
+            form.addRow(_lbl(_fr("Style", "Style")), self.cb_mode)
+            self._relief_lbl = _lbl(_fr("Hauteur", "Height"))
+            form.addRow(self._relief_lbl, self.sp_relief)
+            self._maj_mode()
+        else:
+            form.addRow(_lbl(_fr("Relief", "Relief")), self.sp_relief)
         corps_lay.addLayout(form)
 
         # couleur
@@ -349,6 +365,8 @@ class _ElementEditor(QFrame):
             self._selc(self.cb_pol, d.get("police"))
             self.sp_h.setValue(float(d.get("hauteur", 5.0)))
             self.sp_esp.setValue(float(d.get("espacement", 0.0)))
+            self._selc(self.cb_mode, d.get("mode", "relief"))
+            self._maj_mode()
         elif self.type_el == "logo":
             self._image = d.get("chemin", "") or ""
             if self._image:
@@ -376,6 +394,21 @@ class _ElementEditor(QFrame):
     def _recentrer_y(self):
         if self.cb_av.currentData() == "milieu":
             self.sp_dy.setValue(0.0)            # centrage vertical parfait
+
+    def _maj_mode(self):
+        """Style texte : relief -> « Hauteur », gravé -> « Profondeur »,
+        lisse -> à plat (champ masqué, ni hauteur ni profondeur)."""
+        if not hasattr(self, "cb_mode"):
+            return
+        m = self.cb_mode.currentData()
+        self._relief_lbl.setText(
+            _fr("Profondeur", "Depth") if m == "grave" else _fr("Hauteur", "Height"))
+        vis = (m != "lisse")
+        try:
+            self._form.setRowVisible(self.sp_relief, vis)
+        except Exception:
+            self._relief_lbl.setVisible(vis)
+            self.sp_relief.setVisible(vis)
 
     def _spin(self, mini, maxi, val, pas, style, suffix=""):
         s = QDoubleSpinBox()
@@ -434,7 +467,7 @@ class _ElementEditor(QFrame):
             return CV.ElementTexte(
                 texte=self.le.text(), police=self.cb_pol.currentData(),
                 hauteur=self.sp_h.value(), espacement=self.sp_esp.value(),
-                **_common)
+                mode=self.cb_mode.currentData(), **_common)
         if self.type_el == "trait":
             return CV.ElementTrait(
                 longueur=self.sp_long.value(), epaisseur=self.sp_ep.value(),

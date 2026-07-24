@@ -488,7 +488,9 @@ def separateur_tiroir(longueur: float = 150, hauteur: float = 60,
 
 
 def cadre_photo(largeur_photo: float = 100, hauteur_photo: float = 150,
-                bord: float = 12, texte: str = "", grave: bool = True):
+                bord: float = 12, texte: str = "", style: str = "grave",
+                relief: float = 0.8, couleur_cadre: str = "#EDEDED",
+                couleur_fond: str = "#3B82F6", couleur_texte: str = "#111111"):
     """Cadre photo DEUX CORPS (3MF) : cadre à poche arrière + FOND qui
     S'EMBOÎTE — 6 ergots en légère interférence (~0.15 mm) pressent contre la
     paroi de la poche : tenue franche, fond amovible pour changer la photo.
@@ -505,17 +507,36 @@ def cadre_photo(largeur_photo: float = 100, hauteur_photo: float = 150,
     solides += _extruder(ext.difference(fenetre), ep_avant + CHEV,
                          h_poche - CHEV)                          # face avant
     cadre = union_solides(solides)
-    if texte:
-        # Bande de texte CENTRÉE sur la bordure basse VISIBLE : de l'arête
-        # extérieure (y_ext) jusqu'au bord de la fenêtre (y_fen). Avant, la bande
-        # ne couvrait que la moitié EXTERNE de la bordure → texte trop bas.
-        y_ext = -(hp2 + bord)        # arête extérieure basse du cadre
-        y_fen = -(hp2 - 4)           # bord bas de la fenêtre (ouverture)
-        cy = (y_ext + y_fen) / 2.0   # centre vertical de la bordure basse
-        hb = bord - 2.0              # hauteur de bande (taille de texte conservée)
-        bande = box(-lp2, cy - hb / 2.0, lp2, cy + hb / 2.0)
-        cadre = _texte_sur(cadre, bande, texte, h_poche + ep_avant, grave, 0.8, 0.8)
-    cadre.apply_translation(-cadre.bounds[0])
+    # ── Texte + couleurs ──────────────────────────────────────────────────────
+    # _texte_sur bicolore renvoie une Scene {objet: cadre, texte} colorée selon le
+    # STYLE (relief/gravé/lisse). On y ajoute le FOND (3e couleur) → cadre
+    # multicouleur : cadre + fond + texte, chacun sa couleur (slots à l'export).
+    from core.neogen.bicolore import _hex_rgba
+    texte_body = None
+    if texte and texte.strip():
+        # Bande de texte CENTRÉE sur la bordure basse VISIBLE (arête extérieure
+        # -> bord de la fenêtre), sinon le texte tombe trop bas.
+        y_ext = -(hp2 + bord)
+        y_fen = -(hp2 - 4)
+        cyb = (y_ext + y_fen) / 2.0
+        hb = bord - 2.0
+        bande = box(-lp2, cyb - hb / 2.0, lp2, cyb + hb / 2.0)
+        res = _texte_sur(cadre, bande, texte, h_poche + ep_avant, False,
+                         max(0.4, float(relief)), 0.8, style=style,
+                         couleur_objet=couleur_cadre, couleur_texte=couleur_texte)
+        if isinstance(res, trimesh.Scene):
+            cadre = res.geometry["objet"]
+            texte_body = res.geometry.get("texte")
+        else:
+            cadre = res
+            cadre.visual.face_colors = _hex_rgba(couleur_cadre)
+    else:
+        cadre.visual.face_colors = _hex_rgba(couleur_cadre)
+
+    off = -cadre.bounds[0]
+    cadre.apply_translation(off)
+    if texte_body is not None:
+        texte_body.apply_translation(off)
 
     # FOND : plaque au jeu 0.15/côté + 6 ergots (r 0.8, centre à 0.5 du bord
     # -> débord 0.3, soit 0.15 D'INTERFÉRENCE dans la poche = emboîtement).
@@ -530,11 +551,14 @@ def cadre_photo(largeur_photo: float = 100, hauteur_photo: float = 150,
     fond2d = fond2d.difference(Point(0, hp2 + 0.35 - 8).buffer(2.6, resolution=32))
     fond2d = fond2d.difference(Point(0, -(hp2 + 0.35)).buffer(6, resolution=32))
     fond = union_solides(_extruder(fond2d, ep_fond))
+    fond.visual.face_colors = _hex_rgba(couleur_fond)
     fond.apply_translation(-fond.bounds[0])
     fond.apply_translation([float(cadre.bounds[1][0]) + 8.0, 0, 0])
 
     scene = trimesh.Scene()
     scene.add_geometry(cadre, node_name="cadre", geom_name="cadre")
+    if texte_body is not None:
+        scene.add_geometry(texte_body, node_name="texte", geom_name="texte")
     scene.add_geometry(fond, node_name="fond", geom_name="fond")
     return scene
 
