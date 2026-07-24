@@ -51,7 +51,8 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 - **Carte de fragilité par pièce** : sur un plateau multi-pièces, cochez « Fragilité » dans la vue 3D — chaque pièce se colore selon sa solidité (vert = solide, jaune = un peu fragile, rouge = fragile).
 - **FlashPrint — 9e slicer** : sortie vers FlashPrint (FlashForge) avec dépôt automatique du profil d'impression ; les plateaux proposés s'adaptent désormais à chaque imprimante.
 - **Mode performance automatique** : neoSlice choisit seul, pièce par pièce, le meilleur compromis vitesse/précision selon votre machine.
-- **Fiabilité** : chargement des 3MF complexes (assemblages multi-pièces Bambu) qui pouvaient bloquer indéfiniment ; analyses accélérées sur les maillages denses ; petites pièces correctement posées sur le plateau dans la vue 3D.
+- **Fiabilité** : chargement des 3MF complexes (assemblages multi-pièces Bambu) qui pouvaient bloquer indéfiniment ; **plus aucune analyse ne peut geler** — un garde-fou de temps sur les maillages très denses garantit qu'on arrive toujours au devis ; analyses accélérées ; petites pièces correctement posées sur le plateau dans la vue 3D.
+- **macOS** : la mise à jour dépose désormais le fichier téléchargé directement dans le dossier **Téléchargements** (plus facile à retrouver).
 - **Interface** : type de fichier réel affiché (STL/OBJ/3MF), messages d'analyse épurés, progression plus lisible.
 
 ### v0.1.7
@@ -134,7 +135,7 @@ python -m PyInstaller --clean -y neoslice_mac.spec
 ## Gratuit + Pro
 
 neoSlice est **gratuit** pour optimiser et exporter vos pièces — c'est le cœur de l'application et ça le restera.
-Pour aller plus loin, **neoSlice Pro** débloque l'assistant IA Oen, l'export multicouleur avec décompte de stock, le Diagnostic IA et la gestion d'atelier complète.
+Pour aller plus loin, **neoSlice Pro — 79,99 € en paiement unique, à vie (sans abonnement)** — débloque le générateur d'objets neoGen, l'assistant IA Oen, l'export multicouleur avec décompte de stock, le Diagnostic IA et la gestion d'atelier complète.
 
 Envie de soutenir le projet ? [☕ Buy Me a Coffee](https://buymeacoffee.com/bambulabpourlesnuls)
 

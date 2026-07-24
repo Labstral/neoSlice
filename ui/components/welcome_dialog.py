@@ -73,10 +73,13 @@ _WHATS_NEW_FR = [
      "en quelques secondes."),
     ("Autres améliorations v0.1.8",
      "• Chargement fiable des 3MF complexes (assemblages multi-pièces Bambu).\n"
+     "• Plus aucune analyse ne peut geler : un garde-fou de temps garantit qu'on "
+     "arrive toujours au devis, même sur les maillages très denses.\n"
      "• Les petites pièces reposent correctement sur le plateau dans la vue 3D.\n"
      "• Le type de fichier réel (STL, OBJ ou 3MF) est affiché pendant l'analyse.\n"
      "• Messages d'analyse épurés et progression plus lisible.\n"
-     "• Plages de dimensions élargies sur tous les objets neoGen."),
+     "• Plages de dimensions élargies sur tous les objets neoGen.\n"
+     "• macOS : la mise à jour dépose le fichier dans le dossier Téléchargements."),
     ("Oen — assistant IA local (Pro)",
      "Un modèle Qwen3 tourne directement sur votre machine (hors ligne, privé), "
      "nourri d'une base de connaissances imprimantes toutes marques. Activez le "

@@ -199,6 +199,11 @@ a = Analysis(
         'core.neogen.formes3', 'core.neogen.pro_resto', 'core.neogen.pro_mariage',
         'core.neogen.pro_boutique', 'core.neogen.relief_photo',
         'core.neogen.bicolore', 'core.neogen.carte_visite',
+        # objets_module : objets neoGen téléchargeables (MAJ sans rebuild),
+        # importé DANS des fonctions (catalogue/maj) → à forcer.
+        'core.neogen.objets_module',
+        # flashprint_builder : 9e slicer, importé dans une fonction de main_window.
+        'core.export.flashprint_builder',
         # RAM macOS/Linux (analyse de configuration dans les réglages)
         'psutil',
         'mapbox_earcut', 'manifold3d', 'svgelements', 'cv2',
