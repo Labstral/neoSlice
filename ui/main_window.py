@@ -211,6 +211,33 @@ class AnalysisWorker(QObject):
                     logger.exception("Fast overhang analysis échouée")
 
                 self.progress.emit(35, "Mesh complexe — stabilité rapide…")
+
+                # ── Garde-fou anti-timeout ────────────────────────────────────
+                # Sur un mesh pathologique (certains 3MF multi-corps denses),
+                # analyze_stability ou detect_fragility peuvent bloquer > 60s et
+                # faire ÉCHOUER TOUTE l'analyse (« TIMEOUT 60 S » côté client).
+                # On borne chaque calcul : en cas de dépassement on garde la valeur
+                # approximative par défaut et on continue jusqu'au devis. Le thread
+                # démon restant meurt avec l'application, sans bloquer l'UI.
+                import threading as _thw
+
+                def _bounded(_fn, _timeout, _what):
+                    _box = [None]
+                    def _w():
+                        try:
+                            _box[0] = _fn()
+                        except Exception:
+                            logger.exception(f"Fast {_what} échoué")
+                    _t = _thw.Thread(target=_w, daemon=True)
+                    _t.start()
+                    _t.join(_timeout)
+                    if _box[0] is None and _t.is_alive():
+                        logger.warning(
+                            f"Fast {_what}: dépassement > {_timeout:.0f}s — valeur "
+                            "approximative conservée (analyse non bloquée)"
+                        )
+                    return _box[0]
+
                 class _FastResult:
                     stability_score = 0.5; center_of_mass = [0, 0, 0]
                     brim_recommendation_mm = 0.0; min_wall_thickness_mm = 99.0
@@ -220,22 +247,24 @@ class AnalysisWorker(QObject):
                     support_needed = False; has_floating_regions = False
                     fallback_used = True
                 _fr = _FastResult()
-                try:
-                    from core.geometry.stability_analyzer import analyze_stability as _as
-                    _st = _as(self._mesh)
+
+                from core.geometry.stability_analyzer import analyze_stability as _as
+                _st = _bounded(lambda: _as(self._mesh), 15.0, "stabilité")
+                if _st is not None:
                     _fr.stability_score        = _st.score
                     _fr.center_of_mass         = _st.center_of_mass.tolist()
                     _fr.brim_recommendation_mm = _st.brim_recommendation_mm
-                except Exception:
-                    pass
-                try:
-                    from core.geometry.fragility_detector import detect_fragility as _df
-                    _fd = _df(self._mesh, nozzle_diameter_mm=self._nozzle_mm)
+
+                from core.geometry.fragility_detector import detect_fragility as _df
+                _fd = _bounded(
+                    lambda: _df(self._mesh, nozzle_diameter_mm=self._nozzle_mm),
+                    15.0, "fragilité",
+                )
+                if _fd is not None:
                     _fr.has_fragile_zones      = _fd.has_fragile_zones
                     _fr.min_wall_thickness_mm  = _fd.min_thickness_mm
                     _fr.fragility_severity     = _fd.severity
-                except Exception:
-                    pass
+
                 lr = _fr
             else:
                 # ── Tâches d'analyse encapsulées pour exécution parallèle ─────
@@ -2874,7 +2903,18 @@ class MainWindow(QMainWindow):
                     total = int(resp.headers.get("Content-Length", 0))
                     import sys as _sys
                     _upd_suffix = ".exe" if _sys.platform == "win32" else ".zip" if _sys.platform == "darwin" else ""
-                    tmp = tempfile.mktemp(suffix=_upd_suffix, prefix="neoSlice_update_")
+                    if _sys.platform == "darwin":
+                        # macOS : déposer le .zip dans ~/Téléchargements (dossier VISIBLE)
+                        # plutôt que dans un dossier temporaire /var/folders/… obscur —
+                        # sinon l'utilisateur ne retrouve jamais le fichier téléchargé.
+                        _dl_dir = Path.home() / "Downloads"
+                        try:
+                            _dl_dir.mkdir(parents=True, exist_ok=True)
+                        except Exception:
+                            _dl_dir = Path(tempfile.gettempdir())
+                        tmp = str(_dl_dir / "neoSlice_macOS.zip")
+                    else:
+                        tmp = tempfile.mktemp(suffix=_upd_suffix, prefix="neoSlice_update_")
                     downloaded = 0
                     with open(tmp, "wb") as f:
                         while True:
