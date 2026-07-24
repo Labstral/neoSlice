@@ -61,15 +61,23 @@ ESSAIS_GRATUITS = 0   # essais gratuits SUPPRIMES (2026-07-08) : le Diagnostic I
 PRIX_AFFICHE = "79,99 €"
 MAX_APPAREILS = 3        # nombre max d'activations (uses Gumroad)
 
-# Page d'achat Gumroad (bouton « Débloquer Pro »).
-LIEN_ACHAT = "https://neoslice.gumroad.com/l/zetye"
+# Page d'achat Gumroad (bouton « Débloquer Pro ») — produit EUR (lancement 1.8).
+LIEN_ACHAT = "https://neoslice.gumroad.com/l/neoslice-pro-eur"
 
 # Vérification de licence Gumroad — endpoint public (aucun token vendeur requis,
 # product_id + clé suffisent). Gumroad EXIGE le product_id (le permalink ne marche
 # que pour les clés inexistantes). product_id = identifiant public du produit.
 _GUMROAD_VERIFY = "https://api.gumroad.com/v2/licenses/verify"
-_GUMROAD_PRODUCT_ID = "xMWXJLoFcQEeEnUzG4VG3g=="
-_GUMROAD_PERMALINK = "zetye"   # juste pour mémoire (lien d'achat)
+# Deux produits Gumroad coexistent : l'historique en USD et le nouveau en EUR
+# (Gumroad impose un nouveau produit pour changer de devise). On vérifie les clés
+# contre les DEUX product IDs pour ne casser AUCUN client (anciens USD + nouveaux
+# EUR). Le produit EUR est essayé en premier (ventes à venir), l'USD en repli.
+_GUMROAD_PRODUCT_IDS = (
+    "oV7BvjUvE3FM3Jg9uyvP_w==",   # produit EUR (lancement 1.8, permalink neoslice-pro-eur)
+    "xMWXJLoFcQEeEnUzG4VG3g==",   # produit USD (historique, permalink zetye)
+)
+_GUMROAD_PRODUCT_ID = _GUMROAD_PRODUCT_IDS[0]   # compat si référencé ailleurs
+_GUMROAD_PERMALINK = "neoslice-pro-eur"   # pour mémoire (lien d'achat EUR)
 
 # Clés prefs.json
 _K_USED = "diag_free_used"
@@ -419,7 +427,28 @@ def _clear_local() -> None:
 
 
 def _gumroad_verify(cle: str, increment: bool) -> tuple[bool, bool, int, str]:
-    """Vérifie une clé de licence via l'API Gumroad.
+    """Vérifie une clé contre TOUS les produits Gumroad connus (USD + EUR).
+
+    Deux produits coexistent (devise). On essaie chaque product_id et on
+    retourne au 1er succès. Sans réseau, on ne tranche pas. increment=True
+    n'incrémente QUE sur le produit auquel la clé appartient (les autres
+    renvoient 404 sans rien consommer).
+    """
+    if not cle:
+        return True, False, 0, _("license.empty_key")
+    dernier = (True, False, 0, "")
+    for _pid in _GUMROAD_PRODUCT_IDS:
+        reseau_ok, succes, uses, msg = _gumroad_verify_one(_pid, cle, increment)
+        if not reseau_ok:
+            return reseau_ok, succes, uses, msg   # pas de réseau → on ne tranche pas
+        if succes:
+            return reseau_ok, succes, uses, msg
+        dernier = (reseau_ok, succes, uses, msg)
+    return dernier
+
+
+def _gumroad_verify_one(pid: str, cle: str, increment: bool) -> tuple[bool, bool, int, str]:
+    """Vérifie une clé de licence via l'API Gumroad pour UN product_id donné.
 
     Retourne (réseau_ok, succès, uses, message).
       - réseau_ok=False → pas de connexion (on ne tranche pas).
@@ -430,7 +459,7 @@ def _gumroad_verify(cle: str, increment: bool) -> tuple[bool, bool, int, str]:
     if not cle:
         return True, False, 0, _("license.empty_key")
     payload = urllib.parse.urlencode({
-        "product_id": _GUMROAD_PRODUCT_ID,
+        "product_id": pid,
         "license_key": cle,
         "increment_uses_count": "true" if increment else "false",
     }).encode("utf-8")
