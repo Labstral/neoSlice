@@ -61,23 +61,22 @@ ESSAIS_GRATUITS = 0   # essais gratuits SUPPRIMES (2026-07-08) : le Diagnostic I
 PRIX_AFFICHE = "79,99 €"
 MAX_APPAREILS = 3        # nombre max d'activations (uses Gumroad)
 
-# Page d'achat Gumroad (bouton « Débloquer Pro ») — produit EUR (lancement 1.8).
-LIEN_ACHAT = "https://neoslice.gumroad.com/l/neoslice-pro-eur"
+# Page d'achat Gumroad (bouton « Débloquer Pro ») — produit unique « neoslice-pro ».
+LIEN_ACHAT = "https://neoslice.gumroad.com/l/neoslice-pro"
 
 # Vérification de licence Gumroad — endpoint public (aucun token vendeur requis,
 # product_id + clé suffisent). Gumroad EXIGE le product_id (le permalink ne marche
 # que pour les clés inexistantes). product_id = identifiant public du produit.
 _GUMROAD_VERIFY = "https://api.gumroad.com/v2/licenses/verify"
-# Deux produits Gumroad coexistent : l'historique en USD et le nouveau en EUR
-# (Gumroad impose un nouveau produit pour changer de devise). On vérifie les clés
-# contre les DEUX product IDs pour ne casser AUCUN client (anciens USD + nouveaux
-# EUR). Le produit EUR est essayé en premier (ventes à venir), l'USD en repli.
+# Un SEUL produit Gumroad : « neoslice-pro » (le produit historique, avec toutes
+# les ventes ; le produit EUR créé temporairement a été supprimé). Son product_id
+# est INCHANGÉ → les clés des clients existants restent valides. La vérif reste
+# une liste (extensible) au cas où d'autres produits seraient ajoutés un jour.
 _GUMROAD_PRODUCT_IDS = (
-    "oV7BvjUvE3FM3Jg9uyvP_w==",   # produit EUR (lancement 1.8, permalink neoslice-pro-eur)
-    "xMWXJLoFcQEeEnUzG4VG3g==",   # produit USD (historique, permalink zetye)
+    "xMWXJLoFcQEeEnUzG4VG3g==",   # produit unique (permalink neoslice-pro)
 )
 _GUMROAD_PRODUCT_ID = _GUMROAD_PRODUCT_IDS[0]   # compat si référencé ailleurs
-_GUMROAD_PERMALINK = "neoslice-pro-eur"   # pour mémoire (lien d'achat EUR)
+_GUMROAD_PERMALINK = "neoslice-pro"   # pour mémoire (lien d'achat)
 
 # Clés prefs.json
 _K_USED = "diag_free_used"
