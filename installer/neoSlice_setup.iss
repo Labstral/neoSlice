@@ -50,13 +50,15 @@ VersionInfoDescription={#AppName} Setup
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
 
-; Mise à jour — ferme neoSlice automatiquement si ouvert.
-; force = si la fermeture gracieuse échoue (process figé/zombie ou en cours de
-; sortie), l'installateur TERMINE de force neoSlice.exe au lieu d'afficher
-; « fermez l'application » et de bloquer. Débloque aussi les utilisateurs déjà
-; coincés dès ce prochain installateur.
+; Mise à jour — ferme automatiquement TOUT programme qui verrouille un fichier à
+; remplacer, pas seulement neoSlice.exe. Un processus ENFANT survivant
+; (QtWebEngineProcess.exe, worker…) gardait « _internal\msvcp140.dll » ouvert
+; -> « DeleteFile a échoué ; code 5. Accès refusé ». En restreignant le filtre à
+; neoSlice.exe, ces enfants étaient IGNORÉS. On revient donc au filtre par défaut
+; (*.exe) : le gestionnaire de redémarrage Windows ferme tous les verrouilleurs.
+; force = terminaison forcée si la fermeture gracieuse échoue (helper sans fenêtre,
+; process figé/zombie). Débloque aussi les utilisateurs déjà coincés.
 CloseApplications=force
-CloseApplicationsFilter=neoSlice.exe
 RestartApplications=no
 
 ; Désinstalleur
