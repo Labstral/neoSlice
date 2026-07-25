@@ -30,11 +30,27 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-VERSION = "2026-07-23b"
-NOTES = "Passe-fil de bureau. (L'hexagonal est désormais une option de l'entretoise native.)"
+VERSION = "2026-07-25"
+NOTES = "Passe-fil de bureau + boîte rectangulaire (rangement de cartes de jeu)."
 
 # ── Objets à publier ────────────────────────────────────────────────────────
 OBJETS = [
+    {
+        "id": "boite_rectangulaire",
+        "fr": "Boîte rectangulaire", "en": "Rectangular box",
+        "domaine": "maison", "texte": "aucun",
+        "synonymes": "boite rectangulaire rangement cartes jeu carte deck coffret bac plateau contenant",
+        "params": [
+            ["longueur", "Longueur", "Length", 40, 220, 95, 1],
+            ["largeur", "Largeur", "Width", 30, 160, 70, 1],
+            ["hauteur", "Hauteur", "Height", 10, 90, 30, 1],
+            ["paroi", "Épaisseur des parois", "Wall thickness", 1.2, 5, 2, 0.2],
+        ],
+        "code": (
+            "bac = boite_3d(longueur, largeur, hauteur)\n"
+            "piece = creuser(bac, paroi)"
+        ),
+    },
     {
         "id": "passe_fil_bureau",
         "fr": "Passe-fil de bureau", "en": "Desk cable grommet",
