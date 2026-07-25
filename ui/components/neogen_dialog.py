@@ -633,6 +633,23 @@ class NeoGenPanel(QWidget):
                                  else _("neogen.text_height"))
             _style_cb.currentIndexChanged.connect(_sync_style)
             _sync_style()
+        # Menu FORME (ronde / carrée / rectangulaire) : « Diamètre / côté » pour
+        # ronde-carrée, « Longueur » + « Largeur » pour rectangulaire (les champs
+        # inutiles sont masqués selon le choix). Ne s'active que si l'objet a bien
+        # les paramètres longueur ET largeur (donc uniquement la boîte).
+        _forme_cb = champs.get("forme")
+        _row_t = param_rows.get("taille")
+        _row_lo = param_rows.get("longueur")
+        _row_la = param_rows.get("largeur")
+        if _forme_cb is not None and _row_lo is not None and _row_la is not None:
+            def _sync_forme(_ix=0, _cb=_forme_cb, _t=_row_t, _lo=_row_lo, _la=_row_la):
+                rect = (_cb.currentData() == "rectangulaire")
+                if _t is not None:
+                    _t[0].setVisible(not rect); _t[1].setVisible(not rect)
+                for _r in (_lo, _la):
+                    _r[0].setVisible(rect); _r[1].setVisible(rect)
+            _forme_cb.currentIndexChanged.connect(_sync_forme)
+            _sync_forme()
         for (fid, ffr, fen, defaut) in e["flags"]:
             ch = QCheckBox(_fr_en(ffr, fen))
             ch.setChecked(defaut)
