@@ -53,6 +53,7 @@ def _make_builder(obj: dict):
     bac à sable avec les paramètres de l'utilisateur injectés."""
     code = str(obj.get("code", ""))
     a_texte = obj.get("texte", "aucun") != "aucun"
+    a_image = bool(obj.get("image", False))
 
     def _build(p: dict):
         from core.neogen import libre as L        # import paresseux (sandbox)
@@ -62,6 +63,8 @@ def _make_builder(obj: dict):
                 ns[k] = p[k]
         if a_texte:
             ns["texte"] = p.get("texte", "")
+        if a_image:
+            ns["image"] = p.get("image")          # chemin fichier choisi par l'utilisateur
         return L.poser_au_sol(L.executer_sandbox(code, ns))
 
     return _build
@@ -91,7 +94,7 @@ def entrees_catalogue() -> list[dict]:
                 "fr": obj.get("fr", oid), "en": obj.get("en", oid),
                 "domaine": obj.get("domaine", "bureau"),
                 "texte": obj.get("texte", "aucun"),
-                "image": False,
+                "image": bool(obj.get("image", False)),
                 "params": list(obj.get("params", [])),
                 "flags": list(obj.get("flags", [])),
                 "choix": list(obj.get("choix", [])),

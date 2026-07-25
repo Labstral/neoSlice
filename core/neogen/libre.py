@@ -281,12 +281,76 @@ def repeter_cercle(objet: trimesh.Trimesh, n: int, rayon: float):
     return fusionner(*copies)
 
 
+def scene(*objets):
+    """Assemble PLUSIEURS pièces en UN objet multi-corps (ex. boîte + couvercle),
+    imprimées côte à côte. Chaque argument reste un CORPS distinct. Positionne-les
+    avec deplacer() pour qu'ils ne se chevauchent pas sur le plateau."""
+    s = trimesh.Scene()
+    n = 0
+    for o in objets:
+        if o is None or isinstance(o, _2D):
+            continue
+        n += 1
+        s.add_geometry(o.copy(), geom_name=f"piece_{n}")
+    return s
+
+
+def couleur(objet, hexa):
+    """Colore une pièce (hex '#RRGGBB'). Avec scene(), donne un objet
+    MULTICOULEUR : chaque corps porte sa couleur = 1 slot de filament à l'export."""
+    from core.neogen.bicolore import _hex_rgba
+    p = objet.copy()
+    try:
+        p.visual.face_colors = _hex_rgba(hexa)
+    except Exception:
+        pass
+    return p
+
+
 def poser_au_sol(objet):
     if isinstance(objet, _2D):
         return objet
+    if isinstance(objet, trimesh.Scene):
+        s = objet.copy()
+        try:
+            zmin = float(s.bounds[0][2])
+        except Exception:
+            zmin = 0.0
+        for g in s.geometry.values():
+            g.apply_translation([0, 0, -zmin])
+        return s
     p = objet.copy()
     p.apply_translation([0, 0, -float(p.bounds[0][2])])
     return p
+
+
+def relief_image(chemin, largeur=100.0, ep_min=0.8, ep_max=3.2,
+                 mode="lithophanie", cadre=True, debout=False):
+    """Image -> plaque en RELIEF (mode='relief') ou LITHOPHANIE (mode='lithophanie',
+    rétro-éclairée). `chemin` = le fichier image (paramètre image de l'objet)."""
+    from core.neogen.relief_photo import photo_en_relief
+    return photo_en_relief(str(chemin), largeur=float(largeur),
+                           ep_min=float(ep_min), ep_max=float(ep_max),
+                           mode=str(mode), cadre=bool(cadre), debout=bool(debout))
+
+
+def silhouette_image(chemin, largeur=40.0, epaisseur=3.0):
+    """Image (PNG/SVG) -> SILHOUETTE 3D extrudée (logo, pochoir…). `chemin` = le
+    fichier image fourni par le paramètre image de l'objet."""
+    from core.neogen import logo as _L
+    from pathlib import Path as _P
+    from shapely.ops import unary_union as _uu
+    src = _P(str(chemin))
+    couches = (_L.charger_svg(str(src)) if src.suffix.lower() == ".svg"
+               else _L.charger_png(str(src), 1))
+    couches = _L._normaliser(couches, float(largeur))
+    geoms = [mp for _c, mp in couches if mp is not None and not mp.is_empty]
+    if not geoms:
+        raise ValueError("silhouette vide (image illisible ?)")
+    parts = _L._extruder(_uu(geoms), float(epaisseur))
+    m = trimesh.util.concatenate(parts) if isinstance(parts, (list, tuple)) else parts
+    m.apply_translation(-m.bounds[0])
+    return m
 
 
 API = {
@@ -298,6 +362,8 @@ API = {
     "revolution": revolution, "deplacer": deplacer, "tourner": tourner,
     "fusionner": fusionner, "percer": percer, "creuser": creuser,
     "repeter_cercle": repeter_cercle, "poser_au_sol": poser_au_sol,
+    "scene": scene, "couleur": couleur,
+    "relief_image": relief_image, "silhouette_image": silhouette_image,
     "abs": abs, "min": min, "max": max, "round": round, "range": range,
     "len": len, "float": float, "int": int, "list": list,
 }
@@ -306,7 +372,9 @@ _DOC_API = """FONCTIONS DISPONIBLES (les SEULES autorisees, unites mm ; primitiv
 VOLUMES : boite_3d(x,y,z) ; cylindre(diametre,hauteur) ; cone(d_bas,hauteur,d_haut=0) ; sphere(d) ; demi_sphere(d, creuse=0) [creuse=paroi -> BOL] ; pyramide(cote,hauteur) ; tube(d_ext,d_int,hauteur) ; prisme(cotes,diametre,hauteur) ; tore(d_anneau,d_tube) [donut] ; arche(portee,hauteur,section) [anse/pont debout]
 FORMES 2D : rectangle_arrondi(x,y,rayon) ; disque(d) ; etoile(branches,d) ; coeur(taille) ; texte_2d(texte,hauteur_lettres)
 CONSTRUIRE : extrusion(forme2D,hauteur,z=0) -> volume ; revolution([(rayon,z),...]) -> volume tourne
-OPERATIONS : deplacer(obj,dx,dy,dz) ; tourner(obj,'x'|'y'|'z',degres) ; fusionner(a,b,...) ; percer(piece,outil) ; creuser(piece,paroi) [evide par le dessus] ; repeter_cercle(obj,n,rayon) ; poser_au_sol(obj)"""
+OPERATIONS : deplacer(obj,dx,dy,dz) ; tourner(obj,'x'|'y'|'z',degres) ; fusionner(a,b,...) ; percer(piece,outil) ; creuser(piece,paroi) [evide par le dessus] ; repeter_cercle(obj,n,rayon) ; poser_au_sol(obj)
+MULTI-PIECES / COULEUR : scene(corpsA, corpsB, ...) [assemble plusieurs CORPS distincts en UN objet, ex. boite + couvercle cote a cote] ; couleur(corps,'#RRGGBB') [colore un corps -> multicouleur a l'export]
+IMAGE (chemin = parametre image de l'objet) : relief_image(chemin,largeur,ep_min,ep_max,mode='lithophanie'|'relief',cadre=True,debout=False) [photo -> lithophanie/relief] ; silhouette_image(chemin,largeur,epaisseur) [PNG/SVG -> silhouette extrudee (logo, pochoir)]"""
 
 _SYSTEME_BASE = f"""Tu ecris un script Python MINIMAL qui construit UNE piece 3D imprimable, en n'utilisant QUE les fonctions du kit. Tu reponds UNIQUEMENT avec le code entre ```python et ```, rien d'autre.
 
@@ -593,12 +661,42 @@ def executer_sandbox(code: str, params: dict | None = None) -> trimesh.Trimesh:
         raise ValueError("le script doit se terminer par : piece = <resultat>")
     if isinstance(piece, _2D):
         raise ValueError("piece est une forme 2D : extrude-la avec extrusion(forme, hauteur)")
-    if not isinstance(piece, trimesh.Trimesh):
-        raise ValueError("piece doit etre un volume du kit")
+    if not isinstance(piece, (trimesh.Trimesh, trimesh.Scene)):
+        raise ValueError("piece doit etre un volume du kit (ou scene(...) multi-corps)")
     return piece
 
 
-def verifier(piece: trimesh.Trimesh) -> str | None:
+def _verifier_scene(sc) -> str | None:
+    """Valide un objet MULTI-CORPS (scene) : chaque corps étanche/non vide, dims
+    globales OK, touche le plateau, imprimable. Le contrôle « un seul tenant » est
+    volontairement SAUTÉ (le multi-corps est l'objet légitime : boîte + couvercle…)."""
+    bodies = [g for g in sc.geometry.values() if isinstance(g, trimesh.Trimesh)]
+    if not bodies:
+        return "scene vide"
+    for b in bodies:
+        if len(b.faces) < 4:
+            return "un corps de la scene est vide"
+        if not b.is_watertight:
+            return "un corps n'est pas etanche (booleens invalides ?)"
+    d = sc.bounds[1] - sc.bounds[0]
+    if max(d) > 256 or min(d) < 0.8:
+        return f"dimensions aberrantes : {d[0]:.0f}x{d[1]:.0f}x{d[2]:.0f} mm"
+    if sc.bounds[0][2] > 0.5:
+        return "la piece ne touche pas le plateau (utilise poser_au_sol)"
+    try:
+        from core.geometry.overhang_detector import analyze_overhangs
+        merged = trimesh.util.concatenate(bodies)
+        res = analyze_overhangs(merged, smooth=False, check_floating=False)
+        if res.severity >= 0.75 and res.overhang_ratio > 0.18:
+            return "trop de surplombs (> 45 deg) : repense la construction"
+    except Exception:
+        pass
+    return None
+
+
+def verifier(piece) -> str | None:
+    if isinstance(piece, trimesh.Scene):
+        return _verifier_scene(piece)
     if len(piece.faces) < 4:
         return "piece vide"
     if not piece.is_watertight:

@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v0.1.8** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v0.1.8.1** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -48,6 +48,7 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 
 ### v0.1.8.1
 - **neoGen** : la « Boîte + couvercle » propose désormais une forme **rectangulaire** (en plus de ronde et carrée), avec longueur et largeur réglables.
+- **Bibliothèque neoGen sans limite de mise à jour** : « Mettre à jour la base » peut désormais ajouter ou corriger **n'importe quel type d'objet sans réinstaller** — pièces multiples (boîte + couvercle), bicolores, ou générées à partir d'une image (lithophanie, silhouette de logo).
 - **Fenêtre Modules** : coche verte devant le statut d'Oen, pour un rendu homogène avec neoGen.
 
 ### v0.1.8

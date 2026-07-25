@@ -30,8 +30,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-VERSION = "2026-07-23b"
-NOTES = "Passe-fil de bureau. (Le rectangulaire est désormais une forme de la boîte native.)"
+VERSION = "2026-07-25c"
+NOTES = "Passe-fil de bureau. Retrait de la boîte rectangulaire séparée (le rectangulaire est désormais une forme native de « Boîte + couvercle »)."
 
 # ── Objets à publier ────────────────────────────────────────────────────────
 OBJETS = [
@@ -56,23 +56,43 @@ OBJETS = [
 ]
 
 
+def _make_test_image() -> str:
+    """Image d'essai (disque noir sur fond blanc) pour valider les recettes image."""
+    import tempfile
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (240, 240), "white")
+    ImageDraw.Draw(img).ellipse([50, 50, 190, 190], fill="black")
+    path = Path(tempfile.gettempdir()) / "neogen_test_img.png"
+    img.save(path)
+    return str(path)
+
+
 def main() -> int:
     from core.neogen import libre as L
     from core.neogen.objets_module import _defauts
 
+    _IMAGE_TEST = _make_test_image()
     valides, ecartes = [], []
     for obj in OBJETS:
         try:
             ns = _defauts(obj)
             if obj.get("texte", "aucun") != "aucun":
                 ns["texte"] = "Test"
+            if obj.get("image", False):
+                ns["image"] = _IMAGE_TEST          # image d'essai pour valider le code
             piece = L.poser_au_sol(L.executer_sandbox(obj["code"], ns))
             err = L.verifier(piece)
             if err is None:
                 valides.append(obj)
-                d = piece.extents
-                print(f"  OK   {obj['id']:20} {d[0]:.0f}x{d[1]:.0f}x{d[2]:.0f} mm "
-                      f"(watertight={piece.is_watertight})")
+                import trimesh as _tm
+                d = piece.bounds[1] - piece.bounds[0]
+                if isinstance(piece, _tm.Scene):
+                    n = len([g for g in piece.geometry.values() if hasattr(g, "faces")])
+                    print(f"  OK   {obj['id']:20} {d[0]:.0f}x{d[1]:.0f}x{d[2]:.0f} mm "
+                          f"({n} corps)")
+                else:
+                    print(f"  OK   {obj['id']:20} {d[0]:.0f}x{d[1]:.0f}x{d[2]:.0f} mm "
+                          f"(watertight={piece.is_watertight})")
             else:
                 ecartes.append((obj["id"], err))
                 print(f"  KO   {obj['id']:20} → {err}")

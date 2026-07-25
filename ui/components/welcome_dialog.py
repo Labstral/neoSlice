@@ -52,6 +52,9 @@ _WHATS_NEW_FR = [
     ("Nouveautés v0.1.8.1",
      "• neoGen : la « Boîte + couvercle » a désormais une forme RECTANGULAIRE "
      "(en plus de ronde et carrée), avec longueur et largeur réglables.\n"
+     "• La bibliothèque neoGen s'enrichit et se corrige TOUTE SEULE via « Mettre à "
+     "jour la base » — désormais SANS aucune limite : objets en plusieurs pièces, "
+     "en deux couleurs ou générés à partir d'une image, tout arrive sans réinstaller.\n"
      "• Fenêtre Modules : coche verte devant le statut d'Oen, comme neoGen."),
     ("neoGen — générateur d'objets 3D (Pro)",
      "Le nouveau module phare : une bibliothèque d'objets prêts à imprimer, tous "
