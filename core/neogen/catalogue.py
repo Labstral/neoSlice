@@ -91,8 +91,7 @@ def _b_vase(p):
 def _b_boite(p):
     from core.neogen.objets import boite
     return boite(p.get("taille", 50), p.get("hauteur", 30), jeu=p.get("jeu", 0.2),
-                 forme=p.get("forme", "ronde"), cote=p.get("taille", 50),
-                 longueur=p.get("longueur", 90), largeur=p.get("largeur", 60))
+                 forme=p.get("forme", "ronde"), cote=p.get("taille", 50))
 
 def _b_support_tel(p):
     from core.neogen.objets import support_tel
@@ -278,13 +277,10 @@ CATALOGUE = [
     # ── Maison & rangement ──
     _e("boite", "Boîte + couvercle", "Box + lid", "maison", _b_boite,
        params=[_P("taille", "Diamètre / côté", "Diameter / side", 25, 150, 50, 1),
-               _P("longueur", "Longueur", "Length", 40, 220, 90, 1),
-               _P("largeur", "Largeur", "Width", 30, 160, 60, 1),
                _P("hauteur", "Hauteur", "Height", 12, 120, 30, 1),
                _P("jeu", "Jeu couvercle", "Lid clearance", 0.1, 0.5, 0.2, 0.05)],
        choix=[("forme", "Forme", "Shape",
-               [("ronde", "Ronde", "Round"), ("carree", "Carrée", "Square"),
-                ("rectangulaire", "Rectangulaire", "Rectangular")], "ronde")]),
+               [("ronde", "Ronde", "Round"), ("carree", "Carrée", "Square")], "ronde")]),
     _e("bac_compartiments", "Organiseur à cases", "Compartment tray", "maison",
        _f("formes", "bac_compartiments"),
        params=[_P("longueur", "Longueur", "Length", 60, 260, 140, 5),

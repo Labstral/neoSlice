@@ -74,19 +74,12 @@ def vase(hauteur: float = 100, diametre: float = 60, paroi: float = 2.4,
 # ── BOÎTE + COUVERCLE emboîtant (jeu d'ajustement) ───────────────────────────
 def boite(diametre: float = 50, hauteur: float = 30, paroi: float = 2.0,
           fond: float = 2.0, jeu: float = 0.2, forme: str = "ronde",
-          cote: float | None = None, longueur: float | None = None,
-          largeur: float | None = None) -> trimesh.Scene:
-    """Boîte + couvercle à lèvre, RONDE, CARRÉE ou RECTANGULAIRE (coins arrondis). La lèvre du
+          cote: float | None = None) -> trimesh.Scene:
+    """Boîte + couvercle à lèvre, RONDE ou CARRÉE (coins arrondis). La lèvre du
     couvercle entre DANS la boîte avec `jeu` mm par côté (ajustement doux).
     3MF 2 corps côte à côte. Les décalages intérieurs se font par buffer
     NÉGATIF de l'empreinte -> la même mécanique marche pour toute forme."""
-    if forme == "rectangulaire":
-        L = float(longueur or diametre)
-        W = float(largeur or diametre)
-        rc = min(4.0, min(L, W) * 0.12)               # coins arrondis
-        emp = box(-(L / 2 - rc), -(W / 2 - rc),
-                  L / 2 - rc, W / 2 - rc).buffer(rc, join_style=1)
-    elif forme == "carree":
+    if forme == "carree":
         c = float(cote or diametre)
         rc = min(4.0, c * 0.12)                       # coins arrondis
         emp = box(-(c / 2 - rc), -(c / 2 - rc),
