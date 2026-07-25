@@ -1333,7 +1333,7 @@ _FR: dict[str, str] = {
 
     # ── Oen · Assistant IA (section Réglages) ─────────────────────────────────
     "oen.section":            "OEN · ASSISTANT IA",
-    "oen.ready":              "Oen est installé et prêt (100% hors ligne).",
+    "oen.ready":              "✓ Oen est installé et prêt (100% hors ligne).",
     "oen.uninstall":          "Désinstaller",
     "oen.pro_only":           "Oen, l'assistant IA local, est réservé à la version Pro.",
     "oen.install_pitch":      "Oen, l'assistant IA local et hors ligne. Téléchargement unique (~8 Go) : moteur, modèle et base de connaissances. Prévoyez autant d'espace disque.",
@@ -2660,7 +2660,7 @@ _EN: dict[str, str] = {
 
     # ── Oen · AI Assistant (Settings section) ─────────────────────────────────
     "oen.section":            "OEN · AI ASSISTANT",
-    "oen.ready":              "Oen is installed and ready (100% offline).",
+    "oen.ready":              "✓ Oen is installed and ready (100% offline).",
     "oen.uninstall":          "Uninstall",
     "oen.pro_only":           "Oen, the local AI assistant, is available in the Pro version only.",
     "oen.install_pitch":      "Oen, the local, offline AI assistant. One-time download (~8 GB): engine, model and knowledge base. Make sure you have that much free disk space.",
