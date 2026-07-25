@@ -49,10 +49,6 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
-    ("Nouveautés v0.1.8.1",
-     "• neoGen : la « Boîte + couvercle » a désormais une forme RECTANGULAIRE "
-     "(en plus de ronde et carrée), avec longueur et largeur réglables.\n"
-     "• Fenêtre Modules : coche verte devant le statut d'Oen, comme neoGen."),
     ("neoGen — générateur d'objets 3D (Pro)",
      "Le nouveau module phare : une bibliothèque d'objets prêts à imprimer, tous "
      "personnalisables au millimètre — porte-clés, cadres photo, QR codes 3D en "

@@ -46,10 +46,6 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 
 ## Changelog
 
-### v0.1.8.1
-- **neoGen** : la « Boîte + couvercle » propose désormais une forme **rectangulaire** (en plus de ronde et carrée), avec longueur et largeur réglables.
-- **Fenêtre Modules** : coche verte devant le statut d'Oen, pour un rendu homogène avec neoGen.
-
 ### v0.1.8
 - **neoGen — générateur d'objets 3D** *(Pro)* : bibliothèque d'objets prêts à imprimer, tous personnalisables au millimètre — porte-clés, cadres photo, QR codes 3D en deux couleurs, cartes de visite, clips de câble au diamètre exact, joints, équerres, vis et écrous, objets pour la restauration, le mariage et la boutique. Texte en relief ou gravé, choix de la police et des couleurs ; pièces générées étanches et pensées pour sortir sans support. Plages de dimensions élargies sur tous les objets.
 - **Carte de fragilité par pièce** : sur un plateau multi-pièces, cochez « Fragilité » dans la vue 3D — chaque pièce se colore selon sa solidité (vert = solide, jaune = un peu fragile, rouge = fragile).
