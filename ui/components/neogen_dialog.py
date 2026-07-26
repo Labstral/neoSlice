@@ -582,10 +582,14 @@ class NeoGenPanel(QWidget):
             sp.setValue(defaut)
             sp.setSingleStep(pas)
             sp.setDecimals(1 if pas < 1 else 0)
-            sp.setSuffix("°" if pid == "angle" else
-                         (" mm" if pid not in ("cases_x", "cases_y", "rangees",
-                                               "colonnes", "branches", "ondulations",
-                                               "couleurs") else ""))
+            # Pas de « mm » sur les COMPTES (nombre de trous, de jeux, de cases…).
+            # Générique : id dans la liste OU commençant par « nb » OU label « Nombre… »
+            # -> aucun « mm » à lister objet par objet, marche pour toute nouvelle base.
+            _compte = (pid in ("cases_x", "cases_y", "rangees", "colonnes", "branches",
+                               "ondulations", "couleurs", "segments", "cotes")
+                       or pid.startswith("nb")
+                       or str(pfr).strip().lower().startswith(("nombre", "nb ")))
+            sp.setSuffix("°" if pid == "angle" else ("" if _compte else " mm"))
             sp.setStyleSheet(style_champ)
             _lbl_p = _lbl(_fr_en(pfr, pen))
             form.addRow(_lbl_p, sp)

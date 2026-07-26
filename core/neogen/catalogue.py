@@ -33,6 +33,7 @@ DOMAINES = [
     ("resto",   "Restauration", "Restaurant"),
     ("mariage", "Mariage & événementiel", "Wedding & events"),
     ("commerce", "Boutique & bureau pro", "Shop & pro office"),
+    ("calibration", "Calibration & tests", "Calibration & tests"),
 ]
 
 

@@ -30,7 +30,7 @@ import numpy as np
 import trimesh
 from shapely.geometry import Point, Polygon, MultiPolygon, box as shp_box
 from shapely.ops import unary_union
-from shapely.affinity import translate as shp_translate, rotate as shp_rotate
+from shapely.affinity import translate as shp_translate, rotate as shp_rotate, scale as shp_scale
 
 from core.assistant.engine import HOST
 from core.neogen.geo_utils import union_solides
@@ -353,6 +353,91 @@ def silhouette_image(chemin, largeur=40.0, epaisseur=3.0):
     return m
 
 
+# ── MOTEURS AVANCÉS (math + géométrie) — pour objets complexes en base ───────
+# Trigonométrie en DEGRÉS (cohérent avec tourner). Tout est pur/sûr.
+def sin(deg): return float(np.sin(np.radians(float(deg))))
+def cos(deg): return float(np.cos(np.radians(float(deg))))
+def tan(deg): return float(np.tan(np.radians(float(deg))))
+def atan2(y, x): return float(np.degrees(np.arctan2(float(y), float(x))))
+def racine(v): return float(np.sqrt(max(0.0, float(v))))
+def hypot(a, b): return float(np.hypot(float(a), float(b)))
+def plancher(v): return int(np.floor(float(v)))
+def plafond(v): return int(np.ceil(float(v)))
+PI = float(np.pi)
+
+
+def polygone(points):
+    """Polygone 2D QUELCONQUE à partir d'une liste de points (x, y). Répare
+    automatiquement une auto-intersection. -> forme 2D (à extruder)."""
+    pts = [(float(x), float(y)) for x, y in points]
+    p = Polygon(pts)
+    return p if p.is_valid else p.buffer(0)
+
+
+def ellipse(largeur: float, hauteur: float):
+    """Ellipse 2D de dimensions largeur × hauteur."""
+    return shp_scale(Point(0, 0).buffer(0.5, resolution=96),
+                     xfact=float(largeur), yfact=float(hauteur), origin=(0, 0))
+
+
+def balayage(profil_2d, chemin) -> trimesh.Trimesh:
+    """Balaye un profil 2D le long d'un CHEMIN 3D [(x,y,z), …] -> volume courbe
+    (tube coudé, bras courbé, rampe…)."""
+    g = profil_2d.geoms[0] if isinstance(profil_2d, MultiPolygon) else profil_2d
+    path = np.array([[float(x), float(y), float(z)] for x, y, z in chemin])
+    return trimesh.creation.sweep_polygon(g, path)
+
+
+def helice(diametre: float, hauteur: float, pas: float, section: float = 3.0) -> trimesh.Trimesh:
+    """Hélice (ressort / filet de vis simplifié) : boudin de Ø `section` enroulé,
+    `pas` mm par tour, sur `hauteur`."""
+    tours = max(0.25, float(hauteur) / max(0.5, float(pas)))
+    n = max(8, int(tours * 48))
+    ts = np.linspace(0, tours * 2 * np.pi, n)
+    zs = np.linspace(0, float(hauteur), n)
+    path = np.column_stack([np.cos(ts) * diametre / 2, np.sin(ts) * diametre / 2, zs])
+    return trimesh.creation.sweep_polygon(Point(0, 0).buffer(section / 2, resolution=24), path)
+
+
+def echelle(objet, fx: float = 1.0, fy=None, fz=None):
+    """Redimensionne (non uniforme possible). fy/fz = fx si non fournis."""
+    fy = fx if fy is None else fy
+    fz = fx if fz is None else fz
+    if isinstance(objet, _2D):
+        return shp_scale(objet, xfact=fx, yfact=fy, origin=(0, 0))
+    p = objet.copy(); p.apply_scale([float(fx), float(fy), float(fz)]); return p
+
+
+def miroir(objet, axe: str = "x"):
+    """Symétrie par rapport à un axe (x, y ou z)."""
+    a = str(axe).lower()
+    if isinstance(objet, _2D):
+        fx, fy = (-1, 1) if a == "x" else (1, -1)
+        return shp_scale(objet, xfact=fx, yfact=fy, origin=(0, 0))
+    p = objet.copy()
+    p.apply_scale({"x": [-1, 1, 1], "y": [1, -1, 1], "z": [1, 1, -1]}[a])
+    return p
+
+
+def intersection(a, b):
+    """Garde uniquement la PARTIE COMMUNE de deux objets."""
+    if isinstance(a, _2D) and isinstance(b, _2D):
+        return a.intersection(b)
+    return trimesh.boolean.intersection([a, b], engine="manifold")
+
+
+def repeter_ligne(objet, n: int, dx: float = 0, dy: float = 0, dz: float = 0):
+    """Répète `objet` n fois en ligne, décalé de (dx,dy,dz) à chaque copie."""
+    return fusionner(*[deplacer(objet, i * dx, i * dy, i * dz) for i in range(int(n))])
+
+
+def repeter_grille(objet, nx: int, ny: int, dx: float, dy: float):
+    """Répète `objet` sur une grille nx × ny (pas dx, dy)."""
+    parts = [deplacer(objet, i * dx, j * dy, 0)
+             for i in range(int(nx)) for j in range(int(ny))]
+    return fusionner(*parts)
+
+
 API = {
     "boite_3d": boite_3d, "cylindre": cylindre, "cone": cone, "sphere": sphere,
     "demi_sphere": demi_sphere, "pyramide": pyramide, "tube": tube, "prisme": prisme,
@@ -364,6 +449,12 @@ API = {
     "repeter_cercle": repeter_cercle, "poser_au_sol": poser_au_sol,
     "scene": scene, "couleur": couleur,
     "relief_image": relief_image, "silhouette_image": silhouette_image,
+    # moteurs avancés (math + géométrie) pour objets complexes
+    "sin": sin, "cos": cos, "tan": tan, "atan2": atan2, "racine": racine,
+    "hypot": hypot, "plancher": plancher, "plafond": plafond, "pi": PI,
+    "polygone": polygone, "ellipse": ellipse, "balayage": balayage, "helice": helice,
+    "echelle": echelle, "miroir": miroir, "intersection": intersection,
+    "repeter_ligne": repeter_ligne, "repeter_grille": repeter_grille,
     "abs": abs, "min": min, "max": max, "round": round, "range": range,
     "len": len, "float": float, "int": int, "list": list,
 }
