@@ -64,6 +64,42 @@ MAX_APPAREILS = 3        # nombre max d'activations (uses Gumroad)
 # Page d'achat Gumroad (bouton « Débloquer Pro ») — produit unique « neoslice-pro ».
 LIEN_ACHAT = "https://neoslice.gumroad.com/l/neoslice-pro"
 
+# ── Prix / lien Pro DYNAMIQUES (lus depuis le Gist des mises à jour) ─────────
+# Le Gist latest.json peut porter les clés facultatives "pro_price" et
+# "pro_buy_url" : l'app affiche alors ces valeurs au lieu des constantes ci-dessus.
+# Un changement de prix se propage ainsi à TOUTES les apps sans rebuild — fini le
+# décalage type « 19,99 » figé dans une vieille version (voir cas Roger, 2026-07).
+# Valeurs mises en cache dans prefs.json → affichage correct même hors-ligne.
+_K_PRICE_CACHE = "pro_price_cache"
+_K_BUYURL_CACHE = "pro_buy_url_cache"
+
+
+def prix_affiche() -> str:
+    """Prix Pro à afficher : valeur dynamique (Gist, en cache) sinon repli codé."""
+    v = PREFS.get(_K_PRICE_CACHE, "")
+    return v.strip() if isinstance(v, str) and v.strip() else PRIX_AFFICHE
+
+
+def lien_achat() -> str:
+    """Lien d'achat Gumroad : valeur dynamique (Gist, en cache) sinon repli codé."""
+    v = PREFS.get(_K_BUYURL_CACHE, "")
+    return v.strip() if isinstance(v, str) and v.strip().startswith("http") else LIEN_ACHAT
+
+
+def maj_pricing_depuis_gist(data: dict) -> None:
+    """Met en cache le prix / lien Pro fournis par le Gist des MAJ (clés facultatives
+    "pro_price", "pro_buy_url"). Appelé après chaque récupération du Gist. Robuste :
+    toute anomalie est ignorée (on garde l'ancien cache ou le repli codé)."""
+    try:
+        price = data.get("pro_price")
+        if isinstance(price, str) and price.strip():
+            PREFS.set(_K_PRICE_CACHE, price.strip())
+        url = data.get("pro_buy_url")
+        if isinstance(url, str) and url.strip().startswith("http"):
+            PREFS.set(_K_BUYURL_CACHE, url.strip())
+    except Exception:
+        pass
+
 # Vérification de licence Gumroad — endpoint public (aucun token vendeur requis,
 # product_id + clé suffisent). Gumroad EXIGE le product_id (le permalink ne marche
 # que pour les clés inexistantes). product_id = identifiant public du produit.

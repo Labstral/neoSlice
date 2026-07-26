@@ -60,6 +60,13 @@ def check_for_update(callback: Callable[[str | None, str, str], None]) -> None:
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
+            # Prix / lien Pro dynamiques (clés facultatives du Gist) — mis en cache
+            # pour que l'affichage suive le prix courant sans rebuild. Best-effort.
+            try:
+                from core import licensing as _lic
+                _lic.maj_pricing_depuis_gist(data)
+            except Exception:
+                pass
             latest = data.get("version", "").strip("v")
             url    = _platform_download_url(data)
             notes  = data.get("notes", "")

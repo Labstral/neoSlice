@@ -269,7 +269,7 @@ class PaywallDialog(QDialog):
         lay.addSpacing(16)
 
         # Prix + bouton acheter
-        self._price_lbl = QLabel(_("pro.price_suffix", price=licensing.PRIX_AFFICHE))
+        self._price_lbl = QLabel(_("pro.price_suffix", price=licensing.prix_affiche()))
         self._price_lbl.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
         self._price_lbl.setAlignment(Qt.AlignCenter)
         lay.addWidget(self._price_lbl)
@@ -326,7 +326,7 @@ class PaywallDialog(QDialog):
 
     # ── Actions ──────────────────────────────────────────────────────────────
     def _on_buy(self):
-        QDesktopServices.openUrl(QUrl(licensing.LIEN_ACHAT))
+        QDesktopServices.openUrl(QUrl(licensing.lien_achat()))
 
     def _show_features(self):
         from ui.styles.theme import apply_title_bar_theme
