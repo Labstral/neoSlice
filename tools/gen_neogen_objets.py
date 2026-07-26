@@ -56,7 +56,7 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-26e"
+VERSION = "2026-07-26f"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -68,9 +68,11 @@ DOMAINES = {
 # ── Objets à publier ────────────────────────────────────────────────────────
 OBJETS = [
     {
-        # REMPLACE l'objet natif « boite » (même id → override par la base) pour
-        # AJOUTER la forme « Coulissant » sans rebuild. Reproduit ronde/carrée/
-        # rectangulaire (couvercle à lèvre) via creuser + lèvre, à l'identique.
+        # REMPLACE l'objet natif « boite » (même id → override par la base). Ajoute
+        # une case « Couvercle coulissant » (SANS rebuild) : cochée + forme
+        # Rectangulaire → boîte coulissante avec Longueur ET Largeur réglables
+        # (ces champs ne s'affichent qu'en Rectangulaire). Reproduit aussi
+        # ronde/carrée/rectangulaire (couvercle à lèvre) via creuser + lèvre.
         "id": "boite",
         "fr": "Boîte + couvercle", "en": "Box + lid",
         "domaine": "maison", "texte": "aucun",
@@ -85,19 +87,26 @@ OBJETS = [
         "choix": [
             ["forme", "Forme", "Shape",
              [["ronde", "Ronde", "Round"], ["carree", "Carrée", "Square"],
-              ["rectangulaire", "Rectangulaire", "Rectangular"],
-              ["coulissant", "Coulissant", "Sliding"]],
-             "ronde"],
+              ["rectangulaire", "Rectangulaire", "Rectangular"]],
+             "rectangulaire"],
+        ],
+        "flags": [
+            ["coulissant", "Couvercle coulissant", "Sliding lid", False],
         ],
         "code": r'''
 p = 2.4
 fond = 2.4
 H = hauteur
-if forme == "coulissant":
-    # empreinte rectangulaire proportionnelle pilotee par « taille » (l'appli
-    # cache longueur/largeur hors rectangulaire) ; couvercle qui COULISSE.
-    Lg = taille
-    Wd = taille * 0.66
+if coulissant:
+    # Couvercle COULISSANT. Dimensions selon la forme : Rectangulaire → Longueur
+    # ET Largeur (les 2 champs sont visibles en Rectangulaire) ; sinon empreinte
+    # carrée pilotee par « Diamètre / côté ».
+    if forme == "rectangulaire":
+        Lg = longueur
+        Wd = largeur
+    else:
+        Lg = taille
+        Wd = taille
     gh = 3.0
     gd = 2.0
     corps = creuser(boite_3d(Lg, Wd, H), p)
