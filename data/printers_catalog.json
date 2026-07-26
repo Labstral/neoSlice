@@ -19533,5 +19533,23 @@
   "slicers": [
    "anycubic"
   ]
+ },
+ "Eryone Thinker SE 0.4 nozzle": {
+  "marque": "Eryone",
+  "name": "Eryone Thinker SE 0.4 nozzle",
+  "printer_model": "Eryone Thinker SE",
+  "printer_settings_id": "Eryone",
+  "nozzle_diameter": "0.4",
+  "printer_variant": "0.4",
+  "bed_size": "300×300",
+  "printable_height": "400",
+  "max_speed_mms": 200,
+  "max_accel_mms2": 1250,
+  "gcode_flavor": "marlin",
+  "default_print_profile": "0.20mm Standard @Eryone Thinker SE",
+  "default_filament_profile": "Generic PLA",
+  "slicers": [
+   "orca"
+  ]
  }
 }
