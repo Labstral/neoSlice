@@ -134,7 +134,11 @@ def verifier_maj_objets() -> dict | None:
             data = json.loads(r.read().decode("utf-8"))
         if not isinstance(data.get("objets"), list) or not data.get("version"):
             return None
-        if data["version"] == _version_objets_locale():
+        # Ne proposer QUE si le serveur est STRICTEMENT plus récent que le local
+        # (jamais de downgrade). Format « AAAA-MM-DD[suffixe] » -> comparaison de
+        # chaîne correcte (dates zéro-remplies, suffixes b/c triés après).
+        local = _version_objets_locale()
+        if local and str(data["version"]) <= str(local):
             return None
         return data
     except Exception as exc:

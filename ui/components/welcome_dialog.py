@@ -49,6 +49,13 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v0.1.8.3",
+     "• Nouvelle catégorie « Calibration & tests » dans neoGen : cube XYZ, tour "
+     "de température, tests de surplombs, de pont, de tolérance, de trous, "
+     "d'épaisseur de parois, de retrait et de première couche. Tous réglables et "
+     "prêts à imprimer, sans aller chercher de fichier ailleurs.\n"
+     "• La bibliothèque neoGen peut désormais s'enrichir de nouvelles CATÉGORIES "
+     "entières via « Mettre à jour la base », sans réinstaller."),
     ("Nouveautés v0.1.8.2",
      "• Une fenêtre au lancement vous prévient dès que de nouveaux objets neoGen "
      "ou une base de connaissances d'Oen enrichie sont disponibles, avec un bouton "
