@@ -684,6 +684,25 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
     )
 
 
+def _is_sliced_3mf(path: Path) -> bool:
+    """Vrai si le 3MF est un fichier TRANCHÉ (G-code) exporté par un slicer, pas un
+    modèle à préparer. Cas Bambu Studio « Exporter le fichier tranché du plateau »
+    → « …gcode.3mf » contenant « Metadata/plate_N.gcode ». Détecté par le nom
+    (.gcode.3mf) OU par la présence d'un G-code de plateau dans l'archive."""
+    if path.name.lower().endswith(".gcode.3mf"):
+        return True
+    try:
+        with zipfile.ZipFile(path) as zf:
+            for n in zf.namelist():
+                nl = n.lower().replace("\\", "/")
+                # G-code de plateau (sliced) — n'existe PAS dans un modèle/projet normal
+                if nl.startswith("metadata/plate_") and nl.endswith(".gcode"):
+                    return True
+    except Exception:
+        pass
+    return False
+
+
 def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
     """Charge, valide et normalise un fichier STL.
 
@@ -728,6 +747,18 @@ def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
         )
 
     if _is_3mf:
+        # Fichier TRANCHÉ (G-code) exporté depuis un slicer : ce n'est pas un modèle
+        # à préparer. On refuse tôt avec un message clair (sinon chargement infini /
+        # géométrie de charabia — cas remonté par un testeur avec « …gcode.3mf »).
+        if _is_sliced_3mf(path):
+            raise STLLoadError(
+                "Ce fichier est un fichier TRANCHÉ (G-code), pas un modèle 3D.\n\n"
+                "Il a été créé par « Exporter le fichier tranché du plateau » dans "
+                "Bambu Studio. neoSlice a besoin du MODÈLE à préparer, pas du fichier "
+                "déjà tranché.\n\n"
+                "Dans Bambu Studio : faites un CLIC DROIT sur l'objet puis "
+                "« Convertir en un seul STL », et chargez ce fichier STL dans neoSlice."
+            )
         # Charger avec process=False si fichier très grand (évite le crash mémoire sur 40M faces)
         _load_kwargs = {"process": False} if _skip_process else {}
         # Motif Bambu « split-model » (composants → .model externe) : trimesh relit
