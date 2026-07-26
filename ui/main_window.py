@@ -1527,6 +1527,8 @@ class MainWindow(QMainWindow):
     # Signal thread-safe : une MAJ de la base de connaissances d'Oen est disponible
     _kb_update_ready = Signal(str)         # kb_version
     _brands_update_ready = Signal(str)     # version bibliothèque filaments
+    # Signal thread-safe : nouveautés de BASE dispo (bibliothèque neoGen / base d'Oen)
+    _base_updates_ready = Signal(object)   # résumé (dict)
 
     def __init__(self):
         super().__init__()
@@ -1566,10 +1568,12 @@ class MainWindow(QMainWindow):
 
         self._update_ready.connect(self._show_update_dialog_signal)
         QTimer.singleShot(3000, self._check_for_updates)
-        # Verifie discretement si la base de connaissances d'Oen a une MAJ (Pro +
-        # Oen installe seulement). Non bloquant, hors-ligne-safe.
-        self._kb_update_ready.connect(self._on_kb_update_available)
-        QTimer.singleShot(6000, self._check_kb_update)
+        # Nouveautés de BASE (bibliothèque neoGen + base de connaissances d'Oen) :
+        # une SEULE fenêtre au lancement propose de tout mettre à jour en un clic,
+        # sans réinstaller. Non bloquant, hors-ligne-safe. Oen n'est vérifié que si
+        # Pro + installé (géré dans check_base_updates).
+        self._base_updates_ready.connect(self._on_base_updates)
+        QTimer.singleShot(2000, self._check_base_updates)
         self._brands_update_ready.connect(self._on_brands_updated)
         QTimer.singleShot(9000, self._check_brands_update)
 
@@ -2758,6 +2762,41 @@ class MainWindow(QMainWindow):
         try:
             from ui.components.toast import show_toast
             show_toast(self, _("oen.kb_update_toast"), on_click=self._open_modules_mgr)
+        except Exception:
+            pass
+
+    def _check_base_updates(self):
+        """Nouveautés de BASE (bibliothèque neoGen + base d'Oen) : si l'une ou
+        l'autre a du nouveau, une fenêtre unique propose de tout mettre à jour au
+        lancement. Non bloquant, hors-ligne-safe. Simulation via la variable
+        d'environnement NEOSLICE_SIMULATE_BASE_UPDATE (fenêtre de test)."""
+        import threading
+        try:
+            from ui.components.base_update_dialog import (
+                simulation_active, check_base_updates,
+            )
+        except Exception:
+            return
+        sim = simulation_active()
+
+        def _work():
+            try:
+                summary = check_base_updates(simulate=sim)
+                if summary:
+                    self._base_updates_ready.emit(summary)
+            except Exception:
+                pass
+
+        if sim:
+            _work()                     # immédiat : la fenêtre de test apparaît vite
+        else:
+            threading.Thread(target=_work, daemon=True).start()
+
+    def _on_base_updates(self, summary):
+        """Ouvre la fenêtre unique de mise à jour de base (neoGen / Oen)."""
+        try:
+            from ui.components.base_update_dialog import BaseUpdateDialog
+            BaseUpdateDialog(summary, self).exec()
         except Exception:
             pass
 

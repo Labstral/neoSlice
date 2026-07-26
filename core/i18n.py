@@ -1357,6 +1357,16 @@ _FR: dict[str, str] = {
     "oen.kb_done":            "Base de connaissances mise à jour (version {version}).",
     "oen.kb_failed":          "Échec de la mise à jour : {err} (base actuelle conservée).",
     "oen.kb_update_toast":    "Une mise à jour de la base d'Oen est disponible. Ouvrez les Réglages pour l'installer.",
+    "base_update.title":      "Des nouveautés sont disponibles",
+    "base_update.intro":      "Mettez à jour pour en profiter, sans réinstaller neoSlice.",
+    "base_update.neogen":     "Bibliothèque neoGen : de nouveaux objets prêts à imprimer.",
+    "base_update.oen":        "Base de connaissances d'Oen : une version enrichie.",
+    "base_update.btn_now":    "Mettre à jour maintenant",
+    "base_update.btn_later":  "Plus tard",
+    "base_update.btn_close":  "Fermer",
+    "base_update.updating":   "Mise à jour en cours…",
+    "base_update.done":       "Mise à jour terminée.",
+    "base_update.failed":     "Échec de la mise à jour : {err}",
 }
 
 # ── English ───────────────────────────────────────────────────────────────────
@@ -2684,6 +2694,16 @@ _EN: dict[str, str] = {
     "oen.kb_done":            "Knowledge base updated (version {version}).",
     "oen.kb_failed":          "Update failed: {err} (current base kept).",
     "oen.kb_update_toast":    "An update to Oen's knowledge base is available. Open Settings to install it.",
+    "base_update.title":      "Updates are available",
+    "base_update.intro":      "Update to get them, no need to reinstall neoSlice.",
+    "base_update.neogen":     "neoGen library: new ready-to-print objects.",
+    "base_update.oen":        "Oen knowledge base: an enriched version.",
+    "base_update.btn_now":    "Update now",
+    "base_update.btn_later":  "Later",
+    "base_update.btn_close":  "Close",
+    "base_update.updating":   "Updating…",
+    "base_update.done":       "Update complete.",
+    "base_update.failed":     "Update failed: {err}",
 }
 
 # ── Engine ────────────────────────────────────────────────────────────────────
