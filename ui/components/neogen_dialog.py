@@ -581,7 +581,14 @@ class NeoGenPanel(QWidget):
             sp.setRange(mini, maxi)
             sp.setValue(defaut)
             sp.setSingleStep(pas)
-            sp.setDecimals(1 if pas < 1 else 0)
+            # Décimales alignées sur le PAS (sinon un pas de 0.05 avec 1 décimale
+            # se ré-arrondit et les flèches semblent inertes).
+            if pas >= 1:
+                sp.setDecimals(0)
+            elif pas >= 0.1:
+                sp.setDecimals(1)
+            else:
+                sp.setDecimals(2)
             # Pas de « mm » sur les COMPTES (nombre de trous, de jeux, de cases…).
             # Générique : id dans la liste OU commençant par « nb » OU label « Nombre… »
             # -> aucun « mm » à lister objet par objet, marche pour toute nouvelle base.

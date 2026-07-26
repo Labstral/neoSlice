@@ -56,7 +56,7 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-26d"
+VERSION = "2026-07-26e"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -67,6 +67,76 @@ DOMAINES = {
 
 # ── Objets à publier ────────────────────────────────────────────────────────
 OBJETS = [
+    {
+        # REMPLACE l'objet natif « boite » (même id → override par la base) pour
+        # AJOUTER la forme « Coulissant » sans rebuild. Reproduit ronde/carrée/
+        # rectangulaire (couvercle à lèvre) via creuser + lèvre, à l'identique.
+        "id": "boite",
+        "fr": "Boîte + couvercle", "en": "Box + lid",
+        "domaine": "maison", "texte": "aucun",
+        "synonymes": "boite couvercle rangement ronde carree rectangulaire coulissant coulisse glissiere plumier tiroir rails rainure lid",
+        "params": [
+            ["taille", "Diamètre / côté", "Diameter / side", 18, 270, 50, 1],
+            ["longueur", "Longueur", "Length", 28, 400, 90, 1],
+            ["largeur", "Largeur", "Width", 20, 290, 60, 1],
+            ["hauteur", "Hauteur", "Height", 10, 216, 30, 1],
+            ["jeu", "Jeu couvercle", "Lid clearance", 0.1, 0.5, 0.2, 0.1],
+        ],
+        "choix": [
+            ["forme", "Forme", "Shape",
+             [["ronde", "Ronde", "Round"], ["carree", "Carrée", "Square"],
+              ["rectangulaire", "Rectangulaire", "Rectangular"],
+              ["coulissant", "Coulissant", "Sliding"]],
+             "ronde"],
+        ],
+        "code": r'''
+p = 2.4
+fond = 2.4
+H = hauteur
+if forme == "coulissant":
+    # empreinte rectangulaire proportionnelle pilotee par « taille » (l'appli
+    # cache longueur/largeur hors rectangulaire) ; couvercle qui COULISSE.
+    Lg = taille
+    Wd = taille * 0.66
+    gh = 3.0
+    gd = 2.0
+    corps = creuser(boite_3d(Lg, Wd, H), p)
+    z1 = H - 2.5 - gh
+    lo = Lg - p + 3
+    cx = -(p + 3) / 2
+    for sy in (1, -1):
+        yc = sy * (Wd / 2 - p)
+        corps = percer(corps, deplacer(boite_3d(lo, 2 * gd, gh), cx, yc, z1))
+    corps = percer(corps, deplacer(boite_3d(3 * p, Wd - 2 * p + 2 * gd + 4, H), -Lg / 2, 0, z1))
+    lw = (Wd - 2 * p) + 2 * gd - 2 * jeu
+    ll = Lg - p - jeu
+    lt = gh - jeu
+    couvercle = deplacer(boite_3d(ll, lw, lt), 0, Wd + 16, 0)
+    piece = scene(corps, couvercle)
+elif forme == "ronde":
+    d = taille
+    corps = creuser(cylindre(d, H), p)
+    cap = extrusion(disque(d), fond)
+    lip = tube(d - 2 * (p + jeu), d - 2 * (p + jeu) - 2 * p, 6)
+    couvercle = deplacer(fusionner(cap, deplacer(lip, 0, 0, fond - 0.01)), 0, d + 16, 0)
+    piece = scene(corps, couvercle)
+else:
+    if forme == "carree":
+        Lx = taille
+        Wy = taille
+    else:
+        Lx = longueur
+        Wy = largeur
+    rc = min(4.0, min(Lx, Wy) * 0.12)
+    foot = rectangle_arrondi(Lx, Wy, rc)
+    corps = creuser(extrusion(foot, H), p)
+    lo = rectangle_arrondi(Lx - 2 * (p + jeu), Wy - 2 * (p + jeu), max(0.8, rc - p))
+    li = rectangle_arrondi(Lx - 2 * (p + jeu) - 2 * p, Wy - 2 * (p + jeu) - 2 * p, max(0.5, rc - 2 * p))
+    lip = percer(extrusion(lo, 6), deplacer(extrusion(li, 8), 0, 0, -1))
+    cap = extrusion(foot, fond)
+    couvercle = deplacer(fusionner(cap, deplacer(lip, 0, 0, fond - 0.01)), 0, Wy + 16, 0)
+    piece = scene(corps, couvercle)''',
+    },
     {
         "id": "passe_fil_bureau",
         "fr": "Passe-fil de bureau", "en": "Desk cable grommet",
