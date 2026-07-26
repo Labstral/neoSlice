@@ -80,6 +80,18 @@ def charger_objets() -> list[dict]:
         return []
 
 
+def domaines_module() -> list[dict]:
+    """Catégories (domaines) définies par la base téléchargée : [{id, fr, en}, …].
+    Permet d'ajouter une NOUVELLE catégorie neoGen sans rebuild — le catalogue les
+    fusionne avec les domaines natifs (voir catalogue.par_domaine)."""
+    try:
+        data = json.loads(FICHIER_LOCAL.read_text(encoding="utf-8"))
+        doms = data.get("domaines", [])
+        return [d for d in doms if isinstance(d, dict) and d.get("id")]
+    except Exception:
+        return []
+
+
 def entrees_catalogue() -> list[dict]:
     """Convertit les objets téléchargés en entrées de catalogue neoGen (même
     forme que le helper `_e` de catalogue.py)."""

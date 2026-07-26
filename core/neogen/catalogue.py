@@ -823,8 +823,26 @@ def rechercher(phrase: str) -> str | None:
 
 
 def par_domaine() -> list[tuple[tuple, list[dict]]]:
-    """[(domaine (id, fr, en), [entrées...]), ...] dans l'ordre d'affichage."""
-    return [(d, [e for e in CATALOGUE if e["domaine"] == d[0]]) for d in DOMAINES]
+    """[(domaine (id, fr, en), [entrées...]), ...] dans l'ordre d'affichage.
+
+    Domaines NATIFS + domaines définis par la base téléchargée (nouvelle CATÉGORIE
+    sans rebuild). On n'affiche qu'un domaine ayant au moins un objet."""
+    doms = list(DOMAINES)
+    ids = {d[0] for d in doms}
+    try:
+        from core.neogen import objets_module
+        for dm in objets_module.domaines_module():
+            if dm["id"] not in ids:
+                doms.append((dm["id"], dm.get("fr", dm["id"]), dm.get("en", dm["id"])))
+                ids.add(dm["id"])
+    except Exception:
+        pass
+    out = []
+    for d in doms:
+        entrees = [e for e in CATALOGUE if e["domaine"] == d[0]]
+        if entrees:
+            out.append((d, entrees))
+    return out
 
 
 def construire(entree_id: str, params: dict):
