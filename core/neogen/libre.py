@@ -457,6 +457,7 @@ API = {
     "repeter_ligne": repeter_ligne, "repeter_grille": repeter_grille,
     "abs": abs, "min": min, "max": max, "round": round, "range": range,
     "len": len, "float": float, "int": int, "list": list,
+    "str": str, "sum": sum, "enumerate": enumerate,
 }
 
 _DOC_API = """FONCTIONS DISPONIBLES (les SEULES autorisees, unites mm ; primitives POSEES sur le plateau z=0, centrees en 0,0) :

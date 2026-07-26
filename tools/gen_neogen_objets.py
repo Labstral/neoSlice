@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-VERSION = "2026-07-26b"
+VERSION = "2026-07-26c"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -104,9 +104,9 @@ OBJETS = [
 t = taille
 cube = boite_3d(t, t, t)
 h = t * 0.5
-x = deplacer(tourner(extrusion(texte_2d("X", h), 4), 'x', 90), 0, -(t/2 - 1.2), t/2 - h/2)
+x = deplacer(tourner(extrusion(texte_2d("X", h), 4), 'x', 90), 0, -(t/2 - 1.2), t/2)
 cube = percer(cube, x)
-y = deplacer(tourner(extrusion(texte_2d("Y", h), 4), 'y', 90), (t/2 - 1.2), 0, t/2 - h/2)
+y = deplacer(tourner(tourner(extrusion(texte_2d("Y", h), 4), 'x', 90), 'z', 90), (t/2 - 1.2), 0, t/2)
 cube = percer(cube, y)
 z = deplacer(extrusion(texte_2d("Z", h), 4), 0, 0, t - 1.2)
 cube = percer(cube, z)
@@ -119,7 +119,7 @@ piece = poser_au_sol(cube)''',
         "params": [
             ["nb_trous", "Nombre de trous", "Number of holes", 3, 10, 6, 1],
             ["d_min", "Diamètre mini", "Min diameter", 1, 5, 2, 0.5],
-            ["pas", "Pas (incrément)", "Step", 0.5, 2, 1, 0.5],
+            ["pas", "Écart entre diamètres", "Diameter step", 0.5, 2, 1, 0.5],
         ],
         "code": r'''
 n = int(nb_trous)
@@ -216,40 +216,57 @@ piece = poser_au_sol(fusionner(cadre, b1, b2))''',
     {
         "id": "test_surplombs", "fr": "Test de surplombs", "en": "Overhang test",
         "domaine": "calibration", "texte": "aucun",
-        "synonymes": "test surplomb overhang angle porte-a-faux calibration",
-        "params": [["taille", "Largeur", "Width", 60, 120, 80, 5]],
+        "synonymes": "test surplomb overhang angle porte-a-faux calibration bras courbe degres",
+        "params": [
+            ["hauteur", "Hauteur", "Height", 60, 140, 90, 5],
+            ["largeur", "Largeur", "Width", 18, 40, 30, 1],
+            ["angle_max", "Angle max", "Max angle", 60, 80, 80, 5],
+        ],
         "code": r'''
-Lp = taille
-base = boite_3d(Lp, 26, 3)
-spine = deplacer(boite_3d(8, 26, 66), -(Lp / 2 - 4), 0, 0)
-corps = fusionner(base, spine)
-angs = [30, 40, 50, 60, 70]
-for i in range(5):
-    a = angs[i]
-    fin = tourner(boite_3d(30, 22, 3.5), 'y', -(90 - a))
-    fin = deplacer(fin, -(Lp / 2 - 20), 0, 8 + i * 11)
-    corps = fusionner(corps, fin)
+amax = float(angle_max)
+larg = largeur
+ep = 8.0
+R = hauteur * 57.2958 / amax
+chemin = []
+for i in range(41):
+    t = amax * i / 40.0
+    chemin.append((R * (1 - cos(t)), 0, R * sin(t)))
+bras = balayage(rectangle_arrondi(larg, ep, 2), chemin)
+socle = deplacer(boite_3d(38, larg + 6, 4), 14, 0, 0)
+corps = fusionner(bras, socle)
+for k in range(1, int(amax // 10) + 1):
+    d = k * 10
+    t = float(d)
+    num = tourner(extrusion(texte_2d(str(d), larg * 0.42), 3), "x", -90)
+    num = deplacer(num, R * (1 - cos(t)), larg / 2 - 1.2, R * sin(t))
+    corps = percer(corps, num)
 piece = poser_au_sol(corps)''',
     },
     {
         "id": "tour_temp", "fr": "Tour de température", "en": "Temperature tower",
         "domaine": "calibration", "texte": "aucun",
-        "synonymes": "tour temperature temp tower calibration paliers chauffe buse",
+        "synonymes": "tour temperature temp tower calibration paliers chauffe buse numeros",
         "params": [
-            ["nb", "Nombre de paliers", "Number of steps", 3, 7, 5, 1],
-            ["hauteur_palier", "Hauteur d'un palier", "Step height", 8, 20, 14, 1],
+            ["nb", "Nombre de paliers", "Number of steps", 3, 9, 8, 1],
+            ["temp_min", "Température de départ", "Start temperature", 170, 260, 220, 5],
+            ["pas_temp", "Écart de température", "Temperature step", 5, 10, 5, 5],
         ],
         "code": r'''
 n = int(nb)
-hp = hauteur_palier
-w = 24
-corps = None
+tmin = temp_min
+pas = pas_temp
+hp = 15.0
+w = 46.0
+prof = 34.0
+corps = boite_3d(w, 6, n * hp + 4)
 for i in range(n):
-    c = w - i * 1.5
-    seg = deplacer(boite_3d(c, c, hp + 0.4), 0, 0, i * hp)
-    corps = seg if corps is None else fusionner(corps, seg)
-    corps = fusionner(corps, deplacer(boite_3d(9, 5, 3), c / 2 - 1, 0, i * hp + hp - 3))
-    corps = percer(corps, deplacer(tourner(cylindre(4, w + 6), 'x', 90), 0, 0, i * hp + hp / 2))
+    z0 = i * hp + 2
+    corps = fusionner(corps, deplacer(boite_3d(w, prof, hp * 0.5), 0, prof / 2 + 3, z0))
+    corps = percer(corps, deplacer(tourner(cylindre(7, prof + 12), "x", 90), -w / 4, prof / 2, z0 + hp * 0.25))
+    corps = fusionner(corps, deplacer(cone(7, hp * 0.45, 0), w / 6, prof * 0.45, z0 + hp * 0.5))
+    temp = tmin + i * pas
+    num = tourner(extrusion(texte_2d(str(temp), hp * 0.5), 3), "x", -90)
+    corps = percer(corps, deplacer(num, w / 2 - 13, -1.2, z0 + hp * 0.5))
 piece = poser_au_sol(corps)''',
     },
 ]
