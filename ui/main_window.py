@@ -3842,6 +3842,22 @@ class MainWindow(QMainWindow):
             _src_3mf = getattr(self, "_stl_path", None)
             _is_3mf_input = bool(_src_3mf and str(_src_3mf).lower().endswith(".3mf")
                                   and self._threemf_data is not None)
+            # Un 3MF « nu » (généré par neoGen/trimesh : ni model_settings.config,
+            # ni slice_info, ni marque BambuStudio) n'est PAS un projet slicer.
+            # Y injecter des réglages ne suffit pas : BS le rejette (« ne provient
+            # pas de Bambu Lab » → géométrie + couleur seulement, imprimante ET
+            # réglages perdus). On le RECONSTRUIT alors proprement depuis le mesh
+            # avec le writer Bambu brandé (chemin natif ci-dessous).
+            if _is_3mf_input:
+                _td = self._threemf_data
+                _mx = (getattr(_td, "model_xml", "") or "")
+                _ms = (getattr(_td, "model_settings_xml", "") or "")
+                _projet_slicer = (bool(_ms.strip()) or "BambuStudio" in _mx
+                                  or "OrcaSlicer" in _mx or "Slic3r" in _mx)
+                if not _projet_slicer:
+                    _is_3mf_input = False
+                    logger.info("[EXPORT] 3MF source non-Bambu (neoGen/trimesh) → "
+                                "reconstruction brandée depuis le mesh")
             logger.info(f"[EXPORT] src={_src_3mf} is_3mf={_is_3mf_input} threemf={self._threemf_data is not None}")
 
             from core.prefs import PREFS as _PREFS

@@ -49,6 +49,12 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v0.1.8.5",
+     "• Correction importante : les objets créés dans neoGen s'exportent "
+     "désormais correctement vers Bambu Studio. Avant, Bambu Studio n'en gardait "
+     "que la géométrie et perdait les réglages ET l'imprimante sélectionnée ; "
+     "c'est réparé — réglages, imprimante et brim sont bien conservés.\n"
+     "• Divers correctifs du formulaire neoGen (flèches de réglage à pas fin)."),
     ("Nouveautés v0.1.8.4",
      "• La « Tour de température » de la catégorie Calibration & tests est "
      "désormais un modèle de référence complet (PLA + PETG), prêt à imprimer.\n"
