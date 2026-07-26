@@ -49,6 +49,13 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v0.1.8.2",
+     "• Une fenêtre au lancement vous prévient dès que de nouveaux objets neoGen "
+     "ou une base de connaissances d'Oen enrichie sont disponibles, avec un bouton "
+     "pour tout mettre à jour en un clic, sans réinstaller.\n"
+     "• Import : si vous ouvrez par erreur un fichier « tranché » (.gcode.3mf) "
+     "exporté depuis Bambu Studio, neoSlice l'explique clairement et vous indique "
+     "comment exporter le modèle à la place (clic droit → « Convertir en un seul STL »)."),
     ("Nouveautés v0.1.8.1",
      "• neoGen : la « Boîte + couvercle » a désormais une forme RECTANGULAIRE "
      "(en plus de ronde et carrée), avec longueur et largeur réglables.\n"
