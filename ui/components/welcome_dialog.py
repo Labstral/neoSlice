@@ -49,6 +49,12 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v0.1.8.4",
+     "• La « Tour de température » de la catégorie Calibration & tests est "
+     "désormais un modèle de référence complet (PLA + PETG), prêt à imprimer.\n"
+     "• Le « Test de surplombs » a été entièrement refait : bras courbé net, "
+     "angles gravés bien lisibles sur le dessus, avec hauteur, largeur, épaisseur "
+     "et angle maximum réglables."),
     ("Nouveautés v0.1.8.3",
      "• Nouvelle catégorie « Calibration & tests » dans neoGen : cube XYZ, tour "
      "de température, tests de surplombs, de pont, de tolérance, de trous, "

@@ -137,6 +137,7 @@ project_datas = [
     ('ui/styles', 'ui/styles'),
     ('assets', 'assets'),
     ('core/parameters/profiles', 'core/parameters/profiles'),
+    ('core/neogen/meshes', 'core/neogen/meshes'),   # maillages figés neoGen (tour de température…)
 ]
 # data/ SAUF data/kb : wikis + index RAG (~5 Go) inutiles à l'app distribuée
 # (l'installateur d'Oen télécharge l'index dans ~/.neoslice). Aligné sur

@@ -25,12 +25,32 @@ peut donc corriger un objet existant sans republier toute l'application.
 """
 from __future__ import annotations
 
+import base64
+import gzip
+import io
 import json
 from pathlib import Path
 
 from loguru import logger
 
 FICHIER_LOCAL = Path.home() / ".neoslice" / "neogen" / "objets_extra.json"
+
+
+def mesh_depuis_champ(champ: dict):
+    """Décode un maillage IMPORTÉ embarqué dans la base : {format, gz_b64} →
+    trimesh. Permet de livrer un modèle tout fait (3mf/STL/OBJ d'Emmanuel) par
+    mise à jour de base, SANS rebuild — l'app 0.1.8.4+ sait le charger. Le
+    maillage est posé (base z=0) et centré en XY, prêt à imprimer."""
+    import trimesh
+    fmt = str(champ.get("format", "stl")).lower()
+    raw = gzip.decompress(base64.b64decode(champ["gz_b64"]))
+    m = trimesh.load(io.BytesIO(raw), file_type=fmt, process=True)
+    if isinstance(m, trimesh.Scene):
+        m = m.to_geometry()
+    m.apply_translation(-m.bounds[0])                 # coin en 0
+    c = (m.bounds[0] + m.bounds[1]) / 2
+    m.apply_translation([-c[0], -c[1], 0])            # centré XY, base z=0
+    return m
 
 
 def _defauts(obj: dict) -> dict:
@@ -51,6 +71,19 @@ def _defauts(obj: dict) -> dict:
 def _make_builder(obj: dict):
     """Fabrique le constructeur d'un objet-recette : exécute son `code` dans le
     bac à sable avec les paramètres de l'utilisateur injectés."""
+    # Objet IMPORTÉ (maillage embarqué) : pas de recette, on charge le mesh tel
+    # quel. Une échelle optionnelle (param « echelle » en %) peut le redimensionner.
+    mesh_champ = obj.get("mesh")
+    if mesh_champ:
+        def _build_mesh(p: dict):
+            m = mesh_depuis_champ(mesh_champ)
+            ech = p.get("echelle")
+            if ech and abs(float(ech) - 100.0) > 1e-6:
+                m.apply_scale(float(ech) / 100.0)
+                m.apply_translation(-m.bounds[0] * [0, 0, 1])  # rebase z=0
+            return m
+        return _build_mesh
+
     code = str(obj.get("code", ""))
     a_texte = obj.get("texte", "aucun") != "aucun"
     a_image = bool(obj.get("image", False))
@@ -99,7 +132,7 @@ def entrees_catalogue() -> list[dict]:
     for obj in charger_objets():
         try:
             oid = str(obj.get("id", "")).strip()
-            if not oid or not obj.get("code"):
+            if not oid or not (obj.get("code") or obj.get("mesh")):
                 continue
             entrees.append({
                 "id": oid,

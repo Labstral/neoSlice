@@ -24,13 +24,39 @@ Usage :  python tools/gen_neogen_objets.py
 """
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-VERSION = "2026-07-26c"
+
+def embed_mesh(chemin: str) -> dict:
+    """Embarque un MODÈLE IMPORTÉ (3mf/STL/OBJ tout fait) dans la base, sans
+    rebuild : renvoie le champ `mesh` à mettre dans un objet (à la place de
+    `code`). Le maillage est chargé, ré-exporté en STL binaire compact, gzippé
+    puis base64. L'app 0.1.8.4+ sait le recharger tel quel (posé, centré XY).
+
+    Exemple d'objet importé (à ajouter dans OBJETS) :
+        {"id": "ma_tour", "fr": "Ma tour", "en": "My tower",
+         "domaine": "calibration", "texte": "aucun",
+         "params": [["echelle", "Échelle", "Scale", 50, 150, 100, 5]],
+         "mesh": embed_mesh(r"C:/chemin/vers/modele.3mf")}
+    """
+    import trimesh
+    m = trimesh.load(chemin, force="mesh")
+    if isinstance(m, trimesh.Scene):
+        m = m.to_geometry()
+    raw = m.export(file_type="stl")            # STL binaire
+    if isinstance(raw, str):
+        raw = raw.encode()
+    return {"format": "stl",
+            "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
+
+
+VERSION = "2026-07-26d"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -213,62 +239,6 @@ b1 = deplacer(boite_3d(t - 6, 3, ep), 0, 0, ep / 2)
 b2 = deplacer(boite_3d(3, t - 6, ep), 0, 0, ep / 2)
 piece = poser_au_sol(fusionner(cadre, b1, b2))''',
     },
-    {
-        "id": "test_surplombs", "fr": "Test de surplombs", "en": "Overhang test",
-        "domaine": "calibration", "texte": "aucun",
-        "synonymes": "test surplomb overhang angle porte-a-faux calibration bras courbe degres",
-        "params": [
-            ["hauteur", "Hauteur", "Height", 60, 140, 90, 5],
-            ["largeur", "Largeur", "Width", 18, 40, 30, 1],
-            ["angle_max", "Angle max", "Max angle", 60, 80, 80, 5],
-        ],
-        "code": r'''
-amax = float(angle_max)
-larg = largeur
-ep = 8.0
-R = hauteur * 57.2958 / amax
-chemin = []
-for i in range(41):
-    t = amax * i / 40.0
-    chemin.append((R * (1 - cos(t)), 0, R * sin(t)))
-bras = balayage(rectangle_arrondi(larg, ep, 2), chemin)
-socle = deplacer(boite_3d(38, larg + 6, 4), 14, 0, 0)
-corps = fusionner(bras, socle)
-for k in range(1, int(amax // 10) + 1):
-    d = k * 10
-    t = float(d)
-    num = tourner(extrusion(texte_2d(str(d), larg * 0.42), 3), "x", -90)
-    num = deplacer(num, R * (1 - cos(t)), larg / 2 - 1.2, R * sin(t))
-    corps = percer(corps, num)
-piece = poser_au_sol(corps)''',
-    },
-    {
-        "id": "tour_temp", "fr": "Tour de température", "en": "Temperature tower",
-        "domaine": "calibration", "texte": "aucun",
-        "synonymes": "tour temperature temp tower calibration paliers chauffe buse numeros",
-        "params": [
-            ["nb", "Nombre de paliers", "Number of steps", 3, 9, 8, 1],
-            ["temp_min", "Température de départ", "Start temperature", 170, 260, 220, 5],
-            ["pas_temp", "Écart de température", "Temperature step", 5, 10, 5, 5],
-        ],
-        "code": r'''
-n = int(nb)
-tmin = temp_min
-pas = pas_temp
-hp = 15.0
-w = 46.0
-prof = 34.0
-corps = boite_3d(w, 6, n * hp + 4)
-for i in range(n):
-    z0 = i * hp + 2
-    corps = fusionner(corps, deplacer(boite_3d(w, prof, hp * 0.5), 0, prof / 2 + 3, z0))
-    corps = percer(corps, deplacer(tourner(cylindre(7, prof + 12), "x", 90), -w / 4, prof / 2, z0 + hp * 0.25))
-    corps = fusionner(corps, deplacer(cone(7, hp * 0.45, 0), w / 6, prof * 0.45, z0 + hp * 0.5))
-    temp = tmin + i * pas
-    num = tourner(extrusion(texte_2d(str(temp), hp * 0.5), 3), "x", -90)
-    corps = percer(corps, deplacer(num, w / 2 - 13, -1.2, z0 + hp * 0.5))
-piece = poser_au_sol(corps)''',
-    },
 ]
 
 
@@ -291,6 +261,19 @@ def main() -> int:
     valides, ecartes = [], []
     for obj in OBJETS:
         try:
+            if obj.get("mesh"):                    # MODÈLE IMPORTÉ (mesh embarqué)
+                from core.neogen.objets_module import mesh_depuis_champ
+                piece = mesh_depuis_champ(obj["mesh"])
+                d = piece.bounds[1] - piece.bounds[0]
+                if (len(piece.faces) and len(piece.faces) < 600_000
+                        and float(min(d)) > 0.8 and float(max(d)) < 300.0):
+                    valides.append(obj)
+                    print(f"  OK   {obj['id']:20} {d[0]:.0f}x{d[1]:.0f}x{d[2]:.0f} mm "
+                          f"(importé, {len(piece.faces)} faces)")
+                else:
+                    ecartes.append((obj["id"], "mesh hors bornes"))
+                    print(f"  KO   {obj['id']:20} → mesh hors bornes")
+                continue
             ns = _defauts(obj)
             if obj.get("texte", "aucun") != "aucun":
                 ns["texte"] = "Test"

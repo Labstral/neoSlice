@@ -103,6 +103,15 @@ def _b_de(p):
     from core.neogen.objets import de_a_jouer
     return de_a_jouer(p.get("taille", 16))
 
+def _b_tour_temp(p):
+    from core.neogen.objets import tour_temperature
+    return tour_temperature(p.get("echelle", 100) / 100.0)
+
+def _b_test_surplombs(p):
+    from core.neogen.objets import test_surplombs
+    return test_surplombs(largeur=p.get("largeur", 26), hauteur=p.get("hauteur", 78),
+                          ep=p.get("epaisseur", 4), angle_max=p.get("angle_max", 70))
+
 def _b_logo(p):
     from core.neogen import logo as L
     from core.neogen.bicolore import _hex_rgba
@@ -482,6 +491,14 @@ CATALOGUE = [
     # ── Jeux & loisirs ──
     _e("de", "Dé à jouer", "Playing die", "jeux", _b_de,
        params=[_P("taille", "Taille", "Size", 8, 40, 16, 1)]),
+    _e("tour_temperature", "Tour de température (PLA + PETG)",
+       "Temperature tower (PLA + PETG)", "calibration", _b_tour_temp),
+    _e("test_surplombs", "Test de surplombs", "Overhang test", "calibration",
+       _b_test_surplombs,
+       params=[_P("hauteur", "Hauteur", "Height", 60, 100, 78, 2),
+               _P("largeur", "Largeur", "Width", 18, 40, 26, 1),
+               _P("epaisseur", "Épaisseur", "Thickness", 2.5, 8, 4, 0.5),
+               _P("angle_max", "Angle max", "Max angle", 60, 80, 70, 5)]),
     _e("jeton", "Jeton (poker, caddie)", "Token (poker, cart)", "jeux",
        _f("formes2", "jeton"), texte="optionnel",
        params=[_P("diametre", "Diamètre", "Diameter", 25, 60, 40, 1),

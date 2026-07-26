@@ -32,6 +32,95 @@ from core.neogen.geo_utils import union_solides
 
 CHEV = 0.3   # chevauchement de fusion entre tranches (mm)
 
+_MESHES = Path(__file__).parent / "meshes"
+
+
+# ── MODÈLES FIGÉS embarqués (maillages fournis tels quels, non paramétriques) ─
+def tour_temperature(echelle: float = 1.0) -> trimesh.Trimesh:
+    """Tour de température de référence (PLA + PETG) : maillage validé, chargé
+    tel quel depuis un STL embarqué. Une recette ne peut pas IMPORTER un modèle
+    figé — d'où ce natif. `echelle` permet de l'agrandir/réduire (défaut 1:1)."""
+    m = trimesh.load(str(_MESHES / "tour_temperature.stl"), process=True)
+    if isinstance(m, trimesh.Scene):
+        m = m.to_geometry()
+    if echelle and abs(echelle - 1.0) > 1e-6:
+        m.apply_scale(float(echelle))
+    m.apply_translation(-m.bounds[0])                 # coin en 0
+    c = (m.bounds[0] + m.bounds[1]) / 2
+    m.apply_translation([-c[0], -c[1], 0])            # centré XY, base z=0
+    return m
+
+
+# ── TEST DE SURPLOMBS : bras courbé (quart de tour) à degrés gravés ──────────
+def test_surplombs(largeur: float = 26.0, hauteur: float = 78.0,
+                   ep: float = 4.0, angle_max: float = 70.0) -> trimesh.Trimesh:
+    """Bras qui part vertical et bascule progressivement jusqu'à `angle_max`°
+    d'inclinaison : la face INFÉRIEURE est le surplomb à tester. Lame MINCE
+    (`ep`) dans l'épaisseur radiale, LARGE en Y (`largeur`). Les angles (10°,
+    20°, …) sont GRAVÉS sur la face convexe extérieure (le « dessus »), pas sur
+    le flanc. Posé sur un petit socle, imprimable tel quel."""
+    from shapely.geometry import Polygon
+    from core.neogen.geo_utils import union_solides
+    from core.neogen.libre import texte_2d          # texte shapely centré à l'origine
+
+    amax = float(angle_max)
+    amax_r = np.radians(amax)
+    R = float(hauteur) / amax_r                      # longueur d'arc = hauteur
+    cx = R                                           # centre du cercle (x, z=0)
+    r_out, r_in = R + ep / 2, R - ep / 2
+
+    # profil latéral (vue de côté, plan XZ) = secteur annulaire LISSE + socle.
+    # On prolonge le bras au-delà du dernier angle gravé (marge haute) pour que le
+    # chiffre du sommet (70) ne soit pas coupé par l'extrémité.
+    marge_haut = np.radians(9.0)
+    ts = np.linspace(0.0, amax_r + marge_haut, 88)
+    ext = [(cx - r_out * np.cos(t), r_out * np.sin(t)) for t in ts]
+    inn = [(cx - r_in * np.cos(t), r_in * np.sin(t)) for t in ts[::-1]]
+    pts = ext + inn
+    pts += [(cx - r_in, 0.0), (cx - r_out - 6, 0.0)]   # descend au socle
+    prof = Polygon(pts).buffer(0)
+    bande = trimesh.creation.extrude_polygon(prof, largeur)      # épaisseur -> Z
+    # profil (XY) dressé : Y(hauteur)->Z, Z(épaisseur)->Y
+    bande.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
+    bande.apply_translation([0, largeur / 2, 0])                 # largeur centrée en Y
+    # socle : semelle sous le pied
+    socle = trimesh.creation.box(extents=[20, largeur, 4])
+    socle.apply_translation([cx - r_out + 2, 0, 2])
+    corps = union_solides([bande, socle])
+    centre = np.array([cx, 0.0, 0.0])
+
+    # gravure des angles sur la face convexe extérieure
+    pas_arc = R * np.radians(10.0)                    # écart d'arc entre 2 stations
+    h_txt = min(largeur * 0.34, pas_arc * 0.55)       # assez petit pour ne pas se toucher
+    graveurs = []
+    for d in range(10, int(amax) + 1, 10):
+        tr = np.radians(float(d))
+        p = np.array([R * (1 - np.cos(tr)), 0.0, R * np.sin(tr)])
+        radial = (p - centre) / R                    # normale extérieure (convexe)
+        tangente = np.array([np.sin(tr), 0.0, np.cos(tr)])   # vers la pointe
+        g2d = texte_2d(str(d), h_txt)
+        txt = trimesh.util.concatenate(_extruder(g2d, 2.0))
+        txt.apply_translation([0, 0, -1.0])          # centré sur l'épaisseur de gravure
+        # Repère de lecture, vu du DEHORS (regard = -radial), pointe en HAUT :
+        #   X texte (droite du lecteur) = -Y monde ; Y texte (haut) = tangente vers
+        #   la pointe ; Z texte (face lisible) = radial extérieur. Rotation propre
+        #   (droitier) -> chiffres à l'endroit, pas en miroir.
+        M = np.eye(4)
+        M[:3, 0] = [0.0, -1.0, 0.0]
+        M[:3, 1] = tangente
+        M[:3, 2] = radial
+        txt.apply_transform(M)
+        txt.apply_translation(p + radial * (ep / 2))  # posé sur la peau extérieure
+        graveurs.append(txt)
+    if graveurs:
+        corps = trimesh.boolean.difference(
+            [corps, union_solides(graveurs)], engine="manifold")
+
+    corps.apply_translation(-corps.bounds[0] * [0, 0, 1])   # base z=0
+    c = (corps.bounds[0] + corps.bounds[1]) / 2
+    corps.apply_translation([-c[0], -c[1], 0])              # centré XY
+    return corps
+
 
 def _extruder(geom, h, z=0.0):
     geoms = geom.geoms if isinstance(geom, MultiPolygon) else [geom]

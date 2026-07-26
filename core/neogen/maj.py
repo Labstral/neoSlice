@@ -151,15 +151,28 @@ def appliquer_objets(manifest: dict, progress_cb=None) -> tuple[int, int]:
     atomiquement les seuls objets prouvés sains. Renvoie (acceptés, écartés).
     Du code distant n'atteint JAMAIS l'utilisateur sans être prouvé imprimable."""
     from core.neogen import libre as L
-    from core.neogen.objets_module import _defauts, FICHIER_LOCAL
+    from core.neogen.objets_module import _defauts, mesh_depuis_champ, FICHIER_LOCAL
     valides, ecartes = [], 0
     objets = manifest.get("objets", [])
     for i, obj in enumerate(objets):
         if progress_cb:
             progress_cb(f"{i + 1}/{len(objets)}", (i + 1) / max(1, len(objets)))
         try:
-            if not obj.get("id") or not obj.get("code"):
+            if not obj.get("id") or not (obj.get("code") or obj.get("mesh")):
                 ecartes += 1
+                continue
+            if obj.get("mesh"):
+                # Modèle IMPORTÉ : un maillage est de la donnée pure (aucun code
+                # exécuté) — on valide la GÉOMÉTRIE (non vide, taille saine), sans
+                # les contrôles d'imprimabilité stricts (le modèle est fourni tel
+                # quel, il peut légitimement avoir des surplombs/ponts).
+                piece = mesh_depuis_champ(obj["mesh"])
+                d = piece.bounds[1] - piece.bounds[0]
+                if (len(piece.faces) and len(piece.faces) < 600_000
+                        and float(min(d)) > 0.8 and float(max(d)) < 300.0):
+                    valides.append(obj)
+                else:
+                    ecartes += 1
                 continue
             ns = _defauts(obj)
             if obj.get("texte", "aucun") != "aucun":
@@ -173,10 +186,13 @@ def appliquer_objets(manifest: dict, progress_cb=None) -> tuple[int, int]:
             ecartes += 1
     FICHIER_LOCAL.parent.mkdir(parents=True, exist_ok=True)
     tmp = FICHIER_LOCAL.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"version": manifest["version"],
-                               "notes": manifest.get("notes", ""),
-                               "objets": valides},
-                              ensure_ascii=False, indent=1), encoding="utf-8")
+    _sortie = {"version": manifest["version"],
+               "notes": manifest.get("notes", ""),
+               "objets": valides}
+    if isinstance(manifest.get("domaines"), list):     # préserve les catégories base
+        _sortie["domaines"] = manifest["domaines"]
+    tmp.write_text(json.dumps(_sortie, ensure_ascii=False, indent=1),
+                   encoding="utf-8")
     os.replace(tmp, FICHIER_LOCAL)
     logger.info(f"neoGen objets {manifest['version']} : "
                 f"{len(valides)} objets, {ecartes} écartés")
