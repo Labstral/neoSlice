@@ -56,7 +56,7 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-28a"
+VERSION = "2026-07-28b"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -91,8 +91,9 @@ OBJETS = [
               ["rectangulaire", "Rectangulaire", "Rectangular"]],
              "rectangulaire"],
             ["mesures", "Mesures", "Dimensions",
-             [["ext", "Extérieures", "Outer"], ["int", "Intérieures", "Inner"]],
-             "ext"],
+             [["int", "Intérieures (volume utile)", "Inner (usable)"],
+              ["ext", "Extérieures (murs compris)", "Outer (with walls)"]],
+             "int"],
         ],
         "flags": [
             ["coulissant", "Couvercle coulissant", "Sliding lid", False],
