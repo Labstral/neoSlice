@@ -56,7 +56,7 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-28j"
+VERSION = "2026-07-28k"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -237,9 +237,10 @@ if lightbox:
     # dans l'anneau (le câble sort de la LED) + un trou de sortie.
     corps = percer(corps, deplacer(boite_3d(ouv, 10, 7), 0, -(Dled / 2), fond - 0.5))
     if sortie_arriere:
-        # sortie par l'ARRIÈRE (dessous) : trou dans le FOND au bord de la LED ->
-        # le câble sort par le dessous (ne gêne pas si on pose la boîte sur le flanc).
-        corps = percer(corps, deplacer(boite_3d(ouv, 12, fond + 8), 0, -(Dled / 2 - 2), -4))
+        # sortie par l'ARRIÈRE (dessous) : trou dans le FOND collé au BORD BAS (côté
+        # sortie) -> reste toujours proche du bas quelle que soit la taille de la
+        # boîte, le câble descend bien quand on la pose sur le flanc.
+        corps = percer(corps, deplacer(boite_3d(ouv, 12, fond + 8), 0, -(Hb / 2 - p - 7), -4))
     else:
         # sortie sur le CÔTÉ : trou fixe dans la paroi -Y, au ras du fond.
         corps = percer(corps, deplacer(boite_3d(ouv, 3 * p, 9), 0, -Hb / 2, fond))
