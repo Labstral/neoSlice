@@ -56,7 +56,7 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-28e"
+VERSION = "2026-07-28f"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -220,13 +220,13 @@ if lightbox:
         litho = fusionner(litho, cadre)
     corps = creuser(boite_3d(Wb, Hb, prof + fond), p)
     corps = fusionner(corps, deplacer(tube(Dled + 4, Dled + 0.8, 5), 0, 0, fond))
-    # Passage câble : RAINURE au fond + OUVERTURE dans l'anneau (le câble arrive à
-    # plat jusqu'au bord), du centre vers un côté.
-    rainure = deplacer(boite_3d(6, Hb / 2 - p + 2, 8), 0, -(Hb / 2 - p + 2) / 2, fond - 1.5)
+    # Passage câble/plug : MÊME ouverture partout (13 mm) -> ouverture dans
+    # l'anneau + rainure au fond + trou dans la paroi, tous alignés et de même
+    # largeur, pour que le plug USB-A (12 x 4.5 mm) passe d'un bout à l'autre.
+    ouv = 13.0
+    rainure = deplacer(boite_3d(ouv, Hb / 2 - p + 2, 8), 0, -(Hb / 2 - p + 2) / 2, fond - 1.5)
     corps = percer(corps, rainure)
-    # TROU RECTANGULAIRE dans la paroi pour le plug USB-A (12 x 4.5 mm) : 13 x 6 mm,
-    # à peine plus grand, au ras du fond.
-    usb = deplacer(boite_3d(13, 3 * p, 6), 0, -Hb / 2, fond)
+    usb = deplacer(boite_3d(ouv, 3 * p, 6), 0, -Hb / 2, fond)
     corps = percer(corps, usb)
     ext = rectangle_arrondi(Wb - 2 * p - 0.6, Hb - 2 * p - 0.6, 3)
     inn = rectangle_arrondi(Wb - 4 * p - 0.6, Hb - 4 * p - 0.6, 2)
