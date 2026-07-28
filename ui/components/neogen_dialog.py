@@ -938,6 +938,14 @@ class NeoGenPanel(QWidget):
                                else "Texte")
         if e["image"] and not params.get("image"):
             return                       # pas d'image → pas d'aperçu (lithophanie…)
+        # NE JAMAIS lancer un 2e aperçu pendant qu'un tourne : les booléens
+        # (manifold) ne sont PAS thread-safe et le vieux QThread serait GC en
+        # cours d'exécution -> crash quand on règle vite un objet lourd (lightbox).
+        # On ré-essaie juste après, avec les derniers réglages.
+        _w = getattr(self, "_apercu_worker", None)
+        if _w is not None and _w.isRunning():
+            self._apercu_timer.start(200)
+            return
         self._apercu_worker = _ApercuWorker(e["id"], params)
         self._apercu_worker.pret.connect(self.apercu_objet)
         self._apercu_worker.start()
