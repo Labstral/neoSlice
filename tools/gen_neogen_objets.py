@@ -56,7 +56,7 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-26f"
+VERSION = "2026-07-28a"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -82,6 +82,7 @@ OBJETS = [
             ["longueur", "Longueur", "Length", 28, 400, 90, 1],
             ["largeur", "Largeur", "Width", 20, 290, 60, 1],
             ["hauteur", "Hauteur", "Height", 10, 216, 30, 1],
+            ["paroi", "Épaisseur des murs", "Wall thickness", 1.2, 5, 2.4, 0.2],
             ["jeu", "Jeu couvercle", "Lid clearance", 0.1, 0.5, 0.2, 0.1],
         ],
         "choix": [
@@ -89,26 +90,41 @@ OBJETS = [
              [["ronde", "Ronde", "Round"], ["carree", "Carrée", "Square"],
               ["rectangulaire", "Rectangulaire", "Rectangular"]],
              "rectangulaire"],
+            ["mesures", "Mesures", "Dimensions",
+             [["ext", "Extérieures", "Outer"], ["int", "Intérieures", "Inner"]],
+             "ext"],
         ],
         "flags": [
             ["coulissant", "Couvercle coulissant", "Sliding lid", False],
         ],
         "code": r'''
-p = 2.4
-fond = 2.4
+p = paroi
+fond = paroi
+Dt = taille
+Lo = longueur
+La = largeur
 H = hauteur
+if mesures == "int":
+    # L'utilisateur a saisi les cotes INTÉRIEURES (le volume utile). On ajoute
+    # les parois pour obtenir l'extérieur -> l'intérieur fait pile la taille voulue.
+    Dt = Dt + 2 * p
+    Lo = Lo + 2 * p
+    La = La + 2 * p
+    H = H + fond
+    if coulissant:
+        H = H + 5.5   # glissière + lèvre du dessus mangent la hauteur interne
 if coulissant:
     # Couvercle COULISSANT. Dimensions selon la forme : Rectangulaire → Longueur
     # ET Largeur (les 2 champs sont visibles en Rectangulaire) ; sinon empreinte
     # carrée pilotee par « Diamètre / côté ».
     if forme == "rectangulaire":
-        Lg = longueur
-        Wd = largeur
+        Lg = Lo
+        Wd = La
     else:
-        Lg = taille
-        Wd = taille
+        Lg = Dt
+        Wd = Dt
     gh = 3.0
-    gd = 2.0
+    gd = min(2.0, p - 0.4)   # profondeur de rainure < épaisseur de paroi
     corps = creuser(boite_3d(Lg, Wd, H), p)
     z1 = H - 2.5 - gh
     lo = Lg - p + 3
@@ -123,7 +139,7 @@ if coulissant:
     couvercle = deplacer(boite_3d(ll, lw, lt), 0, Wd + 16, 0)
     piece = scene(corps, couvercle)
 elif forme == "ronde":
-    d = taille
+    d = Dt
     corps = creuser(cylindre(d, H), p)
     cap = extrusion(disque(d), fond)
     lip = tube(d - 2 * (p + jeu), d - 2 * (p + jeu) - 2 * p, 6)
@@ -131,11 +147,11 @@ elif forme == "ronde":
     piece = scene(corps, couvercle)
 else:
     if forme == "carree":
-        Lx = taille
-        Wy = taille
+        Lx = Dt
+        Wy = Dt
     else:
-        Lx = longueur
-        Wy = largeur
+        Lx = Lo
+        Wy = La
     rc = min(4.0, min(Lx, Wy) * 0.12)
     foot = rectangle_arrondi(Lx, Wy, rc)
     corps = creuser(extrusion(foot, H), p)
