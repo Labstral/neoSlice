@@ -56,7 +56,7 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-28f"
+VERSION = "2026-07-28g"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -232,7 +232,12 @@ if lightbox:
     inn = rectangle_arrondi(Wb - 4 * p - 0.6, Hb - 4 * p - 0.6, 2)
     levre = percer(extrusion(ext, 5), deplacer(extrusion(inn, 7), 0, 0, -1))
     couvercle = fusionner(litho, deplacer(levre, 0, 0, -5))
-    couvercle = deplacer(couvercle, 0, Hb + 25, 5)
+    if debout:
+        # case « Debout » cochée -> couvercle DEBOUT (qualité lithophanie), posé
+        # à la verticale à côté de la boîte pour l'impression.
+        couvercle = deplacer(poser_au_sol(tourner(couvercle, "x", 90)), 0, Hb + 30, 0)
+    else:
+        couvercle = deplacer(couvercle, 0, Hb + 25, 5)   # à plat à côté
     piece = scene(corps, couvercle)
 else:
     piece = relief_image(image, largeur, ep_min, ep_max, mode, cadre, debout)''',
