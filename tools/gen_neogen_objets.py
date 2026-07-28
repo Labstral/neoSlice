@@ -56,7 +56,7 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-28h"
+VERSION = "2026-07-28i"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -183,6 +183,7 @@ else:
             ["cadre", "Cadre rigide", "Rigid frame", True],
             ["debout", "Debout (qualité lithophanie)", "Standing (lithophane quality)", True],
             ["lightbox", "Boîte lumineuse (LED Ø60)", "Light box (Ø60 LED)", False],
+            ["sortie_arriere", "Sortie câble à l'arrière (dessous)", "Cable exit at back (underside)", False],
         ],
         "choix": [
             ["mode", "Mode", "Mode",
@@ -227,8 +228,13 @@ if lightbox:
     ouv = 16.0
     rainure = deplacer(boite_3d(ouv, Hb / 2 - p + 2, 11), 0, -(Hb / 2 - p + 2) / 2, fond - 1.5)
     corps = percer(corps, rainure)
-    usb = deplacer(boite_3d(ouv, 3 * p, 9), 0, -Hb / 2, fond)
-    corps = percer(corps, usb)
+    if sortie_arriere:
+        # sortie par l'ARRIÈRE (dessous) : trou traversant le FOND près du bord ->
+        # le câble sort par le dessous, ne gêne pas si on pose la boîte sur le flanc.
+        corps = percer(corps, deplacer(boite_3d(ouv, 12, fond + 8), 0, -(Hb / 2 - p - 7), -4))
+    else:
+        # sortie sur le CÔTÉ : trou dans la paroi au ras du fond.
+        corps = percer(corps, deplacer(boite_3d(ouv, 3 * p, 9), 0, -Hb / 2, fond))
     ext = rectangle_arrondi(Wb - 2 * p - 0.6, Hb - 2 * p - 0.6, 3)
     inn = rectangle_arrondi(Wb - 4 * p - 0.6, Hb - 4 * p - 0.6, 2)
     levre = percer(extrusion(ext, 5), deplacer(extrusion(inn, 7), 0, 0, -1))
