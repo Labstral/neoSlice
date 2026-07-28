@@ -662,6 +662,47 @@ class NeoGenPanel(QWidget):
                     _r[0].setVisible(rect); _r[1].setVisible(rect)
             _forme_cb.currentIndexChanged.connect(_sync_forme)
             _sync_forme()
+        # BOÎTE : affiche EN DIRECT la mesure INTÉRIEURE (le volume utile), calculée
+        # depuis la forme, l'épaisseur des murs et le mode Extérieures/Intérieures.
+        # L'utilisateur voit tout de suite ce que la boîte contiendra vraiment.
+        _paroi_sp = champs.get("paroi")
+        _mesures_cb = champs.get("mesures")
+        if _paroi_sp is not None and _mesures_cb is not None and _forme_cb is not None:
+            _info_int = QLabel("")
+            _info_int.setWordWrap(True)
+            _info_int.setStyleSheet(f"color: {PRO_CYAN}; background: transparent; "
+                                    f"font-size: 8pt; font-weight: 600;")
+            form.addRow("", _info_int)
+
+            def _maj_interieur(*_a, _p=_paroi_sp, _m=_mesures_cb, _f=_forme_cb,
+                               _ch=champs, _lab=_info_int):
+                pv = _p.value()
+                forme = _f.currentData()
+                if forme == "rectangulaire":
+                    L = _ch["longueur"].value(); W = _ch["largeur"].value()
+                else:
+                    L = _ch["taille"].value(); W = L
+                Ht = _ch["hauteur"].value()
+                if _m.currentData() == "int":
+                    iL, iW, iH = L, W, Ht                       # saisi = intérieur
+                else:
+                    iL, iW, iH = L - 2 * pv, W - 2 * pv, Ht - pv  # extérieur - murs
+                iL, iW, iH = max(0, iL), max(0, iW), max(0, iH)
+                if forme == "ronde":
+                    _lab.setText(_fr_en(
+                        f"Intérieur : Ø {iL:.1f} × {iH:.1f} mm (haut.)",
+                        f"Inside: Ø {iL:.1f} × {iH:.1f} mm (height)"))
+                else:
+                    _lab.setText(_fr_en(
+                        f"Intérieur : {iL:.1f} × {iW:.1f} × {iH:.1f} mm  (L × l × h)",
+                        f"Inside: {iL:.1f} × {iW:.1f} × {iH:.1f} mm  (L × W × h)"))
+            for _w in (_paroi_sp, champs.get("longueur"), champs.get("largeur"),
+                       champs.get("taille"), champs.get("hauteur")):
+                if _w is not None:
+                    _w.valueChanged.connect(_maj_interieur)
+            _mesures_cb.currentIndexChanged.connect(_maj_interieur)
+            _forme_cb.currentIndexChanged.connect(_maj_interieur)
+            _maj_interieur()
         for (fid, ffr, fen, defaut) in e["flags"]:
             ch = QCheckBox(_fr_en(ffr, fen))
             ch.setChecked(defaut)
