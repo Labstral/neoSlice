@@ -56,7 +56,7 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-28b"
+VERSION = "2026-07-28e"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -162,6 +162,80 @@ else:
     cap = extrusion(foot, fond)
     couvercle = deplacer(fusionner(cap, deplacer(lip, 0, 0, fond - 0.01)), 0, Wy + 16, 0)
     piece = scene(corps, couvercle)''',
+    },
+    {
+        # OVERRIDE de l'objet natif « photo_relief » (lithophanie) pour ajouter,
+        # SANS rebuild, une case « Boîte lumineuse » : le couvercle devient une
+        # lithophanie à plat qui clipse sur une boîte dimensionnée pour un module
+        # LED rond Ø60 × 8 mm (anneau de centrage + trou câble USB). Décochée =
+        # lithophanie normale, identique au natif.
+        "id": "photo_relief",
+        "fr": "Photo en relief / lithophanie", "en": "Photo relief / lithophane",
+        "domaine": "perso", "texte": "aucun", "image": True,
+        "synonymes": ("lithophanie photo relief lightbox boite lumineuse lampe led "
+                      "backlit retroeclaire luminaire veilleuse cadre lumineux"),
+        "params": [
+            ["largeur", "Largeur", "Width", 40, 200, 100, 5],
+            ["ep_min", "Épaisseur mini", "Min thickness", 0.4, 2, 0.8, 0.2],
+            ["ep_max", "Épaisseur maxi", "Max thickness", 1.6, 6, 3.2, 0.2],
+        ],
+        "flags": [
+            ["cadre", "Cadre rigide", "Rigid frame", True],
+            ["debout", "Debout (qualité lithophanie)", "Standing (lithophane quality)", True],
+            ["lightbox", "Boîte lumineuse (LED Ø60)", "Light box (Ø60 LED)", False],
+        ],
+        "choix": [
+            ["mode", "Mode", "Mode",
+             [["lithophanie", "Lithophanie (rétro-éclairée)", "Lithophane (backlit)"],
+              ["relief", "Relief décoratif", "Decorative relief"]],
+             "lithophanie"],
+        ],
+        "code": r'''
+if lightbox:
+    # COUVERCLE lithophanie A PLAT qui clipse sur une BOITE tenant un module LED
+    # rond Ø60 x 8 mm (anneau de centrage + trou cable USB). Boite et couvercle
+    # au MEME format que la lithophanie.
+    litho = relief_image(image, largeur, ep_min, ep_max, "lithophanie", True, False)
+    b = litho.bounds
+    W = b[1][0] - b[0][0]
+    Hy = b[1][1] - b[0][1]
+    T = b[1][2] - b[0][2]
+    cx = (b[0][0] + b[1][0]) / 2
+    cy = (b[0][1] + b[1][1]) / 2
+    litho = deplacer(litho, -cx, -cy, -b[0][2])   # centre en XY, base z=0
+    p = 2.4
+    fond = 3.0
+    Dled = 60.0
+    prof = 12.0
+    # La boite doit TOUJOURS pouvoir accueillir la LED Ø60 -> au moins
+    # Dled + 2 parois + marge dans CHAQUE sens (gere les images larges/etroites).
+    mini = Dled + 2 * p + 8
+    Wb = max(W, mini)
+    Hb = max(Hy, mini)
+    if Wb - W > 0.5 or Hb - Hy > 0.5:
+        # litho plus petite que la boite -> BORD plein autour d'elle pour que le
+        # COUVERCLE fasse pile la taille de la boite (ils restent identiques).
+        cadre = percer(extrusion(rectangle_arrondi(Wb, Hb, 3), T),
+                       deplacer(extrusion(rectangle_arrondi(W - 1, Hy - 1, 1), T + 2), 0, 0, -1))
+        litho = fusionner(litho, cadre)
+    corps = creuser(boite_3d(Wb, Hb, prof + fond), p)
+    corps = fusionner(corps, deplacer(tube(Dled + 4, Dled + 0.8, 5), 0, 0, fond))
+    # Passage câble : RAINURE au fond + OUVERTURE dans l'anneau (le câble arrive à
+    # plat jusqu'au bord), du centre vers un côté.
+    rainure = deplacer(boite_3d(6, Hb / 2 - p + 2, 8), 0, -(Hb / 2 - p + 2) / 2, fond - 1.5)
+    corps = percer(corps, rainure)
+    # TROU RECTANGULAIRE dans la paroi pour le plug USB-A (12 x 4.5 mm) : 13 x 6 mm,
+    # à peine plus grand, au ras du fond.
+    usb = deplacer(boite_3d(13, 3 * p, 6), 0, -Hb / 2, fond)
+    corps = percer(corps, usb)
+    ext = rectangle_arrondi(Wb - 2 * p - 0.6, Hb - 2 * p - 0.6, 3)
+    inn = rectangle_arrondi(Wb - 4 * p - 0.6, Hb - 4 * p - 0.6, 2)
+    levre = percer(extrusion(ext, 5), deplacer(extrusion(inn, 7), 0, 0, -1))
+    couvercle = fusionner(litho, deplacer(levre, 0, 0, -5))
+    couvercle = deplacer(couvercle, 0, Hb + 25, 5)
+    piece = scene(corps, couvercle)
+else:
+    piece = relief_image(image, largeur, ep_min, ep_max, mode, cadre, debout)''',
     },
     {
         "id": "passe_fil_bureau",
