@@ -147,6 +147,10 @@ def entrees_catalogue() -> list[dict]:
                 "construire": _make_builder(obj),
                 "_module": True,      # marque : objet issu d'une mise à jour de base
                 "_synonymes": obj.get("synonymes", ""),
+                # visibilité conditionnelle de champs (voir neogen_dialog) :
+                # {champ: flag} -> visible seulement si flag coché / caché si coché.
+                "visible_si": dict(obj.get("visible_si", {})),
+                "cache_si": dict(obj.get("cache_si", {})),
             })
         except Exception as e:
             logger.debug(f"objet module '{obj.get('id')}' ignoré : {e}")

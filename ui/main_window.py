@@ -1897,26 +1897,10 @@ class MainWindow(QMainWindow):
             self._left_scroll.viewport().setStyleSheet(f"background: {pal['BG_PANEL']}; border: none;")
             if self._left_scroll.widget():
                 self._left_scroll.widget().setStyleSheet(f"background: {pal['BG_PANEL']};")
-        # Panneau neoGen : sa palette est capturée à la construction -> on le
-        # RECONSTRUIT avec le nouveau thème en préservant son état (pièce en
-        # cours de modification, conversation, onglet).
-        _panel = getattr(self, "_neogen_panel", None)
-        if _panel is not None:
-            from ui.components.neogen_dialog import NeoGenPanel
-            etat = _panel.exporter_etat()
-            actif = (hasattr(self, "_right_scroll")
-                     and self._right_scroll.widget() is _panel)
-            neuf = NeoGenPanel()
-            neuf.importer_etat(etat)
-            neuf.piece_ready.connect(self._charger_objet_neogen_mono)
-            neuf.objet_multicouleur.connect(self._charger_objet_multicouleur)
-            neuf.apercu_objet.connect(self._apercu_neogen)
-            neuf.close_requested.connect(self._show_params_panel)
-            if actif:
-                self._right_scroll.takeWidget()
-                self._right_scroll.setWidget(neuf)
-            _panel.deleteLater()
-            self._neogen_panel = neuf
+        # Panneau neoGen : on NE le recrée PLUS (la recréation vidait l'état ->
+        # l'utilisateur se retrouvait sorti du menu/section en cours). Son
+        # refresh_theme (appelé plus bas) ré-applique le thème EN PLACE, en
+        # conservant le domaine, l'objet ouvert, la section ET les valeurs saisies.
         if hasattr(self, '_right_scroll'):
             self._right_scroll.setStyleSheet(f"""
                 QScrollArea {{ background: {pal['BG_PANEL']}; border: none; border-left: 1px solid {pal['INACTIVE']}; }}

@@ -56,7 +56,7 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-28i"
+VERSION = "2026-07-28j"
 NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
@@ -178,6 +178,7 @@ else:
             ["largeur", "Largeur", "Width", 40, 200, 100, 5],
             ["ep_min", "Épaisseur mini", "Min thickness", 0.4, 2, 0.8, 0.2],
             ["ep_max", "Épaisseur maxi", "Max thickness", 1.6, 6, 3.2, 0.2],
+            ["profondeur", "Profondeur boîte (LED)", "Box depth (LED)", 10, 40, 12, 1],
         ],
         "flags": [
             ["cadre", "Cadre rigide", "Rigid frame", True],
@@ -191,6 +192,10 @@ else:
               ["relief", "Relief décoratif", "Decorative relief"]],
              "lithophanie"],
         ],
+        # Visibilité conditionnelle (pilotée par la base, appliquée par le formulaire) :
+        # ces champs n'ont de sens qu'en mode Boîte lumineuse.
+        "visible_si": {"profondeur": "lightbox", "sortie_arriere": "lightbox"},
+        "cache_si": {"cadre": "lightbox"},
         "code": r'''
 if lightbox:
     # COUVERCLE lithophanie A PLAT qui clipse sur une BOITE tenant un module LED
@@ -207,7 +212,9 @@ if lightbox:
     p = 2.4
     fond = 3.0
     Dled = 60.0
-    prof = 12.0
+    # profondeur intérieure réglable, mais JAMAIS < 10 mm (LED 8 mm + 2 mm de jeu)
+    # pour que la LED ne touche pas le couvercle.
+    prof = max(profondeur, 10.0)
     # La boite doit TOUJOURS pouvoir accueillir la LED Ø60 -> au moins
     # Dled + 2 parois + marge dans CHAQUE sens (gere les images larges/etroites).
     mini = Dled + 2 * p + 8
@@ -226,14 +233,15 @@ if lightbox:
     # de large x 9 mm de haut. Ouverture dans l'anneau + rainure au fond + trou de
     # paroi, tous alignés, pour que le plug passe d'un bout à l'autre.
     ouv = 16.0
-    rainure = deplacer(boite_3d(ouv, Hb / 2 - p + 2, 11), 0, -(Hb / 2 - p + 2) / 2, fond - 1.5)
-    corps = percer(corps, rainure)
+    # Ouverture de câble de TAILLE FIXE (ne grandit pas avec la boîte) : un gap
+    # dans l'anneau (le câble sort de la LED) + un trou de sortie.
+    corps = percer(corps, deplacer(boite_3d(ouv, 10, 7), 0, -(Dled / 2), fond - 0.5))
     if sortie_arriere:
-        # sortie par l'ARRIÈRE (dessous) : trou traversant le FOND près du bord ->
-        # le câble sort par le dessous, ne gêne pas si on pose la boîte sur le flanc.
-        corps = percer(corps, deplacer(boite_3d(ouv, 12, fond + 8), 0, -(Hb / 2 - p - 7), -4))
+        # sortie par l'ARRIÈRE (dessous) : trou dans le FOND au bord de la LED ->
+        # le câble sort par le dessous (ne gêne pas si on pose la boîte sur le flanc).
+        corps = percer(corps, deplacer(boite_3d(ouv, 12, fond + 8), 0, -(Dled / 2 - 2), -4))
     else:
-        # sortie sur le CÔTÉ : trou dans la paroi au ras du fond.
+        # sortie sur le CÔTÉ : trou fixe dans la paroi -Y, au ras du fond.
         corps = percer(corps, deplacer(boite_3d(ouv, 3 * p, 9), 0, -Hb / 2, fond))
     ext = rectangle_arrondi(Wb - 2 * p - 0.6, Hb - 2 * p - 0.6, 3)
     inn = rectangle_arrondi(Wb - 4 * p - 0.6, Hb - 4 * p - 0.6, 2)

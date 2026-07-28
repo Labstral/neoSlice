@@ -271,6 +271,16 @@ class NeoGenPanel(QWidget):
                 QTabBar::tab:selected {{ color: {pal['TEXT_PRIMARY']};
                                          border-bottom: 2px solid {pal['ACCENT_BRIGHT']}; }}
             """)
+        # Combos PERSISTANTS (domaine + objet) : re-stylés avec le nouveau thème
+        # (ils survivent au refresh, donc gardaient sinon les couleurs de l'ancien).
+        _style_combo = (
+            f"QComboBox {{ background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};"
+            f" border: 1px solid {pal['INACTIVE']}; border-radius: 5px; padding: 4px 8px; }}"
+            f"QComboBox QAbstractItemView {{ background: {pal['BG_SURFACE']};"
+            f" color: {pal['TEXT_PRIMARY']}; selection-background-color: rgba(34,211,238,0.25); }}")
+        for _cb in (getattr(self, "_combo_domaine", None), getattr(self, "_combo_objet", None)):
+            if _cb is not None:
+                _cb.setStyleSheet(_style_combo)
         self._rethemer_formulaire()
 
     def _rethemer_formulaire(self):
@@ -710,6 +720,27 @@ class NeoGenPanel(QWidget):
             ch.setStyleSheet(style_check)
             form.addRow("", ch)
             champs[fid] = ch
+        # Visibilité conditionnelle de champs, pilotée par la BASE (générique) :
+        #   e["visible_si"] = {champ: flag} -> champ visible SEULEMENT si le flag coché
+        #   e["cache_si"]   = {champ: flag} -> champ CACHÉ si le flag coché
+        # (ex. boîte lumineuse : profondeur/sortie visibles si « lightbox » ; cadre caché).
+        _vis = e.get("visible_si") or {}
+        _cache = e.get("cache_si") or {}
+        if _vis or _cache:
+            def _appliquer_vis(*_a, _v=_vis, _c=_cache, _ch=champs, _f=form):
+                for _fid, _ctrl in _v.items():
+                    _cw = _ch.get(_ctrl); _fw = _ch.get(_fid)
+                    if _fw is not None:
+                        _f.setRowVisible(_fw, bool(_cw is not None and _cw.isChecked()))
+                for _fid, _ctrl in _c.items():
+                    _cw = _ch.get(_ctrl); _fw = _ch.get(_fid)
+                    if _fw is not None:
+                        _f.setRowVisible(_fw, not bool(_cw is not None and _cw.isChecked()))
+            for _ctrl in set(list(_vis.values()) + list(_cache.values())):
+                _cw = champs.get(_ctrl)
+                if _cw is not None and hasattr(_cw, "toggled"):
+                    _cw.toggled.connect(_appliquer_vis)
+            _appliquer_vis()
         # Sélecteurs de COULEUR (objet, texte…) → objet bicolore : 2 slots à l'export
         for (cid, cfr, cen, hexd) in e.get("couleurs", []):
             btn_c = _ColorButton(hexd)
