@@ -134,22 +134,45 @@ def _fast_load_split_3mf(path: Path) -> "trimesh.Scene | None":
                 for it in build.iter(f"{_3MF_NS}item"):
                     build_tf[it.attrib.get("objectid")] = _attrib_to_transform(it.attrib)
 
-            # 5) Assembler la Scene : une géométrie par objectid + transform monde
+            # 5) Assembler la Scene : une géométrie par INSTANCE + transform monde.
+            # ⚠️ Les objectid se répètent entre assemblages (ex. « Table de
+            # chevet » : object_25.model ids 11/12/13 référencés par les objets
+            # racine 14 ET 18, avec des transforms différents ; parts partagées
+            # entre plateaux). Nommer les géométries par le seul sub_id faisait
+            # que trimesh écrasait scene.geometry[sub_id] (le dernier mesh
+            # gagnait pour TOUTES les instances) → mauvais meshes, doublons,
+            # scène étalée sur des mètres. → noms uniques par instance
+            # "parent_sub" ; le mesh (gros tableau de vertices) reste PARTAGÉ
+            # entre instances via mesh_cache (même objet Trimesh sous plusieurs
+            # clés — _parse_threemf_multiobject fait .copy() par objet).
             scene = trimesh.Scene()
+            mesh_cache: dict[tuple[str, str], trimesh.Trimesh] = {}
+            inst_counts: dict[str, int] = {}
             for parent_id, sub_id, comp_tf, zp in ext_refs:
                 vf = geom_cache.get(zp, {}).get(sub_id)
                 if vf is None:
                     continue
-                v, f = vf
-                mesh = trimesh.Trimesh(vertices=v, faces=f, process=False)
+                mesh = mesh_cache.get((zp, sub_id))
+                if mesh is None:
+                    v, f = vf
+                    mesh = trimesh.Trimesh(vertices=v, faces=f, process=False)
+                    mesh_cache[(zp, sub_id)] = mesh
                 bt = build_tf.get(parent_id)
                 world_tf = comp_tf if bt is None else np.dot(bt, comp_tf)
-                # geom_name = objectid → matche part_id de model_settings.config
-                # (et _part_geom_by_id) dans _parse_threemf_multiobject.
-                scene.add_geometry(mesh, geom_name=str(sub_id),
-                                   node_name=str(sub_id), transform=world_tf)
+                # Nom d'instance = "parent_sub" → matche (object id, part id)
+                # de model_settings.config dans _parse_threemf_multiobject.
+                inst = f"{parent_id}_{sub_id}"
+                n = inst_counts.get(inst, 0)
+                inst_counts[inst] = n + 1
+                if n:  # même part répétée dans le même assemblage → suffixe
+                    inst = f"{inst}#{n}"
+                scene.add_geometry(mesh, geom_name=inst,
+                                   node_name=inst, transform=world_tf)
             if not scene.geometry:
                 return None
+            # Marqueur : les geom keys sont "parent_sub" (matching dédié dans
+            # _parse_threemf_multiobject, à ne PAS appliquer aux scènes trimesh).
+            scene.metadata["neoslice_split_fast"] = True
             logger.info(f"[3MF] chargement rapide split-model : {len(scene.geometry)} géométries")
             return scene
     except Exception as e:
@@ -183,6 +206,14 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
             root = None
             modifier_part_ids: set[str] = set()  # IDs des parts non-imprimables
             part_to_obj_id: dict[str, str] = {}  # part_id → parent object_id
+            # Dicts composites "obj_part" : la MÊME part peut être normal_part
+            # sous un objet et negative_part sous un autre (ids réutilisés entre
+            # assemblages) → les dicts à plat par part_id sont ambigus. Utilisés
+            # par le matching dédié split-model (geom keys "parent_sub").
+            config_obj_ids: set[str] = set()
+            name_by_key: dict[str, str] = {}      # "obj_part" → nom
+            extruder_by_key: dict[str, int] = {}  # "obj_part" → extruder
+            modifier_keys: set[str] = set()       # "obj_part" non-imprimables
             if _has_config:
                 model_settings_xml = zf.read("Metadata/model_settings.config").decode("utf-8")
                 root = ET.fromstring(model_settings_xml)
@@ -196,6 +227,7 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
                 }
                 for obj in root.findall("object"):
                     obj_id = obj.get("id", "")
+                    config_obj_ids.add(obj_id)
                     # Extruder au niveau objet (fallback). Bambu le stocke en
                     # ENFANT <metadata key="extruder" value="N"/>, PAS en attribut de
                     # <object> → lire les deux (priorité au metadata). Sans ça, tous les
@@ -213,20 +245,24 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
                         subtype = part.get("subtype", "normal_part")
                         part_id = part.get("id", obj_id)
                         part_to_obj_id[str(part_id)] = obj_id  # toujours enregistrer le lien
+                        _ckey = f"{obj_id}_{part_id}"
                         if subtype in _SKIP_SUBTYPES:
-                            logger.debug(f"Part {part_id} ignorée (subtype={subtype})")
+                            logger.debug(f"Part {part_id} (obj {obj_id}) ignorée (subtype={subtype})")
                             modifier_part_ids.add(str(part_id))
+                            modifier_keys.add(_ckey)
                             continue
                         # Nom depuis metadata
                         for meta in part.findall("metadata"):
                             if meta.get("key") == "name":
                                 name_by_id[part_id] = meta.get("value", f"Part {part_id}")
+                                name_by_key[_ckey] = name_by_id[part_id]
                         # Extruder au niveau part (priorité) ou objet
                         ext_val = obj_extruder
                         for meta in part.findall("metadata"):
                             if meta.get("key") == "extruder":
                                 ext_val = int(meta.get("value", 1))
                         extruder_by_id[part_id] = ext_val
+                        extruder_by_key[_ckey] = ext_val
 
             # Lire les matrices de placement Bambu + plate_index par objet.
             # Bambu stocke scale/rotation/translation dans metadata "matrix" au niveau <object>,
@@ -464,15 +500,15 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
     if len(meshes) < 1:
         return None  # aucun mesh, rien à faire
 
-    # Compter les plateaux réels (plate_N.png, sans 'no_light')
+    # Compter les plateaux réels (plate_N.png strict — exclut plate_N_small.png
+    # et plate_no_light_N.png, sinon le compte est doublé : 7 plateaux → 14)
     plate_count = 1
     try:
+        import re as _re
         with zipfile.ZipFile(path) as _zf2:
             plate_count = max(1, len([
                 n for n in _zf2.namelist()
-                if n.startswith("Metadata/plate_")
-                and n.endswith(".png")
-                and "no_light" not in n
+                if _re.fullmatch(r"Metadata/plate_\d+\.png", n)
             ]))
     except Exception:
         pass
@@ -492,8 +528,46 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
                 return c
         return None
 
+    # Scène issue de _fast_load_split_3mf : geom keys "parent_sub" UNIQUES par
+    # instance (les objectid se répètent entre assemblages → noms uniques par
+    # instance). Matching DIRECT par (objet parent, part) : les dicts à plat
+    # sont ambigus (ex. part 11 = normal_part sous l'objet 18 mais
+    # negative_part sous l'objet 14). Transform = celui de la scène
+    # (build_item ∘ component, déjà monde) ; plateau = celui du parent.
+    _split_fast = bool(getattr(scene, "metadata", {}).get("neoslice_split_fast"))
+
     for geom_id, mesh in meshes.items():
         geom_key = str(geom_id)
+        if _split_fast and "_" in geom_key:
+            _base = geom_key.split("#")[0]          # "14_11#1" → "14_11"
+            _p_oid, _, _s_pid = _base.partition("_")
+            if _p_oid in config_obj_ids and (
+                    _base in extruder_by_key or _base in name_by_key
+                    or _base in modifier_keys):
+                try:
+                    _xf, _ = scene.graph.get(geom_key)
+                    if not isinstance(_xf, np.ndarray) or _xf.shape != (4, 4):
+                        _xf = np.eye(4)
+                except Exception:
+                    _xf = np.eye(4)
+                if _base in modifier_keys:
+                    modifier_objects.append(MeshObject(
+                        object_id=f"mod_{geom_key}",
+                        name=f"modifier_{geom_key}",
+                        extruder=0,
+                        mesh=mesh.copy(),
+                        transform=_xf,
+                    ))
+                else:
+                    objects.append(MeshObject(
+                        object_id=geom_key,
+                        name=name_by_key.get(_base, f"Part {_s_pid}"),
+                        extruder=extruder_by_key.get(_base, 1),
+                        mesh=mesh.copy(),
+                        transform=_xf,
+                        plate_index=plate_by_obj_id.get(_p_oid, 0),
+                    ))
+                continue
         # Matching flexible : geom_key "2_1" → essaie "2_1" et "2"
         _matched = _resolve_id(geom_key, extruder_by_id, name_by_id, matrix_by_obj_id)
         is_known_part = _matched is not None
@@ -617,16 +691,16 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
     clean_idx = face_counts.index(min_fc) if face_counts else 0
     clean_mesh_ref = objects[clean_idx].mesh if objects else None
 
-    # Pour combined_mesh : n'utiliser que les objets du premier plateau (index 0-based).
-    _first_plate = min(plate_by_obj_id.values()) if plate_by_obj_id else 0
-    _obj_ids_plate1 = {_id for _id, _pl in plate_by_obj_id.items() if _pl == _first_plate}
+    # combined_mesh = TOUS les objets, dans l'ordre de `objects` : le pipeline
+    # d'affichage/couleurs (colorize surplombs multipart, thermomap fragilité)
+    # aligne ses tableaux par face sur CETTE concaténation — filtrer ici (ex.
+    # premier plateau seul) désaligne tout et fait DISPARAÎTRE les autres
+    # plateaux de la vue analyse (vécu : Table de chevet, 1 objet affiché sur 29).
     if plate_by_obj_id:
-        logger.info(f"[3MF] plateaux: {sorted(set(plate_by_obj_id.values()))}, "
-                    f"premier={_first_plate}, objets plateau0={len(_obj_ids_plate1)}")
+        logger.info(f"[3MF] plateaux: {sorted(set(plate_by_obj_id.values()))}")
 
     combined_parts = []
     for obj, fc in zip(objects, face_counts):
-
         deviation = abs(fc - min_fc) / max(min_fc, 1) if min_fc > 0 else 0
         m = (clean_mesh_ref.copy() if deviation > 0 and deviation < 0.05
              else obj.mesh.copy())
@@ -649,7 +723,7 @@ def _parse_threemf_multiobject(path: Path, scene: trimesh.Scene) -> ThreeMFData 
     if combined_parts:
         combined = trimesh.util.concatenate(combined_parts)
         _bb = combined.bounding_box.extents
-        logger.info(f"3MF combined mesh (plate={_first_plate}): {_bb.round(1)} mm")
+        logger.info(f"3MF combined mesh (tous plateaux): {_bb.round(1)} mm")
     else:
         combined = objects[0].mesh
 

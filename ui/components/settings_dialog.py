@@ -156,6 +156,8 @@ class SettingsDialog(QDialog):
     _update_result = Signal(str, str, str)   # résultat du thread → main thread
     pro_activated = Signal()                 # émis quand neoSlice Pro vient d'être activé ici
     scanbar_anim_changed = Signal(bool)      # animation de la scan-line on/off
+    auto_reinforce_changed = Signal(bool)    # renfort auto des pièces fragiles on/off
+    colorblind_changed = Signal(bool)        # mode daltonien (palettes analyse) on/off
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -256,6 +258,20 @@ class SettingsDialog(QDialog):
         lay.addLayout(dark_row)
         lay.addSpacing(8)
 
+        # Mode daltonien — palettes analyse (thermomap + surplombs) daltonien-safe
+        # (bleu → jaune → vermillon au lieu du vert↔rouge indistinguable).
+        self._colorblind_lbl, self._colorblind_cb = self._make_checkbox_row(
+            _("settings.colorblind_mode"),
+            bool(PREFS.get("colorblind_mode", False)))
+        self._colorblind_cb.toggled.connect(self._on_colorblind_toggled)
+        colorblind_row = QHBoxLayout()
+        colorblind_row.setContentsMargins(0, 0, 0, 0)
+        colorblind_row.addWidget(self._colorblind_lbl)
+        colorblind_row.addStretch()
+        colorblind_row.addWidget(self._colorblind_cb)
+        lay.addLayout(colorblind_row)
+        lay.addSpacing(8)
+
         # Animation de la barre de scan (en-tête) — figée si décochée
         self._scan_lbl, self._scan_cb = self._make_checkbox_row(
             _("settings.scanbar_anim"), bool(PREFS.get("scanbar_anim", False)))
@@ -335,6 +351,21 @@ class SettingsDialog(QDialog):
         slicer_row.addStretch()
         slicer_row.addWidget(self._slicer_combo)
         lay.addLayout(slicer_row)
+        lay.addSpacing(8)
+
+        # Renforcement automatique des pièces fragiles (scènes multi-objets) :
+        # les pièces oranges/rouges (thermomap) reçoivent + parois + remplissage.
+        # Placé sous « Slicer de sortie » (demande Emmanuel — plus propre).
+        self._reinforce_lbl, self._reinforce_cb = self._make_checkbox_row(
+            _("settings.auto_reinforce"),
+            bool(PREFS.get("auto_reinforce_fragile", True)))
+        self._reinforce_cb.toggled.connect(self._on_auto_reinforce_toggled)
+        reinforce_row = QHBoxLayout()
+        reinforce_row.setContentsMargins(0, 0, 0, 0)
+        reinforce_row.addWidget(self._reinforce_lbl)
+        reinforce_row.addStretch()
+        reinforce_row.addWidget(self._reinforce_cb)
+        lay.addLayout(reinforce_row)
         lay.addSpacing(8)
 
         lay.addSpacing(18)
@@ -785,6 +816,14 @@ class SettingsDialog(QDialog):
         PREFS.set("scanbar_anim", bool(checked))
         self.scanbar_anim_changed.emit(bool(checked))
 
+    def _on_auto_reinforce_toggled(self, checked: bool):
+        PREFS.set("auto_reinforce_fragile", bool(checked))
+        self.auto_reinforce_changed.emit(bool(checked))
+
+    def _on_colorblind_toggled(self, checked: bool):
+        PREFS.set("colorblind_mode", bool(checked))
+        self.colorblind_changed.emit(bool(checked))
+
     def _on_lang_changed(self):
         PREFS.set("lang", self._lang_combo.currentData())
         self._show_restart_notice()
@@ -1049,7 +1088,8 @@ class SettingsDialog(QDialog):
 
         row_lbl_style = f"color: {pal['TEXT_PRIMARY']}; background: transparent;"
         for lbl in (self._dark_lbl, self._scan_lbl, self._lang_lbl, self._slicer_lbl,
-                    self._printer_lbl, self._perf_lbl):
+                    self._printer_lbl, self._perf_lbl, self._reinforce_lbl,
+                    self._colorblind_lbl):
             lbl.setStyleSheet(row_lbl_style)
 
         self._perf_desc_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
@@ -1067,21 +1107,12 @@ class SettingsDialog(QDialog):
             QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; color: #ffffff; }}
         """)
 
-        cb_style = f"""
-            QCheckBox {{ background: transparent; }}
-            QCheckBox::indicator {{
-                width: 18px; height: 18px;
-                border: 2px solid {pal['INACTIVE']};
-                border-radius: 3px;
-                background: {pal['BG_INPUT']};
-            }}
-            QCheckBox::indicator:checked {{
-                background: {pal['ACCENT']}; border-color: {pal['ACCENT']};
-            }}
-            QCheckBox::indicator:hover {{ border-color: {pal['ACCENT_BRIGHT']}; }}
-        """
-        for cb in (self._dark_cb, self._scan_cb):
-            cb.setStyleSheet(cb_style)
+        # Cases à cocher : style NATIF (petit ✓ visible), identique partout —
+        # Emmanuel préfère la coche aux « cases pleines ». On VIDE tout stylesheet
+        # (un précédent _apply_theme a pu poser un style plein) → rendu natif.
+        for cb in (self._dark_cb, self._scan_cb, self._reinforce_cb,
+                   self._colorblind_cb):
+            cb.setStyleSheet("")
 
         self._dark_cb.blockSignals(True)
         self._dark_cb.setChecked(_T.is_dark())

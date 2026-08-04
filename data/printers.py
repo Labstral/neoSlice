@@ -701,3 +701,18 @@ def printer_bed_info(printer_key: str) -> dict:
         return bt[printer_key]
     alias = "Bambu Lab " + printer_key.replace(" Mini", " mini")
     return bt.get(alias, {})
+
+
+def volume_impression(nom_ui: str) -> tuple[float, float, float]:
+    """Volume d'impression (X, Y, Z) en mm d'une imprimante, d'après son champ
+    « volume » (ex. « 256×256×256 mm »). Repli prudent 256×256×256 si inconnu
+    (imprimantes catalogue sans volume renseigné). Sert de garde-fou neoGen :
+    refuser de générer une pièce plus grande que le plateau cible."""
+    try:
+        v = (PRINTERS.get(nom_ui) or {}).get("volume", "")
+        parts = [p.strip() for p in str(v).replace("mm", "").split("×")]
+        if len(parts) == 3:
+            return (float(parts[0]), float(parts[1]), float(parts[2]))
+    except Exception:
+        pass
+    return (256.0, 256.0, 256.0)

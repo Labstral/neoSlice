@@ -222,13 +222,34 @@ def tourner(objet, axe: str = "z", degres: float = 0):
     return p
 
 
+def _garder_tags(source, resultat):
+    """Reporte les tags neoSlice (plateau/profil — metadata `neoslice_*`) du
+    corps SOURCE sur le RÉSULTAT d'une opération booléenne. Les booléens
+    (union/différence/intersection) fabriquent un mesh NEUF sans metadata →
+    sans ça, `fusionner(plateau(x, 1), y)` perdait silencieusement le plateau
+    et tout repartait sur le plateau 0 à l'export (vécu en audit)."""
+    try:
+        if isinstance(source, trimesh.Trimesh) and isinstance(resultat, trimesh.Trimesh):
+            src = getattr(source, "metadata", None) or {}
+            for k, v in src.items():
+                if str(k).startswith("neoslice_"):
+                    if not isinstance(resultat.metadata, dict):
+                        resultat.metadata = {}
+                    resultat.metadata[k] = v
+    except Exception:
+        pass
+    return resultat
+
+
 def fusionner(*objets):
     objets = [o for o in objets if o is not None]
     if all(isinstance(o, _2D) for o in objets):
         u = unary_union(objets)
         return u
     vols = [o if not isinstance(o, _2D) else extrusion(o, 1.0) for o in objets]
-    return union_solides(vols)
+    # tags du 1er corps 3D (le « principal ») conservés sur l'union
+    src = next((o for o in objets if not isinstance(o, _2D)), None)
+    return _garder_tags(src, union_solides(vols))
 
 
 def percer(objet, outil):
@@ -240,7 +261,14 @@ def percer(objet, outil):
     if isinstance(outil, _2D):
         h = float(objet.bounds[1][2] - objet.bounds[0][2]) + 20
         outil = extrusion(outil, h, float(objet.bounds[0][2]) - 10)
-    return trimesh.boolean.difference([objet, outil], engine="manifold")
+    res = trimesh.boolean.difference([objet, outil], engine="manifold")
+    # Résultat vide (l'outil englobe tout le corps) : le booléen renvoie None ou
+    # un mesh sans faces → sans cette garde, la recette crashait plus loin sur un
+    # « NoneType » incompréhensible (vécu : passe-fil avec Ø câbles > Ø corps).
+    if res is None or len(getattr(res, "faces", [])) == 0:
+        raise ValueError("percer : l'outil retire tout le volume — réduis son "
+                         "diamètre ou agrandis la pièce.")
+    return _garder_tags(objet, res)
 
 
 def creuser(objet: trimesh.Trimesh, paroi: float = 2.0) -> trimesh.Trimesh:
@@ -268,7 +296,8 @@ def creuser(objet: trimesh.Trimesh, paroi: float = 2.0) -> trimesh.Trimesh:
     haut = interieur.copy()
     haut.apply_translation([0, 0, 5])
     outil = union_solides([interieur, haut])
-    return trimesh.boolean.difference([objet, outil], engine="manifold")
+    return _garder_tags(objet,
+                        trimesh.boolean.difference([objet, outil], engine="manifold"))
 
 
 def repeter_cercle(objet: trimesh.Trimesh, n: int, rayon: float):
@@ -302,6 +331,39 @@ def couleur(objet, hexa):
     p = objet.copy()
     try:
         p.visual.face_colors = _hex_rgba(hexa)
+    except Exception:
+        pass
+    return p
+
+
+def plateau(objet, numero):
+    """Assigne une pièce à un PLATEAU (0 = premier). Dans scene(), les pièces de
+    plateaux DIFFÉRENTS sont exportées sur des plateaux distincts (projet 3MF
+    multi-plateaux Bambu/Orca) — ex. couvercle lithophane sur le plateau 0, boîte
+    sur le plateau 1. Se combine avec profil()."""
+    if isinstance(objet, _2D):
+        return objet
+    p = objet.copy()
+    try:
+        if not isinstance(p.metadata, dict):
+            p.metadata = {}
+        p.metadata["neoslice_plate"] = int(numero)
+    except Exception:
+        pass
+    return p
+
+
+def profil(objet, nom):
+    """Force le PROFIL d'impression d'une pièce : 'standard' (réglages normaux) ou
+    'lithophanie' (remplissage 100 %…). En scène multi-plateaux, permet p.ex. la
+    boîte en 'standard' alors que l'objet global est une lithophanie."""
+    if isinstance(objet, _2D):
+        return objet
+    p = objet.copy()
+    try:
+        if not isinstance(p.metadata, dict):
+            p.metadata = {}
+        p.metadata["neoslice_profil"] = str(nom)
     except Exception:
         pass
     return p
@@ -423,7 +485,7 @@ def intersection(a, b):
     """Garde uniquement la PARTIE COMMUNE de deux objets."""
     if isinstance(a, _2D) and isinstance(b, _2D):
         return a.intersection(b)
-    return trimesh.boolean.intersection([a, b], engine="manifold")
+    return _garder_tags(a, trimesh.boolean.intersection([a, b], engine="manifold"))
 
 
 def repeter_ligne(objet, n: int, dx: float = 0, dy: float = 0, dz: float = 0):
@@ -447,7 +509,7 @@ API = {
     "revolution": revolution, "deplacer": deplacer, "tourner": tourner,
     "fusionner": fusionner, "percer": percer, "creuser": creuser,
     "repeter_cercle": repeter_cercle, "poser_au_sol": poser_au_sol,
-    "scene": scene, "couleur": couleur,
+    "scene": scene, "couleur": couleur, "plateau": plateau, "profil": profil,
     "relief_image": relief_image, "silhouette_image": silhouette_image,
     # moteurs avancés (math + géométrie) pour objets complexes
     "sin": sin, "cos": cos, "tan": tan, "atan2": atan2, "racine": racine,
@@ -746,7 +808,10 @@ def executer_sandbox(code: str, params: dict | None = None) -> trimesh.Trimesh:
         # Valeurs des PARAMÈTRES d'un objet de la base téléchargeable : elles
         # deviennent des variables du script (ex. diametre, hauteur, texte).
         # Ce sont des nombres/chaînes, jamais du code — le namespace reste clos.
-        espace.update(params)
+        # Défense en profondeur : aucune clé « _ » (un param nommé __builtins__
+        # ou _INTERDIT écraserait le namespace clos).
+        espace.update({k: v for k, v in params.items()
+                       if not str(k).startswith("_")})
     exec(compile(code, "<neogen-libre>", "exec"), espace)   # noqa: S102 — clos
     piece = espace.get("piece")
     if piece is None:

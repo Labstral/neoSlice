@@ -44,6 +44,10 @@ def _e(id, fr, en, domaine, construire, texte="aucun", image=False,
             "choix": list(choix), "couleurs": list(couleurs), "construire": construire}
 
 
+# Options des menus déroulants filament (HueForge) — depuis la bibliothèque TD.
+from data.filament_td import options_choix as _td_opts
+
+
 # ── Constructeurs (imports paresseux : le catalogue se charge instantanément) ─
 def _b_porte_cle(p):
     from core.neogen.texte import construire_porte_cle
@@ -129,6 +133,31 @@ def _b_logo(p):
     c_logo = _hex_rgba(p.get("couleur_logo", "#111111"))
     for nom, g in scene.geometry.items():
         g.visual.face_colors = c_obj if nom == "socle" else c_logo
+    return scene
+
+
+def _b_hueforge(p):
+    """HueForge : image couleur -> relief multi-filament (bandes par hauteur).
+
+    4 filaments (fond clair -> foncé) choisis dans la bibliothèque TD ; TD réglable
+    (0 = valeur de la bibliothèque). Renvoie la scène de bandes ; l'aperçu photo
+    (couleur par sommet) voyage dans scene.metadata['hueforge_apercu']."""
+    from core.neogen.hueforge import generer_hueforge
+    from data.filament_td import couleur_hex, td_defaut
+    palette = []
+    for i in range(1, 5):
+        nom = p.get(f"filament_{i}")
+        if not nom:
+            continue
+        td = p.get(f"td_{i}", 0.0) or 0.0
+        palette.append({"nom": nom, "hex": couleur_hex(nom),
+                        "td": td if td > 0 else td_defaut(nom)})
+    if len(palette) < 2:
+        raise ValueError("HueForge : choisis au moins 2 filaments différents.")
+    scene, _ap = generer_hueforge(
+        p["image"], palette,
+        largeur=p.get("largeur", 100), hauteur_couche=p.get("hauteur_couche", 0.08),
+        base_mm=p.get("base", 0.4), couches_max=int(p.get("couches", 30)))
     return scene
 
 
@@ -271,6 +300,20 @@ CATALOGUE = [
                 ("silhouette", "Silhouette", "Outline")], "badge")],
        couleurs=[("objet", "Couleur objet", "Object color", "#3B82F6"),
                  ("logo", "Couleur logo", "Logo color", "#111111")]),
+    _e("hueforge", "HueForge (photo couleur)", "HueForge (color photo)", "perso",
+       _b_hueforge, image=True,
+       params=[_P("largeur", "Largeur", "Width", 40, 250, 100, 5),
+               _P("hauteur_couche", "Hauteur de couche", "Layer height", 0.04, 0.20, 0.08, 0.04),
+               _P("base", "Épaisseur du fond", "Base thickness", 0.2, 1.2, 0.4, 0.2),
+               _P("couches", "Détail (nb de couches)", "Detail (layers)", 10, 60, 30, 5),
+               _P("td_1", "TD filament 1 (0 = auto)", "Filament 1 TD (0 = auto)", 0, 8, 0, 0.1),
+               _P("td_2", "TD filament 2 (0 = auto)", "Filament 2 TD (0 = auto)", 0, 8, 0, 0.1),
+               _P("td_3", "TD filament 3 (0 = auto)", "Filament 3 TD (0 = auto)", 0, 8, 0, 0.1),
+               _P("td_4", "TD filament 4 (0 = auto)", "Filament 4 TD (0 = auto)", 0, 8, 0, 0.1)],
+       choix=[("filament_1", "Filament 1 (fond, clair)", "Filament 1 (base, light)", _td_opts(), "Blanc"),
+              ("filament_2", "Filament 2", "Filament 2", _td_opts(), "Rouge"),
+              ("filament_3", "Filament 3", "Filament 3", _td_opts(), "Bleu"),
+              ("filament_4", "Filament 4 (dessus, foncé)", "Filament 4 (top, dark)", _td_opts(), "Noir")]),
     _e("marque_page", "Marque-page", "Bookmark", "perso", _f("formes", "marque_page"),
        texte="optionnel",
        params=[_P("longueur", "Longueur", "Length", 80, 220, 140, 5),
@@ -920,6 +963,42 @@ def construire(entree_id: str, params: dict):
         _g.POLICE_ACTIVE = None
         _g.RELIEF_ACTIF = None
         _g.ESPACEMENT_ACTIF = None
+
+
+def piece_hors_plateau(piece, volume: tuple[float, float, float]) -> str | None:
+    """Garde-fou taille : la pièce tient-elle sur le plateau de l'imprimante
+    CIBLE ? Retourne « LxP (plateau XxY) » si ça dépasse, None sinon.
+
+    Scène MULTI-PLATEAUX (corps taggés `neoslice_plate`) : chaque PLATEAU est
+    vérifié séparément (la boîte lumineuse dépasse en global mais chaque plateau
+    tient). Tolérance 2 mm. Décidé avec Emmanuel (audit : bornes élargies →
+    pièces jusqu'à 1200 mm générées sans avertissement)."""
+    import trimesh
+    vx, vy, vz = (float(volume[0]), float(volume[1]),
+                  float(volume[2]) if len(volume) > 2 else 1e9)
+    tol = 2.0
+
+    if isinstance(piece, trimesh.Scene):
+        groupes: dict[int, list] = {}
+        for g in piece.geometry.values():
+            if not isinstance(g, trimesh.Trimesh) or len(g.faces) == 0:
+                continue
+            md = getattr(g, "metadata", {}) or {}
+            groupes.setdefault(int(md.get("neoslice_plate", 0) or 0), []).append(g)
+        metteurs = [trimesh.util.concatenate(bs) for bs in groupes.values() if bs]
+    elif isinstance(piece, trimesh.Trimesh):
+        metteurs = [piece]
+    else:
+        return None
+    for m in metteurs:
+        d = m.bounds[1] - m.bounds[0]
+        # la pièce peut tourner de 90° sur le plateau → comparer trié
+        px, py = sorted((float(d[0]), float(d[1])))
+        bx, by = sorted((vx, vy))
+        if px > bx + tol or py > by + tol or float(d[2]) > vz + tol:
+            return (f"{d[0]:.0f}×{d[1]:.0f}×{d[2]:.0f} mm "
+                    f"(plateau {vx:.0f}×{vy:.0f}×{vz:.0f})")
+    return None
 
 
 def est_multicouleur(piece) -> bool:

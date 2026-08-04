@@ -354,8 +354,9 @@ def magnet(texte: str = "", diametre: float = 35, ep: float = 4, ep_texte: float
            police: str | None = None, style: str | None = None,
            couleur_objet: str | None = None, couleur_texte: str | None = None):
     """Pastille avec LOGEMENT d'aimant creusé au dos (aimant collé/inséré)."""
-    if prof_aimant >= ep - 1.0:
-        raise ValueError("Logement trop profond pour l'épaisseur (min 1 mm de paroi).")
+    # Garde-fou bornes UI : profondeur bornée pour garder 1 mm de paroi (les
+    # curseurs aux extrêmes levaient une erreur brute au lieu d'ajuster).
+    prof_aimant = min(float(prof_aimant), max(0.5, float(ep) - 1.0))
     disque = Point(0, 0).buffer(diametre / 2, resolution=96)
     poche = Point(0, 0).buffer(d_aimant / 2, resolution=64)
     if not (texte or "").strip():

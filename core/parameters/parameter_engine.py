@@ -77,6 +77,20 @@ def appliquer_profil_lithophanie(config: "PrintConfig") -> "PrintConfig":
     return config
 
 
+def profil_par_defaut() -> "PrintConfig":
+    """Profil « par défaut » de référence (standard.yaml) — réglages Bambu bruts,
+    sans aucune intelligence neoSlice. Sert de base de comparaison pour expliquer
+    « ce que neoSlice a changé ». Repli sur PrintConfig() si le YAML manque."""
+    try:
+        path = _PROFILES_DIR / "standard.yaml"
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        valid = PrintConfig.model_fields.keys()
+        return PrintConfig(**{k: v for k, v in data.items() if k in valid})
+    except Exception:
+        return PrintConfig()
+
+
 class ParameterEngine:
     """Traduit IntentProfile + AnalysisReport + filament en PrintConfig Bambu Studio.
 

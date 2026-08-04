@@ -167,6 +167,9 @@ class ParamsPreview(QWidget):
         self._sections: dict[str, CollapsibleSection] = {}
         self._last_config   = None
         self._last_analysis = None
+        self._last_explanations: list[dict] = []
+        self._explain_visible = False      # volet « ce que neoSlice a amélioré »
+        self._explain_box = None
         self._setup_ui()
 
     def refresh_theme(self):
@@ -198,9 +201,12 @@ class ParamsPreview(QWidget):
 
     # ── API publique ───────────────────────────────────────────────────────
 
-    def update_from_config(self, config: PrintConfig, analysis: AnalysisReport | None = None):
+    def update_from_config(self, config: PrintConfig, analysis: AnalysisReport | None = None,
+                           explanations: list[dict] | None = None):
         self._last_config = config
         self._last_analysis = analysis
+        self._last_explanations = explanations or []
+        self._explain_visible = False   # replié à chaque nouvelle génération
         self._empty.hide()
         self._sections_widget.show()
         self._render_sections(config, analysis)
@@ -216,6 +222,9 @@ class ParamsPreview(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         self._sections.clear()
+        self._last_explanations = []
+        self._explain_visible = False
+        self._explain_box = None
         self._sections_widget.hide()
         self._empty.show()
 
@@ -256,10 +265,31 @@ class ParamsPreview(QWidget):
         cl.setContentsMargins(12, 10, 12, 10)
         cl.setSpacing(5)
 
+        header_row = QWidget()
+        header_row.setStyleSheet("background: transparent;")
+        hrl = QHBoxLayout(header_row)
+        hrl.setContentsMargins(0, 0, 0, 0)
+        hrl.setSpacing(6)
         header = QLabel(_("preview.summary_title"))
         header.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
         header.setStyleSheet(f"color: {_rp['ACCENT_BRIGHT']}; letter-spacing: 2px; background: transparent;")
-        cl.addWidget(header)
+        hrl.addWidget(header)
+        hrl.addStretch()
+        # Icône « i » discrète → ouvre le volet « ce que neoSlice a amélioré »
+        if self._last_explanations:
+            info_btn = QPushButton("i")
+            info_btn.setFixedSize(18, 18)
+            info_btn.setCursor(Qt.PointingHandCursor)
+            info_btn.setToolTip(_("explain.tip"))
+            info_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+            info_btn.setStyleSheet(
+                f"QPushButton {{ background: {_rp['BG_SURFACE']}; color: {_rp['ACCENT_BRIGHT']}; "
+                f"border: 1px solid {_rp['ACCENT']}; border-radius: 9px; }} "
+                f"QPushButton:hover {{ background: {_rp['ACCENT']}; color: {_rp['BG_PANEL']}; }}"
+            )
+            info_btn.clicked.connect(self._toggle_explain)
+            hrl.addWidget(info_btn)
+        cl.addWidget(header_row)
 
         mode = getattr(c, "neoslice_support_mode", "auto")
         if mode == "none":
@@ -313,7 +343,71 @@ class ParamsPreview(QWidget):
             rl.addWidget(lbl_v, 0)
             cl.addWidget(row)
 
+        # ── Volet « ce que neoSlice a amélioré » (replié par défaut) ────────
+        self._explain_box = None
+        if self._last_explanations:
+            self._explain_box = self._build_explain_box()
+            self._explain_box.setVisible(self._explain_visible)
+            cl.addWidget(self._explain_box)
+
         self._sections_layout.addWidget(card)
+
+    def _toggle_explain(self):
+        self._explain_visible = not self._explain_visible
+        if self._explain_box is not None:
+            self._explain_box.setVisible(self._explain_visible)
+
+    def _build_explain_box(self) -> QWidget:
+        """Construit le volet listant les explications pédagogiques."""
+        _p = _T.palette()
+        box = QWidget()
+        box.setStyleSheet("background: transparent;")
+        bl = QVBoxLayout(box)
+        bl.setContentsMargins(0, 6, 0, 0)
+        bl.setSpacing(6)
+
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background: {_p['INACTIVE']};")
+        bl.addWidget(sep)
+
+        hdr = QLabel(_("explain.header"))
+        hdr.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
+        hdr.setStyleSheet(f"color: {_p['TEXT_LABEL']}; letter-spacing: 2px; background: transparent;")
+        bl.addWidget(hdr)
+
+        for e in self._last_explanations:
+            bl.addWidget(self._make_explain_row(e))
+        return box
+
+    def _make_explain_row(self, e: dict) -> QWidget:
+        """Une explication : catégorie + titre + raison, filet accent à gauche."""
+        _p = _T.palette()
+        row = QWidget()
+        row.setStyleSheet(
+            f"background: {_p['BG_SURFACE']}; border-left: 2px solid {_p['ACCENT']}; border-radius: 2px;"
+        )
+        rl = QVBoxLayout(row)
+        rl.setContentsMargins(8, 5, 8, 5)
+        rl.setSpacing(1)
+
+        cat = QLabel(e.get("cat", ""))
+        cat.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
+        cat.setStyleSheet(f"color: {_p['ACCENT_BRIGHT']}; letter-spacing: 2px; background: transparent;")
+        rl.addWidget(cat)
+
+        titre = QLabel(e.get("titre", ""))
+        titre.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
+        titre.setStyleSheet(f"color: {_p['TEXT_PRIMARY']}; background: transparent;")
+        titre.setWordWrap(True)
+        rl.addWidget(titre)
+
+        raison = QLabel(e.get("raison", ""))
+        raison.setFont(QFont(FONT_MAIN, 8))
+        raison.setStyleSheet(f"color: {_p['TEXT_SECONDARY']}; background: transparent;")
+        raison.setWordWrap(True)
+        rl.addWidget(raison)
+        return row
 
     def _render_sections(self, c: PrintConfig, a: AnalysisReport | None):
         while self._sections_layout.count():

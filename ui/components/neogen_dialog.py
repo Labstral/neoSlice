@@ -101,15 +101,35 @@ class _CatalogueWorker(QThread):
     fini_multi = Signal(object, str)      # (scene, entree_id) — objet bicolore
     erreur = Signal(str)
 
-    def __init__(self, entree_id: str, params: dict):
+    def __init__(self, entree_id: str, params: dict,
+                 volume_plateau: tuple | None = None):
         super().__init__()
         self._id, self._params = entree_id, params
+        self._volume = volume_plateau     # (x, y, z) mm de l'imprimante cible
 
     def run(self):
         try:
-            from core.neogen.catalogue import construire, est_multicouleur, generer_fichier
+            from core.neogen.catalogue import (construire, est_multicouleur,
+                                               generer_fichier, piece_hors_plateau)
+            import trimesh as _tm
             piece = construire(self._id, self._params)
-            if est_multicouleur(piece):
+            # Garde-fou plateau : refuser une pièce plus grande que le plateau de
+            # l'imprimante CIBLE (bornes élargies du catalogue → jusqu'à 1200 mm
+            # possibles sinon, décidé avec Emmanuel après audit).
+            if self._volume:
+                _depasse = piece_hors_plateau(piece, self._volume)
+                if _depasse:
+                    self.erreur.emit(_("neogen.hors_plateau", dims=_depasse))
+                    return
+            # Scène MULTI-PLATEAUX (corps taggés plateau()) → route SCÈNE aussi (comme
+            # bicolore) : garde la scène taggée en mémoire (_neogen_scene) pour
+            # l'export multi-plateaux (les tags seraient perdus par un export fichier).
+            _multiplate = False
+            if isinstance(piece, _tm.Scene):
+                _multiplate = any(
+                    int((getattr(g, "metadata", {}) or {}).get("neoslice_plate", 0) or 0) > 0
+                    for g in piece.geometry.values())
+            if est_multicouleur(piece) or _multiplate:
                 self.fini_multi.emit(piece, self._id)
             else:
                 self.fini.emit(generer_fichier(self._id, self._params, piece=piece))
@@ -239,8 +259,9 @@ class NeoGenPanel(QWidget):
         # _ready : évite d'émettre ouvrir_carte pendant la CONSTRUCTION (avant que
         # main_window ait connecté le signal, et alors qu'on est sur l'onglet Recherche).
         self._ready = False
-        self._tabs.addTab(self._onglet_bibliotheque(), _("neogen.tab_library"))
-        self._tabs.insertTab(0, self._onglet_libre(), _("neogen.tab_search"))
+        # Bibliothèque en PREMIER (onglet 0, affiché par défaut), Rechercher ensuite.
+        self._tabs.addTab(self._onglet_libre(), _("neogen.tab_search"))
+        self._tabs.insertTab(0, self._onglet_bibliotheque(), _("neogen.tab_library"))
         self._tabs.setCurrentIndex(0)
         self._tabs.currentChanged.connect(self._on_tab_change)
         lay.addWidget(self._tabs, 1)
@@ -259,6 +280,10 @@ class NeoGenPanel(QWidget):
         couleurs de l'ancien thème → formulaire illisible/« sorti du menu »)."""
         self._pal = _THEME.palette()
         pal = self._pal
+        # Fond de la colonne : posé au build (ligne 192) avec le thème d'alors —
+        # il faut le RÉ-appliquer ici, sinon la colonne reste figée au thème de
+        # départ pendant que les champs, eux, se mettent à jour (fond incohérent).
+        self.setStyleSheet(f"background: {pal['BG_PANEL']};")
         for w in self.findChildren(QLabel):
             if w.objectName() == "neogenTitre":
                 w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;"
@@ -536,7 +561,9 @@ class NeoGenPanel(QWidget):
         self._vider_formulaire()
         self._carte_embedded = panel
         panel.setParent(self._form_holder)
-        self._form_lay.addWidget(panel)
+        # stretch 1 : le panneau REMPLIT la colonne → sa liste (scroll, stretch 1)
+        # pousse les boutons (export, litho, modèles) tout en BAS, collés au bord.
+        self._form_lay.addWidget(panel, 1)
         panel.show()
 
     def _construire_formulaire(self, e: dict) -> QWidget:
@@ -796,8 +823,12 @@ class NeoGenPanel(QWidget):
             # bouton PLEINE LARGEUR, même style visible que « Joindre un
             # logo » de la Création libre (avant : QPushButton sans style,
             # on ne voyait pas que c'était cliquable)
-            cle_btn = ("neogen.attach_photo" if e["id"] == "photo_relief"
-                       else "neogen.attach_logo")
+            if e["id"] == "photo_relief":
+                cle_btn = "neogen.attach_photo"
+            elif e["id"] == "logo":
+                cle_btn = "neogen.attach_logo"
+            else:                                   # HueForge & autres : image générique
+                cle_btn = "neogen.attach_image"
             btn_img = QPushButton(_(cle_btn))
             btn_img.setCursor(Qt.PointingHandCursor)
             btn_img.setMinimumHeight(30)
@@ -813,11 +844,16 @@ class NeoGenPanel(QWidget):
                                   " font-size: 9pt;")
             self._lbl_img_courant = lbl_img   # pour l'aperçu image pré-rempli
 
+            # Logo 3D : SVG uniquement (le PNG/JPG rasterisé donne une silhouette
+            # sale). Les autres objets image (photo en relief, HueForge) acceptent
+            # les photos PNG/JPG.
+            _filtre = ("SVG (*.svg)" if e["id"] == "logo"
+                       else "Image (*.svg *.png *.jpg *.jpeg)")
+
             def _pick():
                 from PySide6.QtGui import QFontMetrics
                 chemin, _f2 = QFileDialog.getOpenFileName(
-                    self, _(cle_btn), "",
-                    "Image (*.svg *.png *.jpg *.jpeg)")
+                    self, _(cle_btn), "", _filtre)
                 if chemin:
                     fm = QFontMetrics(lbl_img.font())
                     lbl_img.setText(fm.elidedText(Path(chemin).name,
@@ -900,7 +936,7 @@ class NeoGenPanel(QWidget):
                 wdg.setChecked(bool(val))
             elif isinstance(wdg, QLineEdit):
                 wdg.setText(str(val))
-        self._tabs.setCurrentIndex(1)          # bascule sur la Bibliothèque
+        self._tabs.setCurrentIndex(0)          # bascule sur la Bibliothèque
         # génération immédiate si tout le nécessaire est là (sinon on laisse
         # l'utilisateur compléter — ex. texte requis, image manquante)
         e = self._entree_courante
@@ -989,9 +1025,23 @@ class NeoGenPanel(QWidget):
         if e["image"] and not params.get("image"):
             self._statut.setText("⚠ " + _("neogen.image_required"))
             return
+        # Une génération à la fois : écraser self._worker pendant qu'un thread
+        # tourne (ex. changer d'objet et regénérer aussitôt) ferait perdre sa
+        # référence Python → GC du QThread en plein run → crash (même piège que
+        # les workers thermomap). On garde aussi une liste de références vivantes.
+        _w = getattr(self, "_worker", None)
+        if _w is not None and _w.isRunning():
+            self._statut.setText("⚙ " + _("neogen.building"))
+            return
         btn.setEnabled(False)
         self._statut.setText("⚙ " + _("neogen.building"))
-        self._worker = _CatalogueWorker(e["id"], params)
+        self._worker = _CatalogueWorker(
+            e["id"], params, getattr(self, "volume_plateau", None))
+        self._workers_vivants = getattr(self, "_workers_vivants", [])
+        self._workers_vivants.append(self._worker)
+        self._worker.finished.connect(
+            lambda w=self._worker: self._workers_vivants.remove(w)
+            if w in self._workers_vivants else None)
         self._worker.fini.connect(self._sur_fini)
         self._worker.fini_multi.connect(self._sur_fini_multi)
         self._worker.erreur.connect(self._sur_erreur)
@@ -1011,7 +1061,7 @@ class NeoGenPanel(QWidget):
     def _sur_aucun(self):
         self._btn_go.setEnabled(True)
         self._statut.setText("💬 " + _("neogen.search_none"))
-        self._tabs.setCurrentIndex(1)          # invite à parcourir la biblio
+        self._tabs.setCurrentIndex(0)          # invite à parcourir la biblio
 
     def _sur_fini(self, chemin):
         """Objet Bibliothèque généré : le panneau reste — on ajuste, on regénère."""

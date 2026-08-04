@@ -29,10 +29,54 @@ try:
     # Fragilité (thermomap par objet) : vert (solide) → jaune → orange → rouge (fragile)
     _FRAGILITY_CMAP = _LSC.from_list("neoslice_frag",
         [(0.0, "#2ECC71"), (0.35, "#F1C40F"), (0.62, "#F39C12"), (1.0, "#E74C3C")])
+    # ── Variantes MODE DALTONIEN (palette Okabe-Ito, sûre deutéra/protanopie) ──
+    # Axe BLEU → jaune → vermillon (évite le vert↔rouge indistinguable) + la
+    # luminosité croît (lisible même sans perception des teintes). Zones safe des
+    # surplombs = neutre inchangé, seul le highlight passe bleu→vermillon.
+    _FRAGILITY_CMAP_CB = _LSC.from_list("neoslice_frag_cb",
+        [(0.0, "#0072B2"), (0.35, "#56B4E9"), (0.62, "#F0E442"), (1.0, "#D55E00")])
+    _OVERHANG_CMAP_DARK_CB = _LSC.from_list("neoslice_oh_dk_cb",
+        [(0.0, "#C8C4BE"), (0.22, "#56B4E9"), (0.55, "#F0E442"), (0.82, "#E69F00"), (1.0, "#D55E00")])
+    _OVERHANG_CMAP_LIGHT_CB = _LSC.from_list("neoslice_oh_lt_cb",
+        [(0.0, "#D4D0CA"), (0.22, "#56B4E9"), (0.55, "#F0E442"), (0.82, "#E69F00"), (1.0, "#D55E00")])
 except Exception:
     _OVERHANG_CMAP_DARK  = "RdYlGn_r"
     _OVERHANG_CMAP_LIGHT = "RdYlGn_r"
     _FRAGILITY_CMAP = "RdYlGn_r"
+    _FRAGILITY_CMAP_CB = "cividis"
+    _OVERHANG_CMAP_DARK_CB = "cividis"
+    _OVERHANG_CMAP_LIGHT_CB = "cividis"
+
+
+def _mode_daltonien() -> bool:
+    """Vrai si le mode daltonien est actif (PREFS)."""
+    try:
+        from core.prefs import PREFS
+        return bool(PREFS.get("colorblind_mode", False))
+    except Exception:
+        return False
+
+
+def _frag_cmap():
+    """Colormap de la thermomap de fragilité (daltonien-safe si activé)."""
+    return _FRAGILITY_CMAP_CB if _mode_daltonien() else _FRAGILITY_CMAP
+
+
+def _overhang_cmap(is_dark: bool):
+    """Colormap des surplombs (daltonien-safe si activé), selon le thème."""
+    if _mode_daltonien():
+        return _OVERHANG_CMAP_DARK_CB if is_dark else _OVERHANG_CMAP_LIGHT_CB
+    return _OVERHANG_CMAP_DARK if is_dark else _OVERHANG_CMAP_LIGHT
+
+
+# Pastilles de la légende « Fragilité par pièce » selon le mode (alignées sur les
+# points d'ancrage des colormaps ci-dessus).
+_FRAG_LEGEND_COLORS        = ("#2ECC71", "#F1C40F", "#E74C3C")   # vert / jaune / rouge
+_FRAG_LEGEND_COLORS_CB     = ("#0072B2", "#F0E442", "#D55E00")   # bleu / jaune / vermillon
+
+
+def _frag_legend_colors():
+    return _FRAG_LEGEND_COLORS_CB if _mode_daltonien() else _FRAG_LEGEND_COLORS
 
 try:
     import trimesh
@@ -185,10 +229,16 @@ class Viewer3D(QWidget):
     element_selectionne = Signal(int)
     # touche Suppr sur un élément sélectionné → le supprimer de l'éditeur
     element_suppr_demande = Signal(int)
+    # clic sur un objet d'une scène multi-objets → l'ISOLER (édition par objet)
+    objet_clique = Signal(str)          # object_id
+    # bouton « ↩ Vue d'ensemble » (mode objet isolé) → revenir à tous les objets
+    retour_ensemble = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._mesh = None
+        self._multi_actors = {}         # object_id -> vtkActor (picking par objet)
+        self._multi_pick_mode = False   # True quand une scène multi-objets sélectionnable est affichée
         self._pv_mesh_cache = None   # cache pyvista mesh — évite de recalculer les normales
         self._face_colors: np.ndarray | None = None
         self._auto_rotate = False
@@ -334,6 +384,29 @@ class Viewer3D(QWidget):
             s.show()
         s.raise_()
 
+    def _apply_ensemble_btn_style(self):
+        """Style thémé du bouton « ↩ Vue d'ensemble ». Fond OPAQUE + palette
+        Window de la même couleur + autoFillBackground : les coins hors du
+        border-radius sont peints de la même teinte → plus de « coins blancs »
+        (le rendu 3D clair transparaissait dans les angles arrondis, vécu)."""
+        if not hasattr(self, "_btn_ensemble"):
+            return
+        is_dk = _T.is_dark()
+        if is_dk:
+            bg = "#0A121E"; col = "#9FC0DC"; brd = "#1A3550"
+        else:
+            bg = "#F0F2F5"; col = "#333333"; brd = "#C0C0C0"
+        acc = _T.palette()["ACCENT"]
+        # border-radius: 0 (coins CARRÉS) : un QPushButton avec stylesheet+arrondi
+        # laisse ses 4 coins hors rayon TRANSPARENTS → le rendu 3D transparaît
+        # (« coins blancs », vécu). Carré = aucun coin transparent, net dans les
+        # deux thèmes. (autoFillBackground/palette sont ignorés dès qu'un
+        # stylesheet définit background → inutiles ici.)
+        self._btn_ensemble.setStyleSheet(
+            f"QPushButton {{ color: {col}; background: {bg}; border: 1px solid {brd};"
+            f" border-radius: 0px; padding: 5px 12px; }} "
+            f"QPushButton:hover {{ border-color: {acc}; }}")
+
     def _apply_rot_checkbox_style(self):
         pal = _T.palette()
         is_dk = _T.is_dark()
@@ -349,7 +422,7 @@ class Viewer3D(QWidget):
         self._rot_checkbox.setStyleSheet(f"""
             QCheckBox {{
                 color: {col}; background: {bg};
-                spacing: 5px; padding: 2px 6px; border-radius: 3px;
+                spacing: 5px; padding: 2px 6px; border-radius: 0px;
                 outline: none;
             }}
             QCheckBox:focus {{ outline: none; }}
@@ -378,7 +451,7 @@ class Viewer3D(QWidget):
         self._plate_checkbox.setStyleSheet(f"""
             QCheckBox {{
                 color: {col}; background: {bg};
-                spacing: 5px; padding: 2px 6px; border-radius: 3px;
+                spacing: 5px; padding: 2px 6px; border-radius: 0px;
                 outline: none;
             }}
             QCheckBox:focus {{ outline: none; }}
@@ -422,7 +495,7 @@ class Viewer3D(QWidget):
         self._frag_checkbox.setStyleSheet(f"""
             QCheckBox {{
                 color: {col}; background: {bg};
-                spacing: 5px; padding: 2px 6px; border-radius: 3px;
+                spacing: 5px; padding: 2px 6px; border-radius: 0px;
                 outline: none;
             }}
             QCheckBox:focus {{ outline: none; }}
@@ -460,16 +533,120 @@ class Viewer3D(QWidget):
             self._frag_checkbox.blockSignals(False)
             # La position/visibilité est gérée par start_auto_rotate / resizeEvent.
 
+    def montrer_retour_ensemble(self, visible: bool) -> None:
+        """Affiche/masque le bouton « ↩ Vue d'ensemble » (coin haut-gauche)."""
+        if not hasattr(self, "_btn_ensemble"):
+            return
+        try:
+            if visible:
+                self._btn_ensemble.adjustSize()
+                self._btn_ensemble.move(10, 10)
+                self._btn_ensemble.show()
+                self._btn_ensemble.raise_()
+            else:
+                self._btn_ensemble.hide()
+        except Exception:
+            pass
+
+    def get_camera_state(self):
+        """Retourne l'état complet de la caméra (position, focal, view-up) pour
+        pouvoir le restaurer plus tard, ou None si indisponible."""
+        if not HAS_PYVISTA or self._plotter is None:
+            return None
+        try:
+            return self._plotter.camera_position
+        except Exception:
+            return None
+
+    def set_camera_state(self, state) -> None:
+        """Restaure un état caméra obtenu via get_camera_state()."""
+        if not HAS_PYVISTA or self._plotter is None or state is None:
+            return
+        try:
+            self._plotter.camera_position = state
+            self._plotter.render()
+        except Exception:
+            pass
+
+    def suspendre_rendu(self, actif: bool) -> None:
+        """Suspend (True) / reprend (False) le rendu VTK. Permet d'enchaîner
+        plusieurs opérations (chargement + caméra + recolorisation) sans afficher
+        les états intermédiaires — un seul rendu final à la reprise (évite le
+        « clignotement » de rafraîchissement). Cf. bascule Fragilité."""
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+        try:
+            self._plotter.suppress_rendering = bool(actif)
+            if not actif:
+                self._plotter.render()
+        except Exception:
+            pass
+
+    def _placer_case_fragilite(self) -> None:
+        """Positionne + affiche la case « Fragilité » au-dessus de « Plateau »,
+        en RÉALIGNANT les trois cases sur la même largeur (sinon Plateau et
+        Rotation, dimensionnées avant l'arrivée de Fragilité, restent plus
+        étroites/décalées — vécu)."""
+        cw = max(
+            self._rot_checkbox.sizeHint().width() + 16,
+            self._plate_checkbox.sizeHint().width() + 16,
+            self._frag_checkbox.sizeHint().width() + 16,
+        )
+        _x = self.width() - cw - 8
+        if self._rot_checkbox.isVisible():
+            self._rot_checkbox.setGeometry(_x, self.height() - 30, cw, 22)
+            self._plate_checkbox.setGeometry(_x, self.height() - 56, cw, 22)
+            _y = self.height() - 82
+        else:                                  # mode lite : pas de case Rotation
+            self._plate_checkbox.setGeometry(_x, self.height() - 30, cw, 22)
+            _y = self.height() - 56
+        self._frag_checkbox.setGeometry(_x, _y, cw, 22)
+        self._frag_checkbox.show()
+        self._frag_checkbox.raise_()
+
+    def montrer_case_fragilite_calcul(self) -> None:
+        """Affiche la case « Fragilité » GRISÉE avec « (calcul…) » dès la fin de
+        l'analyse — la thermomap se calcule en arrière-plan (~1-2 s/pièce) et la
+        case s'activera à la fin. Le flag _frag_computing est respecté par
+        start_auto_rotate/resizeEvent (sinon ils re-cachaient la case, vécu)."""
+        if not hasattr(self, "_frag_checkbox"):
+            return
+        try:
+            self._frag_computing = True
+            self._frag_checkbox.setText(_("viewer.frag_computing"))
+            self._frag_checkbox.setEnabled(False)
+            self._placer_case_fragilite()
+        except Exception:
+            pass
+
+    def montrer_case_fragilite(self) -> None:
+        """Active la case « Fragilité » — la thermomap est PRÊTE (fin du calcul
+        en arrière-plan, après start_auto_rotate qui gère normalement la
+        visibilité)."""
+        if not getattr(self, "_has_fragility_data", False) \
+                or not hasattr(self, "_frag_checkbox"):
+            return
+        try:
+            self._frag_computing = False
+            self._frag_checkbox.setText(_("viewer.frag_toggle"))
+            self._frag_checkbox.setEnabled(True)
+            self._placer_case_fragilite()
+        except Exception:
+            pass
+
     def clear_fragility_data(self) -> None:
         """Aucune donnée de fragilité par pièce → masque la case et la légende,
         revient à la vue surplombs si la thermomap était affichée."""
         self._has_fragility_data = False
         self._fragility_severity = None
         self._frag_restore_cb = None
+        self._frag_computing = False
         if hasattr(self, "_frag_checkbox"):
             self._frag_checkbox.blockSignals(True)
             self._frag_checkbox.setChecked(False)
             self._frag_checkbox.blockSignals(False)
+            self._frag_checkbox.setText(_("viewer.frag_toggle"))   # état « calcul… » nettoyé
+            self._frag_checkbox.setEnabled(True)
             self._frag_checkbox.hide()
         if hasattr(self, "_frag_legend_label"):
             self._frag_legend_label.hide()
@@ -478,6 +655,13 @@ class Viewer3D(QWidget):
         """Bascule entre la vue surplombs (décoché) et la thermomap fragilité (coché)."""
         if self._plotter is None or self._mesh is None:
             return
+        # Rendu SUSPENDU pendant la reconstruction (clear + re-ajout des acteurs) :
+        # sans ça, un rendu intermédiaire affiche la scène VIDE une fraction de
+        # seconde (flash) à chaque bascule, dans les deux sens.
+        try:
+            self._plotter.suppress_rendering = True
+        except Exception:
+            pass
         try:
             if state and self._fragility_severity is not None:
                 # Thermomap fragilité — garder la caméra
@@ -502,6 +686,12 @@ class Viewer3D(QWidget):
             self._raise_viewer_checkboxes()
         except Exception:
             logger.exception("Bascule thermomap fragilité échouée")
+        finally:
+            try:
+                self._plotter.suppress_rendering = False
+                self._plotter.render()
+            except Exception:
+                pass
 
     def _raise_viewer_checkboxes(self):
         for _cb in (getattr(self, "_frag_checkbox", None),
@@ -523,14 +713,16 @@ class Viewer3D(QWidget):
             return (f'<tr><td style="padding-right:5px; color:{color}; '
                     f'font-size:13px; line-height:13px;">●</td>'
                     f'<td style="color:{txt};">{label}</td></tr>')
+        c_solid, c_mid, c_high = _frag_legend_colors()   # daltonien-safe si activé
         return (
             f'<div style="font-family:sans-serif; font-size:11px;">'
-            f'<div style="color:{title}; font-weight:bold; margin-bottom:2px;">'
+            f'<div style="color:{title}; font-weight:bold;">'
             f'{_("viewer.frag_legend_title")}</div>'
+            f'<div style="font-size:7px; line-height:7px;">&nbsp;</div>'  # espaceur
             f'<table cellspacing="0" cellpadding="0">'
-            f'{_row("#2ECC71", _("viewer.frag_legend_solid"))}'
-            f'{_row("#F1C40F", _("viewer.frag_legend_mid"))}'
-            f'{_row("#E74C3C", _("viewer.frag_legend_high"))}'
+            f'{_row(c_solid, _("viewer.frag_legend_solid"))}'
+            f'{_row(c_mid, _("viewer.frag_legend_mid"))}'
+            f'{_row(c_high, _("viewer.frag_legend_high"))}'
             f'</table></div>'
         )
 
@@ -545,8 +737,11 @@ class Viewer3D(QWidget):
             is_dk = _T.is_dark()
             bg = 'rgba(10,18,30,235)' if is_dk else 'rgba(240,242,245,235)'
             self._frag_legend_label.setText(self._build_frag_legend_html())
+            # border-radius: 0 (coins CARRÉS) : un QLabel avec background + arrondi
+            # laisse ses 4 coins hors rayon TRANSPARENTS → le rendu 3D transparaît
+            # (« bouts de coins blancs » en thème sombre, vécu comme sur les cases).
             self._frag_legend_label.setStyleSheet(
-                f"background: {bg}; border-radius: 4px; padding: 6px 8px;")
+                f"background: {bg}; border-radius: 0px; padding: 6px 8px;")
             self._frag_legend_label.adjustSize()
             self._frag_legend_label.move(10, 10)
             self._frag_legend_label.show()
@@ -561,6 +756,8 @@ class Viewer3D(QWidget):
             self._apply_plate_checkbox_style()
         if hasattr(self, '_frag_checkbox'):
             self._apply_frag_checkbox_style()
+        if hasattr(self, '_btn_ensemble'):
+            self._apply_ensemble_btn_style()
         pal = _T.palette()
         self.setStyleSheet(f"background: {pal['VIEWER_BG']};")
         if self._plotter is None:
@@ -572,8 +769,12 @@ class Viewer3D(QWidget):
             pass
         # labels du widget d'orientation : lisibles dans le nouveau thème
         self._style_orient_labels()
-        # Mesh — mise à jour du matériau/plateau si une pièce est chargée
+        # Mesh — mise à jour du matériau/plateau si une pièce est chargée.
+        # suspendre_rendu : la reconstruction (plateau + mesh + recolorisation)
+        # enchaîne plusieurs opérations → un SEUL rendu final, pas de clignotement
+        # au changement de thème (même principe que la bascule Fragilité).
         if self._mesh is not None:
+            self.suspendre_rendu(True)
             try:
                 _saved_cam = self._plotter.camera_position
                 self._plotter.remove_actor("build_plate_surface", render=False)
@@ -610,6 +811,8 @@ class Viewer3D(QWidget):
                 self._plotter.camera_position = _saved_cam
             except Exception:
                 pass
+            finally:
+                self.suspendre_rendu(False)
         # Recréer les barres de fragilité — colorize_overhangs (mode analyse) a fait
         # plotter.clear() qui efface les vtkFollower. Sans ça, les barres
         # disparaissent au changement de thème.
@@ -623,6 +826,29 @@ class Viewer3D(QWidget):
             self._plotter.render()
         except Exception:
             pass
+
+    def refresh_colorblind(self):
+        """Bascule du mode daltonien : re-colorise la vue courante (thermomap de
+        fragilité ou surplombs) avec la palette adaptée + met à jour la légende.
+        Sans effet sur la vue normale (pas de couleurs par sévérité)."""
+        if self._plotter is None or self._mesh is None:
+            return
+        mode = getattr(self, "_view_mode", "normal")
+        try:
+            self.suspendre_rendu(True)   # recolorisation en un seul rendu
+            _cam = self._plotter.camera_position
+            if mode == "analysis" and self._face_colors is not None:
+                self.colorize_overhangs(self._mesh, self._face_colors, _keep_camera=True)
+            elif mode == "fragility" \
+                    and getattr(self, "_fragility_severity", None) is not None:
+                self.colorize_fragility(self._mesh, self._fragility_severity,
+                                        _keep_camera=True)
+                self._update_frag_legend_visibility()
+            self._plotter.camera_position = _cam
+        except Exception:
+            logger.debug("refresh_colorblind échoué", exc_info=True)
+        finally:
+            self.suspendre_rendu(False)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -641,8 +867,10 @@ class Viewer3D(QWidget):
             )
             self._rot_checkbox.setGeometry(self.width() - cw - 8, self.height() - 30, cw, 22)
             self._plate_checkbox.setGeometry(self.width() - cw - 8, self.height() - 56, cw, 22)
-            # Case Fragilité AU-DESSUS de Plateau (seulement si des données existent)
-            if hasattr(self, "_frag_checkbox") and getattr(self, "_has_fragility_data", False):
+            # Case Fragilité AU-DESSUS de Plateau (données prêtes OU calcul en cours)
+            if hasattr(self, "_frag_checkbox") and (
+                    getattr(self, "_has_fragility_data", False)
+                    or getattr(self, "_frag_computing", False)):
                 self._frag_checkbox.setGeometry(self.width() - cw - 8, self.height() - 82, cw, 22)
             if hasattr(self, "_frag_legend_label") and self._frag_legend_label.isVisible():
                 self._frag_legend_label.move(10, 10)
@@ -713,12 +941,17 @@ class Viewer3D(QWidget):
         hl = QVBoxLayout(holder)
         hl.setAlignment(Qt.AlignCenter)
         hl.setSpacing(14)
-        holder.setStyleSheet("background-color: #070710; border-radius: 10px;")
+        # Couleurs de la PALETTE (pas de sombre en dur) : ce message doit rester
+        # lisible dans les deux thèmes (règle thème clair/sombre).
+        _pp = _T.palette()
+        holder.setStyleSheet(
+            f"background-color: {_pp['BG_PANEL']}; border-radius: 10px;")
 
         label = QLabel(msg)
         label.setAlignment(Qt.AlignCenter)
         label.setWordWrap(True)
-        label.setStyleSheet("color: #6A6A8A; font-size: 13px; background: transparent;")
+        label.setStyleSheet(
+            f"color: {_pp['TEXT_SECONDARY']}; font-size: 13px; background: transparent;")
         hl.addWidget(label)
 
         # Bouton mode compatibilité : uniquement si l'OpenGL a échoué et qu'on n'est
@@ -916,9 +1149,13 @@ class Viewer3D(QWidget):
             def _cam_cb(caller, event):
                 try:
                     pos = self._plotter.camera.position
-                    actor = self._plotter.actors.get("build_plate_surface")
-                    if actor:
-                        actor.prop.opacity = 0.0 if pos[2] < 0 else self._PLATE_OPACITY
+                    _op = 0.0 if pos[2] < 0 else self._PLATE_OPACITY
+                    # TOUS les plateaux (mono « build_plate_surface » ET multi
+                    # « build_plate_surface_N ») — sinon les plateaux multiples
+                    # restaient opaques vus de dessous.
+                    for _nm, _ac in list(self._plotter.actors.items()):
+                        if _nm.startswith("build_plate_surface"):
+                            _ac.prop.opacity = _op
                 except Exception:
                     pass
             self._plotter.renderer.GetActiveCamera().AddObserver("ModifiedEvent", _cam_cb)
@@ -961,15 +1198,30 @@ class Viewer3D(QWidget):
         self._frag_checkbox.hide()
         self._frag_checkbox.stateChanged.connect(self._on_frag_toggle)
 
+        # Bouton « ↩ Vue d'ensemble » (mode objet isolé) — coin HAUT-GAUCHE,
+        # masqué par défaut. Ramène à la scène complète multi-objets.
+        self._btn_ensemble = QPushButton(_("viewer.back_overview"), self)
+        self._btn_ensemble.setFont(QFont(FONT_MAIN, 9))
+        self._btn_ensemble.setCursor(Qt.PointingHandCursor)
+        self._apply_ensemble_btn_style()
+        self._btn_ensemble.clicked.connect(self.retour_ensemble.emit)
+        self._btn_ensemble.hide()
+
         # Légende thermomap (3 niveaux colorés) — coin haut-gauche, masquée par défaut.
         self._frag_legend_label = QLabel(self)
         self._frag_legend_label.setTextFormat(Qt.RichText)
         self._frag_legend_label.hide()
 
     def _on_rot_toggle(self, state: int):
-        # Mémorise le CHOIX de l'utilisateur : s'il coupe la rotation, elle doit
-        # rester coupée après une génération / un rechargement (et inversement).
+        # Mémorise le CHOIX de l'utilisateur — de façon PERSISTANTE (PREFS) :
+        # coché → la rotation revient à chaque pièce/session ; décoché → jamais.
+        # Par défaut (jamais touché) : désactivée.
         self._rot_user_off = not bool(state)
+        try:
+            from core.prefs import PREFS
+            PREFS.set("auto_rotate", bool(state))
+        except Exception:
+            pass
         if state:  # 2 = Qt.Checked, 0 = Qt.Unchecked
             self._auto_rotate = True
             if self._plotter:
@@ -1026,7 +1278,10 @@ class Viewer3D(QWidget):
         from core.prefs import PREFS
         _lite = PREFS.get("perf_mode", "full") == "lite"
 
-        _has_frag = getattr(self, "_has_fragility_data", False)
+        # « calcul en cours » compte comme visible : la case grisée « (calcul…) »
+        # ne doit pas être re-cachée par start_auto_rotate (vécu).
+        _has_frag = (getattr(self, "_has_fragility_data", False)
+                     or getattr(self, "_frag_computing", False))
         cw_frag = (self._frag_checkbox.sizeHint().width() + 16) if _has_frag else 0
 
         # Plateau checkbox — toujours visible après analyse, quel que soit le mode
@@ -1042,9 +1297,11 @@ class Viewer3D(QWidget):
                 self._frag_checkbox.raise_()
             return
 
-        # Respecte le choix mémorisé : si l'utilisateur a coupé la rotation, on
-        # affiche les cases mais on ne relance PAS la rotation.
-        _actif = not getattr(self, "_rot_user_off", False)
+        # Respecte le choix PERSISTANT (PREFS) : rotation auto DÉSACTIVÉE par
+        # défaut, partout (viewer, neoGen…) ; ne tourne que si l'utilisateur l'a
+        # explicitement cochée — et ce choix survit aux rechargements/sessions.
+        _actif = bool(PREFS.get("auto_rotate", False))
+        self._rot_user_off = not _actif
         self._auto_rotate = _actif
         self._rot_checkbox.setEnabled(True)
         self._rot_checkbox.blockSignals(True)
@@ -1122,6 +1379,26 @@ class Viewer3D(QWidget):
                         return True
                 except Exception:
                     pass
+            # Sélection d'objet (scène multi-objets) : un CLIC SIMPLE (press+release
+            # sans bouger — un drag = orbite caméra, on l'ignore) isole l'objet visé.
+            if getattr(self, "_multi_pick_mode", False):
+                from PySide6.QtCore import Qt as _Qt2
+                if t == QEvent.MouseButtonPress and event.button() == _Qt2.LeftButton:
+                    self._multi_press = (event.position() if hasattr(event, "position")
+                                         else event.pos())
+                elif t == QEvent.MouseButtonRelease and event.button() == _Qt2.LeftButton:
+                    _pp = getattr(self, "_multi_press", None)
+                    self._multi_press = None
+                    if _pp is not None:
+                        _rp = (event.position() if hasattr(event, "position")
+                               else event.pos())
+                        if abs(_rp.x() - _pp.x()) + abs(_rp.y() - _pp.y()) < 6:
+                            try:
+                                _oid = self._pick_object_id(_rp)
+                                if _oid is not None:
+                                    self.objet_clique.emit(_oid)
+                            except Exception:
+                                logger.debug("picking objet échoué", exc_info=True)
             if t == QEvent.MouseButtonPress:
                 self._user_interacting = True
                 self._resume_timer.stop()
@@ -1204,14 +1481,27 @@ class Viewer3D(QWidget):
             # représente ~15% d'une figurine de 6mm → elle semble LÉVITER. On cale
             # l'écart sur la taille réelle (plafonné aux anciennes valeurs).
             _gap = getattr(self, "_plate_z_gap", 0.5)
-            plate = pv.Plane(
-                center=(cx, cy, -2.0 * _gap),
-                direction=(0, 0, 1),
-                i_size=pw,
-                j_size=ph,
-                i_resolution=1,
-                j_resolution=1,
-            )
+            # Surface à COINS ARRONDIS (style Bambu Studio) : polygone convexe
+            # dont les 4 coins sont des arcs de rayon ∝ taille du plateau.
+            _r = max(3.0, min(12.0, min(pw, ph) * 0.06))
+            _zp = -2.0 * _gap
+            _pts = []
+            # 24 segments par coin : arc parfaitement lisse. PAS de trait de
+            # contour séparé — VTK rend ses jonctions comme des « perles » dans
+            # les arrondis (vécu) ; le bord de la surface fait le contour, net.
+            for _ox, _oy, _start in ((cx + hw - _r, cy + hh - _r, 0.0),
+                                     (cx - hw + _r, cy + hh - _r, 90.0),
+                                     (cx - hw + _r, cy - hh + _r, 180.0),
+                                     (cx + hw - _r, cy - hh + _r, 270.0)):
+                for _a in np.linspace(_start, _start + 90.0, 25)[:-1]:
+                    _rad = np.radians(_a)
+                    _pts.append([_ox + _r * np.cos(_rad),
+                                 _oy + _r * np.sin(_rad), _zp])
+            _np_pts = np.array(_pts, dtype=np.float32)
+            _n = len(_pts)
+            plate = pv.PolyData(
+                _np_pts, faces=np.array([_n] + list(range(_n)), dtype=np.int_)
+            ).triangulate()
             self._plotter.add_mesh(
                 plate,
                 color="#2a2b2e",
@@ -1223,8 +1513,10 @@ class Viewer3D(QWidget):
 
             nx = max(2, round(pw / spacing))
             ny = max(2, round(ph / spacing))
-            lines_v = np.linspace(cx - hw, cx + hw, nx + 1)
-            lines_h = np.linspace(cy - hh, cy + hh, ny + 1)
+            # Lignes INTÉRIEURES seulement ([1:-1]) : les bords sont dessinés par
+            # le contour arrondi — sinon les lignes de bord dépassent des coins.
+            lines_v = np.linspace(cx - hw, cx + hw, nx + 1)[1:-1]
+            lines_h = np.linspace(cy - hh, cy + hh, ny + 1)[1:-1]
             # Grille juste SOUS le dessous des pièces (à z=0) : évite qu'elle
             # traverse le bas des pièces selon l'angle (Z-fighting), surtout avec
             # le polygon-offset VTK actif. Écart proportionnel (cf. _gap plus haut)
@@ -1254,9 +1546,30 @@ class Viewer3D(QWidget):
             pass
 
     def _add_build_plate(self, mesh=None) -> None:
-        """Ajoute un plateau dont la taille s'adapte à la pièce chargée."""
+        """Ajoute un plateau dont la taille s'adapte à la pièce chargée.
+
+        Si un chargement multi-plateaux a mémorisé ses groupes
+        (_plate_groups_draw), on dessine UN plateau par groupe — fidèle à
+        Bambu Studio — au lieu d'un plateau unique englobant."""
         if not HAS_PYVISTA or self._plotter is None:
             return
+        _groupes = getattr(self, "_plate_groups_draw", None)
+        if _groupes:
+            try:
+                if mesh is not None:
+                    _zext = float(mesh.bounding_box.extents[2])
+                    self._plate_z_gap = min(0.5, max(0.03, _zext * 0.02))
+                else:
+                    self._plate_z_gap = 0.5
+                for _pid, (_cx, _cy, _pw, _ph) in enumerate(_groupes):
+                    self._draw_single_plate(_cx, _cy, max(_pw, _ph),
+                                            suffix=f"_{_pid}",
+                                            plate_w=_pw, plate_h=_ph)
+                self._current_plate_size = max(max(g[2], g[3]) for g in _groupes)
+                return
+            except Exception:
+                logger.debug("dessin multi-plateaux échoué → plateau unique",
+                             exc_info=True)
         try:
             if mesh is not None:
                 # Empreinte XY uniquement — ne pas utiliser Z (hauteur)
@@ -1447,6 +1760,84 @@ class Viewer3D(QWidget):
         logger.info(f"Auto-arrange : {n} pièces sur {len(shelves)} rangée(s)")
         return True, offsets
 
+    @staticmethod
+    def _layout_par_plateau(transformed: list, objects: list) -> tuple:
+        """Disposition fidèle multi-plateaux : groupe les pièces par plate_index
+        (lu du 3MF — aucune devinette spatiale), garde la disposition INTERNE de
+        chaque plateau, et pose les plateaux côte à côte.
+
+        Returns (offsets: list[(dx, dy)] par pièce, groupes: list[list[int]]).
+        """
+        groupes_map: dict[int, list[int]] = {}
+        for i, o in enumerate(objects):
+            groupes_map.setdefault(int(getattr(o, "plate_index", 0)), []).append(i)
+        groupes = [groupes_map[k] for k in sorted(groupes_map)]
+
+        PAD, GAP = 20.0, 35.0        # marge intérieure plateau / écart entre plateaux
+        # Au-delà : positions intra-plateau incohérentes (certains 3MF Bambu ont
+        # des transforms d'instance corrompus → pièces dispersées sur des mètres,
+        # vécu : Table de chevet, plateau « 256 mm » étendu sur 3,3 m). On range
+        # alors les pièces du plateau en petite grille compacte.
+        SEUIL_DISPERSE = 300.0
+
+        local = [(0.0, 0.0)] * len(transformed)   # offsets DANS le repère du groupe
+        tailles = []                              # (largeur, hauteur) par groupe
+        for idxs in groupes:
+            xmin = min(float(transformed[i].bounds[0][0]) for i in idxs)
+            ymin = min(float(transformed[i].bounds[0][1]) for i in idxs)
+            xmax = max(float(transformed[i].bounds[1][0]) for i in idxs)
+            ymax = max(float(transformed[i].bounds[1][1]) for i in idxs)
+            w, h = xmax - xmin, ymax - ymin
+            if max(w, h) > SEUIL_DISPERSE and len(idxs) > 1:
+                # Compactage LOCAL en grille : cellule = plus grande pièce + marge.
+                sizes = [(float(transformed[i].bounds[1][0] - transformed[i].bounds[0][0]),
+                          float(transformed[i].bounds[1][1] - transformed[i].bounds[0][1]))
+                         for i in idxs]
+                cw = max(s[0] for s in sizes) + 12.0
+                ch = max(s[1] for s in sizes) + 12.0
+                cols = max(1, math.ceil(math.sqrt(len(idxs))))
+                rows = math.ceil(len(idxs) / cols)
+                gw, gh = cols * cw, rows * ch
+                for k, i in enumerate(idxs):
+                    r_, c_ = divmod(k, cols)
+                    tx = (c_ + 0.5) * cw - gw / 2
+                    ty = gh / 2 - (r_ + 0.5) * ch
+                    b = transformed[i].bounds
+                    local[i] = (tx - (b[0][0] + b[1][0]) / 2,
+                                ty - (b[0][1] + b[1][1]) / 2)
+                tailles.append((gw, gh))
+            else:
+                # Disposition interne FIDÈLE, ramenée autour de (0, 0).
+                gcx, gcy = (xmin + xmax) / 2, (ymin + ymax) / 2
+                for i in idxs:
+                    local[i] = (-gcx, -gcy)
+                tailles.append((w, h))
+
+        # Taille UNIQUE et CARRÉE (style Bambu Studio) : le groupe le plus
+        # encombrant fixe le côté de TOUS les plateaux.
+        cote = max(max(w, h) for w, h in tailles) + 2 * PAD
+        cote = max(cote, 30.0)
+
+        # Grille de plateaux : 3 par rangée MAXIMUM (comme Bambu Studio), les
+        # rangées les unes sous les autres — pas de ligne infinie.
+        n = len(groupes)
+        ncols = min(3, n)
+        nrows = math.ceil(n / 3)
+        cell = cote + GAP
+        centres = []
+        offsets = [(0.0, 0.0)] * len(transformed)
+        for g, idxs in enumerate(groupes):
+            r_, c_ = divmod(g, 3)
+            px = (c_ - (ncols - 1) / 2) * cell
+            py = ((nrows - 1) / 2 - r_) * cell
+            centres.append((px, py))
+            for i in idxs:
+                lx, ly = local[i]
+                offsets[i] = (lx + px, ly + py)
+        logger.info(f"Multi-plateaux : {n} plateau(x) carrés de {cote:.0f}mm "
+                    f"en {nrows} rangée(s), {len(transformed)} pièce(s)")
+        return offsets, groupes, cote, centres
+
     def _load_multipart_mesh(self, threemf_data) -> None:
         """Affiche un 3MF multi-objets — chaque objet = acteur séparé coloré par slot."""
         import trimesh as _trimesh
@@ -1455,6 +1846,10 @@ class Viewer3D(QWidget):
         self._pv_mesh_cache = None
         self._face_colors = None
         self._view_mode = "normal"
+        self._plate_groups_draw = None   # remis par ce chargement s'il est multi-plateaux
+        self._plate_groups_idx = None
+        self._multi_actors = {}          # object_id -> vtkActor (picking par objet)
+        self._multi_pick_mode = False
         self.clear_fragility_data()   # nouvelle pièce → oublier la fragilité précédente
         # Memoire (object_id -> slot) pour la re-colorisation live par slot
         # (previsualisation des couleurs choisies a l'export).
@@ -1524,7 +1919,16 @@ class Viewer3D(QWidget):
         # Au-dessus = multi-plateau ou positions absolues Bambu → forcer compactage.
         _positions_huge = _footprint_xy > 200.0
 
-        if threemf_data.slot_count > 1 and not _positions_huge:
+        if _has_multiplate:
+            # VRAI multi-plateaux (plate_index lus du 3MF) : afficher comme Bambu
+            # Studio — un plateau par groupe, côte à côte. Chaque groupe garde sa
+            # disposition interne ; le dessin des plateaux suit dans
+            # _add_build_plate via self._plate_groups_draw.
+            do_arrange = True
+            (arrange_offsets, self._plate_groups_idx,
+             self._plate_cote, self._plate_centres) = \
+                self._layout_par_plateau(transformed, _display_objects)
+        elif threemf_data.slot_count > 1 and not _positions_huge:
             do_arrange = False
             arrange_offsets = [(0.0, 0.0)] * len(transformed)
         else:
@@ -1584,6 +1988,24 @@ class Viewer3D(QWidget):
                 "ymax": float(_b[1][1]) + gy,
                 "cz":   float(_b[1][2]),
             })
+        # object_id dans le MÊME ordre que _object_viewer_bounds (picking par position)
+        self._object_ids_ordered = [str(o.object_id) for o in _display_objects]
+
+        # Multi-plateaux : rectangles de plateaux (un par groupe) calculés sur les
+        # positions FINALES (après centrage). Mémorisés dans _plate_groups_draw :
+        # _add_build_plate les dessine (et les redessine à chaque recolorisation).
+        _grp = getattr(self, "_plate_groups_idx", None)
+        if _grp:
+            # Plateaux CARRÉS de taille IDENTIQUE, dessinés sur les CENTRES DE
+            # CASES calculés par _layout_par_plateau (+ centrage global gx/gy) —
+            # placement exact, aucun risque de dérive/chevauchement.
+            _cote = float(getattr(self, "_plate_cote", 0.0) or 30.0)
+            _ctr = getattr(self, "_plate_centres", None) or []
+            self._plate_groups_draw = []
+            for (_px, _py) in _ctr:
+                self._plate_groups_draw.append((_px + gx, _py + gy, _cote, _cote))
+            self._plate_groups_idx = None
+            self._plate_centres = None
 
         self._add_build_plate(self._mesh)
 
@@ -1603,7 +2025,13 @@ class Viewer3D(QWidget):
                 mc = m_final.copy()
                 mc.apply_translation([gx, gy, 0.0])
                 pv_obj = self._trimesh_to_pyvista(mc)
-                color = self._SLOT_COLORS.get(obj.extruder, "#AABBCC")
+                # Couleur de filament (slot) UNIQUEMENT pour un vrai assemblage
+                # multicolore. Pour un lot de pièces mono-matière (multi-plateaux,
+                # multi-objets), on affiche l'ivoire NEUTRE de base — sinon les
+                # pièces « flashaient » en couleur de slot (orange…) pendant
+                # l'analyse avant d'être repeintes en gris (vécu).
+                color = (self._SLOT_COLORS.get(obj.extruder, "#AABBCC")
+                         if _is_color_assembly else "#f2ede8")
 
                 if _use_pbr:
                     # Normales PBR : feature_angle 25° → arêtes vives nettes,
@@ -1620,7 +2048,7 @@ class Viewer3D(QWidget):
                         )
                     except Exception:
                         pass
-                    self._plotter.add_mesh(
+                    _act = self._plotter.add_mesh(
                         pv_obj, color=color, show_edges=False,
                         smooth_shading=True,
                         pbr=False,   # mat lumineux, cohérent partout
@@ -1634,7 +2062,7 @@ class Viewer3D(QWidget):
                     # le main thread) MAIS on garde le rendu mat lumineux (mêmes
                     # ambient/diffuse/specular que la voie PBR). Avant, ambient=0.12 /
                     # diffuse=0.88 donnait des ombres dures très moches à l'export couleur.
-                    self._plotter.add_mesh(
+                    _act = self._plotter.add_mesh(
                         pv_obj, color=color, show_edges=False,
                         smooth_shading=True,
                         pbr=False,
@@ -1643,8 +2071,13 @@ class Viewer3D(QWidget):
                         diffuse=rq["diffuse"],
                         name=f"obj_{obj.object_id}",
                     )
+                # Map acteur → object_id pour le picking (isolation par objet).
+                self._multi_actors[str(obj.object_id)] = _act
             except Exception as _e:
                 logger.warning(f"Objet {obj.name} non affiché : {_e}")
+
+        # Picking d'objet activé UNIQUEMENT s'il y a plusieurs pièces à isoler.
+        self._multi_pick_mode = len(_display_objects) > 1
 
         # 5) Caméra sur le bounding box global arrangé
         try:
@@ -1654,14 +2087,47 @@ class Viewer3D(QWidget):
                                               math.sin(_elev) * _far)
             self._plotter.camera.focal_point = (0.0, 0.0, 0.0)
             self._plotter.camera.up = (0.0, 0.0, 1.0)
-            _pad = float(_bb.max()) * 0.5
-            _hw = float(_bb[0]) / 2 + _pad
-            _hd = float(_bb[1]) / 2 + _pad
-            _ht = float(_bb[2]) + _pad
-            try:
-                self._plotter.reset_camera(bounds=[-_hw, _hw, -_hd, _hd, -_pad * 0.2, _ht])
-            except TypeError:
-                self._plotter.reset_camera()
+            _groupes_cam = getattr(self, "_plate_groups_draw", None)
+            if _groupes_cam:
+                # Multi-plateaux : cadrage MANUEL sur la grille de plateaux.
+                # reset_camera(bounds) fait cadrer la SPHÈRE englobante par VTK —
+                # pire cas pour une grille plate et large : tout paraît minuscule
+                # (vécu). On calcule la distance nous-mêmes depuis la taille
+                # exacte de la grille, le ratio de fenêtre et l'angle de vue.
+                _xs0 = min(g[0] - g[2] / 2 for g in _groupes_cam)
+                _xs1 = max(g[0] + g[2] / 2 for g in _groupes_cam)
+                _ys0 = min(g[1] - g[3] / 2 for g in _groupes_cam)
+                _ys1 = max(g[1] + g[3] / 2 for g in _groupes_cam)
+                _gw, _gh = _xs1 - _xs0, _ys1 - _ys0
+                _gcx, _gcy = (_xs0 + _xs1) / 2, (_ys0 + _ys1) / 2
+                _va = math.radians(float(self._plotter.camera.view_angle or 30.0))
+                try:
+                    _wpx, _hpx = self._plotter.window_size
+                    _aspect = max(float(_wpx) / max(float(_hpx), 1.0), 0.2)
+                except Exception:
+                    _aspect = 1.6
+                _marge = 1.10
+                # distance pour que la grille tienne verticalement (profondeur
+                # projetée à 25°) ET horizontalement (largeur / ratio fenêtre)
+                _dv = (_gh / 2 * math.sin(_elev) * _marge) / math.tan(_va / 2)
+                _dh = (_gw / 2 * _marge) / (math.tan(_va / 2) * _aspect)
+                _dist = max(_dv, _dh, 80.0) + (_gh / 2) * math.cos(_elev)
+                self._plotter.camera.focal_point = (_gcx, _gcy, 0.0)
+                self._plotter.camera.position = (
+                    _gcx, _gcy - math.cos(_elev) * _dist, math.sin(_elev) * _dist)
+                self._plotter.camera.up = (0.0, 0.0, 1.0)
+            else:
+                # Mono-plateau : marge 50 % sur les petites scènes (inchangé),
+                # plafonnée sur les grandes.
+                _bmax = float(_bb.max())
+                _pad = min(_bmax * 0.5, _bmax * 0.15 + 60.0)
+                _hw = float(_bb[0]) / 2 + _pad
+                _hd = float(_bb[1]) / 2 + _pad
+                _ht = float(_bb[2]) + _pad
+                try:
+                    self._plotter.reset_camera(bounds=[-_hw, _hw, -_hd, _hd, -_pad * 0.2, _ht])
+                except TypeError:
+                    self._plotter.reset_camera()
             self._plotter.renderer.ResetCameraClippingRange()
         except Exception as _ce:
             logger.warning(f"Camera setup multipart échoué : {_ce}")
@@ -1885,6 +2351,8 @@ class Viewer3D(QWidget):
         self._pv_mesh_cache = None
         self._face_colors = None
         self._view_mode = "normal"
+        self._plate_groups_draw = None   # pièce simple → un seul plateau
+        self._multi_pick_mode = False    # pièce simple → pas de sélection d'objet
         self.clear_fragility_data()   # nouvelle pièce → oublier la fragilité précédente
         self._plotter.clear()
         self._setup_lights()
@@ -1983,6 +2451,8 @@ class Viewer3D(QWidget):
         self._mesh = fusion
         self._face_colors = None
         self._view_mode = "carte"
+        self._plate_groups_draw = None   # carte = 1 plateau (pas d'héritage multi)
+        self._multi_pick_mode = False    # carte → pas de sélection d'objet
         if premiere:
             self._cancel_mesh_prep()
             self.stop_auto_rotate()
@@ -2047,6 +2517,12 @@ class Viewer3D(QWidget):
         if not HAS_PYVISTA or self._plotter is None:
             return
         import trimesh as _tm
+        # HueForge : afficher l'APERÇU photo (relief à couleur par sommet) plutôt
+        # que les bandes d'export, si la scène le fournit dans ses métadonnées.
+        if isinstance(piece, _tm.Scene):
+            _apc = (getattr(piece, "metadata", None) or {}).get("hueforge_apercu")
+            if _apc is not None:
+                piece = _apc
         if isinstance(piece, _tm.Scene):
             corps = dict(piece.geometry)
         elif isinstance(piece, _tm.Trimesh):
@@ -2055,11 +2531,46 @@ class Viewer3D(QWidget):
             return
         if not corps:
             return
-        fusion = _tm.util.concatenate(list(corps.values()))
-        # NB : on ne touche PAS self._mesh — l'aperçu est purement visuel et ne doit
-        # pas écraser la pièce chargée dans le pipeline (analyse/export).
-        # 1re fois : on cadre la caméra. Ensuite (changement de couleur / de réglage)
-        # on GARDE la caméra en place — pas de reset gênant à chaque modification.
+
+        # Rendu d'UN corps (couleurs par sommet HueForge si variées, sinon teinte
+        # de face uniforme). Facteur commun aux aperçus mono- et multi-plateaux.
+        def _ajouter_corps(g, off, nom):
+            pvm = self._trimesh_to_pyvista(g)
+            pvm.translate(off, inplace=True)
+            vcols = None
+            try:
+                _vc = getattr(g.visual, "vertex_colors", None)
+                if _vc is not None and len(_vc) == len(g.vertices) \
+                        and pvm.n_points == len(_vc):
+                    _arr = np.asarray(_vc)[:, :3]
+                    if _arr.std() > 3.0:
+                        vcols = _arr
+            except Exception:
+                vcols = None
+            if vcols is not None:
+                pvm.point_data["rgb"] = vcols
+                # lighting=False → couleurs fidèles, identiques clair/sombre.
+                self._plotter.add_mesh(pvm, scalars="rgb", rgb=True, show_edges=False,
+                                       lighting=False, smooth_shading=True,
+                                       name=f"apercu_{nom}", reset_camera=False)
+            else:
+                try:
+                    col = g.visual.face_colors[0][:3] / 255.0
+                except Exception:
+                    col = (0.82, 0.82, 0.86)      # neutre si pas de couleur
+                self._plotter.add_mesh(pvm, color=col, show_edges=False,
+                                       smooth_shading=False, name=f"apercu_{nom}",
+                                       reset_camera=False)
+
+        # Corps répartis par PLATEAU (tag DSL neoslice_plate) — ex. boîte lumineuse :
+        # couvercle lithophane sur un plateau, boîte sur un autre.
+        plates: dict[int, list] = {}
+        for nom, g in corps.items():
+            md = getattr(g, "metadata", {}) or {}
+            plates.setdefault(int(md.get("neoslice_plate", 0) or 0), []).append((nom, g))
+        multi = len(plates) > 1
+
+        # NB : on ne touche PAS self._mesh — l'aperçu est purement visuel.
         premiere = getattr(self, "_view_mode", "") != "apercu_neogen"
         _cam_gardee = None
         if not premiere or garder_camera:
@@ -2069,21 +2580,43 @@ class Viewer3D(QWidget):
                 _cam_gardee = None
         self._view_mode = "apercu_neogen"
         self._cancel_mesh_prep()
+        self._plate_groups_draw = None
+        self._multi_pick_mode = False
+        # clear + plateau(x) + N corps = plusieurs rendus intermédiaires visibles
+        # à chaque ajustement du formulaire → un SEUL rendu final (anti-clignotement).
+        self.suspendre_rendu(True)
         self._plotter.clear()
         self._setup_lights()
-        self._add_build_plate(fusion)
-        b = fusion.bounds
-        off = [-(b[0][0] + b[1][0]) / 2, -(b[0][1] + b[1][1]) / 2, -b[0][2]]
-        for nom, g in corps.items():
-            try:
-                col = g.visual.face_colors[0][:3] / 255.0
-            except Exception:
-                col = (0.82, 0.82, 0.86)          # neutre si pas de couleur
-            pvm = self._trimesh_to_pyvista(g)
-            pvm.translate(off, inplace=True)
-            self._plotter.add_mesh(pvm, color=col, show_edges=False,
-                                   smooth_shading=False, name=f"apercu_{nom}",
-                                   reset_camera=False)
+
+        if not multi:
+            fusion = _tm.util.concatenate(list(corps.values()))
+            self._add_build_plate(fusion)
+            b = fusion.bounds
+            off = [-(b[0][0] + b[1][0]) / 2, -(b[0][1] + b[1][1]) / 2, -b[0][2]]
+            for nom, g in corps.items():
+                _ajouter_corps(g, off, nom)
+        else:
+            # Plateaux CARRÉS de taille identique (max empreinte), disposés en rangée.
+            side = 0.0
+            for pieces in plates.values():
+                f = _tm.util.concatenate([g for _n, g in pieces])
+                bb = f.bounds
+                side = max(side, bb[1][0] - bb[0][0], bb[1][1] - bb[0][1])
+            side = max(side + 40.0, 120.0)
+            gap = 20.0
+            order = sorted(plates)
+            n = len(order)
+            for idx, pi in enumerate(order):
+                cx = (idx - (n - 1) / 2.0) * (side + gap)
+                self._draw_single_plate(cx, 0.0, side, suffix=f"_p{pi}")
+                pieces = plates[pi]
+                f = _tm.util.concatenate([g for _n, g in pieces])
+                bb = f.bounds
+                off = [cx - (bb[0][0] + bb[1][0]) / 2,
+                       -(bb[0][1] + bb[1][1]) / 2, -bb[0][2]]
+                for nom, g in pieces:
+                    _ajouter_corps(g, off, nom)
+
         try:
             if premiere and not garder_camera:
                 self._plotter.reset_camera()
@@ -2091,7 +2624,7 @@ class Viewer3D(QWidget):
                 self._plotter.camera_position = _cam_gardee   # garder la vue
         except Exception:
             pass
-        self._plotter.render()
+        self.suspendre_rendu(False)   # rendu unique de l'aperçu final
 
     def vider_pour_carte(self) -> None:
         """Vide IMMÉDIATEMENT le viewer à l'ouverture de l'éditeur de carte :
@@ -2109,6 +2642,8 @@ class Viewer3D(QWidget):
         self.stop_auto_rotate()
         self._mesh = None
         self._face_colors = None
+        self._plate_groups_draw = None   # ne pas hériter du multi-plateaux précédent
+        self._multi_pick_mode = False
         try:
             self._plotter.clear()
             self._setup_lights()
@@ -2223,6 +2758,41 @@ class Viewer3D(QWidget):
             except Exception:
                 pass
         return None
+
+    def _pick_object_id(self, pos):
+        """object_id de l'objet multi sous la souris (ou None) — par POSITION.
+
+        On NE peut PAS picker par acteur : après l'analyse, colorize_overhangs
+        fusionne tout en un seul acteur « main_mesh » (les acteurs obj_* n'existent
+        plus). On projette donc le clic sur le plan z=0 et on cherche l'objet dont
+        l'emprise XY (viewer-space, cf. _object_viewer_bounds) contient le point."""
+        bounds = getattr(self, "_object_viewer_bounds", None)
+        ids = getattr(self, "_object_ids_ordered", None)
+        if not bounds or not ids or len(bounds) != len(ids):
+            return None
+        # Point 3D RÉELLEMENT touché par le rayon (mesh OU plateau) — PAS une
+        # projection sur z=0 : sinon cliquer sur le HAUT d'un objet (en hauteur)
+        # tombe à côté de son emprise par parallaxe (vécu : il fallait viser le
+        # plateau). GetPickPosition donne le vrai (x, y) de l'impact.
+        try:
+            from vtkmodules.vtkRenderingCore import vtkPropPicker
+            x, y = self._carte_disp(pos)
+            picker = vtkPropPicker()
+            if not picker.Pick(x, y, 0, self._plotter.renderer):
+                return None
+            _p = picker.GetPickPosition()
+            wx, wy = float(_p[0]), float(_p[1])
+        except Exception:
+            return None
+        best, best_d = None, None
+        for oid, b in zip(ids, bounds):
+            if b["xmin"] <= wx <= b["xmax"] and b["ymin"] <= wy <= b["ymax"]:
+                cx = (b["xmin"] + b["xmax"]) / 2
+                cy = (b["ymin"] + b["ymax"]) / 2
+                d = (wx - cx) ** 2 + (wy - cy) ** 2
+                if best_d is None or d < best_d:   # chevauchement → le plus centré
+                    best, best_d = oid, d
+        return best
 
     def _carte_mouse(self, event, t) -> bool | None:
         """Gère press/move/release pour le drag d'éléments. Renvoie True si
@@ -2405,7 +2975,7 @@ class Viewer3D(QWidget):
         self._plotter.add_mesh(
             pv_mesh,
             scalars="overhang",
-            cmap=_OVERHANG_CMAP_DARK if _T.is_dark() else _OVERHANG_CMAP_LIGHT,
+            cmap=_overhang_cmap(_T.is_dark()),
             clim=[0.0, 1.0],
             show_scalar_bar=False,
             smooth_shading=False,
@@ -2445,6 +3015,13 @@ class Viewer3D(QWidget):
         flottantes et sans encombrement. face_severity : sévérité 0→1 par face."""
         if not HAS_PYVISTA or self._plotter is None:
             return
+        # GARDE anti-flash : le thermomap ne colore JAMAIS les pièces tant que la
+        # case « Fragilité » n'est pas EXPLICITEMENT cochée. Neutralise tout appel
+        # parasite au chargement (flash orange 1 s, vécu), quelle qu'en soit la
+        # source. Le toggle légitime coche la case AVANT d'appeler → passe.
+        if hasattr(self, "_frag_checkbox") and not self._frag_checkbox.isChecked():
+            logger.debug("colorize_fragility ignoré (case Fragilité décochée)")
+            return
 
         self._view_mode = "fragility"
         # Mémorisé pour recréer la vue après un changement de thème (refresh_theme
@@ -2466,7 +3043,7 @@ class Viewer3D(QWidget):
         self._plotter.add_mesh(
             pv_mesh,
             scalars="fragility",
-            cmap=_FRAGILITY_CMAP,
+            cmap=_frag_cmap(),
             clim=[0.0, 1.0],
             show_scalar_bar=False,
             smooth_shading=False,

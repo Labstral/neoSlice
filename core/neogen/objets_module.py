@@ -85,6 +85,15 @@ def _make_builder(obj: dict):
         return _build_mesh
 
     code = str(obj.get("code", ""))
+    # Pré-compilation : une recette avec une FAUTE DE SYNTAXE (typo dans une
+    # future MàJ de base) est écartée AU CHARGEMENT avec un log clair, au lieu
+    # de crasher en SyntaxError brute à la première génération (audit neoGen).
+    try:
+        compile(code, f"<base:{obj.get('id', '?')}>", "exec")
+    except SyntaxError as exc:
+        logger.warning(f"[base neoGen] recette « {obj.get('id')} » invalide "
+                       f"(syntaxe ligne {exc.lineno}) — objet écarté")
+        return None
     a_texte = obj.get("texte", "aucun") != "aucun"
     a_image = bool(obj.get("image", False))
 
@@ -134,6 +143,9 @@ def entrees_catalogue() -> list[dict]:
             oid = str(obj.get("id", "")).strip()
             if not oid or not (obj.get("code") or obj.get("mesh")):
                 continue
+            _builder = _make_builder(obj)
+            if _builder is None:          # recette invalide (syntaxe) → écartée
+                continue
             entrees.append({
                 "id": oid,
                 "fr": obj.get("fr", oid), "en": obj.get("en", oid),
@@ -144,7 +156,7 @@ def entrees_catalogue() -> list[dict]:
                 "flags": list(obj.get("flags", [])),
                 "choix": list(obj.get("choix", [])),
                 "couleurs": list(obj.get("couleurs", [])),
-                "construire": _make_builder(obj),
+                "construire": _builder,
                 "_module": True,      # marque : objet issu d'une mise à jour de base
                 "_synonymes": obj.get("synonymes", ""),
                 # visibilité conditionnelle de champs (voir neogen_dialog) :

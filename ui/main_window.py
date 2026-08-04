@@ -46,8 +46,30 @@ from core.prefs import PREFS
 
 
 # Thermomap de fragilité : au-delà de ce nombre de pièces, on n'évalue pas la
-# fragilité pièce par pièce (coût de detect_fragility sur le thread principal).
+# fragilité pièce par pièce (coût de detect_fragility, ~1-2 s par pièce).
 _MAX_FRAG_BARS_OBJECTS = 40
+
+
+class _ThermomapWorker(QThread):
+    """Calcule la thermomap de fragilité (pièce par pièce) HORS du thread UI.
+
+    detect_fragility coûte ~1-2 s/pièce : en synchrone, un lot de 38 pièces
+    (meuble multi-plateaux) gelait l'interface ~50 s — « ne répond pas », vécu.
+    Le résultat est jeté au retour si une autre pièce a été chargée entre-temps
+    (compteur de génération côté MainWindow)."""
+    fini = Signal(object, bool)      # (severity ndarray | None, restore_neogen)
+
+    def __init__(self, calcul, parent=None):
+        super().__init__(parent)
+        self._calcul = calcul
+
+    def run(self):
+        try:
+            sev, restore = self._calcul()
+        except Exception:
+            logger.exception("Thermomap fragilité (arrière-plan) échouée")
+            sev, restore = None, False
+        self.fini.emit(sev, restore)
 
 
 # ── Alertes matériau × géométrie ─────────────────────────────────────────
@@ -1455,6 +1477,17 @@ def _open_3mf_in_slicer(path: str, slicer: str) -> None:
             pass
 
 
+def _sanitize_filename(name: str | None) -> str:
+    """Nettoie un nom d'objet pour en faire un nom de fichier sûr (Windows/macOS)."""
+    import re
+    s = (name or "").strip()
+    # retirer une extension résiduelle (.stl/.stp/.3mf/.obj) issue du nom d'objet
+    s = re.sub(r"\.(stl|stp|step|3mf|obj|ply)$", "", s, flags=re.IGNORECASE)
+    s = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", s)   # caractères interdits
+    s = re.sub(r"\s+", " ", s).strip(" .")          # espaces/points de bord
+    return s[:80] or ""
+
+
 def _slicer_name() -> str:
     """Nom affiché du slicer de sortie choisi (Bambu Studio / OrcaSlicer / PrusaSlicer)."""
     from core.prefs import PREFS as _P
@@ -1535,6 +1568,14 @@ class MainWindow(QMainWindow):
         self._mesh = None
         self._original_mesh = None
         self._threemf_data = None
+        # Cache visuel de la VUE D'ENSEMBLE (édition par objet) : {td, report,
+        # overhang_colors, fragility_sev} → retour instantané sans ré-analyse.
+        self._overview_cache = None
+        self._overview_camera = None   # caméra à restaurer au retour d'un objet isolé
+        # Scène neoGen multi-plateaux (lithophanie + boîte) chargée comme objet
+        # multi-objets → édition par objet + export multi-plateaux dédié.
+        self._neogen_multiplate = False
+        self._neogen_multiplate_profils = {}   # {object_id: 'lithophanie'|'standard'|None}
         self._analysis: AnalysisReport | None = None
         self._stl_load_thread: QThread | None = None
         self._stl_load_worker: STLLoadWorker | None = None
@@ -1833,9 +1874,192 @@ class MainWindow(QMainWindow):
 
         # ── Viewer 3D ──
         self._viewer = Viewer3D()
+        # Édition par objet : clic sur un objet d'une scène multi-objets → l'isoler ;
+        # bouton « Vue d'ensemble » → revenir à tous les objets.
+        self._active_object_id = None
+        self._active_object_name = None
+        self._overview_threemf = None
+        # Réglages MÉMORISÉS par objet (édition multi-objets) :
+        # {object_id: {"config", "selection", "explanations", "intent_ids"}}.
+        self._per_object_state = {}
+        self._viewer.objet_clique.connect(self._isoler_objet)
+        self._viewer.retour_ensemble.connect(self._retour_vue_ensemble)
         layout.addWidget(self._viewer, stretch=1)
 
         return container
+
+    # ── Édition par objet (sélection / isolation) ───────────────────────────
+
+    def _isoler_objet(self, object_id: str):
+        """Clic sur un objet d'une scène multi-objets → l'ISOLER : neoSlice se
+        comporte comme si cet objet avait été chargé seul (analyse, réglages,
+        export ciblés). « ↩ Vue d'ensemble » ramène à la scène complète."""
+        td = getattr(self, "_threemf_data", None)
+        if td is None:
+            return
+        mo = next((o for o in td.objects if str(o.object_id) == str(object_id)), None)
+        if mo is None:
+            return
+        m = self._object_mesh_posed(mo)    # transform + base z=0 + centré XY
+
+        # Mémoriser la position caméra ACTUELLE de la vue d'ensemble → on la
+        # restaure au retour (sinon le recadrage par défaut éloigne la scène).
+        self._overview_camera = self._viewer.get_camera_state()
+        self._overview_threemf = td        # mémoriser pour y revenir
+        self._active_object_id = str(object_id)
+        self._active_object_name = str(mo.name or "objet")   # → nom de fichier export
+        self._threemf_data = None          # traiter comme un mono-objet
+        self._mesh = m
+        self._original_mesh = m.copy()
+
+        # Scène neoGen multi-plateaux : le PROFIL de la pièce pilote le verrou.
+        # Couvercle lithophane → RÉSISTANCE grisée/bloquée sur « Lithophanie »
+        # (remplissage 100 % imposé) ; boîte → réglages standard, tout modifiable.
+        _profil = getattr(self, "_neogen_multiplate_profils", {}).get(str(object_id))
+        _obj_litho = (_profil == "lithophanie")
+        self._est_lithophanie = _obj_litho
+        try:
+            self._intent_selector.set_lithophanie(_obj_litho)
+            self._analysis_panel.show_litho_banner(_obj_litho)
+        except Exception:
+            pass
+        # Bascule de géométrie sans rendu intermédiaire (évite le clignotement
+        # scène → objet) ; un seul rendu à la reprise, puis l'analyse.
+        self._viewer.suspendre_rendu(True)
+        try:
+            self._viewer.load_mesh(m)      # affichage isolé (un plateau)
+            self._viewer.montrer_retour_ensemble(True)
+        finally:
+            self._viewer.suspendre_rendu(False)
+        self._statusbar.set_message(
+            _("status.object_isolated", name=str(mo.name)), TELE_GREEN)
+        self._start_analysis()
+
+    def _retour_vue_ensemble(self):
+        """Bouton « ↩ Vue d'ensemble » → réafficher tous les objets."""
+        td = getattr(self, "_overview_threemf", None)
+        if td is None:
+            return
+        # MÉMORISER l'état de l'objet quitté — même s'il n'a pas été « généré » :
+        # la SÉLECTION d'instructions persiste par objet (fusion avec un éventuel
+        # état déjà généré, qu'on ne perd pas). Sinon, en revenant sur l'objet,
+        # les cases cochées étaient oubliées (signalé : « ça ne reste pas en mémoire »).
+        _aid = getattr(self, "_active_object_id", None)
+        if _aid is not None:
+            try:
+                prev = dict(self._per_object_state.get(_aid, {}))
+                prev["intent_ids"] = self._intent_selector.capturer_selection()
+                self._per_object_state[_aid] = prev
+                logger.info(f"[objet] sélection mémorisée au retour pour {_aid} "
+                            f"(config déjà présente={prev.get('config') is not None})")
+            except Exception:
+                logger.debug("mémorisation sélection au retour échouée", exc_info=True)
+
+        self._threemf_data = td
+        self._mesh = td.combined_mesh
+        self._active_object_id = None
+        self._active_object_name = None
+        self._overview_threemf = None
+
+        # Vue d'ensemble = plus d'objet litho isolé → déverrouiller la Résistance
+        # (elle sera re-verrouillée en réisolant le couvercle).
+        if getattr(self, "_neogen_multiplate", False):
+            self._est_lithophanie = False
+            try:
+                self._intent_selector.set_lithophanie(False)
+                self._analysis_panel.show_litho_banner(False)
+            except Exception:
+                pass
+
+        # Enchaîner chargement + caméra + recolorisation SANS rendu intermédiaire
+        # (sinon on voit ivoire → saut caméra → couleurs = « clignotement » ~1 s).
+        # Un seul rendu final à la reprise. Uniquement pour le retour INSTANTANÉ
+        # (cache présent) ; en repli analyse, le rendu reprend avant l'overlay.
+        _cache_ok = (getattr(self, "_overview_cache", None) is not None
+                     and self._overview_cache.get("td") is td
+                     and self._overview_cache.get("report") is not None
+                     and self._overview_cache.get("overhang_colors") is not None)
+        self._viewer.suspendre_rendu(_cache_ok)
+        try:
+            self._viewer.load_mesh(td)
+            _vm = getattr(self._viewer, "_mesh", None)   # cf. _on_stl_load_done
+            if _vm is not None and len(_vm.faces) == len(self._mesh.faces):
+                self._mesh = _vm
+            # Restaurer la caméra AVANT la recolorisation : les colorize_overhangs
+            # suivants sont en _keep_camera=True → ils gardent cette position (au
+            # lieu du recadrage par défaut qui éloigne la scène).
+            self._viewer.set_camera_state(getattr(self, "_overview_camera", None))
+            self._viewer.montrer_retour_ensemble(False)
+
+            # Retour INSTANTANÉ si le cache visuel est complet (pas de « recharge-
+            # ment » : ni overlay d'analyse, ni recalcul de fragilité). Sinon,
+            # analyse normale (builders mémoïsés, donc rapide).
+            restore_ok = self._restaurer_vue_ensemble_depuis_cache()
+        finally:
+            self._viewer.suspendre_rendu(False)   # rendu unique de l'état final
+        if not restore_ok:
+            self._start_analysis()
+
+        # Des réglages par objet ont été posés → permettre l'export d'ensemble
+        # (un 3MF avec toutes les modifications) même sans re-générer une config.
+        _edits = {o: s for o, s in (getattr(self, "_per_object_state", {}) or {}).items()
+                  if s and s.get("config") is not None}
+        if _edits and getattr(self, "_current_config", None) is not None:
+            self._statusbar.set_export_enabled(True)
+            self._statusbar.set_message(
+                _("status.overview_restored", n=len(_edits)), TELE_GREEN)
+
+    def _restaurer_vue_ensemble_depuis_cache(self) -> bool:
+        """Restaure l'affichage de la vue d'ensemble depuis `_overview_cache`
+        sans relancer l'analyse (surplombs + thermomap mémorisés). Retourne True
+        si tout le cache était disponible et appliqué, False sinon (→ analyse)."""
+        c = getattr(self, "_overview_cache", None)
+        td = self._threemf_data
+        if not (c and c.get("td") is td):
+            return False
+        report = c.get("report")
+        colors = c.get("overhang_colors")
+        frag = c.get("fragility_sev")          # (sev_arr, max_sev) ou None
+        # Le rapport + les surplombs suffisent pour éviter l'overlay d'analyse.
+        # La thermomap : appliquée si en cache, sinon relancée EN ARRIÈRE-PLAN
+        # (pas d'overlay non plus) — cf. `_demarrer_thermomap_fragilite`.
+        if report is None or colors is None:
+            return False
+        try:
+            self._analysis_timeout.stop()
+            self._analysis = report
+            self._analysis_panel.update_from_report(report)
+            self._progress_bar.hide()
+            self._viewer.set_loading(False)
+            self._intent_selector.set_loading(False)
+            self._intent_selector.enable_generate(True)
+            self._step_stl.set_done()
+            self._step_intent.set_active()
+            self._intent_selector.set_locked(False)
+            self._intent_selector.auto_select_from_analysis(report)
+            # Surplombs mémorisés — garder la caméra déjà cadrée par load_mesh.
+            if len(colors) == len(self._mesh.faces):
+                self._viewer.colorize_overhangs(self._mesh, colors, _keep_camera=True)
+            # Thermomap de fragilité : cache → instantané ; sinon → arrière-plan.
+            self._viewer.clear_fragility_data()
+            if frag is not None and frag[0] is not None and len(frag[0]) == len(self._mesh.faces):
+                self._analysis_panel.set_fragility_disabled()
+                self._viewer.set_fragility_data(frag[0])
+                self._viewer.montrer_case_fragilite()
+            else:
+                self._demarrer_thermomap_fragilite()
+            self._viewer.start_auto_rotate()
+            self._recolorer_viewer_si_multicouleur()
+            oh_pct = report.overhang_severity * 100
+            oh_tag = _("status.oh_tag", pct=oh_pct) if oh_pct > 0.1 else ""
+            self._statusbar.set_message(
+                _("status.analysis_ok", ms=report.analysis_time_ms, oh_tag=oh_tag),
+                TELE_GREEN)
+            logger.info("[vue d'ensemble] restaurée depuis le cache (sans ré-analyse)")
+            return True
+        except Exception:
+            logger.exception("restauration vue d'ensemble depuis cache échouée")
+            return False
 
     # ── Panneau droit ──────────────────────────────────────────────────────
 
@@ -1956,6 +2180,8 @@ class MainWindow(QMainWindow):
         dlg.update_request.connect(self._on_settings_update_request)
         dlg.pro_activated.connect(self._topbar.refresh_pro)
         dlg.scanbar_anim_changed.connect(self._topbar.set_scanbar_animation)
+        dlg.auto_reinforce_changed.connect(self._on_auto_reinforce_changed)
+        dlg.colorblind_changed.connect(lambda _on: self._viewer.refresh_colorblind())
         btn = self._topbar._settings_btn
         btn_br = btn.mapToGlobal(QPoint(btn.width(), btn.height()))
         # Position sous la roue crantee, mais bornee pour rester dans l'ecran
@@ -2015,6 +2241,13 @@ class MainWindow(QMainWindow):
             panel.close_requested.connect(self._show_params_panel)
             panel.ouvrir_carte.connect(self._open_carte)   # depuis Personnalisation
             self._neogen_panel = panel
+        # Volume du plateau de l'imprimante CIBLE → garde-fou de génération
+        # (posé à CHAQUE ouverture : suit les changements d'imprimante).
+        try:
+            from data.printers import volume_impression
+            panel.volume_plateau = volume_impression(self._current_printer)
+        except Exception:
+            panel.volume_plateau = None
         if self._right_scroll.widget() is panel:
             self._show_params_panel()          # 2e clic sur NEOGEN = referme
             return
@@ -2024,8 +2257,19 @@ class MainWindow(QMainWindow):
         self._topbar.set_new_enabled(True)     # « Nouvelle pièce » actif dans neoGen
         if hasattr(panel, "refresh_theme"):
             panel.refresh_theme()              # thème courant (titres/onglets)
-        if hasattr(panel, "_planifier_apercu_objet"):
-            panel._planifier_apercu_objet()    # aperçu de l'objet courant à l'ouverture
+        # Affiche l'objet courant à l'ouverture. La 1re fois, on relance la SÉLECTION
+        # complète : la construction l'avait suppressée (_ready=False), et comme la
+        # Bibliothèque est désormais l'onglet actif par défaut, aucun changement
+        # d'onglet ne la redéclenche → l'objet par défaut (carte de visite) ne
+        # s'embarquait plus. Ensuite : simple rafraîchissement (on garde le formulaire).
+        try:
+            if not getattr(panel, "_demarre", False):
+                panel._demarre = True
+                panel._choisir_objet(panel._combo_objet.currentIndex())
+            elif hasattr(panel, "_planifier_apercu_objet"):
+                panel._planifier_apercu_objet()
+        except Exception:
+            logger.debug("démarrage neoGen ignoré", exc_info=True)
 
     def _open_carte(self):
         """Carte de visite EMBARQUÉE inline dans la colonne neoGen (sous les onglets
@@ -2151,10 +2395,28 @@ class MainWindow(QMainWindow):
         import tempfile
         import trimesh
         from core.neogen.catalogue import PAR_ID
+        # Scène MULTI-PLATEAUX (corps taggés plateau()) → charger comme objet
+        # multi-objets (ThreeMFData) → clic-pour-isoler + réglages par pièce +
+        # export multi-plateaux, au lieu du circuit bicolore mono-plateau.
+        try:
+            _plates = {int((getattr(g, "metadata", {}) or {}).get("neoslice_plate", 0) or 0)
+                       for g in scene.geometry.values()}
+        except Exception:
+            _plates = {0}
+        if len(_plates) > 1:
+            self._charger_scene_multiplateaux(scene, entree_id)
+            return
         try:
             bodies = list(scene.geometry.values())
             fused = trimesh.util.concatenate(bodies)
-            tmp = Path(tempfile.gettempdir()) / f"neogen_{entree_id}.stl"
+            # Nom « lithophanie… » si un corps est taggé profil lithophanie → l'app
+            # active _est_lithophanie (profil 100 %) au chargement, comme un fichier
+            # lithophanie déposé. Sinon nom neutre par objet.
+            _is_litho = any(
+                (getattr(g, "metadata", {}) or {}).get("neoslice_profil") == "lithophanie"
+                for g in bodies)
+            _stem = "lithophanie" if _is_litho else f"neogen_{entree_id}"
+            tmp = Path(tempfile.gettempdir()) / f"{_stem}.stl"
             fused.export(tmp)
         except Exception:
             logger.exception("Préparation objet bicolore échouée")
@@ -2175,6 +2437,65 @@ class MainWindow(QMainWindow):
         self._on_stl_dropped(tmp)                   # remet _neogen_scene à None…
         self._neogen_scene = (copy.deepcopy(scene), couleurs, nom)   # …puis on mémorise
         self._reafficher_neogen_apres_generation()
+
+    def _charger_scene_multiplateaux(self, scene, entree_id: str):
+        """Charge une scène neoGen répartie sur PLUSIEURS plateaux (ex. boîte
+        lumineuse : couvercle lithophane + boîte) comme un objet MULTI-OBJETS
+        (ThreeMFData) → active l'édition par objet (clic pour isoler, réglages par
+        pièce) et l'export multi-plateaux. Le tag profil de chaque corps pilote le
+        verrouillage Résistance (lithophanie) à l'isolation."""
+        import tempfile
+        import trimesh
+        from core.geometry.threemf_data import ThreeMFData, MeshObject
+        bodies = list(scene.geometry.items())
+        objs, profils = [], {}
+        for i, (name, g) in enumerate(bodies):
+            md = getattr(g, "metadata", {}) or {}
+            plate = int(md.get("neoslice_plate", 0) or 0)
+            profil = md.get("neoslice_profil")
+            m = g.copy()
+            m.apply_translation([0.0, 0.0, -float(m.bounds[0][2])])   # base z=0
+            oid = f"ng{i}"
+            if profil == "lithophanie":
+                label = "Couvercle (lithophanie)"
+            elif profil == "standard":
+                label = "Boîte"
+            else:
+                label = f"Pièce {i + 1}"
+            objs.append(MeshObject(object_id=oid, name=label, extruder=1,
+                                   mesh=m, plate_index=plate))
+            profils[oid] = profil
+        combined = trimesh.util.concatenate([o.mesh for o in objs])
+        tmp = Path(tempfile.gettempdir()) / f"neogen_{entree_id}_multiplate.3mf"
+        td = ThreeMFData(combined_mesh=combined, objects=objs, source_path=tmp)
+
+        # Reset façon _on_stl_dropped (sans worker de chargement fichier).
+        self._stl_path = tmp
+        self._est_lithophanie = False   # global = standard ; litho PAR OBJET à l'isolation
+        self._est_hueforge = False
+        self._neogen_scene = None
+        self._carte_export_spec = None
+        self._analysis = None
+        self._current_config = None
+        self._current_selection = None
+        self._config_standard_avant_litho = None
+        try:
+            self._intent_selector.set_lithophanie(False)
+            self._analysis_panel.show_litho_banner(False)
+            self._maj_prerequis_generation()
+        except Exception:
+            pass
+        self._step_stl.set_active()
+        self._viewer.stop_auto_rotate()
+        self._viewer.set_loading(True, "CHARGEMENT — boîte lumineuse")
+        self._original_mesh = None
+
+        # Setup ThreeMFData (comme _on_stl_load_done) → viewer multi-plateaux +
+        # picking + analyse. _on_stl_load_done remet _per_object_state/_overview_* à 0.
+        self._on_stl_load_done(td)
+        # Marqueurs APRÈS (load_done ne les touche pas) → export multi-plateaux dédié.
+        self._neogen_multiplate = True
+        self._neogen_multiplate_profils = profils
 
     def _recolorer_viewer_si_multicouleur(self):
         """Après l'analyse d'un objet neoGen/carte bicolore, remet ses COULEURS dans
@@ -3093,6 +3414,29 @@ class MainWindow(QMainWindow):
         self._current_config = None
         self._current_selection = None
         self._pending_diag_result = None   # nouvelle pièce → diagnostic obsolète
+        # Sortir de TOUT mode spécial : objet isolé, scène neoGen multi-plateaux,
+        # lithophanie, HueForge — sinon le bouton « Vue d'ensemble » restait
+        # visible avec une scène fantôme et la Résistance pouvait rester
+        # verrouillée (audit machine à états).
+        self._threemf_data = None
+        self._active_object_id = None
+        self._active_object_name = None
+        self._overview_threemf = None
+        self._overview_cache = None
+        self._overview_camera = None
+        self._per_object_state = {}
+        self._neogen_multiplate = False
+        self._neogen_multiplate_profils = {}
+        self._neogen_scene = None
+        self._carte_export_spec = None
+        self._est_lithophanie = False
+        self._est_hueforge = False
+        try:
+            self._viewer.montrer_retour_ensemble(False)
+            self._intent_selector.set_lithophanie(False)
+            self._analysis_panel.show_litho_banner(False)
+        except Exception:
+            pass
 
         self._viewer.stop_auto_rotate()
         # Quitter un éventuel mode carte/neoGen : coupe le drag d'éléments et
@@ -3136,6 +3480,13 @@ class MainWindow(QMainWindow):
         # (volontaire) + bannière récap au-dessus du viewer. Tout revient à la
         # normale au chargement d'un autre fichier.
         self._est_lithophanie = path.stem.lower().startswith("lithophanie")
+        # Fichier « classique » → sortir d'un éventuel mode neoGen multi-plateaux.
+        self._neogen_multiplate = False
+        self._neogen_multiplate_profils = {}
+        # HueForge : relief plat imprimé de bas en haut (bandes de couleur) → les
+        # micro-parois du relief ne sont PAS des surplombs. On le reconnaît au nom
+        # du fichier (neogen_hueforge) pour neutraliser surplombs/supports.
+        self._est_hueforge = "hueforge" in path.stem.lower()
         try:
             self._intent_selector.set_lithophanie(self._est_lithophanie)
             self._analysis_panel.show_litho_banner(self._est_lithophanie)
@@ -3209,6 +3560,19 @@ class MainWindow(QMainWindow):
         from core.geometry.threemf_data import ThreeMFData
         path = self._stl_path
 
+        # Nouveau fichier → sortir d'un éventuel mode « objet isolé » et oublier
+        # les réglages par objet du fichier précédent.
+        self._active_object_id = None
+        self._active_object_name = None
+        self._overview_threemf = None
+        self._overview_cache = None
+        self._overview_camera = None
+        self._per_object_state = {}
+        try:
+            self._viewer.montrer_retour_ensemble(False)
+        except Exception:
+            pass
+
         if isinstance(mesh, ThreeMFData):
             self._threemf_data = mesh
             self._mesh = mesh.combined_mesh
@@ -3236,8 +3600,15 @@ class MainWindow(QMainWindow):
         self._topbar.set_has_stl(True)
 
         try:
-            from ui.components.welcome_dialog import _load_prefs, _save_prefs
-            _p = _load_prefs(); _p["last_stl"] = str(path); _save_prefs(_p)
+            # « Dernier fichier » : ne PAS mémoriser les fichiers TEMPORAIRES
+            # (objets neoGen : STL temp, 3MF multi-plateaux jamais écrit sur
+            # disque) — au prochain démarrage ils n'existent plus et le raccourci
+            # pointait dans le vide (audit machine à états).
+            import tempfile as _tf
+            _est_temp = str(path).lower().startswith(_tf.gettempdir().lower())
+            if not _est_temp and Path(path).exists():
+                from ui.components.welcome_dialog import _load_prefs, _save_prefs
+                _p = _load_prefs(); _p["last_stl"] = str(path); _save_prefs(_p)
         except Exception:
             pass
         self._drop_zone.set_recent_file(path)
@@ -3332,6 +3703,25 @@ class MainWindow(QMainWindow):
         # le panneau qu'on vient de vider.
         if self._mesh is None:
             return
+        # Résultat d'un worker PÉRIMÉ (l'utilisateur a cliqué un autre objet /
+        # chargé une autre pièce pendant l'analyse ; le signal était déjà posté
+        # avant le disconnect) → ignorer, l'analyse du bon objet suit.
+        _snd = self.sender()
+        if _snd is not None and _snd is not self._analysis_worker:
+            logger.debug("analyse périmée ignorée (worker remplacé)")
+            return
+        # HueForge : relief plat imprimé à plat, de bas en haut — les surplombs
+        # détectés (micro-parois de pixels/bandes) sont des faux positifs. On les
+        # neutralise AVANT le panneau ET la génération (aucun support ajouté).
+        if getattr(self, "_est_hueforge", False):
+            report.overhang_severity = 0.0
+            report.overhang_ratio = 0.0
+            report.max_overhang_angle = 0.0
+            report.support_needed = False
+            report.estimated_support_ratio = 0.0
+            report.has_floating_regions = False
+            report.overhang_result = None
+
         self._analysis = report
         logger.info(f"Analyse terminée en {report.analysis_time_ms:.0f}ms")
 
@@ -3364,39 +3754,26 @@ class MainWindow(QMainWindow):
         # apparaît même si rien n'est très fragile (couleurs alors surtout vertes) :
         # c'est le SEUL accès à la fragilité par pièce quand la jauge est neutralisée.
         # Exclu : les assemblages COULEUR 3MF (slot>1 = 1 objet physique superposé).
-        _is_color_asm = (self._threemf_data is not None
-                         and self._threemf_data.slot_count > 1)
+        # Assemblage couleur = 1 objet physique en N parts EMPILÉES (même plateau).
+        # Un 3MF MULTI-PLATEAUX est TOUJOURS un lot de pièces séparées, même si
+        # plusieurs filaments sont utilisés (projet BS : extrudeurs différents par
+        # objet) → règle « plusieurs pièces = fragilité de chacune » applicable.
+        _td_frag = self._threemf_data
+        _n_plates = (len({getattr(o, "plate_index", 0) for o in _td_frag.objects})
+                     if _td_frag is not None and _td_frag.objects else 0)
+        _is_color_asm = (_td_frag is not None and _td_frag.slot_count > 1
+                         and _n_plates <= 1)
+        logger.info(f"[thermomap] objets={_td_frag.object_count if _td_frag else 0} "
+                    f"slots={_td_frag.slot_count if _td_frag else 0} "
+                    f"plateaux={_n_plates} color_asm={_is_color_asm}")
         _ng_scene = getattr(self, "_neogen_scene", None)
-        _frag_sev = None
-        _frag_restore = None
-        try:
-            if _is_color_asm:
-                pass  # 1 objet physique multicolore → pas de thermomap par « partie »
-            elif _is_multipart:                          # 3MF multi-objets
-                _s, _mx = self._build_multipart_fragility_severity()
-                if _mx >= 0.0:
-                    _frag_sev = _s
-            elif _ng_scene is not None:                  # objet neoGen bicolore
-                _s, _mx, _n = self._build_neogen_fragility_severity()
-                if _s is not None:
-                    _frag_sev = _s
-                    _frag_restore = self._recolorer_viewer_si_multicouleur
-            else:                                        # mesh unique à corps séparés
-                _s, _mx = self._build_bodysplit_fragility_severity()
-                if _s is not None:
-                    _frag_sev = _s
-        except Exception:
-            logger.exception("Préparation thermomap fragilité échouée")
-            _frag_sev = None
 
-        if _frag_sev is not None:
-            # Case « Fragilité » (décochée par défaut) + jauge FRAGILITÉ neutralisée
-            # (une valeur globale serait incohérente entre parties de fragilités
-            # différentes ; la lecture se fait par pièce via la thermomap).
-            self._viewer.set_fragility_data(_frag_sev, restore_cb=_frag_restore)
-            self._analysis_panel.set_fragility_disabled()
-        else:
-            self._viewer.clear_fragility_data()
+        # ── Thermomap de fragilité — calculée EN ARRIÈRE-PLAN ────────────────
+        # detect_fragility ≈ 1-2 s/pièce : en synchrone ici, un lot de 38 pièces
+        # gelait l'UI ~50 s (« ne répond pas », vécu — Table de chevet.3mf).
+        # La case « Fragilité » apparaît dès que la carte est prête ; un compteur
+        # de génération jette le résultat si une autre pièce a été chargée.
+        self._demarrer_thermomap_fragilite()
 
         # Pour les 3MF multi-objets : toujours coloriser — l'analyse du mesh combiné
         # sous-estime les surplombs (plate_tol trop grande car z_height = hauteur de la plus
@@ -3424,7 +3801,11 @@ class MainWindow(QMainWindow):
                     else:
                         ov = analyze_overhangs(self._mesh, smooth=False, check_floating=False)
                         colors = overhang_face_colors(self._mesh, ov)
-                self._viewer.colorize_overhangs(self._mesh, colors)
+                # Multipart : GARDER la caméra — le chargement a déjà cadré la
+                # grille de plateaux ; le re-cadrage de colorize (sphère VTK)
+                # reculait brutalement la caméra ~1 s après le chargement (vécu).
+                self._viewer.colorize_overhangs(self._mesh, colors,
+                                                _keep_camera=_is_multipart)
             except Exception:
                 logger.exception("colorize_overhangs échoué")
 
@@ -3445,6 +3826,180 @@ class MainWindow(QMainWindow):
             TELE_GREEN,
         )
 
+        # Cache VUE D'ENSEMBLE : mémoriser le rapport d'analyse (les couleurs de
+        # surplombs et la thermomap sont déjà mémoïsées dans leurs builders) → le
+        # retour depuis un objet isolé se fait INSTANTANÉMENT, sans re-analyser.
+        if _is_multipart and getattr(self, "_active_object_id", None) is None:
+            cc = self._overview_cache if (
+                getattr(self, "_overview_cache", None)
+                and self._overview_cache.get("td") is self._threemf_data) else {
+                    "td": self._threemf_data}
+            cc["report"] = report
+            self._overview_cache = cc
+
+        # Édition multi-objets : si l'objet ISOLÉ a déjà des réglages mémorisés,
+        # les restaurer par-dessus l'analyse fraîche (sélecteur d'intention +
+        # config + panneau de droite + export) → « régler A, aller sur B, revenir
+        # à A » retrouve les réglages de A.
+        _oid = getattr(self, "_active_object_id", None)
+        _st = self._per_object_state.get(_oid) if _oid else None
+        if _st:
+            # 1) Sélection d'instructions : restaurée MÊME si l'objet n'a pas encore
+            #    été « généré » (les cases cochées persistent par objet). Sous-try
+            #    isolé → un échec ici ne bloque pas la restauration de la config.
+            try:
+                self._intent_selector.restaurer_selection(_st.get("intent_ids"))
+            except Exception:
+                logger.debug("restauration sélection objet échouée", exc_info=True)
+            # 2) Config générée (si l'objet a été validé au moins une fois).
+            _cfg = _st.get("config")
+            if _cfg is not None:
+                try:
+                    self._current_config = _cfg
+                    self._current_selection = _st.get("selection")
+                    self._params_preview.update_from_config(
+                        _cfg, self._analysis, _st.get("explanations"))
+                    self._analysis_panel.set_generation_active()
+                    self._statusbar.set_export_enabled(True)
+                    self._step_intent.set_done()
+                except Exception:
+                    logger.debug("restauration config objet échouée", exc_info=True)
+            logger.info(f"[objet] état restauré pour {_oid} "
+                        f"(config={_cfg is not None}, "
+                        f"sélection={_st.get('intent_ids') is not None})")
+        else:
+            logger.info(f"[objet] aucun état mémorisé pour {_oid}")
+
+    def _demarrer_thermomap_fragilite(self) -> None:
+        """Lance EN ARRIÈRE-PLAN le calcul de la thermomap de fragilité pour la
+        scène/objet courant, et affiche la case à cocher. Aucun overlay d'analyse.
+        Réutilisé par `_on_analysis_complete` ET par le retour en vue d'ensemble
+        (quand la thermomap n'était pas encore en cache) — d'où l'auto-suffisance."""
+        _td_frag = self._threemf_data
+        _n_plates = (len({getattr(o, "plate_index", 0) for o in _td_frag.objects})
+                     if _td_frag is not None and _td_frag.objects else 0)
+        _is_color_asm = (_td_frag is not None and _td_frag.slot_count > 1
+                         and _n_plates <= 1)
+        _ng_scene = getattr(self, "_neogen_scene", None)
+        _is_multipart = _td_frag is not None and _td_frag.object_count > 1
+
+        self._frag_gen = getattr(self, "_frag_gen", 0) + 1
+        _gen = self._frag_gen
+        self._viewer.clear_fragility_data()
+        try:
+            _frag_upfront = _is_multipart or (
+                _ng_scene is not None and len(_ng_scene[0].geometry) >= 2)
+        except Exception:
+            _frag_upfront = _is_multipart
+        if not _is_color_asm and _frag_upfront:
+            self._analysis_panel.set_fragility_disabled()
+        if _is_color_asm:
+            return
+
+        def _calcul_thermomap():
+            if _is_multipart:                        # 3MF multi-objets
+                s, mx = self._build_multipart_fragility_severity()
+                return (s if mx >= 0.0 else None), False
+            if _ng_scene is not None:                # objet neoGen bicolore
+                s, _mx, _n = self._build_neogen_fragility_severity()
+                return s, True
+            s, _mx = self._build_bodysplit_fragility_severity()
+            return s, False                          # mesh à corps séparés
+
+        def _thermomap_prete(sev, restore_neogen):
+            if _gen != getattr(self, "_frag_gen", 0) or self._mesh is None:
+                return                    # une autre pièce a été chargée
+            if sev is None:
+                self._viewer.clear_fragility_data()
+                if _frag_upfront and self._analysis is not None:
+                    self._analysis_panel.update_from_report(self._analysis)
+                return
+            _cb = (self._recolorer_viewer_si_multicouleur
+                   if restore_neogen else None)
+            self._viewer.set_fragility_data(sev, restore_cb=_cb)
+            self._analysis_panel.set_fragility_disabled()
+            self._viewer.montrer_case_fragilite()
+            # La thermomap est prête (sévérités par pièce en cache) → renforcer
+            # automatiquement les pièces fragiles, en vue d'ensemble uniquement.
+            if getattr(self, "_active_object_id", None) is None:
+                self._auto_renforcer_pieces_fragiles()
+
+        _w = _ThermomapWorker(_calcul_thermomap)
+        self._thermomap_workers = getattr(self, "_thermomap_workers", [])
+        self._thermomap_workers.append(_w)   # référence vivante (sinon GC → crash)
+        _w.fini.connect(_thermomap_prete)
+        _w.finished.connect(
+            lambda: self._thermomap_workers.remove(_w)
+            if _w in self._thermomap_workers else None)
+        _w.start()
+        if _frag_upfront:
+            self._viewer.montrer_case_fragilite_calcul()
+
+    def _auto_renforcer_pieces_fragiles(self, annoncer: bool = True) -> None:
+        """Renforce automatiquement (parois + remplissage) les pièces ORANGES/
+        ROUGES d'une scène multi-objets d'après la thermomap de fragilité ; les
+        pièces vertes/jaunes gardent les réglages communs. Idempotent, RESPECTE
+        les éditions manuelles par objet, piloté par PREFS 'auto_reinforce_fragile'
+        (défaut True). Appelé quand la thermomap est prête et après génération.
+        Les surcharges ressortent dans l'export d'ensemble (un 3MF)."""
+        from core.prefs import PREFS as _P
+        from core.parameters.fragility_reinforce import (
+            appliquer_renfort_auto, niveau_fragilite)
+        td = getattr(self, "_threemf_data", None)
+        if td is None or getattr(td, "object_count", 0) <= 1:
+            return
+        actif = bool(_P.get("auto_reinforce_fragile", True))
+        c = getattr(self, "_overview_cache", None)
+        sevs = c.get("obj_severities") if (c and c.get("td") is td) else None
+        base = getattr(self, "_current_config", None)
+
+        # NE PAS renforcer une pièce à PROFIL EXPLICITE (recette base) : le
+        # couvercle « lithophanie » est verrouillé sur 100 %, et la boîte
+        # « standard » doit RESTER standard (décision Emmanuel — le renfort auto
+        # ne s'applique qu'aux pièces sans directive de profil).
+        _profils = getattr(self, "_neogen_multiplate_profils", {}) or {}
+        if sevs and _profils:
+            sevs = {oid: s for oid, s in sevs.items() if not _profils.get(oid)}
+
+        new_state, count, removed = appliquer_renfort_auto(
+            sevs or {}, base, self._per_object_state, actif)
+        # Refléter le renfort dans les INSTRUCTIONS de gauche : la pièce fragile
+        # reçoit le preset RÉSISTANCE « Élevée » (orange) / « Ultra » (rouge) →
+        # en cliquant l'objet, l'utilisateur VOIT le changement (pas « Standard »).
+        try:
+            base_sel = self._intent_selector.capturer_selection()
+        except Exception:
+            base_sel = None
+        sidx = getattr(self._intent_selector, "_strength_group_idx", -1)
+        for oid, st in new_state.items():
+            if not st.get("auto_reinforced"):
+                continue
+            if st.get("selection") is None:
+                st["selection"] = getattr(self, "_current_selection", None)
+            if base_sel and isinstance(sidx, int) and 0 <= sidx < len(base_sel):
+                ids = list(base_sel)
+                niveau = niveau_fragilite((sevs or {}).get(oid, 0.0))
+                ids[sidx] = ("strength_ultra" if niveau == "red"
+                             else "strength_high")
+                st["intent_ids"] = ids
+        self._per_object_state = new_state
+
+        if not actif:
+            if removed and annoncer:
+                self._statusbar.set_message(_("status.reinforce_off"), AMBER)
+            return
+        logger.info(f"[renfort auto] {count} pièce(s) renforcée(s) "
+                    f"(base={base is not None}, pièces={len(sevs or {})})")
+        if count and annoncer:
+            self._statusbar.set_message(_("status.reinforce_applied", n=count), TELE_GREEN)
+            self._statusbar.set_export_enabled(True)
+
+    def _on_auto_reinforce_changed(self, actif: bool) -> None:
+        """Case Réglages « Renforcer automatiquement les pièces fragiles » (dé)cochée
+        → appliquer/retirer le renfort sur la scène courante (vue d'ensemble)."""
+        if getattr(self, "_active_object_id", None) is None:
+            self._auto_renforcer_pieces_fragiles()
+
     def _build_multipart_overhang_colors(self) -> np.ndarray:
         """Analyse les surplombs par objet séparément — symétrie garantie.
 
@@ -3457,6 +4012,22 @@ class MainWindow(QMainWindow):
         from core.geometry.overhang_detector import analyze_overhangs, overhang_face_colors
 
         td = self._threemf_data
+        # Mémoïsation par scène : la coloration surplombs par objet (N analyses)
+        # est identique à chaque retour en vue d'ensemble → on la recalcule une
+        # seule fois par fichier (évite le « rechargement » à chaque isolation).
+        _c = getattr(self, "_overview_cache", None)
+        if _c and _c.get("td") is td and _c.get("overhang_colors") is not None:
+            return _c["overhang_colors"]
+
+        def _memo(result):
+            if td is not None:
+                cc = self._overview_cache if (
+                    getattr(self, "_overview_cache", None)
+                    and self._overview_cache.get("td") is td) else {"td": td}
+                cc["overhang_colors"] = result
+                self._overview_cache = cc
+            return result
+
         per_obj: list[tuple] = []  # (mesh, colors, overhang_ratio, viewer_n_faces)
 
         # Face count corrigé du viewer (même logique que _load_multipart_mesh)
@@ -3499,7 +4070,7 @@ class MainWindow(QMainWindow):
                 per_obj.append((m, safe, 0.0, viewer_fc))
 
         if not per_obj:
-            return np.zeros((len(self._mesh.faces), 4), dtype=np.uint8)
+            return _memo(np.zeros((len(self._mesh.faces), 4), dtype=np.uint8))
 
         # Note: le masquage spatial par negative_part est retiré car il supprimait
         # aussi les overhangs des bras (le bbox du modifier couvre tout le Groot).
@@ -3510,7 +4081,8 @@ class MainWindow(QMainWindow):
         for i, (m, colors, ratio, nf) in enumerate(per_obj):
             all_colors.append(colors)
 
-        return np.vstack(all_colors) if all_colors else np.zeros((len(self._mesh.faces), 4), dtype=np.uint8)
+        return _memo(np.vstack(all_colors) if all_colors
+                     else np.zeros((len(self._mesh.faces), 4), dtype=np.uint8))
 
     def _build_multipart_fragility_severity(self):
         """Sévérité de fragilité PAR FACE (uniforme par objet) pour la thermomap.
@@ -3529,12 +4101,19 @@ class MainWindow(QMainWindow):
         if len(td.objects) > _MAX_FRAG_BARS_OBJECTS:
             return np.zeros(len(self._mesh.faces), dtype=np.float32), -1.0
 
+        # Mémoïsation par scène : detect_fragility ≈ 1-2 s/pièce → on ne recalcule
+        # PAS la thermomap à chaque retour en vue d'ensemble (elle ne change pas).
+        _c = getattr(self, "_overview_cache", None)
+        if _c and _c.get("td") is td and _c.get("fragility_sev") is not None:
+            return _c["fragility_sev"]
+
         _nz = float(getattr(self, "_current_nozzle_diameter", 0.4))
         _raw_fc = [len(o.mesh.faces) for o in td.objects]
         _min_fc = min(_raw_fc) if _raw_fc else 0
 
         blocks = []
         max_sev = 0.0
+        obj_severities: dict[str, float] = {}   # {object_id: sévérité} → renforcement auto
         for obj in td.objects:
             orig_fc = len(obj.mesh.faces)
             dev = abs(orig_fc - _min_fc) / max(_min_fc, 1) if _min_fc > 0 else 0
@@ -3547,6 +4126,7 @@ class MainWindow(QMainWindow):
                 sev = float(detect_fragility(m, nozzle_diameter_mm=_nz).severity)
             except Exception:
                 sev = 0.0
+            obj_severities[str(obj.object_id)] = sev
             max_sev = max(max_sev, sev)
             blocks.append(np.full(viewer_fc, sev, dtype=np.float32))
 
@@ -3558,7 +4138,15 @@ class MainWindow(QMainWindow):
             else:
                 sev_arr = np.concatenate(
                     [sev_arr, np.zeros(n - len(sev_arr), dtype=np.float32)])
-        return sev_arr, max_sev
+        result = (sev_arr, max_sev)
+        if td is not None:
+            cc = self._overview_cache if (
+                getattr(self, "_overview_cache", None)
+                and self._overview_cache.get("td") is td) else {"td": td}
+            cc["fragility_sev"] = result
+            cc["obj_severities"] = obj_severities   # pour le renforcement auto
+            self._overview_cache = cc
+        return result
 
     def _build_neogen_fragility_severity(self):
         """Sévérité de fragilité PAR PARTIE d'un objet neoGen (socle, texte,
@@ -3695,6 +4283,10 @@ class MainWindow(QMainWindow):
             # remplissage 100 %, 4 parois, couche fine, parois lentes, brim.
             # Prime sur l'intention : sans lui, le motif de remplissage se
             # voit par transparence et ruine la photo.
+            # Config STANDARD (avant profil litho) — conservée pour les pièces
+            # d'une scène multi-plateaux marquées « standard » (ex. la boîte
+            # lumineuse : le couvercle est en 100 %, la boîte reste standard).
+            self._config_standard_avant_litho = config.model_copy(deep=True)
             if getattr(self, "_est_lithophanie", False):
                 from core.parameters.parameter_engine import (
                     appliquer_profil_lithophanie)
@@ -3705,7 +4297,20 @@ class MainWindow(QMainWindow):
             self._current_config = config
             self._current_selection = result
 
-            self._params_preview.update_from_config(config, analysis)
+            # Explications pédagogiques « ce que neoSlice a amélioré » (volet
+            # dépliable dans la colonne de droite, pour les débutants).
+            explanations = []
+            try:
+                from core.parameters.explain import expliquer_config
+                explanations = expliquer_config(
+                    result.intent_profile, analysis, config,
+                    filament_name=filament, printer_name=printer,
+                    nozzle_mm=self._current_nozzle_mm,
+                    is_litho=getattr(self, "_est_lithophanie", False),
+                )
+            except Exception:
+                logger.exception("Erreur génération explications")
+            self._params_preview.update_from_config(config, analysis, explanations)
             # Config (re)générée → réévalue l'affichage du bouton corrections.
             # Si un diagnostic est en attente, le bouton apparaît maintenant ;
             # la nouvelle config ne contient pas encore les corrections → bouton
@@ -3722,9 +4327,457 @@ class MainWindow(QMainWindow):
             )
             self._statusbar.set_export_enabled(True)
             self._step_intent.set_done()
+
+            # Édition multi-objets : MÉMORISER les réglages de l'objet actif pour
+            # les retrouver en re-cliquant dessus, et les réunir dans l'export
+            # d'ensemble (un 3MF, surcharges par objet).
+            if getattr(self, "_active_object_id", None) is not None:
+                try:
+                    self._per_object_state[self._active_object_id] = {
+                        "config": config,
+                        "selection": result,
+                        "explanations": explanations,
+                        "intent_ids": self._intent_selector.capturer_selection(),
+                    }
+                    logger.info(f"[objet] réglages mémorisés pour "
+                                f"{self._active_object_id}")
+                except Exception:
+                    logger.debug("mémorisation réglages objet échouée", exc_info=True)
+            else:
+                # Génération au niveau SCÈNE (vue d'ensemble) → cette config est la
+                # base commune : renforcer automatiquement les pièces fragiles
+                # par-dessus (si la thermomap est déjà prête ; sinon fait à sa fin).
+                self._auto_renforcer_pieces_fragiles()
         except Exception as e:
             logger.exception("Erreur génération paramètres")
             self._statusbar.set_message(_("status.gen_err", msg=e), ERROR_RED)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # ÉDITION PAR OBJET — export d'ensemble (Phase 3b) + repli batch
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _object_mesh_posed(self, mo):
+        """Mesh d'un MeshObject placé pour un export mono-objet : transform
+        appliquée, base à z=0, centré en XY (même pose que l'objet isolé)."""
+        import numpy as np
+        m = mo.mesh.copy()
+        if not np.allclose(mo.transform, np.eye(4)):
+            m.apply_transform(mo.transform)
+        b = m.bounds
+        m.apply_translation([-(b[0][0] + b[1][0]) / 2,
+                             -(b[0][1] + b[1][1]) / 2, -b[0][2]])
+        return m
+
+    def _build_3mf_from_mesh(self, mesh, config, output_path, nozzle_mm):
+        """Construit un 3MF depuis un mesh (reconstruction native), selon le
+        slicer de sortie choisi. Sert à l'export batch « un objet = un 3MF »
+        (universel, tous slicers). Pas de passthrough : chaque objet est reconstruit."""
+        from core.prefs import PREFS as _P
+        slicer = _P.get("slicer_output", "bambu")
+        printer, filament = self._current_printer, self._current_filament
+        out = Path(output_path)
+        if slicer == "prusa":
+            from core.export.prusa_3mf_builder import PrusaThreeMFBuilder
+            return PrusaThreeMFBuilder().build(
+                mesh=mesh, config=config, output_path=out,
+                printer_ui_name=printer, filament_ui_name=filament,
+                nozzle_diameter_mm=nozzle_mm)
+        if slicer == "cura":
+            from core.export.cura_3mf_builder import CuraThreeMFBuilder
+            return CuraThreeMFBuilder().build(
+                mesh=mesh, config=config, output_path=out,
+                printer_ui_name=printer, filament_ui_name=filament,
+                nozzle_diameter_mm=nozzle_mm)
+        if slicer == "flashprint":
+            from core.export.flashprint_builder import FlashPrintBuilder
+            _fpb = FlashPrintBuilder()
+            p = _fpb.build(mesh=mesh, config=config, output_path=out,
+                           printer_ui_name=printer, filament_ui_name=filament,
+                           nozzle_diameter_mm=nozzle_mm)
+            self._flashprint_export_info = {
+                "name": _fpb.last_profile_name,
+                "installed": _fpb.last_profile_installed}
+            return p
+        _plate = self._filament_selector.current_plate_type()
+        return self._tmf_builder.build(
+            mesh=mesh, config=config, output_path=out,
+            printer_ui_name=printer, filament_ui_name=filament,
+            nozzle_diameter_mm=nozzle_mm, plate_type=_plate)
+
+    def _maybe_export_vue_ensemble(self, base_config, ok, result_msg) -> bool:
+        """Vue d'ensemble d'une scène multi-objets AVEC des réglages par objet :
+        prend en charge l'export (un 3MF per-object si le slicer le permet, sinon
+        repli). Retourne True si l'export a été traité ici (ou annulé), False pour
+        laisser le flux d'export standard continuer."""
+        if getattr(self, "_active_object_id", None) is not None:
+            return False                       # objet isolé → export objet seul (Phase 3a)
+        td = getattr(self, "_threemf_data", None)
+        objs = list(getattr(td, "objects", []) or []) if td is not None else []
+        if len(objs) <= 1:
+            return False
+        edits = {oid: st for oid, st in (getattr(self, "_per_object_state", {}) or {}).items()
+                 if st and st.get("config") is not None}
+        if not edits:
+            return False                       # aucun réglage par objet → export commun standard
+
+        from core.prefs import PREFS as _P
+        from core.export.perobject_capabilities import supports_per_object_one_file
+        from data.printers import is_catalogue_model
+        slicer = _P.get("slicer_output", "bambu")
+
+        _ms = (getattr(td, "model_settings_xml", "") or "").strip()
+        _src = getattr(self, "_stl_path", None)
+        src_is_bambu3mf = bool(_src and str(_src).lower().endswith(".3mf") and _ms)
+        printer_is_bambu = not is_catalogue_model(self._current_printer)
+        one_file_ok = (supports_per_object_one_file(slicer)
+                       and src_is_bambu3mf and printer_is_bambu)
+
+        if one_file_ok:
+            return self._export_ensemble_un_fichier(base_config, edits, ok, result_msg)
+        return self._export_ensemble_repli(base_config, edits, objs, ok, result_msg)
+
+    def _export_ensemble_un_fichier(self, base_config, edits, ok, result_msg) -> bool:
+        """UN seul 3MF regroupant tous les objets, chacun ses surcharges
+        (Bambu/Orca) : injection de metadata <object> dans le 3MF source."""
+        from PySide6.QtWidgets import QFileDialog
+        from core.export.tmf_builder import bambu_per_object_overrides
+        _src = Path(self._stl_path)
+        downloads = self._dossier_export_defaut()
+        default_name = str(downloads / f"{_src.stem}_ensemble.3mf")
+        output_path, _f = QFileDialog.getSaveFileName(
+            self, _("export.save_ensemble"),
+            default_name, _("export.dialog_filter"))
+        if not output_path:
+            return True                        # annulé
+        try:
+            nozzle_mm = self._filament_selector.current_nozzle_diameter_mm()
+            _plate = self._filament_selector.current_plate_type()
+            per_object = {}
+            for oid, st in edits.items():
+                ov = bambu_per_object_overrides(base_config, st["config"])
+                if ov:
+                    per_object[str(oid)] = ov
+            logger.info(f"[EXPORT ensemble] {len(per_object)} objet(s) surchargé(s) "
+                        f"sur {len(self._threemf_data.objects)} → {output_path}")
+            path = self._tmf_builder.inject_settings_into_3mf(
+                source_path=_src, config=base_config, output_path=Path(output_path),
+                printer_ui_name=self._current_printer,
+                filament_ui_name=self._current_filament,
+                nozzle_diameter_mm=nozzle_mm, plate_type=_plate,
+                per_object_overrides=per_object)
+            logger.info(f"3MF d'ensemble exporté : {path}")
+            selection = getattr(self, "_current_selection", None)
+            self._show_success_dialog(base_config, selection, path)
+            self._statusbar.set_message(
+                _("status.export_ok") if ok
+                else _("status.export_ok_warn", msg=result_msg),
+                TELE_GREEN if ok else AMBER)
+        except Exception as e:
+            logger.exception("Erreur export d'ensemble per-object")
+            self._statusbar.set_message(_("status.export_err", msg=e), ERROR_RED)
+        return True
+
+    def _export_ensemble_repli(self, base_config, edits, objs, ok, result_msg) -> bool:
+        """Slicer sans réglages-par-objet-en-un-fichier : demander à Emmanuel
+        soit UN fichier par objet (chacun ses réglages), soit un seul 3MF à
+        réglages communs (→ flux standard)."""
+        from PySide6.QtWidgets import QMessageBox
+        box = QMessageBox(self)
+        box.setWindowTitle(_("export.perobj_title"))
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(_("export.perobj_incompat", slicer=_slicer_name()))
+        box.setInformativeText(_("export.perobj_how"))
+        b_batch = box.addButton(_("export.btn_one_per_object"),
+                                QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(_("export.btn_single_common"),
+                      QMessageBox.ButtonRole.ActionRole)
+        b_cancel = box.addButton(_("export.btn_cancel"), QMessageBox.ButtonRole.RejectRole)
+        try:
+            box.setStyleSheet(self.styleSheet())
+        except Exception:
+            pass
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is b_cancel or clicked is None:
+            return True                        # abandon
+        if clicked is not b_batch:
+            return False                       # « réglages communs » → flux standard
+        return self._export_objets_batch(base_config, edits, objs)
+
+    def _export_objets_batch(self, base_config, edits, objs) -> bool:
+        """Exporte chaque objet dans son PROPRE 3MF (universel, tous slicers),
+        avec les réglages mémorisés de l'objet (ou communs à défaut)."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        folder = QFileDialog.getExistingDirectory(
+            self, _("export.batch_folder"),
+            str(self._dossier_export_defaut()))
+        if not folder:
+            return True                        # annulé
+        folder = Path(folder)
+        nozzle_mm = self._filament_selector.current_nozzle_diameter_mm()
+        faits, erreurs, used = [], [], set()
+        for i, mo in enumerate(objs):
+            try:
+                oid = str(mo.object_id)
+                st = edits.get(oid)
+                cfg = st["config"] if st else base_config
+                nom = _sanitize_filename(getattr(mo, "name", None)) or f"objet_{i+1}"
+                base = nom
+                k = 2
+                while nom.lower() in used:      # éviter les collisions de noms
+                    nom = f"{base}_{k}"; k += 1
+                used.add(nom.lower())
+                out = folder / f"{nom}.3mf"
+                mesh = self._object_mesh_posed(mo)
+                self._build_3mf_from_mesh(mesh, cfg, out, nozzle_mm)
+                faits.append(out.name)
+            except Exception:
+                logger.exception(f"Export objet #{i} échoué")
+                erreurs.append(str(getattr(mo, "name", i)))
+        logger.info(f"[EXPORT batch] {len(faits)} fichier(s) écrit(s) dans {folder}")
+        msg = QMessageBox(self)
+        msg.setWindowTitle(_("export.batch_done_title"))
+        msg.setIcon(QMessageBox.Icon.Information if not erreurs
+                    else QMessageBox.Icon.Warning)
+        _txt = _("export.batch_done_text", n=len(faits), folder=folder)
+        if erreurs:
+            _txt += "\n\n" + _("export.batch_failures",
+                               n=len(erreurs), names=", ".join(erreurs))
+        msg.setText(_txt)
+        try:
+            msg.setStyleSheet(self.styleSheet())
+        except Exception:
+            pass
+        msg.exec()
+        self._statusbar.set_message(
+            _("export.batch_status", n=len(faits)), TELE_GREEN)
+        return True
+
+    def _scene_plateaux(self, scene) -> dict:
+        """Regroupe les corps d'une scène neoGen par plateau (tag DSL neoslice_plate,
+        0 par défaut). Retourne {plate_index: [(mesh, profil|None, nom), ...]}."""
+        import trimesh as _tm
+        groups: dict[int, list] = {}
+        try:
+            items = scene.geometry.items()
+        except Exception:
+            return groups
+        for name, g in items:
+            if not isinstance(g, _tm.Trimesh):
+                continue
+            md = getattr(g, "metadata", {}) or {}
+            plate = int(md.get("neoslice_plate", 0) or 0)
+            profil = md.get("neoslice_profil")
+            groups.setdefault(plate, []).append((g, profil, name))
+        return groups
+
+    def _exporter_scene_multiplateaux(self, ng_scene, active_config, output_path,
+                                      nozzle_mm, ok, result_msg) -> bool:
+        """Scène neoGen répartie sur PLUSIEURS plateaux (tags plateau()/profil()) :
+        Bambu/Orca → UN 3MF multi-plateaux avec réglages par objet ; autres slicers
+        → repli 1 fichier par plateau. Retourne True si pris en charge (ou annulé),
+        False si mono-plateau (→ export standard)."""
+        scene, _couleurs, _nom = ng_scene
+        groups = self._scene_plateaux(scene)
+        if len(groups) <= 1:
+            return False                              # mono-plateau → export normal
+
+        from core.prefs import PREFS as _P
+        from core.export.perobject_capabilities import supports_per_object_one_file
+        from data.printers import is_catalogue_model
+        import trimesh as _tm
+
+        slicer = _P.get("slicer_output", "bambu")
+        std_config = getattr(self, "_config_standard_avant_litho", None) or active_config
+
+        def _cfg_for(profil, plate):
+            if profil == "standard":
+                return std_config
+            if profil == "lithophanie":
+                return active_config
+            # untagged : plateau 0 = config active (litho le cas échéant) ;
+            # plateaux secondaires = standard (la boîte, même sans tag profil).
+            return active_config if plate == 0 else std_config
+
+        one_file = (supports_per_object_one_file(slicer)
+                    and not is_catalogue_model(self._current_printer))
+        try:
+            if one_file:
+                from core.export.multiplate_3mf import build_multiplate_bambu
+                objects = []
+                for plate in sorted(groups):
+                    for i, (mesh, profil, bname) in enumerate(groups[plate]):
+                        m = mesh.copy()
+                        m.apply_translation([0.0, 0.0, -float(m.bounds[0][2])])
+                        objects.append({"mesh": m, "config": _cfg_for(profil, plate),
+                                        "plate": plate,
+                                        "name": _sanitize_filename(bname)
+                                                or f"piece_{plate + 1}_{i + 1}"})
+                path = build_multiplate_bambu(
+                    objects, std_config, Path(output_path),
+                    self._current_printer, self._current_filament, nozzle_mm,
+                    plate_type=self._filament_selector.current_plate_type())
+                logger.info(f"3MF multi-plateaux exporté ({len(groups)} plateaux) : {path}")
+                selection = getattr(self, "_current_selection", None)
+                self._show_success_dialog(active_config, selection, path)
+                self._statusbar.set_message(
+                    _("status.export_ok") if ok
+                    else _("status.export_ok_warn", msg=result_msg),
+                    TELE_GREEN if ok else AMBER)
+            else:
+                # Repli universel : un fichier 3MF par plateau.
+                base = Path(output_path)
+                faits = []
+                for plate in sorted(groups):
+                    bodies = [g for g, _p, _n in groups[plate]]
+                    profil = next((p for _g, p, _n in groups[plate] if p), None)
+                    cfg = _cfg_for(profil, plate)
+                    mesh = _tm.util.concatenate([b.copy() for b in bodies])
+                    mesh.apply_translation([0.0, 0.0, -float(mesh.bounds[0][2])])
+                    if plate == 0 and getattr(self, "_est_lithophanie", False):
+                        suffix = "couvercle"
+                    elif cfg is std_config and plate > 0:
+                        suffix = "boite"
+                    else:
+                        suffix = f"plateau{plate + 1}"
+                    out = base.with_name(f"{base.stem}_{suffix}{base.suffix}")
+                    self._build_3mf_from_mesh(mesh, cfg, out, nozzle_mm)
+                    faits.append(out.name)
+                logger.info(f"[EXPORT multi-plateaux] {len(faits)} fichier(s) → {base.parent}")
+                from PySide6.QtWidgets import QMessageBox
+                m = QMessageBox(self)
+                m.setWindowTitle(_("export.multiplate_sep_title"))
+                m.setIcon(QMessageBox.Icon.Information)
+                m.setText(_("export.multiplate_sep_text", n=len(faits),
+                            files="\n".join(faits), folder=base.parent))
+                try:
+                    m.setStyleSheet(self.styleSheet())
+                except Exception:
+                    pass
+                m.exec()
+                self._statusbar.set_message(
+                    _("export.multiplate_status", n=len(faits)), TELE_GREEN)
+        except Exception as e:
+            logger.exception("Erreur export scène multi-plateaux")
+            self._statusbar.set_message(_("status.export_err", msg=e), ERROR_RED)
+        return True
+
+    def _exporter_neogen_multiplateaux(self, base_config, ok, result_msg) -> bool:
+        """Export d'une scène neoGen multi-plateaux (boîte lumineuse) en vue
+        d'ensemble : UN 3MF 2 plateaux (Bambu/Orca) ou 2 fichiers séparés (autres
+        slicers), chaque pièce avec sa config — couvercle litho (+ réglages édités),
+        boîte standard (+ réglages édités). Retourne True si pris en charge."""
+        from core.prefs import PREFS as _P
+        from core.export.perobject_capabilities import supports_per_object_one_file
+        from core.parameters.parameter_engine import appliquer_profil_lithophanie
+        from data.printers import is_catalogue_model
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        import trimesh as _tm
+
+        td = getattr(self, "_threemf_data", None)
+        objs = list(getattr(td, "objects", []) or []) if td is not None else []
+        if not objs:
+            return False
+        profils = getattr(self, "_neogen_multiplate_profils", {}) or {}
+        # Base STANDARD = copie PRÉ-litho de la dernière génération (égale à la
+        # config générée hors litho). Sans ça, si la dernière génération a eu
+        # lieu sur le COUVERCLE isolé, _current_config est la config litho
+        # (100 %) et la boîte en aurait hérité (audit export).
+        std_base = getattr(self, "_config_standard_avant_litho", None) or base_config
+
+        def _cfg_for(oid, profil):
+            st = self._per_object_state.get(oid)
+            if st and st.get("config") is not None:
+                return st["config"]                    # réglages édités par l'utilisateur
+            if profil == "lithophanie":
+                try:
+                    return appliquer_profil_lithophanie(std_base.model_copy(deep=True))
+                except Exception:
+                    return std_base
+            return std_base                            # boîte : standard commun
+
+        items = []
+        for mo in objs:
+            oid = str(mo.object_id)
+            profil = profils.get(oid)
+            items.append({"mesh": self._object_mesh_posed(mo),
+                          "config": _cfg_for(oid, profil),
+                          "plate": int(getattr(mo, "plate_index", 0) or 0),
+                          "profil": profil,
+                          "name": _sanitize_filename(mo.name) or oid})
+
+        slicer = _P.get("slicer_output", "bambu")
+        one_file = (supports_per_object_one_file(slicer)
+                    and not is_catalogue_model(self._current_printer))
+        nozzle = self._filament_selector.current_nozzle_diameter_mm()
+        downloads = self._dossier_export_defaut()
+        try:
+            if one_file:
+                from core.export.multiplate_3mf import build_multiplate_bambu
+                out, _f = QFileDialog.getSaveFileName(
+                    self, _("export.save_two_plates"),
+                    str(downloads / "boite_lumineuse.3mf"), _("export.dialog_filter"))
+                if not out:
+                    return True
+                path = build_multiplate_bambu(
+                    items, std_base, Path(out), self._current_printer,
+                    self._current_filament, nozzle,
+                    plate_type=self._filament_selector.current_plate_type())
+                logger.info(f"3MF boîte lumineuse multi-plateaux exporté : {path}")
+                self._show_success_dialog(
+                    base_config, getattr(self, "_current_selection", None), path)
+                self._statusbar.set_message(
+                    _("status.export_ok") if ok
+                    else _("status.export_ok_warn", msg=result_msg),
+                    TELE_GREEN if ok else AMBER)
+            else:
+                folder = QFileDialog.getExistingDirectory(
+                    self, _("export.folder_per_plate"), str(downloads))
+                if not folder:
+                    return True
+                folder = Path(folder)
+                by_plate: dict[int, list] = {}
+                for it in items:
+                    by_plate.setdefault(it["plate"], []).append(it)
+                faits = []
+                for plate in sorted(by_plate):
+                    grp = by_plate[plate]
+                    mesh = _tm.util.concatenate([g["mesh"] for g in grp])
+                    cfg = grp[0]["config"]
+                    prof = next((g["profil"] for g in grp if g["profil"]), None)
+                    suffix = ("couvercle" if prof == "lithophanie"
+                              else "boite" if prof == "standard"
+                              else f"plateau{plate + 1}")
+                    out = folder / f"boite_lumineuse_{suffix}.3mf"
+                    self._build_3mf_from_mesh(mesh, cfg, out, nozzle)
+                    faits.append(out.name)
+                logger.info(f"[EXPORT boîte lumineuse] {len(faits)} fichier(s) → {folder}")
+                m = QMessageBox(self)
+                m.setWindowTitle(_("export.multiplate_sep_title"))
+                m.setIcon(QMessageBox.Icon.Information)
+                m.setText(_("export.multiplate_sep_text", n=len(faits),
+                            files="\n".join(faits), folder=folder))
+                try:
+                    m.setStyleSheet(self.styleSheet())
+                except Exception:
+                    pass
+                m.exec()
+                self._statusbar.set_message(
+                    _("export.multiplate_status", n=len(faits)), TELE_GREEN)
+        except Exception as e:
+            logger.exception("Erreur export boîte lumineuse multi-plateaux")
+            self._statusbar.set_message(_("status.export_err", msg=e), ERROR_RED)
+        return True
+
+    def _dossier_export_defaut(self) -> Path:
+        """Dossier d'export par défaut (préférence utilisateur sinon Téléchargements)."""
+        from PySide6.QtCore import QStandardPaths
+        _exp = PREFS.get("export_folder", "")
+        if _exp and Path(_exp).is_dir():
+            return Path(_exp)
+        _dl = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.DownloadLocation)
+        return Path(_dl) if _dl else Path.home()
 
     def _on_export_requested(self):
         if not hasattr(self, "_current_config") or self._mesh is None:
@@ -3752,10 +4805,33 @@ class MainWindow(QMainWindow):
             config, profile_label=profile_name, printer_ui_name=self._current_printer
         )
 
+        # ── Boîte lumineuse (scène neoGen multi-plateaux) en VUE D'ENSEMBLE ───
+        # 3MF 2 plateaux dédié (couvercle litho + boîte standard, + éventuels
+        # réglages par pièce édités). Prioritaire sur l'export d'ensemble générique.
+        if (getattr(self, "_neogen_multiplate", False)
+                and getattr(self, "_active_object_id", None) is None):
+            if self._exporter_neogen_multiplateaux(config, ok, result_msg):
+                return
+
+        # ── ÉDITION PAR OBJET — export d'ensemble (Phase 3b) ──────────────────
+        # En vue d'ensemble (aucun objet isolé) AVEC des réglages mémorisés par
+        # objet : proposer UN seul 3MF regroupant tous les objets, chacun ses
+        # surcharges (Bambu/Orca) ; sinon repli (un fichier par objet / réglages
+        # communs). Prend la main sur le flux d'export standard si applicable.
+        if self._maybe_export_vue_ensemble(config, ok, result_msg):
+            return
+
         from PySide6.QtWidgets import QFileDialog
         from PySide6.QtCore import QStandardPaths
         stl_stem = getattr(self, "_stl_path", None)
         stl_stem = stl_stem.stem if stl_stem else "model"
+        # Objet isolé (édition par objet) → nom de fichier = nom de l'objet, pour
+        # qu'un export « objet seul » soit clairement identifiable (Phase 3a).
+        if getattr(self, "_active_object_id", None) is not None:
+            _obj_nm = _sanitize_filename(getattr(self, "_active_object_name", None)
+                                         or "objet")
+            if _obj_nm:
+                stl_stem = _obj_nm
         _exp_folder = PREFS.get("export_folder", "")
         if _exp_folder and Path(_exp_folder).is_dir():
             downloads = Path(_exp_folder)
@@ -3806,6 +4882,13 @@ class MainWindow(QMainWindow):
             # (un corps par couleur), au format du slicer de sortie choisi.
             _ng_scene = getattr(self, "_neogen_scene", None)
             if _ng_scene is not None:
+                # Scène neoGen MULTI-PLATEAUX (corps taggés plateau()) : ex. boîte
+                # lumineuse — couvercle litho (100 %) sur le plateau 1, boîte
+                # standard sur le plateau 2. Prend la main si applicable.
+                if self._exporter_scene_multiplateaux(
+                        _ng_scene, config, Path(output_path), nozzle_mm,
+                        ok, result_msg):
+                    return
                 from core.export.carte_multicouleur import build_multicouleur
                 _scene, _couleurs, _nom = _ng_scene
                 path = build_multicouleur(
@@ -3943,7 +5026,7 @@ class MainWindow(QMainWindow):
         _dp = _THEME.palette()
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Fichier .3MF généré")
+        dlg.setWindowTitle(_("export.dlg_title"))
         dlg.setMinimumWidth(480)
         dlg.setStyleSheet(f"QDialog {{ background: {_dp['BG_PANEL']}; }}")
 
@@ -3964,7 +5047,7 @@ class MainWindow(QMainWindow):
             return l
 
         # ── Titre succès ──
-        title = QLabel("✓   Fichier 3MF généré avec succès")
+        title = QLabel(_("export.success_title"))
         title.setFont(QFont(FONT_MAIN, 12, QFont.Bold))
         title.setStyleSheet(f"color: {_dp['TELE_GREEN']};")
         layout.addWidget(title)
@@ -4145,7 +5228,7 @@ class MainWindow(QMainWindow):
                     )
             except Exception as _pdf_err:
                 logger.exception("Erreur génération PDF")
-                QMessageBox.critical(dlg, "Erreur PDF", str(_pdf_err))
+                QMessageBox.critical(dlg, _("export.pdf_error_title"), str(_pdf_err))
                 return
             if ok:
                 import sys as _sys
@@ -4160,7 +5243,7 @@ class MainWindow(QMainWindow):
                     pass
                 self._statusbar.set_message(f"PDF → {save_path}", TELE_GREEN)
             else:
-                QMessageBox.critical(dlg, "Erreur PDF", "Génération échouée — reportlab installé ?")
+                QMessageBox.critical(dlg, _("export.pdf_error_title"), _("export.pdf_error_failed"))
 
 
         from core.prefs import PREFS as _PREFS_btn

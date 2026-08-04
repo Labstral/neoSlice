@@ -142,9 +142,11 @@ def vase(hauteur: float = 100, diametre: float = 60, paroi: float = 2.4,
     (< 45°) pour imprimer SANS support ; amplitude réduite si nécessaire."""
     r0 = diametre / 2.0
     # pente max = amplitude * (2*pi*ondulations / hauteur) ; on borne a tan(40°)
-    k = 2 * np.pi * ondulations / hauteur
-    amp_max = np.tan(np.radians(40)) / k
-    amp = min(amplitude, amp_max)
+    k = 2 * np.pi * max(0, int(ondulations)) / hauteur
+    if k <= 0 or amplitude <= 0:            # 0 ondulation → vase lisse (pas de /0)
+        k, amp = 1.0, 0.0
+    else:
+        amp = min(amplitude, np.tan(np.radians(40)) / k)
 
     def r_ext(z):
         return r0 + amp * np.sin(k * z)

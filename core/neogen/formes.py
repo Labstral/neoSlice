@@ -824,6 +824,11 @@ def equerre(taille: float = 80, ep: float = 4, vis: bool = True) -> trimesh.Trim
 
 
 def rondelle(d_ext: float = 24, d_int: float = 8, ep: float = 3) -> trimesh.Trimesh:
+    # Garde-fou bornes UI : d_int ≥ d_ext (curseurs aux extrêmes) donnait un
+    # anneau vide → « Aucun solide à fusionner ». On garantit ≥ 0,75 mm de paroi
+    # de chaque côté (même règle que l'entretoise hexagonale).
+    d_ext = max(float(d_ext), float(d_int) + 1.5)
+    d_int = min(float(d_int), d_ext - 1.5)
     ext = Point(0, 0).buffer(d_ext / 2, resolution=64)
     piece = union_solides(_extruder(ext.difference(
         Point(0, 0).buffer(d_int / 2, resolution=64)), ep))

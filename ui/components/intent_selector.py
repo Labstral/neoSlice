@@ -1198,3 +1198,22 @@ class IntentSelector(QWidget):
         if hasattr(self, "_auto_banner"):
             self._auto_banner.hide()
         self._on_selection_changed()
+
+    def capturer_selection(self) -> list:
+        """État des choix (un id par groupe, None si aucun) — pour mémoriser et
+        restaurer les réglages PAR OBJET (édition multi-objets)."""
+        return [g.get_selected_id() for g in self._groups]
+
+    def restaurer_selection(self, ids) -> None:
+        """Réapplique un état capturé par capturer_selection (réglages d'un objet)."""
+        if not ids or len(ids) != len(self._groups):
+            return
+        for g, cible in zip(self._groups, ids):
+            actuel = g.get_selected_id()
+            if actuel == cible:
+                continue
+            if cible is not None:
+                g.select_preset(cible)      # sélectionne (désélectionne l'ancien du groupe)
+            elif actuel is not None:
+                g._on_choice(actuel)        # désélectionne
+        self._on_selection_changed()

@@ -455,6 +455,9 @@ class CostCalculatorDialog(QDialog):
             flay.addLayout(self._row("spool.use_for_quote", self._spool_combo))
         flay.addLayout(self._money_row("cost.filament_price", self._num_edit("filament")))
         flay.addLayout(self._money_row("cost.machine_price", self._num_edit("machine")))
+        # Prix d'ACHAT (amorti), pas un tarif horaire — un utilisateur a saisi
+        # « 0,55 » en croyant régler des €/h → usure affichée 0,00 (retour Xavier).
+        self._rate_edits["machine"].setToolTip(_("cost.machine_price_tip"))
         flay.addLayout(self._row("cost.machine_life", self._num_edit("life")))
         flay.addLayout(self._money_row("cost.labor_rate", self._num_edit("labor")))
         flay.addLayout(self._money_row("cost.packaging", self._num_edit("packaging")))
@@ -638,7 +641,8 @@ class CostCalculatorDialog(QDialog):
         )
 
     def _recompute(self):
-        b = costing.compute_cost(self._current_inputs())
+        inp = self._current_inputs()
+        b = costing.compute_cost(inp)
         cur = b.currency
 
         def fmt(v):
@@ -647,6 +651,19 @@ class CostCalculatorDialog(QDialog):
         self._break_rows["material"][1].setText(fmt(b.material))
         self._break_rows["electricity"][1].setText(fmt(b.electricity))
         self._break_rows["wear"][1].setText(fmt(b.wear))
+        # Pédagogie usure : afficher le TAUX HORAIRE dérivé du prix d'achat
+        # (« Usure machine (0,24 EUR/h) ») — l'utilisateur voit immédiatement
+        # l'effet de sa saisie (0,55 saisi comme prix d'achat → 0,00/h, il
+        # comprend l'erreur au lieu de croire le devis cassé — retour Xavier).
+        try:
+            if inp.machine_price > 0 and inp.machine_lifespan_h > 0:
+                _taux = inp.machine_price / inp.machine_lifespan_h
+                self._break_rows["wear"][0].setText(
+                    _("cost.row_wear_rate", rate=f"{_taux:.2f}", cur=cur))
+            else:
+                self._break_rows["wear"][0].setText(_("cost.row_wear"))
+        except Exception:
+            pass
         self._break_rows["labor"][1].setText(fmt(b.labor))
         self._break_rows["packaging"][1].setText(fmt(b.packaging))
         self._break_rows["failure"][1].setText(fmt(b.failure_buffer))

@@ -21,7 +21,13 @@ from __future__ import annotations
 
 import io
 import sys as _sys
-if hasattr(_sys.stdout, "buffer"):  # console Windows cp1252 -> UTF-8
+# Ré-encodage UTF-8 de la console : UNIQUEMENT en usage SCRIPT (reste du
+# prototype CLI). À l'IMPORT (librairie), envelopper sys.stdout prenait
+# possession du flux du processus hôte : le wrapper FERMAIT le buffer sous-
+# jacent à son remplacement — sous pytest, cela fermait le fichier de capture
+# et cassait TOUTE la suite en cascade (« I/O operation on closed file »,
+# c'était la vraie cause historique de l'interdiction d'importer ui.* en test).
+if __name__ == "__main__" and hasattr(_sys.stdout, "buffer"):
     _sys.stdout = io.TextIOWrapper(_sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 import argparse

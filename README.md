@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v0.1.8.5** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v0.1.9** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -10,11 +10,12 @@
 
 - **9 slicers, 80+ marques, 600+ imprimantes** — le catalogue et les plateaux s'adaptent au slicer et à la machine choisis
 - **Import STL, OBJ & 3MF** — chargez vos fichiers directement, y compris les 3MF multi-plateau et les assemblages complexes
-- **Analyse géométrique** — détection des surplombs, stabilité, fragilité — avec **carte de fragilité par pièce** (chaque pièce colorée selon sa solidité)
+- **Analyse géométrique** — détection des surplombs, stabilité, fragilité — avec **carte de fragilité par pièce** (chaque pièce colorée selon sa solidité) et **mode daltonien**
+- **Édition par pièce** — isolez une pièce d'un plateau multi-pièces d'un clic et donnez-lui ses propres réglages ; les pièces fragiles sont **renforcées automatiquement** ; export en un seul 3MF (réglages par pièce) ou en fichiers séparés selon le slicer
 - **Instruction Mission** — choisissez qualité, résistance, vitesse, supports et usage par simples menus : neoSlice traduit vos choix en paramètres optimisés
 - **Mode performance automatique** — le niveau d'analyse s'adapte seul à votre machine et à la complexité de chaque pièce
 - **Génération 3MF** — export prêt à ouvrir dans votre slicer avec tous les paramètres optimisés
-- **neoGen — générateur d'objets 3D** *(Pro)* — bibliothèque d'objets personnalisables au millimètre (porte-clés, cadres photo, QR codes 3D bicolores, cartes de visite, clips de câble, joints, vis et écrous, objets resto/mariage/boutique…), texte en relief ou gravé, générés étanches et sans support
+- **neoGen — générateur d'objets 3D** *(Pro)* — bibliothèque d'objets personnalisables au millimètre (porte-clés, cadres photo, QR codes 3D bicolores, cartes de visite, clips de câble, joints, vis et écrous, objets resto/mariage/boutique…), texte en relief ou gravé, générés étanches et sans support ; **photo HueForge multi-filament** et **lithophanie avec boîte lumineuse sur deux plateaux**
 - **Oen — assistant IA local** *(Pro)* — un modèle Qwen3 tourne sur votre machine (hors ligne, privé), nourri d'une base de connaissances imprimantes ; **mode Réflexion** activable pour des réponses raisonnées
 - **Export multicouleur** *(Pro)* — coloriez vos pièces après export 3MF, appliquez les filaments par slot, et le **stock est déduit automatiquement** après impression
 - **Espace Pro — gestion d'atelier** *(Pro)* — bobines, devis, factures internationales, clients, commandes et catalogue d'articles, tous connectés
@@ -45,6 +46,18 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v0.1.9
+- **Edition par pièce** : sur un plateau multi-pièces, cliquez une pièce dans la vue 3D pour l'isoler, réglez ses propres paramètres (qualité, résistance, supports…), puis revenez à la vue d'ensemble. L'export produit un seul 3MF avec les réglages de chaque pièce (Bambu Studio / OrcaSlicer) ou un fichier par pièce sur les autres slicers.
+- **Affichage multi-plateaux** : les projets 3MF multi-plateaux s'affichent désormais sur leurs plateaux séparés, comme dans votre slicer.
+- **Renforcement automatique des pièces fragiles** : les pièces jugées fragiles (orange/rouge sur la carte de fragilité) reçoivent d'office plus de parois et un remplissage plus dense — désactivable dans les Réglages.
+- **Mode daltonien** (Réglages → Apparence) : palette adaptée pour les surplombs et la carte de fragilité, lisible quelle que soit votre vision des couleurs.
+- **HueForge — photo en couleurs** *(Pro)* : transformez une photo en impression multi-filament par couches de couleur, avec aperçu fidèle dans la vue 3D.
+- **Lithophanie avec boîte lumineuse** *(Pro)* : le couvercle lithophane et sa boîte LED sont générés sur deux plateaux distincts — couvercle en qualité lithophanie (remplissage 100 %), boîte en réglages standard — et chaque pièce reste réglable individuellement.
+- **neoGen vérifie le plateau** : impossible de générer une pièce plus grande que le plateau de votre imprimante — un message clair vous invite à réduire les dimensions.
+- **Calculette de coûts clarifiée** : le champ « Prix d'achat machine » porte mieux son nom et le détail affiche le taux d'usure horaire calculé (ex. « Usure machine (0,24 EUR/h) »).
+- **Confort** : retour instantané à la vue d'ensemble, transitions de la vue 3D sans clignotement (isolation, thème, aperçus neoGen), rotation automatique désactivée par défaut (votre choix est mémorisé), messages d'export disponibles en anglais.
+- **Fiabilité** : nombreuses corrections issues d'un audit complet — valeurs extrêmes des objets neoGen (rondelle, entretoise, magnet…), enchaînements d'actions inhabituels, thème clair/sombre.
 
 ### v0.1.8.5
 - **Export neoGen → Bambu Studio corrigé** : les objets créés dans neoGen s'exportent désormais comme un vrai projet Bambu. Avant, Bambu Studio n'en gardait que la géométrie et perdait les réglages **et** l'imprimante sélectionnée ; réglages, imprimante et brim sont maintenant conservés.

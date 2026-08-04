@@ -234,6 +234,79 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
     return overrides
 
 
+def bambu_per_object_overrides(base_config: PrintConfig,
+                               object_config: PrintConfig) -> dict:
+    """Réglages à écrire AU NIVEAU OBJET (Bambu/Orca) pour `object_config`,
+    exprimés comme la DIFFÉRENCE avec la config commune `base_config`.
+
+    Retourne `{clé_bambu: valeur_chaîne}` restreint aux clés réellement
+    surchargeables par objet (voir perobject_capabilities). Valeurs en chaînes
+    simples (les tableaux de vitesses sont aplatis), conforme aux 3MF Bambu réels.
+    """
+    from core.export.perobject_capabilities import diff_per_object_overrides
+    base = _config_to_bambu_overrides(base_config)
+    obj = _config_to_bambu_overrides(object_config)
+    return diff_per_object_overrides(base, obj)
+
+
+def _patch_model_settings_per_object(xml_text: str,
+                                     per_object_overrides: dict) -> tuple[str, int]:
+    """Injecte des `<metadata key value>` par objet dans model_settings.config.
+
+    `per_object_overrides` : `{object_id(str): {clé: valeur_chaîne}}`. Pour chaque
+    `<object id="N">` dont l'id figure dans le dict, retire les metadata de même
+    clé déjà présentes puis insère les surcharges (avant le premier `<part>`).
+    Géométrie et reste de la structure inchangés. Retourne (xml_patché, n_objets).
+    """
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        logger.warning("[EXPORT] model_settings.config illisible — per-object ignoré")
+        return xml_text, 0
+
+    # index par id ET par nom (certaines sources n'ont pas d'id numérique aligné)
+    wanted = {str(k): v for k, v in per_object_overrides.items() if v}
+    # FALLBACK id racine : le loader neoSlice nomme les objets d'ASSEMBLAGES
+    # « {parent}_{sub} » (composants partagés) alors que model_settings.config ne
+    # connaît que l'id parent → sans repli, la surcharge était IGNORÉE en
+    # silence (patched=0, export « réussi » sans les réglages — audit export).
+    for k, v in list(wanted.items()):
+        racine = k.split("_")[0]
+        if racine != k and racine not in wanted:
+            wanted[racine] = v
+    patched = 0
+    for obj in root.findall("object"):
+        oid = str(obj.get("id"))
+        ov = wanted.get(oid)
+        if not ov:
+            continue
+        keys = set(ov.keys())
+        # retirer les metadata de même clé déjà présentes au niveau objet
+        for m in [m for m in obj.findall("metadata") if m.get("key") in keys]:
+            obj.remove(m)
+        # position d'insertion : juste avant le premier <part> (sinon en fin)
+        children = list(obj)
+        insert_at = len(children)
+        for i, ch in enumerate(children):
+            if ch.tag == "part":
+                insert_at = i
+                break
+        for j, (k, val) in enumerate(ov.items()):
+            el = ET.Element("metadata", {"key": k, "value": str(val)})
+            obj.insert(insert_at + j, el)
+        patched += 1
+
+    _demandes = len({k.split("_")[0] for k in per_object_overrides if per_object_overrides[k]})
+    if patched < _demandes:
+        logger.warning(f"[EXPORT] surcharges par objet : {patched}/{_demandes} "
+                       f"appliquées — ids sans correspondance dans "
+                       f"model_settings.config : "
+                       f"{sorted(set(wanted) - {o.get('id') for o in root.findall('object')})}")
+    body = ET.tostring(root, encoding="unicode")
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + body, patched
+
+
 import re as _re
 _BBL_REF_RE = _re.compile(r"@BBL\s+[A-Za-z0-9]+")
 
@@ -789,12 +862,18 @@ class ThreeMFBuilder:
         filament_ui_name: str = "PLA",
         nozzle_diameter_mm: float = 0.4,
         plate_type: str = "",
+        per_object_overrides: dict | None = None,
     ) -> Path:
         """Injecte les paramètres neoSlice dans un 3MF existant sans toucher à la géométrie.
 
         Copie le 3MF source tel quel (préserve modifier_part, components, toute la structure
         originale) et remplace uniquement project_settings.config avec les paramètres générés.
         Évite la reconstruction depuis zéro qui perd les modifier_part → Generic-Cubes solides.
+
+        `per_object_overrides` (édition par objet) : `{object_id: {clé_bambu: valeur}}`.
+        Quand fourni, écrit AUSSI des `<metadata key value>` par objet dans
+        model_settings.config (format Bambu/Orca natif) → un seul 3MF avec des
+        réglages différents par objet. `config` reste la base commune (globale).
         """
         import shutil, json
         self._template = _find_bambu_template()
@@ -907,6 +986,7 @@ class ThreeMFBuilder:
         # l'AJOUTANT s'il n'existe pas (source nue type neoGen : la boucle de
         # remplacement seule ne l'écrivait jamais → 3MF final SANS réglages,
         # BS retombait sur sa dernière imprimante).
+        _po = per_object_overrides or None
         tmp = output_path.with_suffix(".tmp")
         try:
             with zipfile.ZipFile(output_path, "r") as zin, \
@@ -917,6 +997,15 @@ class ThreeMFBuilder:
                         zout.writestr(item, json.dumps(project_settings,
                                                        indent=4, ensure_ascii=False))
                         settings_ecrits = True
+                    elif (_po and item.filename == "Metadata/model_settings.config"):
+                        # Édition par objet : injecter les réglages par objet en
+                        # metadata <object> (format Bambu/Orca natif). Géométrie
+                        # et structure inchangées.
+                        _ms = zin.read(item.filename).decode("utf-8", "ignore")
+                        _patched, _n = _patch_model_settings_per_object(_ms, _po)
+                        zout.writestr(item, _patched)
+                        logger.info(f"[EXPORT] réglages par objet injectés dans "
+                                    f"model_settings.config ({_n} objet(s))")
                     else:
                         zout.writestr(item, zin.read(item.filename))
                 if not settings_ecrits:

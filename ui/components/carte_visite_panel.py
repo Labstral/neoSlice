@@ -106,20 +106,26 @@ class LithoParamsDialog(QDialog):
 
 
 def _choisir_couleur(parent, initiale: str, titre: str) -> QColor:
-    """Sélecteur de couleur à texte LISIBLE : le dialogue Qt héritait de la
-    palette sombre de l'app (labels Teinte/Sat/RVB illisibles, cf. retour). On
-    force une palette claire standard sur le dialogue (non natif)."""
+    """Sélecteur de couleur AU THÈME COURANT (clair ET sombre) : le dialogue Qt
+    héritait mal de la palette (labels Teinte/Sat/RVB illisibles). Ancien fix :
+    clair forcé — remplacé par le style à la palette, comme le sélecteur neoGen
+    (validé dans les deux thèmes, décision Emmanuel après audit)."""
+    from ui.styles.theme import MANAGER as _T
+    pal = _T.palette()
     dlg = QColorDialog(QColor(initiale), parent)
     dlg.setOption(QColorDialog.ColorDialogOption.DontUseNativeDialog, True)
     dlg.setWindowTitle(titre)
-    dlg.setStyleSheet("""
-        QColorDialog, QColorDialog QWidget { background:#f4f4f6; color:#111; }
-        QLabel { color:#111; }
-        QSpinBox, QLineEdit { background:#ffffff; color:#111;
-            border:1px solid #b8b8be; border-radius:3px; padding:1px 3px; }
-        QPushButton { background:#e6e6ea; color:#111;
-            border:1px solid #b8b8be; border-radius:4px; padding:4px 12px; }
-        QPushButton:hover { background:#d8d8de; }
+    dlg.setStyleSheet(f"""
+        QColorDialog, QColorDialog QWidget {{ background: {pal['BG_PANEL']};
+            color: {pal['TEXT_PRIMARY']}; }}
+        QLabel {{ color: {pal['TEXT_PRIMARY']}; background: transparent; }}
+        QLineEdit, QSpinBox {{ background: {pal['BG_SURFACE']};
+            color: {pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']};
+            border-radius: 3px; padding: 1px 3px; }}
+        QPushButton {{ background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
+            border: 1px solid {pal['INACTIVE']}; border-radius: 4px;
+            padding: 4px 12px; }}
+        QPushButton:hover {{ border-color: {pal['ACCENT']}; }}
     """)
     return dlg.currentColor() if dlg.exec() else QColor()
 
@@ -513,7 +519,7 @@ class CartePanel(QWidget):
     def _build(self):
         pal = self._pal
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 10, 12, 10)
+        root.setContentsMargins(12, 10, 12, 4)
         root.setSpacing(8)
 
         entete = QHBoxLayout()
@@ -596,6 +602,10 @@ class CartePanel(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Fond TRANSPARENT : la zone (souvent vide) se fond dans le panneau au lieu
+        # d'apparaître comme un rectangle blanc en thème clair.
+        self._scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        self._scroll.viewport().setStyleSheet("background: transparent;")
         holder = QWidget()
         holder.setStyleSheet("background: transparent;")
         self._liste = QVBoxLayout(holder)
@@ -655,6 +665,7 @@ class CartePanel(QWidget):
         self._statut.setWordWrap(True)
         self._statut.setStyleSheet(
             f"color: {pal['TEXT_LABEL']}; background: transparent; font-size: 9pt;")
+        self._statut.setVisible(False)     # aucun espace réservé tant que vide
         root.addWidget(self._statut)
 
     # ── couleur de base ──
@@ -812,7 +823,7 @@ class CartePanel(QWidget):
             scene = CV.construire_apercu(self._spec())
             self.apercu_pret.emit(scene)
         except Exception as exc:
-            self._statut.setText("⚠ " + str(exc)[:80])
+            self.set_statut("⚠ " + str(exc)[:80])
             return
         # Enregistre l'état « posé » dans l'historique (sauf si on est en train de
         # restaurer un état via undo/redo → le flag saute une capture).
@@ -885,7 +896,7 @@ class CartePanel(QWidget):
             _scene, couleurs = CV.construire(spec)
             self.exporter_demande.emit(spec, couleurs)
         except Exception as exc:
-            self._statut.setText("⚠ " + str(exc)[:80])
+            self.set_statut("⚠ " + str(exc)[:80])
 
     def _exporter_litho(self):
         """Convertit la carte en LITHOPHANIE via le MENU STANDARD : on rend le
@@ -899,12 +910,13 @@ class CartePanel(QWidget):
             img = _P(tempfile.gettempdir()) / "neoslice_carte_litho.png"
             rendre_carte_image(spec, img)
         except Exception as exc:
-            self._statut.setText("⚠ " + str(exc)[:80])
+            self.set_statut("⚠ " + str(exc)[:80])
             return
         self.convertir_litho_demande.emit(spec, str(img))
 
     def set_statut(self, txt: str):
         self._statut.setText(txt)
+        self._statut.setVisible(bool(txt))   # ne prend de la place que s'il y a un message
 
     def refresh_theme(self):
         """Ré-applique le thème courant (corrige les labels invisibles quand le
@@ -921,8 +933,9 @@ class CartePanel(QWidget):
                 w.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent; font-size: 9pt;")
             else:
                 w.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; border: none; background: transparent;")
-        for w in self.findChildren(QDoubleSpinBox):
-            w.setStyleSheet(champ)
+        for cls in (QDoubleSpinBox, QComboBox, QLineEdit):
+            for w in self.findChildren(cls):
+                w.setStyleSheet(champ)
         for b in getattr(self, "_btns_ajout", []):
             b.setStyleSheet(_style_bouton_action(pal))
         if hasattr(self, "btn_litho"):
