@@ -49,6 +49,27 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v0.1.9",
+     "• Édition par pièce : sur un plateau multi-pièces, cliquez une pièce dans "
+     "la vue 3D pour l'isoler et lui donner ses propres réglages (qualité, "
+     "résistance, supports…), puis revenez à la vue d'ensemble. L'export produit "
+     "un seul 3MF avec les réglages de chaque pièce (Bambu Studio / OrcaSlicer) "
+     "ou un fichier par pièce sur les autres slicers.\n"
+     "• Affichage multi-plateaux : les projets 3MF multi-plateaux s'affichent "
+     "désormais sur leurs plateaux séparés, comme dans votre slicer.\n"
+     "• Renforcement automatique des pièces fragiles : les pièces jugées fragiles "
+     "(orange/rouge sur la carte de fragilité) reçoivent d'office plus de parois "
+     "et un remplissage plus dense — désactivable dans les Réglages.\n"
+     "• Mode daltonien (Réglages → Apparence) : palette adaptée pour les surplombs "
+     "et la carte de fragilité, lisible quelle que soit votre vision des couleurs.\n"
+     "• HueForge — photo en couleurs (Pro) : transformez une photo en impression "
+     "multi-filament par couches de couleur, avec aperçu fidèle dans la vue 3D.\n"
+     "• Lithophanie avec boîte lumineuse (Pro) : le couvercle lithophane et sa "
+     "boîte LED sont générés sur deux plateaux distincts — couvercle en qualité "
+     "lithophanie, boîte en réglages standard — et chaque pièce reste réglable.\n"
+     "• Confort et fiabilité : retour instantané à la vue d'ensemble, transitions "
+     "de la vue 3D sans clignotement, rotation automatique désactivée par défaut, "
+     "et de nombreuses corrections issues d'un audit complet."),
     ("Nouveautés v0.1.8.5",
      "• Correction importante : les objets créés dans neoGen s'exportent "
      "désormais correctement vers Bambu Studio. Avant, Bambu Studio n'en gardait "
