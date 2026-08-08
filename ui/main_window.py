@@ -2408,7 +2408,17 @@ class MainWindow(QMainWindow):
             return
         try:
             bodies = list(scene.geometry.values())
-            fused = trimesh.util.concatenate(bodies)
+            # UNION BOOLÉENNE (pas un simple concatenate) : supprime les faces
+            # internes (coïncidentes/interpénétrantes) qui faisaient un FAUX surplomb
+            # à l'analyse d'un objet bicolore. Repli concatenate seulement si l'union
+            # lève une exception (rare).
+            try:
+                from core.neogen.geo_utils import union_solides as _us
+                fused = _us([b.copy() for b in bodies])
+                if fused is None or len(getattr(fused, "faces", [])) == 0:
+                    raise ValueError("union vide")
+            except Exception:
+                fused = trimesh.util.concatenate(bodies)
             # Nom « lithophanie… » si un corps est taggé profil lithophanie → l'app
             # active _est_lithophanie (profil 100 %) au chargement, comme un fichier
             # lithophanie déposé. Sinon nom neutre par objet.
@@ -3669,7 +3679,9 @@ class MainWindow(QMainWindow):
         self._analysis_worker = AnalysisWorker(
             self._mesh,
             nozzle_diameter_mm=self._current_nozzle_mm,
-            is_color_assembly=bool(getattr(self._threemf_data, "is_color_assembly", False)),
+            is_color_assembly=bool(
+                getattr(self._threemf_data, "is_color_assembly", False)
+                or getattr(self, "_neogen_scene", None) is not None),
             force_full=_force,
         )
         self._analysis_worker.moveToThread(self._analysis_thread)

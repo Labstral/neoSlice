@@ -50,6 +50,15 @@ from data.filament_td import options_choix as _td_opts
 
 # ── Constructeurs (imports paresseux : le catalogue se charge instantanément) ─
 def _b_porte_cle(p):
+    # Case « Logo » cochée + image fournie -> porte-clé qui suit la forme du logo.
+    if p.get("logo") and p.get("image"):
+        from core.neogen.porte_cle_logo import construire as _pcl
+        return _pcl(p["image"], longueur=p.get("longueur", 50),
+                    socle=p.get("socle", 3.0), trou=p.get("trou", 4.5),
+                    style=p.get("style", "lisse"), relief_h=p.get("relief", 1.6),
+                    forme=p.get("forme", "contour"),
+                    couleur_objet=p.get("couleur_objet", "#3B82F6"),
+                    couleur_logo=p.get("couleur_texte", "#111111"))
     from core.neogen.texte import construire_porte_cle
     return construire_porte_cle(p.get("texte", ""), p.get("longueur", 50),
                                 ep_socle=p.get("socle", 3.0), ep_texte=p.get("relief", 1.6),
@@ -261,10 +270,11 @@ CATALOGUE = [
                 ("ovale", "Ovale", "Oval"),
                 ("rond", "Rond", "Round"),
                 ("etiquette", "Étiquette", "Tag")], "contour"),
-              ("style", "Texte", "Text",
+              ("style", "Style", "Style",
                [("relief", "En relief", "Raised"),
                 ("grave", "Gravé", "Engraved"),
                 ("lisse", "Lisse", "Flush")], "relief")],
+       flags=[("logo", "Logo (SVG)", "Logo (SVG)", False)],
        couleurs=[("objet", "Couleur objet", "Object color", "#3B82F6"),
                  ("texte", "Couleur texte", "Text color", "#FFFFFF")]),
     _e("badge", "Badge", "Badge", "perso", _b_badge, texte="optionnel",
@@ -945,6 +955,10 @@ def construire(entree_id: str, params: dict):
         p["image"] = params.get("image")
         if not p["image"]:
             raise ValueError("image requise")
+    elif params.get("image"):
+        # Objet à image OPTIONNELLE (ex. porte-clé : case « Logo » cochée) — pas de
+        # bouton dédié, l'image arrive via la case ; on la transmet si présente.
+        p["image"] = params.get("image")
     # « De session » : atteignent TOUS les générateurs à texte (même ceux sans
     # paramètre dans leur signature — coquetier, trophée...). Police + hauteur
     # de relief / profondeur de gravure.

@@ -819,6 +819,51 @@ class NeoGenPanel(QWidget):
                     ch.setStyleSheet(style_check)
                     form.addRow("", ch)
                     champs["grave"] = ch
+        # Case « Logo » (porte-clé) : ouvre le sélecteur SVG à la coche et masque
+        # les champs texte/police/espacement — pas de bouton séparé.
+        _logo_cb = champs.get("logo")
+        if _logo_cb is not None:
+            _rows_txt = [champs.get("texte"), champs.get("police"), champs.get("espacement")]
+
+            def _maj_logo_ui(_on, _rows=_rows_txt, _f=form):
+                # UI seulement (visibilité + libellés) — se déclenche AUSSI sur un
+                # changement programmatique (ré-ouverture), sans ouvrir de fenêtre.
+                for _r in _rows:
+                    if _r is not None:
+                        _f.setRowVisible(_r, not _on)
+                _fc = champs.get("forme")
+                if _fc is not None:
+                    _lbl = (_fr_en("Suit le logo", "Follow logo") if _on
+                            else _fr_en("Suit les lettres", "Follows the letters"))
+                    for _i in range(_fc.count()):
+                        if _fc.itemData(_i) == "contour":
+                            _fc.setItemText(_i, _lbl)
+                _lo = _f.labelForField(champs.get("couleur_objet")) if champs.get("couleur_objet") is not None else None
+                _lt = _f.labelForField(champs.get("couleur_texte")) if champs.get("couleur_texte") is not None else None
+                if _lo is not None:
+                    _lo.setText(_fr_en("Couleur du porte-clé", "Keychain color") if _on
+                                else _fr_en("Couleur objet", "Object color"))
+                if _lt is not None:
+                    _lt.setText(_fr_en("Couleur du logo", "Logo color") if _on
+                                else _fr_en("Couleur texte", "Text color"))
+
+            def _clic_logo(_on, _cb=_logo_cb):
+                # Ouverture du sélecteur : UNIQUEMENT sur clic UTILISATEUR (clicked),
+                # jamais sur un setChecked programmatique (retour sur neoGen).
+                if _on and not champs.get("__image"):
+                    chemin, _x = QFileDialog.getOpenFileName(
+                        self, _("neogen.attach_logo"), "", "SVG (*.svg)")
+                    if not chemin:
+                        _cb.setChecked(False)
+                        return
+                    champs["__image"] = chemin
+                elif not _on:
+                    champs.pop("__image", None)
+                self._planifier_apercu_objet()
+
+            _logo_cb.toggled.connect(_maj_logo_ui)
+            _logo_cb.clicked.connect(_clic_logo)
+            _maj_logo_ui(_logo_cb.isChecked())
         if e["image"]:
             # bouton PLEINE LARGEUR, même style visible que « Joindre un
             # logo » de la Création libre (avant : QPushButton sans style,

@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v0.1.9** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v0.1.9.1** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -46,6 +46,10 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v0.1.9.1
+- **Porte-clé à partir d'un logo** : cochez « Logo (SVG) », importez votre fichier SVG, et le porte-clé épouse la forme de votre logo — ou posez-le sur une plaque ovale, rectangulaire ou ronde. Trois styles : en relief, gravé ou découpe, avec deux couleurs au choix (porte-clé + logo).
+- **Fiabilité** : correction de l'analyse des surplombs sur les objets neoGen (plus de faux surplombs sur les pièces plates).
 
 ### v0.1.9
 - **Edition par pièce** : sur un plateau multi-pièces, cliquez une pièce dans la vue 3D pour l'isoler, réglez ses propres paramètres (qualité, résistance, supports…), puis revenez à la vue d'ensemble. L'export produit un seul 3MF avec les réglages de chaque pièce (Bambu Studio / OrcaSlicer) ou un fichier par pièce sur les autres slicers.
