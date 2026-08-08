@@ -54,7 +54,7 @@ _WHATS_NEW_FR = [
      "fichier SVG, et le porte-clé épouse la forme de votre logo — ou posez-le "
      "sur une plaque ovale, rectangulaire ou ronde. Trois styles : en relief, "
      "gravé ou découpe, et deux couleurs au choix (porte-clé + logo).\n"
-     "• Corrections de fiabilité de l'analyse (surplombs) sur les objets neoGen."),
+     "• Diverses corrections de fiabilité."),
     ("Nouveautés v0.1.9",
      "• Édition par pièce : sur un plateau multi-pièces, cliquez une pièce dans "
      "la vue 3D pour l'isoler et lui donner ses propres réglages (qualité, "
