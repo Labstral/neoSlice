@@ -49,6 +49,15 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v0.1.9.2",
+     "• Devis modifiable (Pro) : rouvrez un devis enregistré pour ajuster ses "
+     "valeurs et le mettre à jour, au lieu d'en recréer un à chaque fois.\n"
+     "• Canal de vente et commission (Pro) : dans le devis, indiquez si la vente "
+     "passe par un apporteur d'affaires ou une plateforme et sa commission — "
+     "neoSlice rehausse automatiquement le prix pour préserver votre marge.\n"
+     "• Suivi des apporteurs (Pro) : un nouvel onglet « Apporteurs » dans l'Espace "
+     "Pro pour enregistrer vos apporteurs et suivre le cumul des commissions "
+     "qu'ils génèrent (prévu et réalisé)."),
     ("Nouveautés v0.1.9.1",
      "• Porte-clé à partir d'un logo : cochez « Logo (SVG) », importez votre "
      "fichier SVG, et le porte-clé épouse la forme de votre logo — ou posez-le "

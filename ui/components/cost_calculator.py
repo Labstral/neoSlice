@@ -39,6 +39,17 @@ _K = {
     "failure":      "cost_failure_pct",
     "margin":       "cost_margin_pct",
 }
+# Canal de vente (commission) — persistance : dernier canal choisi + commission
+# mémorisée PAR canal (dict {clé_canal: "10", ...}) → pas de ressaisie au devis suivant.
+_K_CHANNEL = "cost_channel"
+_K_CHANNEL_COMMS = "cost_channel_commissions"
+# Canaux proposés : (clé stable, clé i18n). « direct » = vente directe, 0 %.
+_CHANNELS = (
+    ("direct",     "cost.channel_direct"),
+    ("apporteur",  "cost.channel_apporteur"),
+    ("plateforme", "cost.channel_platform"),
+    ("autre",      "cost.channel_other"),
+)
 _DEFAULTS = {
     "country":  "Suisse",
     "currency": "CHF",
@@ -155,6 +166,8 @@ class CostCalculatorDialog(QDialog):
         self._printer_model = printer_model or ""
         self._rate_edits: dict[str, QLineEdit] = {}
         self._estimated = False
+        # id du devis en cours de MODIFICATION (None = création d'un nouveau devis)
+        self._editing_quote_id: str | None = None
 
         self._setup_ui()
 
@@ -463,6 +476,58 @@ class CostCalculatorDialog(QDialog):
         flay.addLayout(self._money_row("cost.packaging", self._num_edit("packaging")))
         flay.addLayout(self._row("cost.failure", self._num_edit("failure")))
         flay.addLayout(self._row("cost.margin", self._num_edit("margin")))
+
+        # ── Section CANAL DE VENTE (commission apporteur / plateforme) ──────
+        flay.addSpacing(8)
+        sep_ch = _make_sep(); self._seps.append(sep_ch)
+        flay.addWidget(sep_ch)
+        flay.addSpacing(8)
+        lbl_channel = QLabel(_("cost.section_channel"))
+        lbl_channel.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        self._section_labels.append(lbl_channel)
+        flay.addWidget(lbl_channel)
+        self._channel_note = QLabel(_("cost.channel_note"))
+        self._channel_note.setFont(QFont(FONT_MAIN, 8))
+        self._channel_note.setWordWrap(True)
+        flay.addWidget(self._channel_note)
+        flay.addSpacing(2)
+
+        self._channel_combo = QComboBox()
+        self._channel_combo.setObjectName("channelCombo")
+        self._channel_combo.setFont(QFont(FONT_MAIN, 8))
+        for key, i18n_key in _CHANNELS:
+            self._channel_combo.addItem(_(i18n_key), key)
+        self._channel_combo.currentIndexChanged.connect(self._on_channel_changed)
+        flay.addLayout(self._row("cost.channel", self._channel_combo))
+
+        self._commission_edit = self._num_edit()   # % — pas un tarif persistant global
+        flay.addLayout(self._row("cost.commission", self._commission_edit))
+
+        # Apporteur nommé (visible uniquement quand canal = Apporteur d'affaires) :
+        # relie le devis à un apporteur → cumul de ses commissions dans l'onglet
+        # Apporteurs. Bouton « ＋ » pour en créer un rapidement.
+        self._apporteur_row = QWidget()
+        _arl = QHBoxLayout(self._apporteur_row)
+        _arl.setContentsMargins(0, 0, 0, 0); _arl.setSpacing(6)
+        self._apporteur_label = QLabel(_("cost.apporteur"))
+        self._apporteur_label.setFont(QFont(FONT_MAIN, 8)); self._apporteur_label.setWordWrap(True)
+        self._field_labels.append(self._apporteur_label)
+        _arl.addWidget(self._apporteur_label, 1)
+        self._apporteur_combo = QComboBox()
+        self._apporteur_combo.setObjectName("apporteurCombo")
+        self._apporteur_combo.setFont(QFont(FONT_MAIN, 8))
+        self._apporteur_combo.currentIndexChanged.connect(self._on_apporteur_changed)
+        _arl.addWidget(self._apporteur_combo)
+        self._apporteur_add_btn = QPushButton("＋")
+        self._apporteur_add_btn.setFixedSize(26, 24)
+        self._apporteur_add_btn.setCursor(Qt.PointingHandCursor)
+        self._apporteur_add_btn.setToolTip(_("cost.apporteur_new"))
+        self._apporteur_add_btn.clicked.connect(self._add_apporteur)
+        _arl.addWidget(self._apporteur_add_btn)
+        flay.addWidget(self._apporteur_row)
+        self._apporteur_row.setVisible(False)
+        self._reload_apporteurs()
+
         flay.addStretch()
 
         card_lay.addSpacing(12)
@@ -538,6 +603,25 @@ class CostCalculatorDialog(QDialog):
         card_lay.addLayout(rs)
         card_lay.addSpacing(4)
 
+        # ── Commission du canal + prix conseillé (visibles si commission > 0) ──
+        rcom = QHBoxLayout(); rcom.setContentsMargins(0, 0, 0, 0)
+        self._commission_name = QLabel("—"); self._commission_name.setFont(QFont(FONT_MAIN, 8))
+        self._commission_name.setWordWrap(True)
+        self._commission_val = QLabel("—"); self._commission_val.setFont(QFont(FONT_MAIN, 8))
+        self._commission_val.setAlignment(Qt.AlignRight)
+        rcom.addWidget(self._commission_name, 1); rcom.addWidget(self._commission_val)
+        card_lay.addLayout(rcom)
+        card_lay.addSpacing(4)
+
+        rreco = QHBoxLayout(); rreco.setContentsMargins(0, 0, 0, 0)
+        self._reco_name = QLabel(_("cost.reco_price")); self._reco_name.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        self._reco_name.setWordWrap(True)
+        self._reco_val = QLabel("—"); self._reco_val.setFont(QFont(FONT_MAIN, 12, QFont.Bold))
+        self._reco_val.setAlignment(Qt.AlignRight)
+        rreco.addWidget(self._reco_name, 1); rreco.addWidget(self._reco_val)
+        card_lay.addLayout(rreco)
+        card_lay.addSpacing(4)
+
         # Total pour N pièces (affiché seulement si quantité > 1)
         rq = QHBoxLayout(); rq.setContentsMargins(0, 0, 0, 0)
         self._qtytotal_name = QLabel("—"); self._qtytotal_name.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
@@ -588,6 +672,26 @@ class CostCalculatorDialog(QDialog):
         self._status_lbl.setWordWrap(True)
         card_lay.addWidget(self._status_lbl)
 
+        # ── Bannière « modification d'un devis » (en HAUT de la carte, masquée) ──
+        # Affichée quand on rouvre un devis enregistré : rappelle quel devis on
+        # édite et offre un bouton « Annuler » (repasse en mode création).
+        self._edit_banner = QFrame()
+        self._edit_banner.setObjectName("editBanner")
+        eb = QHBoxLayout(self._edit_banner)
+        eb.setContentsMargins(10, 6, 8, 6); eb.setSpacing(8)
+        self._edit_banner_lbl = QLabel("")
+        self._edit_banner_lbl.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
+        self._edit_banner_lbl.setWordWrap(True)
+        eb.addWidget(self._edit_banner_lbl, 1)
+        self._edit_cancel_btn = QPushButton(_("cost.cancel_edit"))
+        self._edit_cancel_btn.setFont(QFont(FONT_MAIN, 8))
+        self._edit_cancel_btn.setFixedHeight(24)
+        self._edit_cancel_btn.setCursor(Qt.PointingHandCursor)
+        self._edit_cancel_btn.clicked.connect(self._exit_edit_mode)
+        eb.addWidget(self._edit_cancel_btn)
+        self._edit_banner.setVisible(False)
+        card_lay.insertWidget(0, self._edit_banner)
+
     # ── Persistance des tarifs ──────────────────────────────────────────────
     def _load_rates(self):
         country = PREFS.get(_K["country"], _DEFAULTS["country"])
@@ -599,6 +703,12 @@ class CostCalculatorDialog(QDialog):
         self._currency_edit.setText(str(PREFS.get(_K["currency"], _DEFAULTS["currency"])))
         for key in ("kwh", "filament", "machine", "life", "labor", "packaging", "failure", "margin"):
             self._rate_edits[key].setText(str(PREFS.get(_K[key], _DEFAULTS[key])))
+        # Canal de vente : restaurer le dernier choisi (déclenche le pré-remplissage
+        # de la commission mémorisée pour ce canal via _on_channel_changed).
+        ch = PREFS.get(_K_CHANNEL, "direct")
+        ci = self._channel_combo.findData(ch)
+        self._channel_combo.setCurrentIndex(ci if ci >= 0 else 0)
+        self._on_channel_changed()
         self._refresh_money_labels()
 
     def _save_rates(self):
@@ -606,6 +716,9 @@ class CostCalculatorDialog(QDialog):
         PREFS.set(_K["currency"], self._currency_edit.text().strip() or _DEFAULTS["currency"])
         for key in ("kwh", "filament", "machine", "life", "labor", "packaging", "failure", "margin"):
             PREFS.set(_K[key], _f(self._rate_edits[key].text(), _DEFAULTS[key]))
+        # Canal de vente : mémoriser le dernier choisi + sa commission
+        PREFS.set(_K_CHANNEL, self._channel_combo.currentData() or "direct")
+        self._remember_commission()
 
     def _on_country_changed(self, pays: str):
         d = costing.COUNTRY_DEFAULTS.get(pays)
@@ -614,11 +727,87 @@ class CostCalculatorDialog(QDialog):
             self._currency_edit.setText(d["devise"])
         self._recompute()
 
+    def _on_channel_changed(self, *_a):
+        """Changement de canal : Direct → commission verrouillée à 0 ; sinon on
+        pré-remplit avec la commission mémorisée pour ce canal (modifiable)."""
+        key = self._channel_combo.currentData()
+        self._commission_edit.blockSignals(True)
+        if key == "direct":
+            self._commission_edit.setText("0")
+            self._commission_edit.setEnabled(False)
+        else:
+            self._commission_edit.setEnabled(True)
+            comms = PREFS.get(_K_CHANNEL_COMMS, {}) or {}
+            self._commission_edit.setText(str(comms.get(key, "")))
+        self._commission_edit.blockSignals(False)
+        # Ligne « Apporteur » visible seulement pour le canal Apporteur d'affaires
+        if getattr(self, "_apporteur_row", None) is not None:
+            is_app = (key == "apporteur")
+            self._apporteur_row.setVisible(is_app)
+            if is_app:
+                self._reload_apporteurs()
+        self._recompute()
+
+    def _reload_apporteurs(self):
+        """Recharge la liste des apporteurs enregistrés dans le combo (sélection
+        courante préservée)."""
+        from core.business import store
+        cur = self._apporteur_combo.currentData()
+        self._apporteur_combo.blockSignals(True)
+        self._apporteur_combo.clear()
+        self._apporteur_combo.addItem(_("cost.apporteur_none"), "")
+        for a in store.list_apporteurs():
+            self._apporteur_combo.addItem(a.get("nom", ""), a["id"])
+        i = self._apporteur_combo.findData(cur)
+        self._apporteur_combo.setCurrentIndex(i if i >= 0 else 0)
+        self._apporteur_combo.blockSignals(False)
+
+    def _on_apporteur_changed(self, *_a):
+        """Choix d'un apporteur → pré-remplit sa commission par défaut (modifiable)."""
+        from core.business import store
+        aid = self._apporteur_combo.currentData()
+        if aid:
+            a = store.get_apporteur(aid)
+            if a and a.get("commission") not in (None, "", 0, 0.0):
+                self._commission_edit.setText(f"{float(a['commission']):g}")
+        self._recompute()
+
+    def _add_apporteur(self):
+        """Création rapide d'un apporteur depuis le devis (nom + commission =
+        celle déjà saisie), puis sélection automatique."""
+        from ui.components.apporteurs_page import ApporteurForm
+        from core.business import store
+        f = ApporteurForm(self)
+        # Pré-remplir la commission du formulaire avec celle en cours de saisie
+        cur_comm = self._commission_edit.text().strip()
+        if cur_comm:
+            f._edits["commission"].setText(cur_comm)
+        if f.exec():
+            d = f.data()
+            if d["nom"]:
+                a = store.add_apporteur(d)
+                self._reload_apporteurs()
+                i = self._apporteur_combo.findData(a["id"])
+                if i >= 0:
+                    self._apporteur_combo.setCurrentIndex(i)
+
+    def _remember_commission(self):
+        """Mémorise la commission saisie pour le canal courant (hors Direct)."""
+        key = self._channel_combo.currentData()
+        if not key or key == "direct":
+            return
+        comms = dict(PREFS.get(_K_CHANNEL_COMMS, {}) or {})
+        comms[key] = self._commission_edit.text().strip()
+        PREFS.set(_K_CHANNEL_COMMS, comms)
+
     def _on_field_changed(self, *_a):
         # Une saisie manuelle du poids OU de la durée annule l'étiquette « estimé »
         if self.sender() in (self._weight_edit, self._time_edit):
             self._estimated = False
             self._refresh_note()
+        # Une saisie manuelle de commission est mémorisée pour le canal courant
+        if self.sender() is getattr(self, "_commission_edit", None):
+            self._remember_commission()
         self._refresh_money_labels()   # devise des libellés à jour (pays/devise)
         self._recompute()
 
@@ -637,8 +826,16 @@ class CostCalculatorDialog(QDialog):
             packaging_cost=_f(self._rate_edits["packaging"].text(), _DEFAULTS["packaging"]),
             failure_rate_pct=_f(self._rate_edits["failure"].text(), _DEFAULTS["failure"]),
             margin_pct=_f(self._rate_edits["margin"].text(), _DEFAULTS["margin"]),
+            commission_pct=_f(self._commission_edit.text()),
             currency=self._currency_edit.text().strip() or _DEFAULTS["currency"],
         )
+
+    def _effective_unit_price(self, b) -> float:
+        """Prix unitaire réellement facturé = prix conseillé commission incluse
+        (identique au prix de vente s'il n'y a pas de commission)."""
+        if b is None:
+            return 0.0
+        return float(getattr(b, "gross_price", 0.0) or getattr(b, "sale_price", 0.0))
 
     def _recompute(self):
         inp = self._current_inputs()
@@ -671,15 +868,28 @@ class CostCalculatorDialog(QDialog):
         self._margin_val.setText(fmt(b.margin_amount))
         self._sale_val.setText(fmt(b.sale_price))
 
-        # Paliers de prix suggérés (prix unitaire par marge)
+        # Commission du canal + prix conseillé (rehaussement pour conserver la
+        # marge) — visibles uniquement quand une commission s'applique.
+        has_comm = getattr(b, "commission_pct", 0.0) > 0.0
+        if has_comm:
+            self._commission_name.setText(_("cost.commission_row", pct=f"{b.commission_pct:g}"))
+            self._commission_val.setText(fmt(b.commission_amount))
+            self._reco_val.setText(fmt(b.gross_price))
+        for w in (self._commission_name, self._commission_val, self._reco_name, self._reco_val):
+            w.setVisible(has_comm)
+
+        # Paliers de prix suggérés (prix unitaire par marge — SANS commission,
+        # décision produit : le rehaussement ne s'applique qu'au prix principal)
         for _tid, (_card, _nm, pv, _color, margin, _fill) in self._tier_cards.items():
             pv.setText(fmt(costing.sale_price_for(b.total_cost, margin)))
 
-        # Total pour N pièces (affiché seulement si quantité > 1)
+        # Total pour N pièces (affiché seulement si quantité > 1) — au prix
+        # réellement facturé (commission incluse s'il y en a une).
         qty = max(1, int(_f(self._qty_edit.text(), 1)))
+        eff = self._effective_unit_price(b)
         if qty > 1:
             self._qtytotal_name.setText(_("cost.total_qty", n=qty))
-            self._qtytotal_val.setText(fmt(b.sale_price * qty))
+            self._qtytotal_val.setText(fmt(eff * qty))
             self._qtytotal_name.setVisible(True)
             self._qtytotal_val.setVisible(True)
         else:
@@ -709,7 +919,12 @@ class CostCalculatorDialog(QDialog):
         part = self._partname_edit.text().strip() or "—"
         cur = self._cur_now()
         unit_cost = float(getattr(b, "total_cost", 0.0)) if b else 0.0
-        unit_price = float(getattr(b, "sale_price", 0.0)) if b else 0.0
+        # Prix facturé = prix conseillé commission incluse (= prix de vente si pas
+        # de commission). base_price = prix HT avant commission (marge seule).
+        unit_price = self._effective_unit_price(b)
+        base_price = float(getattr(b, "sale_price", 0.0)) if b else 0.0
+        commission_pct = float(getattr(b, "commission_pct", 0.0)) if b else 0.0
+        commission_unit = float(getattr(b, "commission_amount", 0.0)) if b else 0.0
         return {
             "part_name": part, "qty": qty, "currency": cur,
             "unit_cost": round(unit_cost, 2), "unit_price": round(unit_price, 2),
@@ -718,17 +933,142 @@ class CostCalculatorDialog(QDialog):
             # déduction de stock côté commande (mono-couleur, à corriger au besoin).
             "grams": round(_f(self._weight_edit.text()), 0),
             "client_id": self._quote_client_combo.currentData() or "",
+            # Canal de vente + commission + apporteur nommé (pour le cumul par apporteur).
+            "channel": self._channel_combo.currentData() or "direct",
+            "channel_label": self._channel_combo.currentText(),
+            "apporteur_id": (self._apporteur_combo.currentData() or "")
+                            if (self._channel_combo.currentData() == "apporteur") else "",
+            "commission_pct": round(commission_pct, 2),
+            "commission_amount": round(commission_unit * qty, 2),   # total sur la quantité
+            "base_price": round(base_price, 2),                     # HT avant commission (unitaire)
+            # Entrées brutes de calcul (texte saisi) → permettent de ROUVRIR le
+            # devis à l'identique dans le calculateur (cf. load_quote). Absentes
+            # des anciens devis : load_quote retombe alors sur les champs ci-dessus.
+            "inputs": self._quote_inputs(),
         }
+
+    def _quote_inputs(self) -> dict:
+        """Snapshot des champs de saisie (impression + tarifs) pour rouvrir un
+        devis. On stocke le TEXTE tel que saisi → reproduction exacte au rechargement."""
+        return {
+            "part_name": self._partname_edit.text().strip(),
+            "qty": self._qty_edit.text().strip(),
+            "weight": self._weight_edit.text().strip(),
+            "time": self._time_edit.text().strip(),
+            "labor_min": self._labor_min_edit.text().strip(),
+            "power": self._power_edit.text().strip(),
+            "country": self._country_combo.currentText(),
+            "currency": self._currency_edit.text().strip(),
+            "client_id": self._quote_client_combo.currentData() or "",
+            "channel": self._channel_combo.currentData() or "direct",
+            "commission": self._commission_edit.text().strip(),
+            "apporteur_id": (self._apporteur_combo.currentData() or "")
+                            if (self._channel_combo.currentData() == "apporteur") else "",
+            **{k: self._rate_edits[k].text().strip() for k in
+               ("kwh", "filament", "machine", "life", "labor", "packaging", "failure", "margin")},
+        }
+
+    # ── Rouvrir un devis pour le modifier ─────────────────────────────────────
+    def load_quote(self, q: dict):
+        """Repeuple le calculateur depuis un devis enregistré et passe en mode
+        MODIFICATION : le prochain « enregistrer » met à jour ce devis au lieu d'en
+        créer un nouveau. Les devis récents portent un bloc `inputs` (entrées
+        exactes) ; les anciens n'ont que les résultats → on retombe alors sur
+        part_name / qty / poids et les tarifs courants (l'utilisateur ré-ajuste)."""
+        inp = q.get("inputs") or {}
+
+        # Pays d'abord, signaux bloqués : sinon _on_country_changed écraserait le
+        # kWh et la devise du devis par les valeurs par défaut du pays.
+        country = inp.get("country")
+        if country:
+            i = self._country_combo.findText(country)
+            if i >= 0:
+                self._country_combo.blockSignals(True)
+                self._country_combo.setCurrentIndex(i)
+                self._country_combo.blockSignals(False)
+
+        def _set(edit, val):
+            if val is not None and str(val) != "":
+                edit.setText(str(val))
+
+        _set(self._partname_edit, inp.get("part_name", q.get("part_name", "")))
+        _set(self._qty_edit, inp.get("qty", q.get("qty", 1)))
+        _set(self._weight_edit, inp.get("weight", q.get("grams", "")))
+        _set(self._time_edit, inp.get("time"))
+        _set(self._labor_min_edit, inp.get("labor_min"))
+        _set(self._power_edit, inp.get("power"))
+        _set(self._currency_edit, inp.get("currency", q.get("currency", "")))
+        for k in ("kwh", "filament", "machine", "life", "labor", "packaging", "failure", "margin"):
+            if inp.get(k) not in (None, ""):
+                self._rate_edits[k].setText(str(inp[k]))
+
+        cid = inp.get("client_id", q.get("client_id", "")) or ""
+        ci = self._quote_client_combo.findData(cid)
+        if ci >= 0:
+            self._quote_client_combo.setCurrentIndex(ci)
+
+        # Canal de vente + commission : régler le canal (signaux bloqués), normaliser
+        # l'état actif via _on_channel_changed, puis restaurer la commission du devis.
+        ch = inp.get("channel", q.get("channel", "direct")) or "direct"
+        chi = self._channel_combo.findData(ch)
+        if chi >= 0:
+            self._channel_combo.blockSignals(True)
+            self._channel_combo.setCurrentIndex(chi)
+            self._channel_combo.blockSignals(False)
+        self._on_channel_changed()
+        if ch != "direct" and inp.get("commission") not in (None, ""):
+            self._commission_edit.setText(str(inp["commission"]))
+        # Apporteur rattaché : restaurer le lien SANS écraser la commission du devis
+        # (signaux bloqués → pas de pré-remplissage par la commission par défaut).
+        app_id = inp.get("apporteur_id", q.get("apporteur_id", "")) or ""
+        if ch == "apporteur" and app_id:
+            self._reload_apporteurs()
+            ai = self._apporteur_combo.findData(app_id)
+            if ai >= 0:
+                self._apporteur_combo.blockSignals(True)
+                self._apporteur_combo.setCurrentIndex(ai)
+                self._apporteur_combo.blockSignals(False)
+
+        # Valeurs choisies par l'utilisateur → ce n'est plus une « estimation ».
+        self._estimated = False
+        self._refresh_note()
+
+        self._editing_quote_id = q.get("id")
+        self._enter_edit_mode(q.get("number", ""))
+        self._refresh_money_labels()
+        self._recompute()
+
+    def _enter_edit_mode(self, number: str):
+        self._edit_banner_lbl.setText(_("cost.editing_banner", number=number))
+        self._edit_banner.setVisible(True)
+        self._save_quote_btn.setText(_("cost.update_quote"))
+
+    def _exit_edit_mode(self):
+        """Repasse en mode création (annulation de la modification en cours)."""
+        self._editing_quote_id = None
+        self._edit_banner.setVisible(False)
+        self._save_quote_btn.setText(_("cost.save_quote"))
 
     def _save_quote(self):
         if getattr(self, "_last", None) is None:
             return
         from core.business import store
-        q = store.add_quote(self.current_quote())
+        editing = self._editing_quote_id
+        if editing:
+            q = store.update_quote(editing, self.current_quote())
+            if q is None:                       # devis supprimé entre-temps → nouveau
+                q = store.add_quote(self.current_quote())
+                msg_key = "cost.quote_saved"
+            else:
+                msg_key = "cost.quote_updated"
+            self._exit_edit_mode()
+        else:
+            q = store.add_quote(self.current_quote())
+            msg_key = "cost.quote_saved"
         self.quote_saved.emit()
         m = QMessageBox(self)
         m.setWindowTitle(_("cost.title"))
-        m.setText(_("cost.quote_saved", number=q["number"]))
+        m.setText(_(msg_key, number=q["number"]))
         m.setIcon(QMessageBox.Information)
         pal = _T.palette()
         m.setStyleSheet(
@@ -884,12 +1224,19 @@ class CostCalculatorDialog(QDialog):
             p.setPen(QColor("#C8D2DC")); p.drawLine(x0, y, W, y); y += 24
             line(_("cost.total"), b.total_cost, bold=False, color=ink)
             line(_("cost.margin_row"), b.margin_amount)
+            has_comm = getattr(b, "commission_pct", 0.0) > 0.0
+            if has_comm:
+                # Ligne commission → l'arithmétique reste juste : coût + marge +
+                # commission = prix conseillé (cohérent avec l'affichage écran).
+                line(_("cost.commission_row", pct=f"{b.commission_pct:g}"), b.commission_amount)
             y += 10
-            line(_("cost.sale_price"), b.sale_price, bold=True, big_val=True, color=accent)
+            eff = self._effective_unit_price(b)
+            line(_("cost.reco_price") if has_comm else _("cost.sale_price"),
+                 eff, bold=True, big_val=True, color=accent)
             qty = getattr(self, "_last_qty", 1)
             if qty > 1:
                 y += 6
-                line(_("cost.total_qty", n=qty), b.sale_price * qty, bold=True, big_val=True, color=accent)
+                line(_("cost.total_qty", n=qty), eff * qty, bold=True, big_val=True, color=accent)
 
             # Pied de page : mentions légales pays + disclaimer + coordonnées
             from core.business import invoicing as _inv
@@ -955,6 +1302,7 @@ class CostCalculatorDialog(QDialog):
             lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         self._est_note.setStyleSheet(f"color: {pal['AMBER']}; background: transparent;")
         self._rates_note.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent; font-style: italic;")
+        self._channel_note.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent; font-style: italic;")
         self._refresh_note()
 
         edit_css = f"""
@@ -964,7 +1312,7 @@ class CostCalculatorDialog(QDialog):
         """
         for e in list(self._rate_edits.values()) + [
             self._weight_edit, self._time_edit, self._labor_min_edit, self._power_edit,
-            self._partname_edit, self._qty_edit,
+            self._partname_edit, self._qty_edit, self._commission_edit,
         ]:
             e.setStyleSheet(edit_css)
         _combo_css = f"""
@@ -978,6 +1326,14 @@ class CostCalculatorDialog(QDialog):
             self._spool_combo.setStyleSheet(_combo_css)
         if getattr(self, "_quote_client_combo", None) is not None:
             self._quote_client_combo.setStyleSheet(_combo_css)
+        if getattr(self, "_channel_combo", None) is not None:
+            self._channel_combo.setStyleSheet(_combo_css)
+        if getattr(self, "_apporteur_combo", None) is not None:
+            self._apporteur_combo.setStyleSheet(_combo_css)
+            self._apporteur_add_btn.setStyleSheet(
+                f"QPushButton {{ background: {pal['ACCENT']}; color: #fff; border: none; "
+                f"border-radius: 3px; font-weight: bold; }}"
+                f"QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}")
 
         for name, val in self._break_rows.values():
             name.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
@@ -988,6 +1344,10 @@ class CostCalculatorDialog(QDialog):
         self._margin_val.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         self._sale_name.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent; letter-spacing: 1px;")
         self._sale_val.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
+        self._commission_name.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        self._commission_val.setStyleSheet(f"color: {pal['AMBER']}; background: transparent;")
+        self._reco_name.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent; letter-spacing: 1px;")
+        self._reco_val.setStyleSheet(f"color: {pal['ACCENT']}; background: transparent;")
         self._status_lbl.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
 
         # Cartes de paliers de prix (fond de couleur uni + bordure assortie)
@@ -1018,3 +1378,13 @@ class CostCalculatorDialog(QDialog):
                            border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 0 14px; }}
             QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}
         """)
+        if getattr(self, "_edit_banner", None) is not None:
+            self._edit_banner.setStyleSheet(
+                f"QFrame#editBanner {{ background: {pal['BG_ELEVATED']}; "
+                f"border: 1px solid {pal['ACCENT']}; border-radius: 5px; }}")
+            self._edit_banner_lbl.setStyleSheet(
+                f"color: {pal['ACCENT']}; background: transparent; border: none;")
+            self._edit_cancel_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {pal['TEXT_SECONDARY']}; "
+                f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 0 12px; }}"
+                f"QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}")

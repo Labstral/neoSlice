@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v0.1.9.1** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v0.1.9.2** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -18,7 +18,7 @@
 - **neoGen — générateur d'objets 3D** *(Pro)* — bibliothèque d'objets personnalisables au millimètre (porte-clés, cadres photo, QR codes 3D bicolores, cartes de visite, clips de câble, joints, vis et écrous, objets resto/mariage/boutique…), texte en relief ou gravé, générés étanches et sans support ; **photo HueForge multi-filament** et **lithophanie avec boîte lumineuse sur deux plateaux**
 - **Oen — assistant IA local** *(Pro)* — un modèle Qwen3 tourne sur votre machine (hors ligne, privé), nourri d'une base de connaissances imprimantes ; **mode Réflexion** activable pour des réponses raisonnées
 - **Export multicouleur** *(Pro)* — coloriez vos pièces après export 3MF, appliquez les filaments par slot, et le **stock est déduit automatiquement** après impression
-- **Espace Pro — gestion d'atelier** *(Pro)* — bobines, devis, factures internationales, clients, commandes et catalogue d'articles, tous connectés
+- **Espace Pro — gestion d'atelier** *(Pro)* — bobines, devis (ré-éditables), factures internationales, clients, commandes, apporteurs d'affaires et catalogue d'articles, tous connectés ; **canal de vente à commission** (apporteur / plateforme) avec prix rehaussé pour préserver votre marge
 - **Mise à jour automatique** — vérification et installation directement depuis l'application ; modules et bases de connaissances mis à jour **sans réinstaller**
 
 ## Plateformes supportées
@@ -46,6 +46,11 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v0.1.9.2
+- **Devis modifiable** *(Pro)* : rouvrez un devis enregistré pour ajuster ses valeurs et le mettre à jour, au lieu d'en recréer un à chaque fois.
+- **Canal de vente et commission** *(Pro)* : indiquez dans le devis si la vente passe par un apporteur d'affaires ou une plateforme et sa commission — neoSlice rehausse automatiquement le prix pour préserver votre marge.
+- **Suivi des apporteurs** *(Pro)* : nouvel onglet « Apporteurs » pour enregistrer vos apporteurs et suivre le cumul des commissions qu'ils génèrent (prévu et réalisé).
 
 ### v0.1.9.1
 - **Porte-clé à partir d'un logo** : cochez « Logo (SVG) », importez votre fichier SVG, et le porte-clé épouse la forme de votre logo — ou posez-le sur une plaque ovale, rectangulaire ou ronde. Trois styles : en relief, gravé ou découpe, avec deux couleurs au choix (porte-clé + logo).

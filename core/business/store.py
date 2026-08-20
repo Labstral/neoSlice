@@ -28,6 +28,7 @@ _ORDERS = _DIR / "orders.json"
 _PRODUCTS = _DIR / "products.json"
 _PURCHASES = _DIR / "purchases.json"   # achats : investissements + consommables
 _SUPPLIES = _DIR / "supplies.json"     # stock de fournitures (cartons, emballages…)
+_APPORTEURS = _DIR / "apporteurs.json" # apporteurs d'affaires (canal à commission)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -517,6 +518,27 @@ def delete_quote(qid: str) -> bool:
     return False
 
 
+def update_quote(qid: str, data: dict) -> dict | None:
+    """Met à jour un devis existant (rouvert dans le calculateur) SANS changer son
+    identité : id, numéro, date de création et statut/facture liée sont conservés ;
+    seuls les champs éditables (part_name, qty, prix, entrées de calcul…) sont
+    remplacés. Renvoie le devis mis à jour, ou None si l'id n'existe plus (devis
+    supprimé entre-temps → l'appelant retombe alors sur add_quote)."""
+    items = _load(_QUOTES)
+    for q in items:
+        if q.get("id") == qid:
+            preserved = {k: q[k] for k in
+                         ("id", "number", "date", "cree_le", "status", "invoice_number")
+                         if k in q}
+            q.clear()
+            q.update(data)
+            q.update(preserved)        # l'identité prime toujours sur les données entrantes
+            q["maj_le"] = _now()
+            _save(_QUOTES, items)
+            return q
+    return None
+
+
 def mark_quote_converted(qid: str, invoice_number: str) -> dict | None:
     items = _load(_QUOTES)
     for q in items:
@@ -848,6 +870,79 @@ def delete_product(pid: str) -> bool:
         _save(_PRODUCTS, new)
         return True
     return False
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Apporteurs d'affaires — canal de vente à commission (suivi du cumul par apporteur)
+# ──────────────────────────────────────────────────────────────────────────────
+def _apporteur_defaults() -> dict:
+    return {"nom": "", "commission": 0.0, "email": "", "notes": ""}
+
+
+def list_apporteurs() -> list[dict]:
+    return sorted(_load(_APPORTEURS), key=lambda a: (a.get("nom") or "").lower())
+
+
+def get_apporteur(aid: str) -> dict | None:
+    return next((a for a in _load(_APPORTEURS) if a.get("id") == aid), None)
+
+
+def add_apporteur(data: dict) -> dict:
+    items = _load(_APPORTEURS)
+    a = _apporteur_defaults()
+    a.update({k: v for k, v in data.items() if k in a})
+    a["id"] = uuid.uuid4().hex
+    a["cree_le"] = a["modifie_le"] = _now()
+    items.append(a)
+    _save(_APPORTEURS, items)
+    return a
+
+
+def update_apporteur(aid: str, data: dict) -> dict | None:
+    items = _load(_APPORTEURS)
+    for a in items:
+        if a.get("id") == aid:
+            for k, v in data.items():
+                if k not in ("id", "cree_le"):
+                    a[k] = v
+            a["modifie_le"] = _now()
+            _save(_APPORTEURS, items)
+            return a
+    return None
+
+
+def delete_apporteur(aid: str) -> bool:
+    items = _load(_APPORTEURS)
+    new = [a for a in items if a.get("id") != aid]
+    if len(new) != len(items):
+        _save(_APPORTEURS, new)
+        return True
+    return False
+
+
+def commissions_for_apporteur(aid: str) -> dict:
+    """Cumul des commissions générées par un apporteur, à partir des devis qui lui
+    sont rattachés (champ `apporteur_id`). « Prévu » = tous les devis liés ;
+    « Réalisé » = uniquement les devis transformés en facture (status=converted)."""
+    quotes = [q for q in _load(_QUOTES) if q.get("apporteur_id") == aid]
+    prevu = sum(float(q.get("commission_amount") or 0) for q in quotes)
+    invoiced = [q for q in quotes if q.get("status") == "converted"]
+    realise = sum(float(q.get("commission_amount") or 0) for q in invoiced)
+    # Devise dominante parmi les devis liés (repli : devise de la société)
+    from collections import Counter
+    curs = Counter(q.get("currency", "") for q in quotes if q.get("currency"))
+    if curs:
+        currency = curs.most_common(1)[0][0]
+    else:
+        from core.business import invoicing
+        currency = invoicing.currency(get_company().get("pays", ""))
+    return {
+        "n_quotes": len(quotes),
+        "n_invoiced": len(invoiced),
+        "total_prevu": round(prevu, 2),
+        "total_realise": round(realise, 2),
+        "currency": currency,
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────

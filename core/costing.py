@@ -109,6 +109,10 @@ class CostInputs:
     packaging_cost: float = 0.0
     failure_rate_pct: float = 0.0
     margin_pct: float = 0.0
+    # Commission / frais du canal de vente (apporteur d'affaires, plateforme…),
+    # en % du PRIX DE VENTE. On rehausse le prix pour que cette commission ne
+    # rogne pas la marge (« gross-up »). 0 = vente directe.
+    commission_pct: float = 0.0
     currency: str = "EUR"
 
 
@@ -127,6 +131,12 @@ class CostBreakdown:
     currency: str = "EUR"
     # Détails utiles pour l'affichage
     energy_kwh: float = 0.0
+    # Canal de vente (commission) — gross-up appliqué au prix principal seulement.
+    # gross_price = prix conseillé COMMISSION INCLUSE (= sale_price si aucune
+    # commission). commission_amount = gross_price - sale_price.
+    commission_pct: float = 0.0
+    commission_amount: float = 0.0
+    gross_price: float = 0.0
 
 
 # Paliers de prix suggérés (clé i18n → marge bénéficiaire %). Façon « stratégie
@@ -164,6 +174,14 @@ def compute_cost(inp: CostInputs) -> CostBreakdown:
     margin_amount = total_cost * max(0.0, inp.margin_pct) / 100.0
     sale_price = total_cost + margin_amount
 
+    # Rehaussement pour absorber la commission du canal (gross-up) : on vend à
+    # sale_price / (1 - c) pour que, après prélèvement de c % sur ce prix, il
+    # reste exactement sale_price (marge intégralement conservée). Borne dure à
+    # 95 % : au-delà le prix exploserait (division par ~0).
+    c = min(max(0.0, inp.commission_pct), 95.0)
+    gross_price = sale_price / (1.0 - c / 100.0) if c > 0.0 else sale_price
+    commission_amount = gross_price - sale_price
+
     return CostBreakdown(
         material=material,
         electricity=electricity,
@@ -177,4 +195,7 @@ def compute_cost(inp: CostInputs) -> CostBreakdown:
         sale_price=sale_price,
         currency=inp.currency,
         energy_kwh=energy_kwh,
+        commission_pct=c,
+        commission_amount=commission_amount,
+        gross_price=gross_price,
     )

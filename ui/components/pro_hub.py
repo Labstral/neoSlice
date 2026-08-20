@@ -712,6 +712,7 @@ class ProHubDialog(QDialog):
             ("orders",    _("pro.tab_orders"),    self._build_orders_page),
             ("invoice",   _("pro.tab_invoice"),   self._build_invoice_page),
             ("clients",   _("pro.tab_clients"),   self._build_clients_page),
+            ("apporteurs", _("pro.tab_apporteurs"), self._build_apporteurs_page),
             ("products",  _("pro.tab_products"),  self._build_products_page),
         ]
         self._tab_index = {key: i for i, (key, _l, _b) in enumerate(tabs)}
@@ -1237,6 +1238,17 @@ class ProHubDialog(QDialog):
         info.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
         lay.addWidget(info, 1)
 
+        # Modifier : rouvre le devis dans le calculateur (onglet Devis)
+        edit = QPushButton(_("cost.edit"))
+        edit.setCursor(Qt.PointingHandCursor); edit.setFixedHeight(26)
+        edit.setToolTip(_("cost.edit_full"))
+        edit.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['TEXT_SECONDARY']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 0 10px; font-size: 11px; }}"
+            f"QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}")
+        edit.clicked.connect(lambda _c=False, qq=q: self._edit_quote(qq))
+        lay.addWidget(edit)
+
         # → Commande : envoie le devis dans la file de production
         to_ord = QPushButton(_("ord.from_quote"))
         to_ord.setCursor(Qt.PointingHandCursor); to_ord.setFixedHeight(26)
@@ -1266,6 +1278,17 @@ class ProHubDialog(QDialog):
         lay.addWidget(dele)
         return card
 
+    def _edit_quote(self, q: dict):
+        """Rouvre un devis dans le calculateur pour le modifier : bascule sur
+        l'onglet Devis, repeuple les champs et remonte en haut de la page."""
+        if getattr(self, "_devis_calc", None) is None:
+            return
+        self._select(self._tab_index["quote"])
+        self._devis_calc.load_quote(q)
+        sc = getattr(self, "_devis_scroll", None)
+        if sc is not None:
+            sc.verticalScrollBar().setValue(0)
+
     def _delete_quote(self, q: dict):
         if self._ask(_("cost.del"), _("cost.del_quote_confirm", number=q.get("number", ""))):
             store.delete_quote(q["id"])
@@ -1285,6 +1308,12 @@ class ProHubDialog(QDialog):
             self._orders_page.refresh()
         self._select(self._tab_index["orders"])
         self._msg(_("pro.tab_orders"), _("ord.created", number=o.get("number", "")))
+
+    # ── Page Apporteurs (suivi des commissions par apporteur) ─────────────────
+    def _build_apporteurs_page(self) -> QWidget:
+        from ui.components.apporteurs_page import ApporteursPage
+        self._apporteurs_page = ApporteursPage(self)
+        return self._apporteurs_page
 
     # ── Page Facturation ──────────────────────────────────────────────────────
     def _build_invoice_page(self) -> QWidget:
