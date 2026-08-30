@@ -205,12 +205,17 @@ class ColorBreakdownWidget(QWidget):
         self._rows_box.setContentsMargins(0, 0, 0, 0)
         self._rows_host = QWidget()
         self._rows_host.setLayout(self._rows_box)
+        # TRANSPARENT obligatoire : sans style, l'hôte peint la palette Qt par
+        # défaut (sombre) → bande noire derrière les slots en thème clair
+        # (vécu ; on ne touche JAMAIS à la palette globale de l'application).
+        self._rows_host.setStyleSheet("background: transparent;")
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll.setWidget(self._rows_host)
         self._scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        self._scroll.viewport().setStyleSheet("background: transparent;")
         lay.addWidget(self._scroll)
 
         for slot in self._breakdown.slots:

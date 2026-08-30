@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v2.0.0** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v2.1.0** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -48,6 +48,12 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v2.1.0
+- **Mode série clarifié** : compteur « SÉRIE × N » étiqueté, visible seulement quand une pièce est prête à exporter, flèches nettes.
+- **Série depuis un 3MF** : fonctionne désormais sur les fichiers 3MF simples ; message explicite pour les projets 3MF structurés.
+- **Assistant d'orientation** : « poser sur une face » fluide sur les pièces très détaillées (miniatures, scans) — fini le gel au survol.
+- **Thème clair** : la zone Couleurs et stock de la fenêtre d'export s'affiche correctement.
 
 ### v2.0.0
 - **Assistant d'orientation** : cliquez sur la pièce les zones qui doivent rester belles ou solides — neoSlice propose des orientations notées Solidité / Supports / Adhérence, expliquées, avec aperçu au survol et application en un clic ; « poser sur une face » inclus.

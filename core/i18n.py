@@ -139,8 +139,11 @@ _FR: dict[str, str] = {
     # ── Export / Success Dialog ────────────────────────────────────────────────
     "export.btn":               "↓  EXPORTER .3MF  →  {slicer}",
     # Mode série (×N exemplaires en grille)
+    "serie.label":              "SÉRIE",
     "serie.tip":                "Mode série : nombre d'exemplaires à exporter, disposés en grille. Au-delà d'un plateau, la série continue sur les plateaux suivants.",
     "serie.not_applicable":     "Mode série indisponible pour un projet 3MF injecté tel quel — export à l'unité",
+    "serie.na_title":           "Mode série non appliqué",
+    "serie.na_msg":             "Ce fichier est un projet 3MF structuré (plusieurs objets, modificateurs, couleurs ou plateaux) : neoSlice le préserve tel quel, et la série ×{n} ne peut pas s'y appliquer.\n\nLa pièce est exportée à l'unité. Pour une série, dupliquez-la dans votre slicer, ou repartez du fichier STL d'origine.",
     "serie.too_big":            "Pièce plus grande que le plateau : série impossible",
     "serie.exported":           "Série exportée : {n} exemplaires sur {p} plateau(x)",
     # Édition par objet / multi-plateaux
@@ -1781,8 +1784,11 @@ _EN: dict[str, str] = {
 
     # ── Export / Success Dialog ────────────────────────────────────────────────
     "export.btn":               "↓  EXPORT .3MF  →  {slicer}",
+    "serie.label":              "BATCH",
     "serie.tip":                "Batch mode: number of copies to export, laid out in a grid. Beyond one plate, the batch continues on the next plates.",
     "serie.not_applicable":     "Batch mode unavailable for a 3MF project injected as-is — exporting a single copy",
+    "serie.na_title":           "Batch mode not applied",
+    "serie.na_msg":             "This file is a structured 3MF project (multiple objects, modifiers, colors or plates): neoSlice preserves it as-is, and the ×{n} batch cannot apply to it.\n\nA single copy was exported. For a batch, duplicate it in your slicer, or start from the original STL file.",
     "serie.too_big":            "Part larger than the plate: batch impossible",
     "serie.exported":           "Batch exported: {n} copies across {p} plate(s)",
     # Per-object / multi-plate editing

@@ -54,6 +54,18 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v2.1.0",
+     "• Mode série clarifié : le compteur « SÉRIE × N » n'apparaît que quand "
+     "une pièce est prête à exporter, avec son étiquette et des flèches "
+     "nettes.\n"
+     "• La série fonctionne désormais aussi depuis un fichier 3MF simple ; "
+     "pour un projet 3MF structuré (multi-objets, modificateurs), neoSlice "
+     "explique clairement pourquoi elle ne peut pas s'appliquer.\n"
+     "• Assistant d'orientation : « poser sur une face » est désormais fluide "
+     "sur les pièces très détaillées (miniatures, scans) — fini le gel au "
+     "survol.\n"
+     "• Thème clair : la zone Couleurs et stock de la fenêtre d'export "
+     "s'affiche correctement."),
     ("Nouveautés v2.0.0",
      "• Assistant d'orientation : cliquez sur la pièce les zones qui doivent "
      "rester belles ou solides — neoSlice propose des orientations notées "

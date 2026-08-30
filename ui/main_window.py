@@ -1158,16 +1158,25 @@ class _StatusBar(QWidget):
         layout.addWidget(self._diag_btn)
 
         # Mode série : ×N exemplaires disposés en grille à l'export (déborde sur
-        # plusieurs plateaux si besoin). Actif dès que l'export l'est.
-        from PySide6.QtWidgets import QSpinBox
-        self._serie_spin = QSpinBox()
+        # plusieurs plateaux si besoin). ÉTIQUETTE « SÉRIE » + QDoubleSpinBox
+        # (0 décimale) pour hériter du style de flèches partagé spinbox_qss —
+        # le QSpinBox nu avait des flèches cassées et restait indéchiffrable
+        # (retour Emmanuel post-2.0). Visible SEULEMENT quand l'export l'est.
+        from PySide6.QtWidgets import QDoubleSpinBox
+        self._serie_lbl = QLabel(_("serie.label"))
+        self._serie_lbl.setFont(QFont(FONT_MONO, 8, QFont.Bold))
+        self._serie_lbl.setToolTip(_("serie.tip"))
+        self._serie_lbl.setVisible(False)
+        layout.addWidget(self._serie_lbl)
+        self._serie_spin = QDoubleSpinBox()
+        self._serie_spin.setDecimals(0)
         self._serie_spin.setRange(1, 99)
         self._serie_spin.setPrefix("× ")
         self._serie_spin.setFont(QFont(FONT_MONO, 9))
         self._serie_spin.setFixedHeight(30)
-        self._serie_spin.setFixedWidth(66)
+        self._serie_spin.setFixedWidth(78)
         self._serie_spin.setToolTip(_("serie.tip"))
-        self._serie_spin.setEnabled(False)
+        self._serie_spin.setVisible(False)
         self._serie_spin.setFocusPolicy(Qt.StrongFocus)
         self._style_serie_spin()
         layout.addWidget(self._serie_spin)
@@ -1240,11 +1249,15 @@ class _StatusBar(QWidget):
             self._diag_btn.setEnabled(False)
 
     def _style_serie_spin(self):
+        from ui.styles.theme import spinbox_qss
         pal = _THEME.palette()
+        self._serie_lbl.setStyleSheet(
+            f"color: {pal['TEXT_LABEL']}; background: transparent; letter-spacing: 1px;")
         self._serie_spin.setStyleSheet(
-            f"QSpinBox {{ background: {pal['BG_INPUT']}; color: {pal['TEXT_PRIMARY']}; "
-            f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 0 4px; }}"
-            f"QSpinBox:disabled {{ color: {pal['TEXT_LABEL']}; }}")
+            f"QDoubleSpinBox {{ background: {pal['BG_INPUT']}; "
+            f"color: {pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
+            f"border-radius: 4px; padding: 0 4px; }}"
+            + spinbox_qss(pal, "rgba(30,144,255,0.35)"))
 
     def serie_count(self) -> int:
         """Nombre d'exemplaires demandés (mode série ; 1 = pièce seule)."""
@@ -1308,6 +1321,8 @@ class _StatusBar(QWidget):
         _bg = pal['ACCENT'] if _THEME.is_dark() else pal['TELE_GREEN']
         self._export_btn.setEnabled(enabled)
         self._serie_spin.setEnabled(enabled)
+        self._serie_spin.setVisible(enabled)   # visible SEULEMENT quand exportable
+        self._serie_lbl.setVisible(enabled)
         if enabled:
             self._pulse_phase = 0
             self._pulse_timer.start(20)
@@ -3982,10 +3997,17 @@ class MainWindow(QMainWindow):
                     pass
                 try:
                     from core.geometry.orientation_advisor import (
-                        IndexZones, _facet_labels, _SEUIL_ZONE_RAPIDE)
+                        IndexZones, _facet_labels, _SEUIL_ZONE_RAPIDE,
+                        facette_faces)
                     idx = IndexZones(self._m)      # KD-trees → survol fluide
                     if len(self._m.faces) <= _SEUIL_ZONE_RAPIDE:
                         _facet_labels(self._m)     # facettes planes (zones nettes)
+                    # Précharge le graphe d'adjacence (cache _neo_face_voisins) :
+                    # construit ICI en arrière-plan (max_faces=1 = dict seul, sans
+                    # BFS). Sans ça, le PREMIER survol « poser sur une face » le
+                    # payait sur le thread UI — ~5 s de gel sur une miniature
+                    # dense de quelques millimètres (vécu, 327 k faces).
+                    facette_faces(self._m, 0, max_faces=1)
                 except Exception:
                     idx = None
                 self.pret.emit(idx)
@@ -4146,8 +4168,16 @@ class MainWindow(QMainWindow):
         from core.geometry import orientation_advisor as _oa
         try:
             index = getattr(self, "_orient_index", None)
-            fid = (index.face_proche(pt) if index is not None
-                   else _oa.face_la_plus_proche(mesh, pt))
+            # Index pas encore prêt (préchauffage en cours) : PAS d'aperçu plutôt
+            # qu'un repli lent — `nearest.on_surface` + BFS + submesh à CHAQUE
+            # mouvement empilait les événements souris → gel de l'interface sur
+            # les pièces denses (vécu : miniature de 3 mm, 100 ms à 5 s par
+            # survol). Le CLIC, lui, reste fonctionnel (curseur d'attente).
+            if index is None:
+                self._viewer.hide_zone_preview()
+                self._orient_hover_face_id = None
+                return
+            fid = index.face_proche(pt)
             if fid is None:
                 self._viewer.hide_zone_preview()
                 self._orient_hover_face_id = None
@@ -4156,18 +4186,17 @@ class MainWindow(QMainWindow):
             if getattr(self, "_orient_hover_face_id", None) == int(fid):
                 return
             self._orient_hover_face_id = int(fid)
-            idx = _oa.facette_faces(mesh, int(fid))
+            # Aperçu plafonné à 6 000 triangles : sur une surface LISSE et dense,
+            # la facette « plane » à 12° peut engloutir 20 000 faces → BFS Python
+            # trop lourde pour un survol. Le clic garde la précision complète.
+            idx = _oa.facette_faces(mesh, int(fid), max_faces=6000)
             if idx.size == 0:
                 self._viewer.hide_zone_preview()
                 return
-            if index is not None:
-                mask = _np.zeros(len(mesh.faces), dtype=bool)
-                mask[idx] = True
-                pts, faces = index.surface_arrays(mask)
-                self._viewer.show_zone_preview((pts, faces), color=FACE_PREVIEW_COLOR)
-            else:
-                self._viewer.show_zone_preview(mesh.submesh([idx], append=True),
-                                               color=FACE_PREVIEW_COLOR)
+            mask = _np.zeros(len(mesh.faces), dtype=bool)
+            mask[idx] = True
+            pts, faces = index.surface_arrays(mask)
+            self._viewer.show_zone_preview((pts, faces), color=FACE_PREVIEW_COLOR)
         except Exception:
             self._viewer.hide_zone_preview()
 
@@ -5644,8 +5673,32 @@ class MainWindow(QMainWindow):
                 from data.printers import is_catalogue_model as _icm0
                 if (_PREFS0.get("slicer_output", "bambu") == "bambu"
                         and not _icm0(self._current_printer)):
-                    self._show_status(_("serie.not_applicable"))
-                    _n_serie = 1
+                    _td0 = self._threemf_data
+                    _simple = (_td0 is not None and _td0.object_count <= 1
+                               and not _td0.modifier_meshes
+                               and not _td0.is_multicolor
+                               and _td0.plate_count <= 1)
+                    if _simple:
+                        # 3MF MONO-pièce sans structure à préserver (ni modifieur,
+                        # ni multi-couleur, ni multi-plateaux) : reconstruction
+                        # native depuis le mesh — même chemin sûr que neoGen et
+                        # les imprimantes catalogue — pour que la série s'applique.
+                        # (vécu : « série ×5 mais une seule pièce dans le slicer »
+                        # — l'injection ignorait la série avec un message fugace.)
+                        _is_3mf_input = False
+                        logger.info("[série] 3MF mono-pièce → reconstruction "
+                                    "native pour appliquer la série")
+                    else:
+                        # Projet 3MF STRUCTURÉ (multi-objets/modifieurs/couleurs) :
+                        # la série casserait la structure → on le dit FRANCHEMENT
+                        # (une vraie boîte, pas un message de barre d'état).
+                        from PySide6.QtWidgets import QMessageBox
+                        _mb = QMessageBox(self)
+                        _mb.setWindowTitle(_("serie.na_title"))
+                        _mb.setText(_("serie.na_msg", n=_n_serie))
+                        _mb.setIcon(QMessageBox.Information)
+                        _mb.exec()
+                        _n_serie = 1
             if _n_serie > 1:
                 from core.geometry.serie import copies_serie
                 from data.printers import volume_impression

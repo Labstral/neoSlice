@@ -128,8 +128,11 @@ TR: dict[str, str] = {
 
     # ── Export / Success Dialog ────────────────────────────────────────────────
     "export.btn":               "↓  EXPORTAR .3MF  →  {slicer}",
+    "serie.label":              "SERIE",
     "serie.tip":                "Modo serie: número de copias a exportar, dispuestas en cuadrícula. Más allá de una placa, la serie continúa en las placas siguientes.",
     "serie.not_applicable":     "Modo serie no disponible para un proyecto 3MF inyectado tal cual — exportación por unidad",
+    "serie.na_title":           "Modo serie no aplicado",
+    "serie.na_msg":             "Este archivo es un proyecto 3MF estructurado (varios objetos, modificadores, colores o placas): neoSlice lo conserva tal cual y la serie ×{n} no puede aplicarse.\n\nSe exportó una sola copia. Para una serie, duplíquela en su laminador o parta del archivo STL original.",
     "serie.too_big":            "Pieza más grande que la placa: serie imposible",
     "serie.exported":           "Serie exportada: {n} copias en {p} placa(s)",
     "export.perobj_title":      "Ajustes por objeto",

@@ -129,8 +129,11 @@ TR: dict[str, str] = {
     # ── Export / Success Dialog ────────────────────────────────────────────────
     "export.btn":               "↓  ESPORTA .3MF  →  {slicer}",
     # Mode série (×N exemplaires en grille)
+    "serie.label":              "SERIE",
     "serie.tip":                "Modalità serie: numero di copie da esportare, disposte in griglia. Oltre la capienza di un piatto, la serie continua sui piatti successivi.",
     "serie.not_applicable":     "Modalità serie non disponibile per un progetto 3MF iniettato così com'è — esportazione singola",
+    "serie.na_title":           "Modalità serie non applicata",
+    "serie.na_msg":             "Questo file è un progetto 3MF strutturato (più oggetti, modificatori, colori o piatti): neoSlice lo conserva così com’è e la serie ×{n} non può esservi applicata.\n\nÈ stata esportata una sola copia. Per una serie, duplicala nello slicer o riparti dal file STL originale.",
     "serie.too_big":            "Pezzo più grande del piatto: serie impossibile",
     "serie.exported":           "Serie esportata: {n} copie su {p} piatto/i",
     # Édition par objet / multi-plateaux
