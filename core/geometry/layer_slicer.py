@@ -294,13 +294,19 @@ def analyze_by_layers(
         prev_valid_z = z
 
     # ── Calcul de la couche sol (empreinte pour stabilité) ─────────────────
-    ground_geoms = [g for z, g in layer_geoms if z <= z_min + pitch * 3 and g is not None]
+    # Contact réel avec le plateau : seuil ABSOLU (≈ la première couche), pas un
+    # multiple du pas — celui-ci varie de 0,2 à 5 mm selon la pièce, si bien
+    # qu'une sphère « posait » sur 1,1 mm de calotte (empreinte surestimée →
+    # stabilité 41 % au lieu de 5 %) et une tour sur 15 mm. `max(pitch, …)`
+    # garantit qu'au moins une couche est retenue.
+    _sol_h = max(pitch, 0.3, min(1.0, height * 0.01))
+    ground_geoms = [g for z, g in layer_geoms if z <= z_min + _sol_h and g is not None]
 
     # ── Agrégation des résultats ───────────────────────────────────────────
     _compute_overhang_metrics(result, total_area, total_overhang_area,
                                total_projected_ov, pitch, mesh)
     _compute_stability(result, mesh, ground_geoms, height)
-    _compute_fragility(result, min_wall, nozzle_diameter_mm)
+    _compute_fragility(result, min_wall, nozzle_diameter_mm, mesh)
     _compute_support_volume(result, total_overhang_area, total_area, pitch, mesh)
 
     result.analysis_time_ms = (time.perf_counter() - t0) * 1000
@@ -399,7 +405,26 @@ def _compute_stability(
     ground_geoms: list,
     height: float,
 ) -> None:
-    """Stabilité basée sur l'empreinte réelle et la projection du CDM."""
+    """Stabilité — DÉLÉGUÉE au moteur dédié (`stability_analyzer`).
+
+    Historique : ce chemin recalculait la stabilité à partir des couches. Or le
+    pas de découpe est ADAPTATIF (0,2 à 5 mm) : sur une pièce plate, la première
+    couche disponible pouvait se situer à 5 mm de haut, où la section ne
+    représente plus le contact avec le plateau (1268 mm² au sol contre 550 mm² à
+    5 mm) → la même pièce obtenait 5 % ici et 100 % via l'autre chemin. Une
+    SEULE implémentation supprime toute possibilité de divergence."""
+    try:
+        from .stability_analyzer import analyze_stability
+        st = analyze_stability(mesh)
+        result.stability_score        = float(st.score)
+        result.center_of_mass         = st.center_of_mass.tolist()
+        result.footprint_area_mm2     = float(st.footprint_area_mm2)
+        result.brim_recommendation_mm = float(st.brim_recommendation_mm)
+        result.is_top_heavy           = bool(st.is_top_heavy)
+        return
+    except Exception as exc:
+        logger.debug(f"stabilité déléguée échouée, repli couches : {exc}")
+
     if not ground_geoms:
         result.stability_score = 0.1
         result.brim_recommendation_mm = 10.0
@@ -424,56 +449,26 @@ def _compute_stability(
 
         inside = footprint_hull.contains(com_pt)
 
-        if not inside:
-            base_score = 0.05
-        else:
-            # Marge CDM → bord de la coque convexe
-            dist_edge = footprint_hull.boundary.distance(com_pt)
-            char_r = math.sqrt(hull_area / math.pi) if hull_area > 1e-6 else 1.0
-            base_score = float(np.clip(dist_edge / max(char_r, 1.0), 0.0, 1.0))
-
-        # ── Pénalité : empreinte convexe vs boîte englobante ────────────────
-        # Pénalise les bases réellement minuscules (figurines, pièces coniques),
-        # PAS les pièces creuses ou à pieds dont la coque convexe est grande.
-        bb_xy = float(mesh.bounding_box.extents[0]) * float(mesh.bounding_box.extents[1])
-        if bb_xy > 1e-6:
-            hull_fill = hull_area / bb_xy
-            if hull_fill < 0.08:
-                base_score *= 0.20   # base quasi-ponctuelle (pointe, figurine)
-            elif hull_fill < 0.20:
-                base_score *= 0.45
-            elif hull_fill < 0.40:
-                base_score *= 0.70
-
-        # ── Pénalité : ratio hauteur / largeur effective ────────────────────
-        eff_width = math.sqrt(footprint_area) if footprint_area > 1e-6 else 1.0
-        h_ratio = height / max(eff_width, 1.0)
-        if h_ratio > 4.0:
-            base_score *= 0.30
-        elif h_ratio > 3.0:
-            base_score *= 0.45
-        elif h_ratio > 2.0:
-            base_score *= 0.65
-        elif h_ratio > 1.5:
-            base_score *= 0.85
-
-        # ── Pénalité : pièce top-heavy ──────────────────────────────────────
+        # MÊME modèle que stability_analyzer (source de vérité unique) : angle de
+        # renversement. Avant, ce chemin avait sa propre formule empilant des
+        # pénalités → la même pièce obtenait deux scores différents selon le
+        # chemin d'analyse (incohérence signalée par Emmanuel).
+        from .stability_analyzer import score_renversement, brim_pour_score
         z_min = float(mesh.bounds[0][2])
         is_top_heavy = float(com[2]) > (z_min + height * 0.60)
         result.is_top_heavy = is_top_heavy
-        if is_top_heavy:
-            base_score *= 0.80
+        bb_xy = float(mesh.bounding_box.extents[0]) * float(mesh.bounding_box.extents[1])
+        hull_fill = (hull_area / bb_xy) if bb_xy > 1e-6 else 1.0
+
+        if not inside:
+            base_score = 0.05
+        else:
+            base_score = score_renversement(
+                float(footprint_hull.boundary.distance(com_pt)),
+                float(com[2]) - z_min, hull_fill, is_top_heavy)
 
         result.stability_score = float(np.clip(base_score, 0.0, 1.0))
-
-        # Recommandation brim
-        s = result.stability_score
-        if s < 0.25:
-            result.brim_recommendation_mm = 10.0
-        elif s < 0.45:
-            result.brim_recommendation_mm = 6.0
-        elif s < 0.60:
-            result.brim_recommendation_mm = 4.0
+        result.brim_recommendation_mm = brim_pour_score(result.stability_score)
 
     except Exception as exc:
         logger.warning(f"Calcul stabilité échoué : {exc}")
@@ -485,8 +480,28 @@ def _compute_fragility(
     result: LayerSliceResult,
     min_wall: float,
     nozzle_mm: float,
+    mesh: trimesh.Trimesh | None = None,
 ) -> None:
-    """Sévérité de fragilité basée sur l'épaisseur minimale de paroi."""
+    """Sévérité de fragilité — DÉLÉGUÉE au moteur dédié (`fragility_detector`).
+
+    La mesure par couches ne regarde que le PLAN de chaque tranche : une plaque
+    posée à plat (fine en hauteur) lui paraît épaisse de 30 mm, et elle renvoyait
+    0 % de fragilité sur toutes les pièces testées — jauge muette, y compris
+    après isolation d'une pièce du plateau (signalé par Emmanuel). Le détecteur
+    dédié mesure l'épaisseur RÉELLE en 3D, et il est souvent plus rapide
+    (15 ms contre 500 ms sur une sphère de 20 k faces).
+    """
+    if mesh is not None:
+        try:
+            from .fragility_detector import detect_fragility
+            fr = detect_fragility(mesh, nozzle_diameter_mm=nozzle_mm)
+            result.min_wall_thickness_mm = float(fr.min_thickness_mm)
+            result.fragility_severity    = float(fr.severity)
+            result.has_fragile_zones     = bool(fr.has_fragile_zones)
+            return
+        except Exception as exc:
+            logger.debug(f"fragilité déléguée échouée, repli couches : {exc}")
+
     result.min_wall_thickness_mm = float(np.clip(min_wall, 0.0, _WALL_SEARCH_MAX))
 
     # Seuil sûr = 3 passages de buse (même règle que fragility_detector.py)

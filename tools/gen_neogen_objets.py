@@ -56,8 +56,8 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-07-28k"
-NOTES = "Nouveau : catégorie Calibration & tests (cube XYZ, trous, tolérance, parois, pont, retrait, 1re couche, surplombs, tour de température) + support de carte Raspberry Pi / Arduino."
+VERSION = "2026-08-27"
+NOTES = "Nouveau : bac Gridfinity — dimensions libres au millimètre près, compartiments réglables, et accroche automatique dans les plaques Gridfinity standard (pieds 42 mm placés tout seuls sous le bac)."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
 # NOUVELLE catégorie neoGen SANS rebuild (fusionnées par catalogue.par_domaine).
@@ -197,7 +197,17 @@ else:
         "visible_si": {"profondeur": "lightbox", "sortie_arriere": "lightbox"},
         "cache_si": {"cadre": "lightbox"},
         "code": r'''
-if lightbox:
+# GARDE-FOU validation : la vérification de la base (téléchargement) exécute la
+# recette SANS image (seul l'utilisateur en choisit une). On rend alors une
+# pièce-témoin saine ; le vrai rendu exige la photo. NE PAS retirer — sans lui,
+# photo_relief est écarté à la validation download (NameError sur `image`).
+try:
+    _img = image
+except:
+    _img = None
+if _img is None:
+    piece = extrusion(rectangle_arrondi(largeur, largeur * 0.75, 3), ep_max)
+elif lightbox:
     # COUVERCLE lithophanie A PLAT qui clipse sur une BOITE tenant un module LED
     # rond Ø60 x 8 mm (anneau de centrage + trou cable USB). Boite et couvercle
     # au MEME format que la lithophanie.
@@ -429,6 +439,106 @@ cadre = percer(extrusion(rectangle_arrondi(t, t, 4), ep),
 b1 = deplacer(boite_3d(t - 6, 3, ep), 0, 0, ep / 2)
 b2 = deplacer(boite_3d(3, t - 6, ep), 0, 0, ep / 2)
 piece = poser_au_sol(fusionner(cadre, b1, b2))''',
+    },
+    {
+        # Bac compatible GRIDFINITY — le système de rangement modulaire 42 mm le
+        # plus imprimé de la communauté. Pieds au profil officiel APPROCHÉ par
+        # étages inscrits dans le chanfrein 45° (marches de ≤ 0,72 mm, coins
+        # arrondis dégressifs) : le bac se clipse dans toute baseplate Gridfinity
+        # standard. Lèvre d'empilage droite (bacs empilables), séparateurs par
+        # découpe de poches (cloisons = épaisseur de paroi), trous à aimants
+        # Ø 6,5 × 2 mm optionnels aux quatre coins de chaque cellule (entraxe 26).
+        "id": "gridfinity",
+        "fr": "Bac Gridfinity", "en": "Gridfinity bin",
+        "domaine": "maison", "texte": "aucun",
+        "synonymes": "gridfinity bac rangement modulaire tiroir organiseur "
+                     "organisateur atelier vis casier baseplate bin 42 compartiment "
+                     "separateur empilable stackable storage",
+        # Dimensions LIBRES en mm (retour Emmanuel : pas d'« unités de 42 mm »,
+        # on choisit exactement la valeur voulue). La compatibilité Gridfinity
+        # est automatique : autant de pieds standard 42 mm que la semelle en
+        # accueille, centrés. ids « cases_* » = COMPTES (pas de suffixe mm).
+        "params": [
+            ["longueur", "Longueur", "Length", 15, 250, 84, 1],
+            ["largeur", "Largeur", "Width", 15, 250, 42, 1],
+            ["hauteur", "Hauteur", "Height", 12, 120, 42, 1],
+            ["cases_x", "Cases en longueur", "Compartments lengthwise", 1, 6, 1, 1],
+            ["cases_y", "Cases en largeur", "Compartments widthwise", 1, 6, 1, 1],
+            ["paroi", "Épaisseur des parois", "Wall thickness", 1.0, 2.4, 1.2, 0.2],
+        ],
+        "code": r'''
+PAS = 42.0
+L = longueur
+La = largeur
+H = hauteur
+fond = 2.0
+
+# ── Pieds standard Gridfinity sous la semelle : AUTANT que la surface en
+# accueille (grille 42 mm centrée) — le bac garde des dimensions LIBRES tout en
+# se clipsant dans une baseplate. Un pied standard fait 41,5 mm carré : si le
+# bac est plus étroit dans UN sens, il passe en FOND PLAT (bac libre, sans
+# accroche). Chanfreins 45° approchés par étages INSCRITS dans le profil
+# officiel (35,6 -> 37,2 -> 41,5 sur 4,75 mm de haut).
+a_pieds = (L >= PAS - 0.5) and (La >= PAS - 0.5)
+base_z = 4.75 if a_pieds else 0.0
+pieds = []
+if a_pieds:
+    nx = max(1, plancher((L + 0.5) / PAS))
+    ny = max(1, plancher((La + 0.5) / PAS))
+    # Pied au profil officiel EXACT et LISSE (retour Emmanuel : l'approximation
+    # en marches faisait un vilain escalier). Chaque chanfrein 45° d'un carré
+    # arrondi = décomposition exacte de la surface d'offset : un cœur droit au
+    # gabarit bas + 4 rampes triangulaires sur les côtés + 4 troncs de cône aux
+    # coins (le rayon de coin grandit avec la largeur : r = 3,75 − (41,5−w)/2).
+    etapes = [(0.0, 0.8, 35.6, 37.2),      # chanfrein bas 0,8 mm
+              (0.8, 1.8, 37.2, 37.2),      # section droite 1,8 mm
+              (2.6, 2.15, 37.2, 41.5)]     # chanfrein haut 2,15 mm
+    morceaux_pied = []
+    for z0, h, w_b, w_t in etapes:
+        r_b = 3.75 - (41.5 - w_b) / 2
+        r_t = 3.75 - (41.5 - w_t) / 2
+        morceaux_pied.append(extrusion(rectangle_arrondi(w_b, w_b, r_b), h, z0))
+        if w_t - w_b < 0.01:
+            continue
+        t = (w_t - w_b) / 2
+        Lb = w_b - 2 * r_b
+        tri = polygone([(w_b / 2, 0), (w_b / 2 + t, h), (w_b / 2, h)])
+        rampe = deplacer(tourner(extrusion(tri, Lb), "x", 90), 0, Lb / 2, 0)
+        for ang in (0, 90, 180, 270):
+            morceaux_pied.append(deplacer(tourner(rampe, "z", ang), 0, 0, z0))
+        cc = w_b / 2 - r_b
+        for sx in (1, -1):
+            for sy in (1, -1):
+                morceaux_pied.append(deplacer(cone(2 * r_b, h, 2 * r_t),
+                                              sx * cc, sy * cc, z0))
+    pied = fusionner(*morceaux_pied)
+    for ix in range(nx):
+        for iy in range(ny):
+            pieds.append(deplacer(pied, (ix - (nx - 1) / 2.0) * PAS,
+                                  (iy - (ny - 1) / 2.0) * PAS, 0))
+
+# ── Corps aux dimensions EXACTES demandées, bord supérieur net
+corps = extrusion(rectangle_arrondi(L, La, 3.75), H - base_z, base_z)
+piece = fusionner(*(pieds + [corps])) if pieds else corps
+
+# ── Poches intérieures (les cloisons restantes = séparateurs), creusées
+# jusqu'au bord -> flancs parfaitement lisses du fond au sommet.
+r_int = max(0.8, 3.75 - paroi)
+cxn = int(cases_x)
+cyn = int(cases_y)
+Wi = L - 2 * paroi
+Hi = La - 2 * paroi
+pw = (Wi - (cxn - 1) * paroi) / cxn
+ph = (Hi - (cyn - 1) * paroi) / cyn
+poches = []
+for i in range(cxn):
+    for j in range(cyn):
+        px = -Wi / 2 + i * (pw + paroi) + pw / 2
+        py = -Hi / 2 + j * (ph + paroi) + ph / 2
+        poches.append(deplacer(rectangle_arrondi(pw, ph, r_int), px, py))
+outil = extrusion(fusionner(*poches) if len(poches) > 1 else poches[0],
+                  H - base_z - fond + 6.0, base_z + fond)
+piece = poser_au_sol(percer(piece, outil))''',
     },
 ]
 

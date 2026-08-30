@@ -95,14 +95,18 @@ class _SlotRow:
             f"border-radius: 4px; }}")
 
     def populate_spools(self, spools: list[dict]):
+        from ui.components.spool_visuals import spool_icon, combo_icon_size, emplacement_suffix
+        from core.business import store
         prev = self.spool_combo.currentData()
         self.spool_combo.blockSignals(True)
         self.spool_combo.clear()
+        combo_icon_size(self.spool_combo)
         self.spool_combo.addItem(_("color_export.no_spool"), None)
         for s in spools:
             label = (f"{s.get('marque','')} {s.get('couleur_nom','')} "
                      f"— {float(s.get('poids_restant_g') or 0):.0f} g").strip()
-            self.spool_combo.addItem(label, s.get("id"))
+            self.spool_combo.addItem(spool_icon(store.spool_couleurs(s)),
+                                     label + emplacement_suffix(s), s.get("id"))
         if prev:
             i = self.spool_combo.findData(prev)
             if i >= 0:

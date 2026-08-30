@@ -5,12 +5,12 @@ Les clients sont réutilisables dans la facturation (sélection + remplissage au
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QPushButton,
     QComboBox, QScrollArea, QFrame, QStackedWidget, QMessageBox, QPlainTextEdit,
-    QDialog,
+    QDialog, QDateEdit, QSpinBox,
 )
 
 from core.i18n import _
@@ -55,6 +55,35 @@ class ClientForm(QDialog):
         i = self._country.findData(self._client.get("pays", "Suisse"))
         self._country.setCurrentIndex(max(0, i))
         g.addWidget(self._lbl(_("client.country")), r, 0); g.addWidget(self._country, r, 1); r += 1
+
+        # ── Attribution apporteur d'affaires (optionnel) ──────────────────────
+        # Rattache un apporteur au client pour une période : à la création d'un
+        # devis pour ce client, l'apporteur sera sélectionné automatiquement tant
+        # que la période est active.
+        from core.business import store as _st
+        self._apporteur = QComboBox()
+        self._apporteur.addItem(_("client.apporteur_none"), "")
+        for a in _st.list_apporteurs():
+            self._apporteur.addItem(a.get("nom", ""), a["id"])
+        ai = self._apporteur.findData(self._client.get("apporteur_id", ""))
+        self._apporteur.setCurrentIndex(max(0, ai))
+        g.addWidget(self._lbl(_("client.apporteur")), r, 0); g.addWidget(self._apporteur, r, 1); r += 1
+
+        self._app_debut = QDateEdit()
+        self._app_debut.setCalendarPopup(True)
+        self._app_debut.setDisplayFormat("dd/MM/yyyy")
+        _deb = self._client.get("apporteur_debut", "")
+        _qd = QDate.fromString(_deb[:10], "yyyy-MM-dd") if _deb else QDate.currentDate()
+        self._app_debut.setDate(_qd if _qd.isValid() else QDate.currentDate())
+        g.addWidget(self._lbl(_("client.apporteur_debut")), r, 0); g.addWidget(self._app_debut, r, 1); r += 1
+
+        self._app_duree = QSpinBox()
+        self._app_duree.setRange(0, 120)
+        self._app_duree.setSuffix(" " + _("client.months"))
+        self._app_duree.setValue(int(self._client.get("apporteur_duree_mois", 0) or 0) or 6)
+        self._app_duree.setToolTip(_("client.apporteur_duree_tip"))
+        g.addWidget(self._lbl(_("client.apporteur_duree")), r, 0); g.addWidget(self._app_duree, r, 1); r += 1
+
         # notes
         self._notes = QPlainTextEdit(self._client.get("notes", "")); self._notes.setFixedHeight(46)
         self._notes.setFont(QFont(FONT_MAIN, 9))
@@ -75,22 +104,39 @@ class ClientForm(QDialog):
         d = {k: e.text().strip() for k, e in self._edits.items()}
         d["pays"] = self._country.currentData()
         d["notes"] = self._notes.toPlainText().strip()
+        # Attribution apporteur : fin = début + durée (mois) ; vide si pas d'apporteur
+        aid = self._apporteur.currentData() or ""
+        d["apporteur_id"] = aid
+        if aid:
+            deb = self._app_debut.date()
+            duree = int(self._app_duree.value())
+            d["apporteur_debut"] = deb.toString("yyyy-MM-dd")
+            d["apporteur_duree_mois"] = duree
+            d["apporteur_fin"] = deb.addMonths(duree).toString("yyyy-MM-dd") if duree > 0 else ""
+        else:
+            d["apporteur_debut"] = ""
+            d["apporteur_duree_mois"] = 0
+            d["apporteur_fin"] = ""
         return d
 
     def _apply_theme(self):
         pal = _T.palette()
         self.setStyleSheet(f"QDialog {{ background: {pal['BG_PANEL']}; }}")
         self._title.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
-        css = (f"QLineEdit, QComboBox, QPlainTextEdit {{ background: {pal['BG_INPUT']}; "
+        css = (f"QLineEdit, QComboBox, QPlainTextEdit, QDateEdit, QSpinBox {{ background: {pal['BG_INPUT']}; "
                f"color: {pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
                f"border-radius: 3px; padding: 3px 6px; min-height: 22px; }}"
                f"QComboBox::down-arrow {{ width:0;height:0;border-left:4px solid transparent;"
                f"border-right:4px solid transparent;border-top:5px solid {pal['TEXT_SECONDARY']};"
                f"margin-right:6px; }}"
                f"QComboBox QAbstractItemView {{ background: {pal['BG_ELEVATED']}; "
+               f"color: {pal['TEXT_PRIMARY']}; selection-background-color: {pal['ACCENT']}; }}"
+               f"QCalendarWidget QWidget {{ background: {pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']}; }}"
+               f"QCalendarWidget QAbstractItemView {{ background: {pal['BG_ELEVATED']}; "
                f"color: {pal['TEXT_PRIMARY']}; selection-background-color: {pal['ACCENT']}; }}")
         for e in (self.findChildren(QLineEdit) + self.findChildren(QComboBox)
-                  + self.findChildren(QPlainTextEdit)):
+                  + self.findChildren(QPlainTextEdit) + self.findChildren(QDateEdit)
+                  + self.findChildren(QSpinBox)):
             e.setStyleSheet(css)
         from PySide6.QtGui import QPalette, QColor
         np = self._notes.palette()

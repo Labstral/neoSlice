@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v0.1.9.2** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v2.0.0** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -12,6 +12,8 @@
 - **Import STL, OBJ & 3MF** — chargez vos fichiers directement, y compris les 3MF multi-plateau et les assemblages complexes
 - **Analyse géométrique** — détection des surplombs, stabilité, fragilité — avec **carte de fragilité par pièce** (chaque pièce colorée selon sa solidité) et **mode daltonien**
 - **Édition par pièce** — isolez une pièce d'un plateau multi-pièces d'un clic et donnez-lui ses propres réglages ; les pièces fragiles sont **renforcées automatiquement** ; export en un seul 3MF (réglages par pièce) ou en fichiers séparés selon le slicer
+- **Assistant d'orientation** — cliquez les zones à préserver sur la pièce : des orientations notées Solidité / Supports / Adhérence sont proposées, expliquées et applicables en un clic
+- **Interface en 5 langues** — français, English, Español, Deutsch, Italiano
 - **Instruction Mission** — choisissez qualité, résistance, vitesse, supports et usage par simples menus : neoSlice traduit vos choix en paramètres optimisés
 - **Mode performance automatique** — le niveau d'analyse s'adapte seul à votre machine et à la complexité de chaque pièce
 - **Génération 3MF** — export prêt à ouvrir dans votre slicer avec tous les paramètres optimisés
@@ -46,6 +48,23 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v2.0.0
+- **Assistant d'orientation** : cliquez sur la pièce les zones qui doivent rester belles ou solides — neoSlice propose des orientations notées Solidité / Supports / Adhérence, expliquées, avec aperçu au survol et application en un clic ; « poser sur une face » inclus.
+- **Nouvelle jauge de stabilité** basée sur l'angle de renversement réel — les pièces hautes et fines ne sont plus surestimées.
+- **3 nouvelles langues** : Español, Deutsch, Italiano (Réglages → Langue) — l'interface complète, en plus du français et de l'anglais.
+- **Mode série** : un compteur « × N » près du bouton Exporter duplique la pièce en grille, avec débordement propre sur plusieurs plateaux.
+- **Bibliothèque de pièces** *(Pro)* : chaque export est mémorisé (réglages exacts + vignette) — « Réimprimer à l'identique » recharge tout, même des mois plus tard.
+- **Chiffres exacts du slicer dans le devis** *(Pro)* : importez le fichier tranché (`.gcode.3mf` / `.gcode`) et le devis utilise le poids et la durée exacts.
+- **Journal d'impressions** *(Pro)* : réussites et échecs, taux d'échec réel par machine et par filament, applicable au devis en un clic.
+- **Calibration par bobine** *(Pro)* : notez les réglages qui marchent pour chaque bobine — badge CALIBRÉE et rappel dans la fiche PDF des réglages.
+- **Bobines multi-couleurs** *(Pro)* : jusqu'à 4 couleurs par bobine, pastille à secteurs dans tous les menus.
+- **Relances d'impayés** *(Pro)* : lettre PDF prête à envoyer dans la langue du client + export comptable CSV par année.
+- **Réparations de fichiers visibles** : trous rebouchés, unités converties — neoSlice dit ce qu'il a réparé au chargement.
+- **Carte de visite enrichie** : styles relief / gravé / découpe par élément, QR code, coins arrondis ou droits, une ou deux couleurs.
+- **Mes machines** : épinglez vos imprimantes en tête de liste — en changer bascule aussi le slicer de sortie.
+- **Recherche neoGen instantanée** avec résultats classés.
+- **Correctif buse** : l'export tient compte de la buse montée (0,2 / 0,6 / 0,8 mm) — largeurs de ligne et hauteurs adaptées.
 
 ### v0.1.9.2
 - **Devis modifiable** *(Pro)* : rouvrez un devis enregistré pour ajuster ses valeurs et le mettre à jour, au lieu d'en recréer un à chaque fois.
@@ -180,7 +199,7 @@ python -m PyInstaller --clean -y neoslice_mac.spec
 neoSlice est **gratuit** pour optimiser et exporter vos pièces — c'est le cœur de l'application et ça le restera.
 Pour aller plus loin, **neoSlice Pro — 79,99 € en paiement unique, à vie (sans abonnement)** — débloque le générateur d'objets neoGen, l'assistant IA Oen, l'export multicouleur avec décompte de stock, le Diagnostic IA et la gestion d'atelier complète.
 
-Envie de soutenir le projet ? [☕ Buy Me a Coffee](https://buymeacoffee.com/bambulabpourlesnuls)
+Envie de soutenir le projet ? [☕ Buy Me a Coffee](https://buymeacoffee.com/soutien)
 
 ---
 

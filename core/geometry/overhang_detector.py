@@ -137,7 +137,21 @@ def analyze_overhangs(
         if _fast_ray or _idx.size * len(mesh.faces) <= _budget:
             try:
                 _probes = face_centroids[_idx] + np.array([0.0, 0.0, -0.2])
-                _inside = mesh.contains(_probes)
+                # DÉTERMINISME (critique) : sans moteur natif, trimesh teste
+                # l'appartenance en lançant un rayon dans une direction TIRÉE AU
+                # HASARD. Sur un mesh auto-intersectant (objets fusionnés, texte
+                # + socle…), le comptage pair/impair bascule d'un tirage à
+                # l'autre → la MÊME pièce affichait 3,4 % puis 1,9 % puis 0 % de
+                # surplombs d'une analyse à l'autre (jauge instable, valeurs
+                # incohérentes avec l'assistant d'orientation). On fige la graine
+                # le temps de l'appel et on RESTAURE l'état global juste après
+                # (aucun effet de bord ailleurs dans l'app).
+                _rng_state = np.random.get_state()
+                try:
+                    np.random.seed(20260823)
+                    _inside = mesh.contains(_probes)
+                finally:
+                    np.random.set_state(_rng_state)
                 _supported = np.zeros(len(_cand), dtype=bool)
                 _supported[_idx[np.asarray(_inside, dtype=bool)]] = True
                 disp_init = disp_init & ~_supported

@@ -174,11 +174,14 @@ class OrderForm(QDialog):
         row = QWidget()
         h = QHBoxLayout(row); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(6)
         combo = QComboBox(); combo.addItem(_("ord.no_spool"), "")
+        from ui.components.spool_visuals import spool_icon, combo_icon_size, emplacement_suffix
+        combo_icon_size(combo)
         for s in self._spools:
             lab = " ".join(p for p in (s.get("materiau", ""), s.get("marque", ""),
                                        s.get("couleur_nom", "")) if p)
             lab += f" — {store.pct_restant(s):.0f}%"
-            combo.addItem(lab, s["id"])
+            combo.addItem(spool_icon(store.spool_couleurs(s)),
+                          lab + emplacement_suffix(s), s["id"])
         combo.setCurrentIndex(max(0, combo.findData(spool_id)))
         ge = QLineEdit(str(int(float(grams))) if str(grams).strip() not in ("", "0", "0.0") else "")
         ge.setPlaceholderText("g"); ge.setFixedWidth(64)

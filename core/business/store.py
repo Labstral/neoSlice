@@ -29,6 +29,7 @@ _PRODUCTS = _DIR / "products.json"
 _PURCHASES = _DIR / "purchases.json"   # achats : investissements + consommables
 _SUPPLIES = _DIR / "supplies.json"     # stock de fournitures (cartons, emballages…)
 _APPORTEURS = _DIR / "apporteurs.json" # apporteurs d'affaires (canal à commission)
+_IMPRESSIONS = _DIR / "impressions.json"  # journal d'impressions (réussites/échecs)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -105,13 +106,52 @@ def _save_dict(path: Path, data: dict) -> None:
 def _spool_defaults() -> dict:
     return {
         "materiau": "PLA", "marque": "", "couleur_hex": "#1E90FF", "couleur_nom": "",
+        # Couleurs SUPPLÉMENTAIRES (bobines dual/tri/quadri couleur — demande
+        # utilisateur Matthieu D.) : la 1re couleur reste couleur_hex (compat
+        # stock par couleur, exports…), celles-ci s'y ajoutent (max 4 au total).
+        "couleurs_hex": [],
         "finition": "", "poids_total_g": 1000.0, "poids_restant_g": 1000.0,
         "tare_g": 200.0, "cout_total": 0.0, "fournisseur": "", "date_achat": "",
         "emplacement": "", "lot": "", "notes": "", "sechage_log": [], "archivee": False,
         # Seuil de réapprovisionnement : sous ce restant, la bobine passe en
         # « à racheter » (alerte stock + liste de courses).
         "seuil_reappro_g": 150.0,
+        # Calibration VALIDÉE de cette bobine (tour de température neoGen, tests
+        # de rétraction…) : les valeurs qui marchent CHEZ VOUS, pour cette bobine
+        # précise. Reprises dans la fiche PDF des réglages à l'export.
+        "calibration": {"temp_buse": 0, "temp_plateau": 0, "debit_pct": 0.0,
+                        "retraction_mm": 0.0, "retraction_vit": 0.0, "notes": ""},
     }
+
+
+def spool_couleurs(spool: dict) -> list[str]:
+    """TOUTES les couleurs de la bobine (principale + supplémentaires), max 4.
+    Une bobine classique en renvoie une ; une dual/tri/quadri couleur, 2 à 4."""
+    out = [spool.get("couleur_hex") or "#888888"]
+    for c in (spool.get("couleurs_hex") or []):
+        c = str(c).strip()
+        if c and c not in out:
+            out.append(c)
+    return out[:4]
+
+
+def spool_est_calibree(spool: dict) -> bool:
+    """Vraie si AU MOINS une valeur de calibration est renseignée (non nulle)."""
+    c = spool.get("calibration") or {}
+    return any(float(c.get(k) or 0) > 0 for k in
+               ("temp_buse", "temp_plateau", "debit_pct",
+                "retraction_mm", "retraction_vit")) or bool((c.get("notes") or "").strip())
+
+
+def spools_calibrees(materiau: str = "") -> list:
+    """Bobines (non archivées) portant une calibration — filtrées par matériau."""
+    out = []
+    for s in list_spools():
+        if materiau and (s.get("materiau") or "").upper() != materiau.upper():
+            continue
+        if spool_est_calibree(s):
+            out.append(s)
+    return out
 
 
 def cout_par_kg(spool: dict) -> float:
@@ -387,8 +427,15 @@ def add_invoice(data: dict) -> dict:
     inv.setdefault("number", next_invoice_number())
     inv["cree_le"] = inv["modifie_le"] = _now()
     inv.setdefault("status", "draft")
-    # Échéance de paiement (par défaut +30 jours) → base des relances pour retard.
-    inv.setdefault("echeance", _add_days(inv.get("date") or datetime.now().strftime("%Y-%m-%d"), 30))
+    # Échéance de paiement → base des relances pour retard. L'échéance SAISIE
+    # dans le formulaire (due_date) prime ; défaut : date + 30 jours. (Avant,
+    # due_date était ignorée : une échéance à +15 j ne déclenchait la relance
+    # qu'à +30 j.)
+    inv.setdefault("echeance", (str(inv.get("due_date") or "").strip()
+                                or _add_days(inv.get("date")
+                                             or datetime.now().strftime("%Y-%m-%d"), 30)))
+    # Libellé client à plat (export comptable, listes) — la fiche imbriquée prime.
+    inv.setdefault("client_label", ((inv.get("client") or {}).get("nom") or "").strip())
     inv.setdefault("relance_le", "")   # date de dernière relance envoyée
     items.append(inv)
     _save(_INVOICES, items)
@@ -403,6 +450,34 @@ def _add_days(iso_date: str, days: int) -> str:
     except (ValueError, TypeError):
         d = date.today()
     return (d + timedelta(days=days)).isoformat()
+
+
+def _add_months(iso_date: str, months: int) -> str:
+    """Ajoute des mois à une date 'YYYY-MM-DD' (jour ramené au dernier du mois si
+    besoin). Repli : aujourd'hui. Sert au calcul de fin d'attribution apporteur."""
+    import calendar
+    try:
+        d = datetime.strptime(iso_date[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        d = date.today()
+    m = d.month - 1 + int(months or 0)
+    y = d.year + m // 12
+    m = m % 12 + 1
+    day = min(d.day, calendar.monthrange(y, m)[1])
+    return date(y, m, day).isoformat()
+
+
+def _date_dans(d: str, debut: str = "", fin: str = "") -> bool:
+    """True si la date 'YYYY-MM-DD' `d` est dans [debut, fin] (bornes vides =
+    ouvertes). Comparaison lexicographique (format ISO)."""
+    if not d:
+        return False
+    d = d[:10]
+    if debut and d < debut[:10]:
+        return False
+    if fin and d > fin[:10]:
+        return False
+    return True
 
 
 def invoice_ttc(inv: dict) -> float:
@@ -545,6 +620,9 @@ def mark_quote_converted(qid: str, invoice_number: str) -> dict | None:
         if q.get("id") == qid:
             q["status"] = "converted"
             q["invoice_number"] = invoice_number
+            # Date de réalisation (facturation) → sert au cumul des commissions
+            # « réalisées » par période dans l'onglet Apporteurs.
+            q["converti_le"] = _now()[:10]
             _save(_QUOTES, items)
             return q
     return None
@@ -555,7 +633,11 @@ def mark_quote_converted(qid: str, invoice_number: str) -> dict | None:
 # ──────────────────────────────────────────────────────────────────────────────
 def _client_defaults() -> dict:
     return {"nom": "", "societe": "", "adresse": "", "cp": "", "ville": "",
-            "pays": "Suisse", "email": "", "tel": "", "id_fiscal": "", "notes": ""}
+            "pays": "Suisse", "email": "", "tel": "", "id_fiscal": "", "notes": "",
+            # Attribution apporteur d'affaires : l'apporteur touche sa commission
+            # sur les devis de ce client tant que la période [début, fin] est active.
+            "apporteur_id": "", "apporteur_debut": "", "apporteur_duree_mois": 0,
+            "apporteur_fin": ""}
 
 
 def list_clients() -> list[dict]:
@@ -720,6 +802,7 @@ def update_order(oid: str, data: dict) -> dict | None:
             o["modifie_le"] = _now()
             _save(_ORDERS, items)
             _maybe_consume_stock(oid)
+            _maybe_log_print(oid)      # « Terminé » → entrée journal (une fois)
             return get_order(oid)
     return None
 
@@ -735,6 +818,217 @@ def delete_order(oid: str) -> bool:
     new = [o for o in items if o.get("id") != oid]
     if len(new) != len(items):
         _save(_ORDERS, new)
+        return True
+    return False
+
+
+# ── Journal d'impressions ────────────────────────────────────────────────────
+# Chaque impression réelle (réussie ou ratée) est une ligne. Au fil des mois, le
+# journal donne le TAUX D'ÉCHEC RÉEL par machine et par filament — réinjectable
+# dans le calculateur de devis à la place du 5 % forfaitaire.
+
+def _print_defaults() -> dict:
+    return {"id": "", "date": "", "piece": "", "machine": "", "filament": "",
+            "statut": "ok",              # ok | echec
+            "defaut": "",                # classe Diagnostic IA ou texte libre
+            "grams": 0.0, "duree_h": 0.0, "notes": "",
+            "source": "manuel",          # manuel | commande
+            "order_id": ""}
+
+
+def add_print(data: dict) -> dict:
+    items = _load(_IMPRESSIONS)
+    p = _print_defaults()
+    p.update({k: v for k, v in (data or {}).items() if k in p})
+    p["id"] = uuid.uuid4().hex
+    if not p["date"]:
+        p["date"] = date.today().isoformat()
+    p["statut"] = "echec" if p.get("statut") == "echec" else "ok"
+    items.append(p)
+    _save(_IMPRESSIONS, items)
+    return p
+
+
+def list_prints() -> list:
+    return sorted(_load(_IMPRESSIONS),
+                  key=lambda p: (p.get("date", ""), p.get("id", "")), reverse=True)
+
+
+def update_print(pid: str, data: dict) -> dict | None:
+    items = _load(_IMPRESSIONS)
+    for p in items:
+        if p.get("id") == pid:
+            for k, v in (data or {}).items():
+                if k not in ("id",):
+                    p[k] = v
+            _save(_IMPRESSIONS, items)
+            return dict(p)
+    return None
+
+
+def delete_print(pid: str) -> bool:
+    items = _load(_IMPRESSIONS)
+    new = [p for p in items if p.get("id") != pid]
+    if len(new) != len(items):
+        _save(_IMPRESSIONS, new)
+        return True
+    return False
+
+
+def failure_stats(machine: str = "", filament: str = "") -> dict:
+    """Taux d'échec réel. Filtres optionnels (machine / filament, exacts).
+    taux_pct = None tant qu'il n'y a AUCUNE impression (≠ 0 % : pas de données
+    n'est pas la même chose que zéro échec)."""
+    prints = _load(_IMPRESSIONS)
+    if machine:
+        prints = [p for p in prints if (p.get("machine") or "") == machine]
+    if filament:
+        prints = [p for p in prints if (p.get("filament") or "") == filament]
+    n = len(prints)
+    echecs = sum(1 for p in prints if p.get("statut") == "echec")
+
+    def _group(cle: str) -> dict:
+        out: dict[str, dict] = {}
+        for p in prints:
+            k = (p.get(cle) or "").strip()
+            if not k:
+                continue
+            g = out.setdefault(k, {"n": 0, "echecs": 0})
+            g["n"] += 1
+            g["echecs"] += 1 if p.get("statut") == "echec" else 0
+        for g in out.values():
+            g["taux_pct"] = round(100.0 * g["echecs"] / g["n"], 1)
+        return out
+
+    return {"n": n, "echecs": echecs,
+            "taux_pct": round(100.0 * echecs / n, 1) if n else None,
+            "par_machine": _group("machine"),
+            "par_filament": _group("filament")}
+
+
+def _maybe_log_print(oid: str) -> None:
+    """Commande arrivée à « Terminé » (ou au-delà) → une entrée AUTOMATIQUE
+    « réussie » au journal, UNE seule fois (drapeau print_logged) : le journal
+    se remplit tout seul pour qui utilise la file de production."""
+    o = get_order(oid)
+    if not o or o.get("print_logged") or o.get("status") == "cancelled":
+        return
+    if o.get("status") not in ("done", "delivered", "paid"):
+        return
+    fil = ""
+    for c in (o.get("consumptions") or []):
+        sp = get_spool(c.get("spool_id") or "")
+        if sp:
+            fil = (sp.get("materiau") or "").strip()
+            break
+    _items = o.get("items") or []
+    _piece = (_items[0].get("designation") or "").strip() if _items else ""
+    add_print({"piece": _piece or o.get("number") or "",
+               "statut": "ok", "filament": fil,
+               "grams": float(o.get("grams") or 0),
+               "source": "commande", "order_id": oid})
+    items = _load(_ORDERS)
+    for it in items:
+        if it.get("id") == oid:
+            it["print_logged"] = True
+            break
+    _save(_ORDERS, items)
+
+
+# ── Bibliothèque de pièces ───────────────────────────────────────────────────
+# Chaque export réussi mémorise la pièce + les réglages EXACTS (config résolue,
+# imprimante, filament, plateau, buse) → « Réimprimer à l'identique » des mois
+# plus tard, sans se souvenir de rien. Le fichier source n'est PAS copié : on
+# garde son chemin + son empreinte SHA-1 (détection de déplacement/modification).
+
+_BIBLIOTHEQUE = _DIR / "bibliotheque.json"
+_VIGNETTES = _DIR / "vignettes"
+
+
+def _library_defaults() -> dict:
+    return {"id": "", "date": "", "nom": "", "fichier": "", "sha1": "",
+            "imprimante": "", "filament": "", "plateau": "", "buse_mm": 0.4,
+            "config": {},                # PrintConfig résolue (model_dump)
+            "vignette": "",              # PNG capturé du viewer (chemin absolu)
+            "notes": "", "exports": 1}
+
+
+def file_sha1(path) -> str:
+    """SHA-1 du fichier source (streamé). Chaîne vide si illisible."""
+    import hashlib
+    try:
+        h = hashlib.sha1()
+        with open(path, "rb") as f:
+            for bloc in iter(lambda: f.read(1 << 20), b""):
+                h.update(bloc)
+        return h.hexdigest()
+    except OSError:
+        return ""
+
+
+def _empreinte(e: dict) -> str:
+    """Identité d'une entrée : même pièce + mêmes réglages ⇒ même empreinte
+    (le ré-export identique rafraîchit l'entrée au lieu de la dupliquer)."""
+    import hashlib
+    brut = json.dumps([e.get("sha1"), e.get("imprimante"), e.get("filament"),
+                       e.get("plateau"), e.get("buse_mm"), e.get("config")],
+                      sort_keys=True, default=str)
+    return hashlib.sha1(brut.encode("utf-8")).hexdigest()
+
+
+def vignette_path(entry_id: str) -> Path:
+    _VIGNETTES.mkdir(parents=True, exist_ok=True)
+    return _VIGNETTES / f"{entry_id}.png"
+
+
+def add_library_entry(data: dict) -> dict:
+    """Ajoute (ou rafraîchit) une entrée. Upsert par empreinte : ré-exporter la
+    même pièce avec les mêmes réglages met à jour la date et le compteur."""
+    items = _load(_BIBLIOTHEQUE)
+    e = _library_defaults()
+    e.update({k: v for k, v in (data or {}).items() if k in e})
+    emp = _empreinte(e)
+    for it in items:
+        if _empreinte(it) == emp:
+            it["date"] = date.today().isoformat()
+            it["exports"] = int(it.get("exports") or 1) + 1
+            it["fichier"] = e["fichier"] or it.get("fichier", "")
+            _save(_BIBLIOTHEQUE, items)
+            return dict(it)
+    e["id"] = uuid.uuid4().hex
+    if not e["date"]:
+        e["date"] = date.today().isoformat()
+    items.append(e)
+    _save(_BIBLIOTHEQUE, items)
+    return e
+
+
+def list_library() -> list:
+    return sorted(_load(_BIBLIOTHEQUE),
+                  key=lambda e: (e.get("date", ""), e.get("id", "")), reverse=True)
+
+
+def update_library_entry(eid: str, data: dict) -> dict | None:
+    items = _load(_BIBLIOTHEQUE)
+    for e in items:
+        if e.get("id") == eid:
+            for k, v in (data or {}).items():
+                if k not in ("id",):
+                    e[k] = v
+            _save(_BIBLIOTHEQUE, items)
+            return dict(e)
+    return None
+
+
+def delete_library_entry(eid: str) -> bool:
+    items = _load(_BIBLIOTHEQUE)
+    new = [e for e in items if e.get("id") != eid]
+    if len(new) != len(items):
+        _save(_BIBLIOTHEQUE, new)
+        try:                                   # la vignette suit l'entrée
+            vignette_path(eid).unlink(missing_ok=True)
+        except OSError:
+            pass
         return True
     return False
 
@@ -920,17 +1214,25 @@ def delete_apporteur(aid: str) -> bool:
     return False
 
 
-def commissions_for_apporteur(aid: str) -> dict:
-    """Cumul des commissions générées par un apporteur, à partir des devis qui lui
-    sont rattachés (champ `apporteur_id`). « Prévu » = tous les devis liés ;
-    « Réalisé » = uniquement les devis transformés en facture (status=converted)."""
-    quotes = [q for q in _load(_QUOTES) if q.get("apporteur_id") == aid]
+def commissions_for_apporteur(aid: str, debut: str = "", fin: str = "") -> dict:
+    """Cumul des commissions générées par un apporteur (devis rattachés via
+    `apporteur_id`). « Prévu » = devis liés (par date de devis) ; « Réalisé » =
+    devis facturés (status=converted, par date de facturation `converti_le`).
+    Si [debut, fin] est fourni, on ne compte que la PÉRIODE (ex. 1er→31 août) →
+    montant à régler à l'apporteur pour le mois. Sans bornes = cumul total."""
+    liees = [q for q in _load(_QUOTES) if q.get("apporteur_id") == aid]
+    if debut or fin:
+        quotes = [q for q in liees if _date_dans(q.get("date", ""), debut, fin)]
+        invoiced = [q for q in liees if q.get("status") == "converted"
+                    and _date_dans(q.get("converti_le") or q.get("date", ""), debut, fin)]
+    else:
+        quotes = liees
+        invoiced = [q for q in liees if q.get("status") == "converted"]
     prevu = sum(float(q.get("commission_amount") or 0) for q in quotes)
-    invoiced = [q for q in quotes if q.get("status") == "converted"]
     realise = sum(float(q.get("commission_amount") or 0) for q in invoiced)
     # Devise dominante parmi les devis liés (repli : devise de la société)
     from collections import Counter
-    curs = Counter(q.get("currency", "") for q in quotes if q.get("currency"))
+    curs = Counter(q.get("currency", "") for q in liees if q.get("currency"))
     if curs:
         currency = curs.most_common(1)[0][0]
     else:
@@ -943,6 +1245,28 @@ def commissions_for_apporteur(aid: str) -> dict:
         "total_realise": round(realise, 2),
         "currency": currency,
     }
+
+
+def apporteur_actif_du_client(client_id: str, ref_date: str = "") -> str:
+    """Renvoie l'apporteur_id rattaché à un client si son attribution est ACTIVE
+    à la date `ref_date` (défaut : aujourd'hui), sinon "". Sert à sélectionner
+    automatiquement l'apporteur à la création d'un devis pour ce client."""
+    if not client_id:
+        return ""
+    c = get_client(client_id)
+    if not c:
+        return ""
+    aid = c.get("apporteur_id") or ""
+    if not aid:
+        return ""
+    ref = (ref_date or date.today().isoformat())[:10]
+    debut = (c.get("apporteur_debut") or "")[:10]
+    fin = (c.get("apporteur_fin") or "")[:10]
+    if debut and ref < debut:
+        return ""            # attribution pas encore commencée
+    if fin and ref > fin:
+        return ""            # attribution expirée
+    return aid
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1166,14 +1490,27 @@ def monthly_revenue(months: int = 6) -> list[dict]:
              "paid": round(agg[m]["paid"], 2)} for m in buckets]
 
 
-def export_accounting_csv(dest: Path) -> Path:
-    """Export comptable des factures (CSV ; séparateur ';' pour Excel FR/CH)."""
+def invoice_years() -> list[int]:
+    """Années présentes dans les factures (décroissantes) — sélecteur d'export."""
+    years = set()
+    for inv in list_invoices():
+        d = str(inv.get("date") or inv.get("cree_le") or "")[:4]
+        if d.isdigit():
+            years.add(int(d))
+    return sorted(years, reverse=True)
+
+
+def export_accounting_csv(dest: Path, annee: int | None = None) -> Path:
+    """Export comptable des factures (CSV ; séparateur ';' pour Excel FR/CH).
+    `annee` : ne garder que les factures de cette année (None = toutes)."""
     import csv
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     from core.business import invoicing
     rows = []
     for inv in sorted(list_invoices(), key=lambda i: str(i.get("date") or "")):
+        if annee and str(inv.get("date") or inv.get("cree_le") or "")[:4] != str(annee):
+            continue
         comp = invoicing.compute(inv.get("items", []),
                                  float(inv.get("vat_rate", 0) or 0),
                                  float(inv.get("discount_pct", 0) or 0))
@@ -1181,7 +1518,10 @@ def export_accounting_csv(dest: Path) -> Path:
             "Numéro": inv.get("number", ""),
             "Date": inv.get("date", ""),
             "Échéance": inv.get("echeance", ""),
-            "Client": inv.get("client_label", ""),
+            # Les anciennes factures n'avaient jamais client_label rempli
+            # (colonne vide dans l'export) → repli sur la fiche client imbriquée.
+            "Client": inv.get("client_label")
+                      or (inv.get("client") or {}).get("nom", ""),
             "Statut": inv.get("status", ""),
             "Devise": inv.get("currency", ""),
             "Total HT": f"{comp['net_ht']:.2f}",

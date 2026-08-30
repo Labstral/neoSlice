@@ -898,17 +898,29 @@ def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
     if len(mesh.faces) == 0:
         raise STLLoadError("Le mesh est vide (aucune face).")
 
+    # RAPPORT de réparation : ces corrections existaient depuis toujours mais
+    # étaient MUETTES (logs seulement) — l'utilisateur découvrait ses fichiers
+    # abîmés à l'impression. On mesure maintenant ce qui a été fait pour
+    # l'afficher dans le panneau d'analyse (mesh.metadata, lu par main_window).
+    _repairs: dict = {}
     if not _skip_process:
+        _etait_etanche = bool(mesh.is_watertight)
         trimesh.repair.fix_normals(mesh)
         trimesh.repair.fix_winding(mesh)
-        if not _skip_fill_holes and not mesh.is_watertight:
+        if not _skip_fill_holes and not _etait_etanche:
             logger.info("Mesh non-watertight — réparation automatique...")
             trimesh.repair.fill_holes(mesh)
+            if mesh.is_watertight:
+                _repairs["trous"] = "rebouches"       # étanche après réparation
+            else:
+                _repairs["trous"] = "partiel"         # mieux, mais pas étanche
         mesh.merge_vertices(merge_tex=False)
         unique_mask = trimesh.triangles.area(mesh.triangles) > 1e-10
         if not unique_mask.all():
+            _n_deg = int((~unique_mask).sum())
             mesh.update_faces(unique_mask)
-            logger.info(f"Faces dégénérées supprimées : {(~unique_mask).sum()}")
+            _repairs["faces_degenerees"] = _n_deg
+            logger.info(f"Faces dégénérées supprimées : {_n_deg}")
 
     if len(mesh.faces) == 0:
         raise STLLoadError("Le mesh est vide après réparation (aucune face valide).")
@@ -945,15 +957,16 @@ def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
     _PLAUSIBLE_MIN, _PLAUSIBLE_MAX = 1.0, 600.0
     if _max_extent < _PLAUSIBLE_MIN:
         # Taille absurde en mm → tenter une conversion d'unité (mètres en priorité).
-        for _factor, _unit in [
-            (1000.0, "mètres"),      # 0.04 → 40 mm (Fusion 360, FreeCAD)
-            (100.0,  "décimètres"),
-            (25.4,   "pouces"),
-            (10.0,   "centimètres"),
+        for _factor, _code, _unit in [
+            (1000.0, "m",  "mètres"),      # 0.04 → 40 mm (Fusion 360, FreeCAD)
+            (100.0,  "dm", "décimètres"),
+            (25.4,   "in", "pouces"),
+            (10.0,   "cm", "centimètres"),
         ]:
             _scaled = _max_extent * _factor
             if _PLAUSIBLE_MIN <= _scaled <= _PLAUSIBLE_MAX:
                 mesh.apply_scale(_factor)
+                _repairs["unites"] = _code      # code neutre → i18n côté UI
                 logger.warning(
                     f"STL en {_unit} détecté (max extent = {_max_extent:.4f}) — "
                     f"converti en mm (×{_factor} → {_scaled:.1f} mm)."
@@ -969,6 +982,12 @@ def load_stl(path: Path) -> "trimesh.Trimesh | ThreeMFData":
     mesh.apply_translation(-mesh.bounds[0])               # coin min → origine
     center_xy = [(mesh.bounds[1][0]) / 2, (mesh.bounds[1][1]) / 2, 0]
     mesh.apply_translation([-center_xy[0], -center_xy[1], 0])
+
+    if _repairs:
+        # Voyage avec le mesh jusqu'à main_window, qui l'affiche dans le
+        # panneau d'analyse (l'utilisateur DOIT savoir que son fichier a été
+        # retouché — et un fichier resté non étanche mérite un avertissement).
+        mesh.metadata["neoslice_reparations"] = _repairs
 
     elapsed = (time.perf_counter() - t0) * 1000
     logger.info(

@@ -258,6 +258,39 @@ def test_recherche_langage_naturel():
     assert C.rechercher("") is None
 
 
+def test_recherche_liste_classee():
+    """Moteur amélioré : liste classée, pluriel/fuzzy/sous-chaîne, couverture des
+    mots, seuil de pertinence (pas de faux positif), et recall des objets qui
+    n'avaient aucun synonyme."""
+    from core.neogen import catalogue as C
+
+    def ids(phrase, n=8):
+        return [eid for eid, _sc in C.rechercher_liste(phrase, n)]
+
+    # liste triée par pertinence, best_id == tête de liste
+    res = C.rechercher_liste("support telephone", 5)
+    assert res and res[0][0] == "support_tel"
+    assert C.rechercher("support telephone") == res[0][0]
+    # scores décroissants
+    scores = [sc for _e, sc in res]
+    assert scores == sorted(scores, reverse=True)
+
+    # pluriel replié (boites -> boite) et fuzzy/sous-chaîne
+    assert "porte_cle" in ids("porte cles")          # pluriel
+    # recall des objets AUTREFOIS sans synonyme (anglais + fautes/variantes)
+    assert ids("cookie cutter")[0] == "emporte_piece"
+    assert ids("washer")[0] == "rondelle"
+    assert ids("drawer divider")[0] == "separateur_tiroir"
+    assert "support_tel" in ids("phone stand")
+
+    # couverture des mots : « coupe de champion » -> Trophée (2 mots) et pas « Coupe »
+    assert ids("coupe de champion")[0] == "trophee"
+
+    # seuil de pertinence : le charabia ne renvoie rien
+    assert C.rechercher_liste("xyzzy blabla zzz") == []
+    assert C.rechercher_liste("") == []
+
+
 def test_photo_relief_lithophanie(tmp_path):
     """Photo -> plaque lithophanie ÉTANCHE : sombre = épais, clair = fin,
     cadre rigide, debout par défaut (qualité d'impression)."""

@@ -30,10 +30,13 @@ _ALIGN_V = [("haut", "Haut", "Top"), ("milieu", "Milieu", "Middle"),
             ("bas", "Bas", "Bottom")]
 _ORIENT = [("horizontal", "Horizontal", "Horizontal"),
            ("vertical", "Vertical", "Vertical")]
-# Style de texte : relief (surélevé) / gravé (creusé) / lisse (à plat, affleurant)
+# Style d'élément : relief (surélevé) / gravé (creusé) / lisse (à plat, affleurant)
 _MODE = [("relief", "Relief", "Raised"),
          ("grave", "Gravé", "Engraved"),
          ("lisse", "Lisse (à plat)", "Flat")]
+# Coins : carte (défaut arrondi, historique), trait et cadre (défaut carré).
+_COINS = [("arrondi", "Arrondis", "Rounded"),
+          ("brut", "Carrés", "Square")]
 
 
 def _fr(fr, en):
@@ -171,7 +174,8 @@ class _ElementEditor(QFrame):
         _titres = {"texte": _fr("Texte", "Text"),
                    "logo": _fr("Logo (image)", "Logo (image)"),
                    "trait": _fr("Trait", "Line"),
-                   "cadre": _fr("Cadre", "Frame")}
+                   "cadre": _fr("Cadre", "Frame"),
+                   "qr": _fr("QR code", "QR code")}
         self._titre_base = _titres.get(self.type_el, self.type_el)
         head = QHBoxLayout()
         self._btn_titre = QPushButton()
@@ -238,6 +242,17 @@ class _ElementEditor(QFrame):
             form.addRow(_lbl(_fr("Taille (mm)", "Size (mm)")), self.sp_h)
             self.sp_esp = self._spin(0.0, 10.0, 0.0, 0.5, champ, " mm")
             form.addRow(_lbl(_fr("Espacement", "Spacing")), self.sp_esp)
+        elif self.type_el == "qr":
+            # Même principe que l'objet QR de la bibliothèque : segno, 100 % local.
+            self.le = QLineEdit()
+            self.le.setPlaceholderText("https://votre-site.fr")
+            self.le.setMaxLength(512)
+            self.le.setStyleSheet(champ)
+            self.le.textChanged.connect(self.change)
+            self.le.textChanged.connect(self._maj_titre)   # titre = lien saisi
+            form.addRow(_lbl(_fr("Lien", "Link")), self.le)
+            self.sp_h = self._spin(12, 45, 18.0, 1.0, champ, " mm")
+            form.addRow(_lbl(_fr("Taille (carré)", "Size (square)")), self.sp_h)
         elif self.type_el == "logo":
             row = QHBoxLayout()
             self.btn_img = QPushButton(_fr("Choisir une image…", "Choose image…"))
@@ -258,6 +273,9 @@ class _ElementEditor(QFrame):
             form.addRow(_lbl(_fr("Épaisseur", "Thickness")), self.sp_ep)
             self.cb_orient = self._combo(_ORIENT, "horizontal", champ)
             form.addRow(_lbl(_fr("Orientation", "Orientation")), self.cb_orient)
+            # Bouts carrés (défaut historique) ou arrondis (capsule)
+            self.cb_coins = self._combo(_COINS, "brut", champ)
+            form.addRow(_lbl(_fr("Coins", "Corners")), self.cb_coins)
         elif self.type_el == "cadre":
             self.sp_larg = self._spin(3, 100, 60.0, 1.0, champ, " mm")
             form.addRow(_lbl(_fr("Largeur", "Width")), self.sp_larg)
@@ -265,6 +283,9 @@ class _ElementEditor(QFrame):
             form.addRow(_lbl(_fr("Hauteur", "Height")), self.sp_haut)
             self.sp_ep = self._spin(0.3, 10, 1.5, 0.1, champ, " mm")
             form.addRow(_lbl(_fr("Épaisseur", "Thickness")), self.sp_ep)
+            # Coins carrés (défaut historique) ou arrondis (façon socle)
+            self.cb_coins = self._combo(_COINS, "brut", champ)
+            form.addRow(_lbl(_fr("Coins", "Corners")), self.cb_coins)
 
         self.cb_ah = self._combo(_ALIGN_H, "centre", champ)
         # « Centre » horizontal -> remet le décalage X à 0 (parfaitement centré)
@@ -285,17 +306,18 @@ class _ElementEditor(QFrame):
         row_off.addWidget(self.sp_dy)
         form.addRow(_lbl(_fr("Décalage X / Y (mm)", "Offset X / Y (mm)")), row_off)
         self.sp_relief = self._spin(0.3, 1.5, 0.6, 0.1, champ, " mm")
-        if self.type_el == "texte":
-            # Style relief / gravé / lisse + libellé dynamique du champ magnitude.
-            self._form = form
-            self.cb_mode = self._combo(_MODE, "relief", champ)
-            self.cb_mode.currentIndexChanged.connect(self._maj_mode)
-            form.addRow(_lbl(_fr("Style", "Style")), self.cb_mode)
-            self._relief_lbl = _lbl(_fr("Hauteur", "Height"))
-            form.addRow(self._relief_lbl, self.sp_relief)
-            self._maj_mode()
-        else:
-            form.addRow(_lbl(_fr("Relief", "Relief")), self.sp_relief)
+        # Style relief / gravé / lisse pour TOUS les éléments (texte, logo, trait,
+        # cadre) + libellé dynamique du champ magnitude. Longtemps réservé au
+        # texte ; généralisé suite au retour d'un utilisateur (Pierre M. : carte
+        # mono-couleur tout en creux — logo, trait et cadre étaient bloqués en
+        # relief sans bouton de choix). Le moteur, lui, savait déjà tout creuser.
+        self._form = form
+        self.cb_mode = self._combo(_MODE, "relief", champ)
+        self.cb_mode.currentIndexChanged.connect(self._maj_mode)
+        form.addRow(_lbl(_fr("Style", "Style")), self.cb_mode)
+        self._relief_lbl = _lbl(_fr("Hauteur", "Height"))
+        form.addRow(self._relief_lbl, self.sp_relief)
+        self._maj_mode()
         corps_lay.addLayout(form)
 
         # couleur
@@ -316,7 +338,7 @@ class _ElementEditor(QFrame):
         saisi (pour reconnaître chaque case une fois réduite)."""
         fleche = "▶  " if getattr(self, "_reduit", False) else "▼  "
         base = self._titre_base
-        if self.type_el == "texte":
+        if self.type_el in ("texte", "qr"):
             txt = (self.le.text() or "").strip()
             if txt:
                 base = f"{base} : {txt[:18]}"
@@ -371,8 +393,9 @@ class _ElementEditor(QFrame):
             self._selc(self.cb_pol, d.get("police"))
             self.sp_h.setValue(float(d.get("hauteur", 5.0)))
             self.sp_esp.setValue(float(d.get("espacement", 0.0)))
-            self._selc(self.cb_mode, d.get("mode", "relief"))
-            self._maj_mode()
+        elif self.type_el == "qr":
+            self.le.setText(d.get("lien", ""))
+            self.sp_h.setValue(float(d.get("taille", 18.0)))
         elif self.type_el == "logo":
             self._image = d.get("chemin", "") or ""
             if self._image:
@@ -382,16 +405,22 @@ class _ElementEditor(QFrame):
             self.sp_long.setValue(float(d.get("longueur", 40.0)))
             self.sp_ep.setValue(float(d.get("epaisseur", 1.0)))
             self._selc(self.cb_orient, d.get("orientation", "horizontal"))
+            self._selc(self.cb_coins, d.get("coins", "brut"))
         elif self.type_el == "cadre":
             self.sp_larg.setValue(float(d.get("largeur", 60.0)))
             self.sp_haut.setValue(float(d.get("hauteur", 35.0)))
             self.sp_ep.setValue(float(d.get("epaisseur", 1.5)))
+            self._selc(self.cb_coins, d.get("coins", "brut"))
         # alignements AVANT les décalages (sinon « centre » remet dx/dy à 0)
         self._selc(self.cb_ah, d.get("align_h", "centre"))
         self._selc(self.cb_av, d.get("align_v", "milieu"))
         self.sp_dx.setValue(float(d.get("dx", 0.0)))
         self.sp_dy.setValue(float(d.get("dy", 0.0)))
         self.sp_relief.setValue(float(d.get("relief", 0.6)))
+        # Style commun aux 4 types ; « relief » par défaut = rétrocompatibilité
+        # des modèles enregistrés avant l'ajout du champ.
+        self._selc(self.cb_mode, d.get("mode", "relief"))
+        self._maj_mode()
 
     def _recentrer_x(self):
         if self.cb_ah.currentData() == "centre":
@@ -402,7 +431,7 @@ class _ElementEditor(QFrame):
             self.sp_dy.setValue(0.0)            # centrage vertical parfait
 
     def _maj_mode(self):
-        """Style texte : relief -> « Hauteur », gravé -> « Profondeur »,
+        """Style (tous éléments) : relief -> « Hauteur », gravé -> « Profondeur »,
         lisse -> à plat (champ masqué, ni hauteur ni profondeur)."""
         if not hasattr(self, "cb_mode"):
             return
@@ -468,20 +497,26 @@ class _ElementEditor(QFrame):
         _common = dict(align_h=self.cb_ah.currentData(),
                        align_v=self.cb_av.currentData(),
                        dx=self.sp_dx.value(), dy=self.sp_dy.value(),
-                       relief=self.sp_relief.value(), couleur=self._couleur)
+                       relief=self.sp_relief.value(),
+                       mode=self.cb_mode.currentData(), couleur=self._couleur)
         if self.type_el == "texte":
             return CV.ElementTexte(
                 texte=self.le.text(), police=self.cb_pol.currentData(),
                 hauteur=self.sp_h.value(), espacement=self.sp_esp.value(),
-                mode=self.cb_mode.currentData(), **_common)
+                **_common)
+        if self.type_el == "qr":
+            return CV.ElementQR(lien=self.le.text(), taille=self.sp_h.value(),
+                                **_common)
         if self.type_el == "trait":
             return CV.ElementTrait(
                 longueur=self.sp_long.value(), epaisseur=self.sp_ep.value(),
-                orientation=self.cb_orient.currentData(), **_common)
+                orientation=self.cb_orient.currentData(),
+                coins=self.cb_coins.currentData(), **_common)
         if self.type_el == "cadre":
             return CV.ElementCadre(
                 largeur=self.sp_larg.value(), hauteur=self.sp_haut.value(),
-                epaisseur=self.sp_ep.value(), **_common)
+                epaisseur=self.sp_ep.value(),
+                coins=self.cb_coins.currentData(), **_common)
         return CV.ElementLogo(chemin=self._image, largeur=self.sp_h.value(),
                               **_common)
 
@@ -570,6 +605,13 @@ class CartePanel(QWidget):
         fmt.addRow(_lbl(_fr("Format L × H", "Size W × H")), row)
         self.sp_ep = _fmt_spin(QDoubleSpinBox()); self.sp_ep.setRange(0.8, 4); self.sp_ep.setValue(1.6); self.sp_ep.setSingleStep(0.2); self.sp_ep.setDecimals(1); self.sp_ep.setSuffix(" mm")
         fmt.addRow(_lbl(_fr("Épaisseur", "Thickness")), self.sp_ep)
+        # Coins de la carte : arrondis (défaut historique, rayon 3,5 mm) ou carrés
+        self.cb_coins_carte = QComboBox()
+        for val, txt_fr, txt_en in _COINS:
+            self.cb_coins_carte.addItem(_fr(txt_fr, txt_en), val)
+        self.cb_coins_carte.setStyleSheet(_champ_style(self._pal))
+        self.cb_coins_carte.currentIndexChanged.connect(self._planifier_apercu)
+        fmt.addRow(_lbl(_fr("Coins", "Corners")), self.cb_coins_carte)
         crow = QHBoxLayout()
         crow.addWidget(_lbl(_fr("Couleur du fond", "Base color")))
         self.btn_base = QPushButton()
@@ -581,20 +623,18 @@ class CartePanel(QWidget):
         root.addLayout(fmt)
         root.addLayout(crow)
 
-        # boutons d'ajout
+        # Ajout d'éléments : UN menu déroulant « Ajouter » (remplace la rangée
+        # de 4 boutons — demande Emmanuel, et il fallait une place pour le QR).
         addrow = QHBoxLayout()
         self._btns_ajout = []
-        for txt, tp in ((_fr("+ Texte", "+ Text"), "texte"),
-                        (_fr("+ Logo", "+ Logo"), "logo"),
-                        (_fr("+ Trait", "+ Line"), "trait"),
-                        (_fr("+ Cadre", "+ Frame"), "cadre")):
-            b = QPushButton(txt)
-            b.setMinimumHeight(28)
-            b.setCursor(Qt.PointingHandCursor)
-            b.setStyleSheet(_style_bouton_action(pal))
-            b.clicked.connect(lambda _c=False, t=tp: self._ajouter(t))
-            addrow.addWidget(b)
-            self._btns_ajout.append(b)
+        b = QPushButton(_fr("＋  Ajouter", "＋  Add"))
+        b.setMinimumHeight(28)
+        b.setCursor(Qt.PointingHandCursor)
+        b.setStyleSheet(_style_bouton_action(pal))
+        b.clicked.connect(self._menu_ajouter)
+        addrow.addWidget(b)
+        self._btns_ajout.append(b)
+        self._btn_ajouter = b
         root.addLayout(addrow)
 
         # liste scrollable des éléments
@@ -634,8 +674,9 @@ class CartePanel(QWidget):
         root.addLayout(modrow)
 
         # export
-        self.btn_export = QPushButton(_fr("Exporter la carte (multicouleur)",
-                                          "Export card (multicolor)"))
+        # « (multicouleur) » retiré du libellé : l'export sort une pièce SIMPLE
+        # quand la carte n'utilise qu'une couleur, multicouleur sinon (auto).
+        self.btn_export = QPushButton(_fr("Exporter la carte", "Export card"))
         self.btn_export.setMinimumHeight(34)
         self.btn_export.setCursor(Qt.PointingHandCursor)
         self.btn_export.setStyleSheet(
@@ -687,6 +728,28 @@ class CartePanel(QWidget):
             self._planifier_apercu()
 
     # ── éléments ──
+    def _menu_ajouter(self):
+        """Menu « Ajouter » : les 5 types d'éléments, stylé au thème COURANT
+        (construit à chaque ouverture — jamais de palette figée)."""
+        from PySide6.QtWidgets import QMenu
+        pal = _THEME.palette()
+        m = QMenu(self)
+        m.setStyleSheet(
+            f"QMenu {{ background: {pal['BG_ELEVATED']}; color: "
+            f"{pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
+            f"padding: 4px; }}"
+            f"QMenu::item {{ padding: 6px 22px 6px 12px; border-radius: 3px; }}"
+            f"QMenu::item:selected {{ background: {pal['ACCENT']}; "
+            f"color: #020408; }}")
+        for txt, tp in ((_fr("Texte", "Text"), "texte"),
+                        (_fr("Logo (image)", "Logo (image)"), "logo"),
+                        (_fr("QR code", "QR code"), "qr"),
+                        (_fr("Trait", "Line"), "trait"),
+                        (_fr("Cadre", "Frame"), "cadre")):
+            m.addAction(txt, lambda t=tp: self._ajouter(t))
+        m.exec(self._btn_ajouter.mapToGlobal(
+            self._btn_ajouter.rect().bottomLeft()))
+
     def _ajouter(self, type_el: str):
         # Réduire les cases existantes pour gagner de la place : seule la
         # nouvelle reste dépliée.
@@ -711,7 +774,8 @@ class CartePanel(QWidget):
     def _spec(self) -> CV.CarteSpec:
         return CV.CarteSpec(
             largeur=self.sp_l.value(), hauteur=self.sp_h.value(),
-            ep=self.sp_ep.value(), couleur_base=self._couleur_base,
+            ep=self.sp_ep.value(), coins=self.cb_coins_carte.currentData(),
+            couleur_base=self._couleur_base,
             elements=[e.element() for e in self._editeurs])
 
     # ── sauvegarde / réédition ──
@@ -719,13 +783,15 @@ class CartePanel(QWidget):
         import dataclasses
         spec = self._spec()
         return {"largeur": spec.largeur, "hauteur": spec.hauteur, "ep": spec.ep,
-                "couleur_base": spec.couleur_base,
+                "coins": spec.coins, "couleur_base": spec.couleur_base,
                 "elements": [dataclasses.asdict(e) for e in spec.elements]}
 
     def from_dict(self, d: dict):
         self.sp_l.setValue(float(d.get("largeur", 85.0)))
         self.sp_h.setValue(float(d.get("hauteur", 55.0)))
         self.sp_ep.setValue(float(d.get("ep", 1.6)))
+        # « arrondi » par défaut : modèles enregistrés avant l'option = inchangés
+        _ElementEditor._selc(self.cb_coins_carte, d.get("coins", "arrondi"))
         self._couleur_base = d.get("couleur_base", "#FFFFFF")
         self._maj_base()
         for ed in list(self._editeurs):
@@ -893,8 +959,11 @@ class CartePanel(QWidget):
     def _exporter(self):
         try:
             spec = self._spec()
-            _scene, couleurs = CV.construire(spec)
-            self.exporter_demande.emit(spec, couleurs)
+            # Pas de CV.construire(spec) ici : la fenêtre principale reconstruit
+            # de toute façon la carte (generer_fichier_carte) et décide mono/multi
+            # sur SES couleurs effectives — le pré-calcul doublait les booléens
+            # (le clic « Exporter » gagne d'autant).
+            self.exporter_demande.emit(spec, None)
         except Exception as exc:
             self.set_statut("⚠ " + str(exc)[:80])
 

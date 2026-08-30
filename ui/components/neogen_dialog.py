@@ -23,7 +23,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QTabWidget, QDoubleSpinBox, QCheckBox,
-    QComboBox, QFormLayout,
+    QComboBox, QFormLayout, QScrollArea, QFrame,
 )
 
 from core.i18n import _, lang
@@ -154,44 +154,9 @@ class _ApercuWorker(QThread):
             pass
 
 
-class _RechercheWorker(QThread):
-    """Demande en langage naturel -> OBJET de la bibliothèque le plus proche +
-    paramètres. Ne génère JAMAIS de code : l'intelligence est dans la
-    bibliothèque validée. Deux niveaux, du plus riche au plus fiable :
-      1. le modèle neoGen (s'il est installé) extrait objet + dimensions/texte ;
-      2. repli SANS modèle : recherche par mots-clés (instantané, ne peut pas
-         « ne rien donner de correct »)."""
-    trouve = Signal(str, object)         # (entry_id, params)
-    aucun = Signal()
-    erreur = Signal(str)
-
-    def __init__(self, phrase: str, image: Path | None):
-        super().__init__()
-        self._phrase, self._image = phrase, image
-
-    def run(self):
-        try:
-            from core.neogen import catalogue as C
-            entry_id, params = None, {}
-            # 1) extraction par le modèle (dimensions, texte) — best effort
-            try:
-                from core.neogen import pilote
-                objet, p, _q = pilote.interpreter(self._phrase, image=self._image)
-                if objet and objet != "__libre__" and objet in C.PAR_ID:
-                    entry_id, params = objet, (p or {})
-            except Exception:
-                pass
-            # 2) repli fiable : recherche par mots-clés dans la bibliothèque
-            if entry_id is None:
-                entry_id = C.rechercher(self._phrase)
-            if entry_id is None:
-                self.aucun.emit()
-                return
-            if self._image and C.PAR_ID[entry_id].get("image"):
-                params = dict(params); params["image"] = str(self._image)
-            self.trouve.emit(entry_id, params)
-        except Exception as exc:
-            self.erreur.emit(str(exc))
+# NB : la recherche neoGen est désormais 100 % locale (mots-clés pondérés, cf.
+# catalogue.rechercher_liste) — instantanée et fiable. Plus d'appel au modèle Oen
+# (Ollama), qui rendait la recherche lente et pouvait figer jusqu'à 180 s.
 
 
 # ═══════════════════════════════ Panneau ═════════════════════════════════════
@@ -273,6 +238,16 @@ class NeoGenPanel(QWidget):
             f"color: {self._pal['TEXT_PRIMARY']}; background: transparent; font-size: 9pt;")
         lay.addWidget(self._statut)
 
+        # « Proposer un objet » : les utilisateurs sont la roadmap de la
+        # bibliothèque (la base se met à jour sans rebuild) — leur donner le
+        # canal DEPUIS neoGen au lieu d'espérer qu'ils trouvent le formulaire.
+        self._proposer = QLabel(
+            f'<a href="https://neoslice-ai.com/retour" style="color: '
+            f'{self._pal["ACCENT"]};">{_("neogen.suggest_object")}</a>')
+        self._proposer.setOpenExternalLinks(True)
+        self._proposer.setStyleSheet("background: transparent; font-size: 9pt;")
+        lay.addWidget(self._proposer)
+
     def refresh_theme(self):
         """Ré-applique le thème SANS sortir l'utilisateur de l'objet en cours :
         titre + onglets, puis reconstruit le formulaire courant avec le nouveau
@@ -306,6 +281,15 @@ class NeoGenPanel(QWidget):
         for _cb in (getattr(self, "_combo_domaine", None), getattr(self, "_combo_objet", None)):
             if _cb is not None:
                 _cb.setStyleSheet(_style_combo)
+        # Bas de panneau : statut + lien « Proposer un objet » (couleur ACCENT
+        # embarquée dans le HTML du lien → à ré-émettre avec la palette à jour).
+        if hasattr(self, "_statut"):
+            self._statut.setStyleSheet(
+                f"color: {pal['TEXT_PRIMARY']}; background: transparent; font-size: 9pt;")
+        if hasattr(self, "_proposer"):
+            self._proposer.setText(
+                f'<a href="https://neoslice-ai.com/retour" style="color: '
+                f'{pal["ACCENT"]};">{_("neogen.suggest_object")}</a>')
         self._rethemer_formulaire()
 
     def _rethemer_formulaire(self):
@@ -408,10 +392,30 @@ class NeoGenPanel(QWidget):
         self._btn_go.clicked.connect(self._lancer_recherche)
         v.addWidget(self._btn_go)
 
-        # exemples : chacun correspond à un objet de la bibliothèque
-        grille = QGridLayout()
+        # Résultats : liste CLASSÉE cliquable (chaque objet ouvre son formulaire).
+        # Masquée tant qu'aucune recherche n'a été lancée.
+        self._results_scroll = QScrollArea()
+        self._results_scroll.setWidgetResizable(True)
+        self._results_scroll.setFrameShape(QFrame.NoFrame)
+        self._results_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._results_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }")
+        self._results_host = QWidget()
+        self._results_host.setStyleSheet("background: transparent;")
+        self._results_lay = QVBoxLayout(self._results_host)
+        self._results_lay.setContentsMargins(0, 0, 0, 0)
+        self._results_lay.setSpacing(5)
+        self._results_lay.addStretch()
+        self._results_scroll.setWidget(self._results_host)
+        self._results_scroll.setVisible(False)
+        v.addWidget(self._results_scroll, 1)
+
+        # Exemples (suggestions) : masqués dès qu'une recherche renvoie des résultats.
+        self._examples_box = QWidget()
+        self._examples_box.setStyleSheet("background: transparent;")
+        grille = QGridLayout(self._examples_box)
+        grille.setContentsMargins(0, 0, 0, 0)
         grille.setSpacing(5)
-        # 4 exemples (grille 2×2), chacun tombe sur un objet réel de la biblio
         exemples = ["neogen.ex1", "neogen.ex2", "neogen.ex3", "neogen.ex_free1"]
         for i, cle in enumerate(exemples):
             txt = _(cle)
@@ -425,10 +429,8 @@ class NeoGenPanel(QWidget):
             """)
             b.clicked.connect(lambda _c=False, t=txt: self._choisir_exemple(t))
             grille.addWidget(b, i // 2, i % 2)
-        v.addLayout(grille)
+        v.addWidget(self._examples_box)
 
-        # (l'ajout d'image se fait dans Bibliothèque > Personnalisation, sur les
-        # objets Logo/Photo qui en ont besoin — pas ici)
         v.addStretch()
         return w
 
@@ -438,16 +440,60 @@ class NeoGenPanel(QWidget):
         self._lancer_recherche()
 
     def _lancer_recherche(self):
+        """Recherche 100 % locale et instantanée : liste classée d'objets. Aucun
+        thread, aucun modèle — plus jamais de gel."""
         phrase = self._input.text().strip()
-        if not phrase or (self._worker and self._worker.isRunning()):
+        if not phrase:
             return
-        self._btn_go.setEnabled(False)
-        self._statut.setText("🔎 " + _("neogen.searching"))
-        self._worker = _RechercheWorker(phrase, self._image)
-        self._worker.trouve.connect(self._sur_trouve)
-        self._worker.aucun.connect(self._sur_aucun)
-        self._worker.erreur.connect(self._sur_erreur)
-        self._worker.start()
+        from core.neogen import catalogue as C
+        resultats = C.rechercher_liste(phrase, 8)
+        self._afficher_resultats(resultats)
+
+    def _afficher_resultats(self, resultats: list):
+        pal = self._pal
+        # vider la liste (on garde le stretch final en dernière position)
+        while self._results_lay.count() > 1:
+            it = self._results_lay.takeAt(0)
+            wdg = it.widget()
+            if wdg is not None:
+                wdg.setParent(None)
+                wdg.deleteLater()
+
+        from core.neogen.catalogue import PAR_ID
+        if not resultats:
+            self._results_scroll.setVisible(False)
+            self._examples_box.setVisible(True)
+            self._statut.setText("💬 " + _("neogen.search_none"))
+            return
+
+        for i, (entry_id, _score) in enumerate(resultats):
+            e = PAR_ID.get(entry_id, {})
+            nom = _fr_en(e.get("fr", entry_id), e.get("en", entry_id))
+            btn = QPushButton(nom)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setMinimumHeight(34)
+            # le meilleur résultat est mis en avant (bordure accent)
+            bord = PRO_CYAN if i == 0 else pal["INACTIVE"]
+            btn.setStyleSheet(f"""
+                QPushButton {{ background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
+                    border: 1px solid {bord}; border-radius: 6px;
+                    padding: 6px 12px; font-size: 10pt; text-align: left; }}
+                QPushButton:hover {{ border-color: {PRO_CYAN}; color: {pal['ACCENT_BRIGHT']}; }}
+            """)
+            btn.clicked.connect(lambda _c=False, eid=entry_id: self._choisir_resultat(eid))
+            self._results_lay.insertWidget(self._results_lay.count() - 1, btn)
+
+        self._results_scroll.setVisible(True)
+        self._examples_box.setVisible(False)
+        self._statut.setText("✓ " + _("neogen.search_results", n=len(resultats)))
+
+    def _choisir_resultat(self, entry_id: str):
+        """Clic sur un résultat : ouvre l'objet dans la Bibliothèque, pré-rempli."""
+        from core.neogen.catalogue import PAR_ID
+        params = {}
+        if self._image and PAR_ID.get(entry_id, {}).get("image"):
+            params["image"] = str(self._image)
+        self._ouvrir_dans_biblio(entry_id, params)
 
     # ═════════════════════════ Onglet BIBLIOTHÈQUE ══════════════════════════
     def _onglet_bibliotheque(self) -> QWidget:
@@ -631,8 +677,9 @@ class NeoGenPanel(QWidget):
             # -> aucun « mm » à lister objet par objet, marche pour toute nouvelle base.
             _compte = (pid in ("cases_x", "cases_y", "rangees", "colonnes", "branches",
                                "ondulations", "couleurs", "segments", "cotes")
-                       or pid.startswith("nb")
-                       or str(pfr).strip().lower().startswith(("nombre", "nb ")))
+                       or pid.startswith(("nb", "unites", "cases", "compartiments"))
+                       or str(pfr).strip().lower().startswith(("nombre", "nb "))
+                       or "(unités" in str(pfr).lower() or "(units" in str(pen).lower())
             _angle = pid == "angle" or pid.startswith("angle") or "angle" in str(pfr).lower()
             sp.setSuffix("°" if _angle else ("" if _compte else " mm"))
             sp.setStyleSheet(style_champ)
@@ -745,7 +792,10 @@ class NeoGenPanel(QWidget):
             ch.setChecked(defaut)
             ch.setCursor(Qt.PointingHandCursor)
             ch.setStyleSheet(style_check)
-            form.addRow("", ch)
+            # Ligne ENTIÈRE (pas de colonne étiquette vide devant) : les libellés
+            # de cases partaient à mi-largeur et se faisaient couper à droite
+            # dans la colonne ~400 px (vécu : « Lèvre d'empilage (bacs empi… »).
+            form.addRow(ch)
             champs[fid] = ch
         # Visibilité conditionnelle de champs, pilotée par la BASE (générique) :
         #   e["visible_si"] = {champ: flag} -> champ visible SEULEMENT si le flag coché
@@ -1093,21 +1143,6 @@ class NeoGenPanel(QWidget):
         self._worker.start()
 
     # ── Résultats ────────────────────────────────────────────────────────────
-    def _sur_trouve(self, entry_id: str, params: object):
-        """Recherche aboutie : ouvre l'objet de bibliothèque le plus proche,
-        paramètres pré-remplis, et le génère."""
-        self._btn_go.setEnabled(True)
-        from core.neogen.catalogue import PAR_ID
-        e = PAR_ID.get(entry_id, {})
-        nom = _fr_en(e.get("fr", entry_id), e.get("en", entry_id))
-        self._statut.setText("✓ " + _("neogen.search_found", nom=nom))
-        self._ouvrir_dans_biblio(entry_id, params or {})
-
-    def _sur_aucun(self):
-        self._btn_go.setEnabled(True)
-        self._statut.setText("💬 " + _("neogen.search_none"))
-        self._tabs.setCurrentIndex(0)          # invite à parcourir la biblio
-
     def _sur_fini(self, chemin):
         """Objet Bibliothèque généré : le panneau reste — on ajuste, on regénère."""
         if hasattr(self, "_btn_cat"):

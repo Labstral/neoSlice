@@ -5,7 +5,10 @@ from dataclasses import dataclass
 import numpy as np
 import trimesh
 from scipy.spatial import ConvexHull
-from scipy.spatial.qhull import QhullError
+try:                        # scipy ≥ 1.8 : QhullError vit dans scipy.spatial
+    from scipy.spatial import QhullError
+except ImportError:         # repli anciennes versions (namespace déprécié)
+    from scipy.spatial.qhull import QhullError
 
 
 @dataclass
@@ -17,14 +20,59 @@ class StabilityResult:
     is_top_heavy: bool
 
 
+def score_renversement(dist_edge_mm: float, com_height_mm: float,
+                       hull_fill: float = 1.0, is_top_heavy: bool = False) -> float:
+    """Score de stabilité 0→1 à partir de l'ANGLE DE RENVERSEMENT.
+
+    SOURCE DE VÉRITÉ UNIQUE : appelée par `analyze_stability` (repli) ET par
+    `layer_slicer._compute_stability` (chemin principal). Avant, chacun avait sa
+    formule → la même pièce pouvait obtenir deux scores différents selon le
+    chemin d'analyse emprunté (incohérence signalée par Emmanuel).
+
+    - `dist_edge_mm`  : distance du CDM projeté au bord de l'empreinte
+    - `com_height_mm` : hauteur du centre de masse au-dessus du plateau
+    - `hull_fill`     : empreinte / boîte englobante XY (contact ponctuel = petit)
+    """
+    com_h = max(float(com_height_mm), 1e-6)
+    angle = math.degrees(math.atan2(max(0.0, float(dist_edge_mm)), com_h))
+    score = (angle - 8.0) / (35.0 - 8.0)        # 8° → instable, 35°+ → très stable
+    score = float(np.clip(score, 0.05, 1.0))
+    if hull_fill < 0.02:
+        score = min(score, 0.15)                # contact quasi ponctuel
+    elif hull_fill < 0.08:
+        score = min(score, 0.35)
+    if is_top_heavy:
+        score *= 0.92
+    return float(np.clip(score, 0.0, 1.0))
+
+
+def brim_pour_score(score: float) -> float:
+    """Brim conseillé selon la stabilité (même barème partout)."""
+    if score < 0.30:
+        return 10.0
+    if score < 0.50:
+        return 6.0
+    if score < 0.65:
+        return 4.0
+    return 0.0
+
+
 def analyze_stability(mesh: trimesh.Trimesh) -> StabilityResult:
     """Évalue la stabilité de la pièce dans son orientation actuelle.
 
-    Score basé sur :
-    - Le centre de masse projeté est-il dans l'empreinte au sol ?
-    - Quelle marge par rapport au bord (normalisée par la taille de l'empreinte) ?
-    - Ratio hauteur/empreinte (pièce haute et fine = instable)
-    - Surface d'empreinte relative à la boîte englobante (base courbe/pointue)
+    Modèle : ANGLE DE RENVERSEMENT — l'angle dont il faudrait incliner la pièce
+    pour que son centre de masse sorte de l'empreinte au sol :
+
+        tan(θ) = distance(CDM projeté, bord de l'empreinte) / hauteur du CDM
+
+    C'est la mesure physique classique du basculement, et elle combine d'elle-même
+    les trois facteurs qui comptent (taille d'empreinte, hauteur, position du CDM).
+    L'ancien score « marge / rayon d'empreinte » ignorait la hauteur : une tour
+    10×10×120 obtenait 0,40 (« moyen ») et une pièce plate à grande base 0,46 —
+    incohérences signalées par Emmanuel.
+
+    Repères : θ ≥ 35° = très stable ; θ ≈ 20° = correct ; θ ≤ 8° = instable ;
+    CDM hors empreinte = la pièce bascule (score plancher).
     """
     com = mesh.center_mass
     com_xy = com[:2]
@@ -32,7 +80,10 @@ def analyze_stability(mesh: trimesh.Trimesh) -> StabilityResult:
     z_min = mesh.bounds[0][2]
     z_max = mesh.bounds[1][2]
     height = z_max - z_min
-    ground_threshold = z_min + height * 0.05
+    # Contact RÉEL : seuil absolu (première couche), pas un pourcentage de la
+    # hauteur — sinon une sphère de 30 mm « pose » sur une calotte de 1,5 mm et
+    # paraît stable alors qu'elle touche par un point.
+    ground_threshold = z_min + max(0.3, min(1.0, height * 0.01))
 
     ground_verts = mesh.vertices[mesh.vertices[:, 2] <= ground_threshold]
 
@@ -64,51 +115,20 @@ def analyze_stability(mesh: trimesh.Trimesh) -> StabilityResult:
     eqs = hull_2d.equations
     com_inside = bool(np.all(eqs[:, :2] @ com_xy + eqs[:, 2] <= 1e-6))
 
+    is_top_heavy = com[2] > height * 0.55
+
     if not com_inside:
         # CDM hors empreinte → la pièce bascule sous son propre poids
         score = 0.05
     else:
-        # Marge entre CDM et bord le plus proche
-        dist_to_edge = _point_to_polygon_distance(com_xy, hull_verts_2d)
-        # Rayon caractéristique de l'empreinte : √(aire/π) = rayon d'un cercle équivalent
-        char_radius = math.sqrt(footprint_area / math.pi) if footprint_area > 1e-6 else 1.0
-        # Score : 0 = CDM sur le bord, 1 = CDM bien centré dans l'empreinte
-        score = min(1.0, dist_to_edge / max(char_radius, 1.0))
+        bb_footprint = (float(mesh.bounding_box.extents[0])
+                        * float(mesh.bounding_box.extents[1]))
+        fill = footprint_area / bb_footprint if bb_footprint > 1e-6 else 1.0
+        score = score_renversement(
+            _point_to_polygon_distance(com_xy, hull_verts_2d),
+            float(com[2] - z_min), fill, is_top_heavy)
 
-    # ── Pénalité : empreinte réelle petite par rapport à la boîte englobante ──
-    # Une base courbe ou pointue n'offre qu'un petit contact avec le plateau
-    bb_footprint = float(mesh.bounding_box.extents[0]) * float(mesh.bounding_box.extents[1])
-    if bb_footprint > 1e-6:
-        footprint_fill = footprint_area / bb_footprint
-        if footprint_fill < 0.10:
-            score *= 0.30   # base quasi-ponctuelle ou linéaire
-        elif footprint_fill < 0.25:
-            score *= 0.55   # très petite empreinte courbe
-        elif footprint_fill < 0.45:
-            score *= 0.78   # empreinte réduite
-
-    # ── Pénalité : ratio hauteur/largeur d'empreinte (pièce haute et fine) ────
-    effective_width = math.sqrt(footprint_area) if footprint_area > 1e-6 else 1.0
-    height_ratio = height / max(effective_width, 1.0)
-    if height_ratio > 3.0:
-        score *= 0.45
-    elif height_ratio > 2.0:
-        score *= 0.70
-    elif height_ratio > 1.5:
-        score *= 0.88
-
-    # ── Pénalité : CDM haut = pièce top-heavy ─────────────────────────────────
-    is_top_heavy = com[2] > height * 0.55
-    if is_top_heavy:
-        score *= 0.85
-
-    brim_mm = 0.0
-    if score < 0.30:
-        brim_mm = 10.0
-    elif score < 0.50:
-        brim_mm = 6.0
-    elif score < 0.65:
-        brim_mm = 4.0
+    brim_mm = brim_pour_score(score)
 
     return StabilityResult(
         score=float(np.clip(score, 0.0, 1.0)),

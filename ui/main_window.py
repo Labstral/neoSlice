@@ -551,6 +551,17 @@ class AnalysisWorker(QObject):
                     "onglet Process > Support > Enable support"
                 )
 
+            # Score d'orientation (assistant) — proxy vectorisé, ~quelques ms à
+            # 200 ms max sur les très gros meshes. Remplit les champs prévus du
+            # rapport (orientation_score / orientation_improvement_pct).
+            try:
+                from core.geometry.orientation_advisor import score_orientation_actuelle
+                _osc, _ogain = score_orientation_actuelle(self._mesh)
+                report.orientation_score = _osc / 100.0
+                report.orientation_improvement_pct = _ogain
+            except Exception:
+                logger.debug("score orientation indisponible", exc_info=True)
+
             report.analysis_time_ms = (time.perf_counter() - t0) * 1000
             if self._support_mask is not None:
                 report.support_face_mask = self._support_mask
@@ -1146,6 +1157,21 @@ class _StatusBar(QWidget):
         self._apply_diag_btn_style()
         layout.addWidget(self._diag_btn)
 
+        # Mode série : ×N exemplaires disposés en grille à l'export (déborde sur
+        # plusieurs plateaux si besoin). Actif dès que l'export l'est.
+        from PySide6.QtWidgets import QSpinBox
+        self._serie_spin = QSpinBox()
+        self._serie_spin.setRange(1, 99)
+        self._serie_spin.setPrefix("× ")
+        self._serie_spin.setFont(QFont(FONT_MONO, 9))
+        self._serie_spin.setFixedHeight(30)
+        self._serie_spin.setFixedWidth(66)
+        self._serie_spin.setToolTip(_("serie.tip"))
+        self._serie_spin.setEnabled(False)
+        self._serie_spin.setFocusPolicy(Qt.StrongFocus)
+        self._style_serie_spin()
+        layout.addWidget(self._serie_spin)
+
         self._export_btn = QPushButton(_("export.btn", slicer=_slicer_name()))
         self._export_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
         self._export_btn.setFixedHeight(30)
@@ -1213,9 +1239,24 @@ class _StatusBar(QWidget):
             self._diag_btn.setText("✓  CORRECTIONS APPLIQUÉES")
             self._diag_btn.setEnabled(False)
 
+    def _style_serie_spin(self):
+        pal = _THEME.palette()
+        self._serie_spin.setStyleSheet(
+            f"QSpinBox {{ background: {pal['BG_INPUT']}; color: {pal['TEXT_PRIMARY']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 0 4px; }}"
+            f"QSpinBox:disabled {{ color: {pal['TEXT_LABEL']}; }}")
+
+    def serie_count(self) -> int:
+        """Nombre d'exemplaires demandés (mode série ; 1 = pièce seule)."""
+        return int(self._serie_spin.value())
+
+    def reset_serie(self) -> None:
+        self._serie_spin.setValue(1)
+
     def refresh_theme(self):
         pal = _THEME.palette()
         self.setStyleSheet(f"background: {pal['BG_PANEL']};")
+        self._style_serie_spin()
         self._dot.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
         self._msg.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         if self._diag_btn.isEnabled():
@@ -1266,6 +1307,7 @@ class _StatusBar(QWidget):
         pal = _THEME.palette()
         _bg = pal['ACCENT'] if _THEME.is_dark() else pal['TELE_GREEN']
         self._export_btn.setEnabled(enabled)
+        self._serie_spin.setEnabled(enabled)
         if enabled:
             self._pulse_phase = 0
             self._pulse_timer.start(20)
@@ -1454,9 +1496,18 @@ def _open_3mf_in_slicer(path: str, slicer: str) -> None:
     import sys as _sys, subprocess as _sp, os as _os
     try:
         if _sys.platform == "win32":
+            # DÉTACHER le slicer : sans cela il hérite de notre console et y
+            # déverse ses propres logs — Bambu Studio, qui embarque FFmpeg pour
+            # la caméra de l'imprimante, écrivait « [swscaler] deprecated pixel
+            # format used » UNE FOIS PAR SECONDE dans le terminal de neoSlice,
+            # et continuait même après la fermeture de neoSlice (vécu).
+            _flags = getattr(_sp, "DETACHED_PROCESS", 0x00000008) | \
+                     getattr(_sp, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
             for exe in _SLICER_EXES["win32"].get(slicer, []):
                 if _os.path.exists(exe):
-                    _sp.Popen([exe, path])
+                    _sp.Popen([exe, path],
+                              stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                              creationflags=_flags, close_fds=True)
                     return
             _os.startfile(path)            # repli : appli associée au .3mf
         elif _sys.platform == "darwin":
@@ -1552,6 +1603,11 @@ def _coffee_icon():
 
 
 # ── Fenêtre principale ─────────────────────────────────────────────────────
+
+# Aperçu « poser sur une face » : vert Okabe-Ito (lisible aussi en mode
+# daltonien), distinct du vermillon des zones de contrainte.
+FACE_PREVIEW_COLOR = "#009E73"
+
 
 class MainWindow(QMainWindow):
 
@@ -1739,6 +1795,9 @@ class MainWindow(QMainWindow):
         ws_layout.addWidget(self._center_container, stretch=1)
         ws_layout.addWidget(self._right_scroll)
 
+        # Assistant d'orientation : viewer + panneau d'analyse existent désormais
+        self._orient_connect()
+
         root.addWidget(workspace, stretch=1)
 
         # ── StatusBar ──
@@ -1790,6 +1849,10 @@ class MainWindow(QMainWindow):
             if _f:
                 self._current_filament = _f
         self._filament_selector.selection_changed.connect(self._on_filament_printer_changed)
+        # « Mes machines » : la sélection d'une machine épinglée peut basculer le
+        # slicer de sortie → mettre à jour le libellé du bouton d'export.
+        self._filament_selector.slicer_switched.connect(self._on_slicer_switched)
+        self._filament_selector.status_message.connect(self._show_status)
         self._filament_selector.printer_confirmed.connect(self._on_printer_confirmed)
         self._filament_selector.filament_confirmed.connect(self._on_filament_confirmed)
         # Étape ① validée -> déverrouille « Générer configuration » (les pièces
@@ -1911,6 +1974,7 @@ class MainWindow(QMainWindow):
         self._threemf_data = None          # traiter comme un mono-objet
         self._mesh = m
         self._original_mesh = m.copy()
+        self._orient_reset_state()         # objet isolé = nouveau contexte d'orientation
 
         # Scène neoGen multi-plateaux : le PROFIL de la pièce pilote le verrou.
         # Couvercle lithophane → RÉSISTANCE grisée/bloquée sur « Lithophanie »
@@ -1959,6 +2023,7 @@ class MainWindow(QMainWindow):
         self._mesh = td.combined_mesh
         self._active_object_id = None
         self._active_object_name = None
+        self._orient_reset_state()         # retour à l'ensemble multi-pièces
         self._overview_threemf = None
 
         # Vue d'ensemble = plus d'objet litho isolé → déverrouiller la Résistance
@@ -2029,6 +2094,8 @@ class MainWindow(QMainWindow):
             self._analysis_timeout.stop()
             self._analysis = report
             self._analysis_panel.update_from_report(report)
+            self._orient_gate_multi()
+            self._orient_maj_badge_pro()
             self._progress_bar.hide()
             self._viewer.set_loading(False)
             self._intent_selector.set_loading(False)
@@ -2210,6 +2277,15 @@ class MainWindow(QMainWindow):
         # Pro peut avoir été activé dans les réglages → tuto Pro (une fois)
         self._maybe_launch_pro_tutorial()
 
+    def _on_slicer_switched(self, _slicer: str):
+        """« Mes machines » a changé le slicer de sortie (sans passer par les
+        Réglages) → aligner le libellé du bouton d'export sur le nouveau slicer."""
+        try:
+            if hasattr(self, "_statusbar") and hasattr(self._statusbar, "_export_btn"):
+                self._statusbar._export_btn.setText(_("export.btn", slicer=_slicer_name()))
+        except Exception:
+            pass
+
     def _open_neogen(self):
         """Bascule la COLONNE DE DROITE entre les paramètres générés et le
         panneau neoGen : le viewer reste visible en entier pendant qu'on crée
@@ -2251,6 +2327,7 @@ class MainWindow(QMainWindow):
         if self._right_scroll.widget() is panel:
             self._show_params_panel()          # 2e clic sur NEOGEN = referme
             return
+        self._orient_on_right_swap()           # neoGen remplace l'assistant → modes off
         self._right_scroll.takeWidget()        # détache SANS détruire
         self._right_scroll.setWidget(panel)
         self._right_scroll.setFixedWidth(400)  # un peu plus large pour le confort
@@ -2279,7 +2356,7 @@ class MainWindow(QMainWindow):
         panel = getattr(self, "_carte_panel", None)
         if panel is None:
             panel = CartePanel()
-            panel.apercu_pret.connect(self._viewer.afficher_carte)
+            panel.apercu_pret.connect(self._apercu_carte)
             panel.exporter_demande.connect(self._exporter_carte)
             panel.convertir_litho_demande.connect(self._ouvrir_carte_en_litho)
             # déplacement d'un élément à la souris (viewer) -> maj dx/dy panneau
@@ -2361,8 +2438,13 @@ class MainWindow(QMainWindow):
             # APERÇU : carte FUSIONNÉE unique (une seule pièce visible dans le
             # viewer). Le vrai 3MF multicouleur n'est construit qu'à l'export
             # (« Générer le 3MF ») pour ne pas afficher un corps par couleur.
-            chemin = generer_fichier_carte(spec, litho=litho, litho_params=litho_params)
-            if not litho:
+            chemin, couleurs = generer_fichier_carte(
+                spec, litho=litho, litho_params=litho_params)
+            # MONO-COULEUR (retour Pierre M.) : une carte qui n'utilise qu'UNE
+            # couleur effective (ex. tout gravé ton sur ton) reste une pièce
+            # SIMPLE — pas de spec mémorisée, donc pas de route multicouleur ni
+            # de fenêtre de slots à l'export : un 3MF standard, un seul filament.
+            if not litho and len(couleurs) >= 2:
                 import copy
                 carte_spec = copy.deepcopy(spec)
         except Exception as exc:
@@ -2525,14 +2607,35 @@ class MainWindow(QMainWindow):
         except Exception:
             logger.debug("recolorisation viewer multicouleur ignorée", exc_info=True)
 
+    def _neogen_colonne_active(self) -> bool:
+        """Vraie si la colonne de droite affiche ENCORE le panneau neoGen (ou la
+        carte, embarquée dedans). Les aperçus sont asynchrones : celui qui
+        aboutit APRÈS « Nouvelle pièce » (ou après fermeture du panneau)
+        redessinait l'objet par-dessus la scène tout juste réinitialisée →
+        « rien ne se passe » au clic (vécu, bac Gridfinity en cours d'aperçu)."""
+        panel = getattr(self, "_neogen_panel", None)
+        return panel is not None and hasattr(self, "_right_scroll") \
+            and self._right_scroll.widget() is panel
+
     def _apercu_neogen(self, piece):
         """Aperçu direct d'un objet neoGen (sélection / réglage) dans le viewer —
         comme la carte de visite. Purement visuel : n'entre pas dans le pipeline
         (l'analyse et l'export ne se font qu'après « Générer »)."""
+        if not self._neogen_colonne_active():
+            return                          # aperçu arrivé après la fermeture
         try:
             self._viewer.apercu_neogen(piece)
         except Exception:
             logger.debug("aperçu neoGen ignoré", exc_info=True)
+
+    def _apercu_carte(self, scene):
+        """Aperçu de la carte de visite — même garde anti-course que neoGen."""
+        if not self._neogen_colonne_active():
+            return
+        try:
+            self._viewer.afficher_carte(scene)
+        except Exception:
+            logger.debug("aperçu carte ignoré", exc_info=True)
 
     def _charger_objet_neogen_mono(self, path):
         """Objet neoGen MONO-couleur généré : charge dans le pipeline MAIS garde le
@@ -2557,6 +2660,15 @@ class MainWindow(QMainWindow):
         """Rend la colonne de droite aux paramètres générés (état normal)."""
         if not hasattr(self, "_right_scroll"):
             return
+        self._orient_on_right_swap()       # sortir des modes de clic de l'assistant
+        # Fermeture de neoGen/carte SANS pièce générée : purger l'APERÇU resté
+        # dans le viewer (sinon objet fantôme affiché + « Nouvelle pièce »
+        # grisé, sans aucun moyen de vider la scène — vécu, ✕ du panneau).
+        if getattr(self, "_mesh", None) is None:
+            try:
+                self._viewer.purger_apercu()
+            except Exception:
+                pass
         # De retour aux paramètres : « Nouvelle pièce » ne reste actif que si une
         # pièce est réellement chargée (sinon rien à réinitialiser).
         self._topbar.set_new_enabled(getattr(self, "_mesh", None) is not None)
@@ -2673,11 +2785,20 @@ class MainWindow(QMainWindow):
             hub = ProHubDialog(self, devis_context=self._devis_context(),
                                initial_tab=initial_tab)
             apply_title_bar_theme(hub)
+            # Bibliothèque : « Réimprimer » ferme l'Espace Pro puis recharge la
+            # pièce (le chargement ne doit JAMAIS démarrer sous un modal ouvert).
+            self._reprint_after_hub = None
+            hub.reimpression_demandee.connect(
+                lambda e, h=hub: (setattr(self, "_reprint_after_hub", e), h.accept()))
             # Le centrage sur l'écran est géré par ProHubDialog.showEvent (fiable).
             hub.exec()
         finally:
             self._viewer.masquer_sphere_pour_modal(False)
         self._maybe_launch_pro_tutorial()   # 1re activation → tuto Pro (une fois)
+        _rp = getattr(self, "_reprint_after_hub", None)
+        self._reprint_after_hub = None
+        if _rp:
+            self._reimprimer_entree(_rp)
 
     def _devis_context(self) -> dict:
         """Contexte transmis au devis intégré (poids/durée/imprimante/pièce).
@@ -2753,10 +2874,14 @@ class MainWindow(QMainWindow):
             lay.addWidget(msg)
 
             combo = QComboBox()
+            from ui.components.spool_visuals import spool_icon, combo_icon_size, emplacement_suffix
+            from core.business import store as _bstore
+            combo_icon_size(combo)
             for s in spools:
                 label = (f"{s.get('materiau','')} · {s.get('marque','')} "
                          f"{s.get('couleur_nom','')} — {float(s.get('poids_restant_g') or 0):.0f} g")
-                combo.addItem(label.strip(), s["id"])
+                combo.addItem(spool_icon(_bstore.spool_couleurs(s)),
+                              label.strip() + emplacement_suffix(s), s["id"])
             combo.setStyleSheet(
                 f"QComboBox {{ background: {pal['BG_INPUT']}; color: {pal['TEXT_PRIMARY']}; "
                 f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; padding: 4px 8px; }}")
@@ -3521,6 +3646,11 @@ class MainWindow(QMainWindow):
         self._current_selection = None
         self._carte_export_spec = None   # tout nouveau fichier annule le mode carte multicouleur
         self._neogen_scene = None        # …et le mode objet neoGen bicolore (QR, texte…)
+        self._pending_reprint = None     # …et une réimpression bibliothèque en attente
+        try:
+            self._statusbar.reset_serie()   # nouveau fichier → ×1 (pas de ×N hérité)
+        except Exception:
+            pass
         try:
             self._params_preview.reset()
             self._analysis_panel.reset()
@@ -3592,6 +3722,7 @@ class MainWindow(QMainWindow):
             self._mesh = mesh
 
         self._original_mesh = self._mesh.copy()
+        self._orient_reset_state()        # nouvelle pièce → zones/backup obsolètes
 
         # Passer ThreeMFData au viewer pour affichage multi-acteurs colorés,
         # ou le mesh simple pour affichage normal.
@@ -3625,8 +3756,31 @@ class MainWindow(QMainWindow):
         # Miniature d'aperçu dans la zone d'import (différée : le rendu hors-écran
         # ne doit pas bloquer la fin du chargement).
         QTimer.singleShot(120, lambda p=path: self._update_drop_thumbnail(p))
+        self._afficher_reparations_fichier()
         self._statusbar.set_message(_("status.loading", name=path.name), AMBER)
         self._start_analysis()
+
+    def _afficher_reparations_fichier(self):
+        """Réparations faites par load_stl (mesh.metadata) → panneau d'analyse.
+        La réparation était historiquement MUETTE : l'utilisateur doit savoir
+        que son fichier a été retouché (et être PRÉVENU s'il reste percé)."""
+        try:
+            rep = (getattr(getattr(self, "_mesh", None), "metadata", {}) or {}) \
+                .get("neoslice_reparations") or {}
+            lignes, warn = [], False
+            if rep.get("trous") == "rebouches":
+                lignes.append(_("repair.holes"))
+            elif rep.get("trous") == "partiel":
+                lignes.append(_("repair.holes_partial"))
+                warn = True
+            if rep.get("faces_degenerees"):
+                lignes.append(_("repair.degenerate", n=rep["faces_degenerees"]))
+            if rep.get("unites"):
+                lignes.append(_("repair.units",
+                                unit=_(f"repair.unit_{rep['unites']}")))
+            self._analysis_panel.show_repair_info(lignes, warn=warn)
+        except Exception:
+            pass
 
     def _update_drop_thumbnail(self, path):
         """Génère et affiche la miniature du modèle dans la zone d'import."""
@@ -3651,6 +3805,514 @@ class MainWindow(QMainWindow):
         if getattr(self, "_mesh", None) is None:
             return
         self._force_full_next = True
+        self._start_analysis()
+
+    # ══════════════════ Assistant d'orientation ══════════════════════════════
+    def _show_status(self, text: str):
+        """Message court dans la barre de statut (aucun overlay sur le viewer)."""
+        try:
+            self._statusbar.set_message(text, TELE_GREEN)
+        except Exception:
+            pass
+
+    def _orient_connect(self):
+        """Branche la carte (colonne gauche) ; le panneau complet s'ouvre dans la
+        COLONNE DE DROITE (bascule façon neoGen — le viewer reste entier)."""
+        oa_w = self._analysis_panel.orientation
+        oa_w.open_requested.connect(self._orient_toggle_panel)
+        oa_w.poser_face_change.connect(self._orient_set_facing)
+        self._viewer.point_marque.connect(self._orient_on_point)
+        self._viewer.point_survole.connect(self._orient_on_hover)
+        self._orient_zones = []           # [{mask, center}]
+        self._orient_zone_scale = 1.0
+        self._orient_click_mode = None    # None | "zone" | "face"
+        self._orient_effort = ""          # "", "z", "x", "y"
+        self._orient_backup = None        # mesh AVANT la 1re orientation appliquée
+        self._orient_worker = None
+        self._orient_panel = None         # OrientationSidePanel (créé à la demande)
+
+    def _orient_verrou_pro(self) -> bool:
+        """Assistant d'orientation = fonctionnalité Pro. Renvoie True si l'accès
+        est autorisé ; sinon ouvre le paywall et renvoie False.
+
+        La carte reste visible hors Pro (badge PRO) : elle montre le potentiel
+        d'amélioration et fait découvrir la fonctionnalité — même logique que le
+        bouton « Espace Pro »."""
+        from core import licensing
+        if licensing.est_pro():
+            return True
+        # Tout modal doit masquer la sphère Oen (fenêtre OpenGL toujours au
+        # premier plan → crash Windows sous charge).
+        self._viewer.masquer_sphere_pour_modal(True)
+        try:
+            from ui.components.paywall_dialog import PaywallDialog
+            PaywallDialog(self).exec()
+        finally:
+            self._viewer.masquer_sphere_pour_modal(False)
+        if licensing.est_pro():                 # activé dans le paywall
+            self._topbar.refresh_pro()
+            self._analysis_panel.orientation.set_pro(True)
+            return True
+        return False
+
+    def _orient_toggle_panel(self):
+        """Ouvre/ferme le panneau de l'assistant dans la colonne de droite."""
+        # Fermeture : jamais bloquée (sinon un non-Pro resterait coincé).
+        if (getattr(self, "_orient_panel", None) is not None
+                and self._right_scroll.widget() is self._orient_panel):
+            self._show_params_panel()
+            return
+        if not self._orient_verrou_pro():
+            return
+        from ui.components.orientation_assistant import OrientationSidePanel
+        panel = self._orient_panel
+        if panel is None:
+            panel = OrientationSidePanel()
+            panel.marquage_change.connect(self._orient_set_marking)
+            panel.zones_effacees.connect(self._orient_clear_zones)
+            panel.taille_zone_changee.connect(self._orient_set_zone_scale)
+            panel.analyser_demande.connect(self._orient_compute)
+            panel.appliquer_demande.connect(self._orient_apply)
+            panel.revenir_demande.connect(self._orient_revert)
+            panel.effort_change.connect(self._orient_set_effort)
+            panel.close_requested.connect(self._show_params_panel)
+            self._orient_panel = panel
+        if self._right_scroll.widget() is panel:
+            self._show_params_panel()          # 2e clic = referme
+            return
+        self._right_scroll.takeWidget()
+        self._right_scroll.setWidget(panel)
+        self._right_scroll.setFixedWidth(320)
+        panel.set_zones(len(self._orient_zones))
+        self._analysis_panel.orientation.set_panel_open(True)
+
+    def _orient_on_right_swap(self):
+        """La colonne droite quitte l'assistant (✕, retour paramètres, neoGen…) :
+        sortir proprement de tout mode de clic — aucun mode fantôme."""
+        panel = getattr(self, "_orient_panel", None)
+        if panel is not None:
+            panel.stop_marking()
+        try:
+            self._analysis_panel.orientation.set_panel_open(False)
+            self._analysis_panel.orientation.stop_click_modes()
+        except Exception:
+            pass
+        self._orient_click_mode = None
+        try:
+            self._viewer.set_marking_mode(False)
+            self._viewer.clear_zone_preview()
+            self._orient_hover_last = None
+            self._orient_hover_face_id = None
+        except Exception:
+            pass
+
+    def _orient_maj_badge_pro(self):
+        """Badge PRO de la carte, aligné sur la licence courante."""
+        try:
+            from core import licensing
+            self._analysis_panel.orientation.set_pro(licensing.est_pro())
+        except Exception:
+            pass
+
+    def _orient_gate_multi(self):
+        """v1 : l'assistant s'applique à UNE pièce (ou un objet isolé). Sur un
+        plateau multi-pièces non isolé, la carte est masquée (l'utilisateur
+        isole une pièce d'un clic pour l'orienter)."""
+        try:
+            if getattr(self._viewer, "_multi_pick_mode", False):
+                self._analysis_panel.orientation.set_visible_card(False)
+        except Exception:
+            pass
+
+    def _orient_reset_state(self):
+        """Nouvelle pièce chargée : zones et sauvegarde d'origine obsolètes."""
+        self._orient_zones = []
+        self._orient_backup = None
+        self._orient_click_mode = None
+        self._orient_index = None        # index spatial obsolète (autre mesh)
+        self._orient_hover_last = None
+        self._orient_hover_face_id = None
+        try:
+            self._viewer.clear_zone_overlays()
+            self._viewer.set_marking_mode(False)
+            self._viewer.set_preview_matrix(None)
+            self._analysis_panel.orientation.stop_click_modes()
+            panel = getattr(self, "_orient_panel", None)
+            if panel is not None:
+                panel.stop_marking()
+                panel.set_zones(0)
+                panel.set_propositions([])
+                panel.set_applied(False)
+                # panneau ouvert → rendre la colonne aux paramètres (autre pièce)
+                if self._right_scroll.widget() is panel:
+                    self._show_params_panel()
+        except Exception:
+            pass
+
+    def _orient_prechauffer(self):
+        """Construit l'arbre de proximité du mesh EN ARRIÈRE-PLAN dès qu'un mode
+        de clic est activé.
+
+        Le 1er `nearest.on_surface` coûte ~1,3 s sur une pièce détaillée (327 k
+        faces) : payé au moment du CLIC, il fige l'interface sans rien annoncer
+        (« on a l'impression que ça ne fonctionne pas »). Payé pendant que
+        l'utilisateur vise sa face, il devient invisible — les appels suivants
+        tombent à ~45 ms."""
+        mesh = getattr(self, "_mesh", None)
+        if mesh is None:
+            return
+        w = getattr(self, "_orient_warm", None)
+        if w is not None and w.isRunning():
+            return
+
+        class _Warm(QThread):
+            pret = Signal(object)
+
+            def __init__(self, m):
+                super().__init__()
+                self._m = m
+
+            def run(self):
+                idx = None
+                try:
+                    import numpy as _np
+                    # un appel réel construit et met en cache l'arbre sur le mesh
+                    self._m.nearest.on_surface(_np.zeros((1, 3)))
+                except Exception:
+                    pass
+                try:
+                    from core.geometry.orientation_advisor import (
+                        IndexZones, _facet_labels, _SEUIL_ZONE_RAPIDE)
+                    idx = IndexZones(self._m)      # KD-trees → survol fluide
+                    if len(self._m.faces) <= _SEUIL_ZONE_RAPIDE:
+                        _facet_labels(self._m)     # facettes planes (zones nettes)
+                except Exception:
+                    idx = None
+                self.pret.emit(idx)
+
+        self._orient_index = None
+        self._orient_warm = _Warm(mesh)
+        self._orient_warm.pret.connect(self._orient_index_pret)
+        self._orient_warm.start()
+
+    def _orient_index_pret(self, index):
+        """Index spatial prêt : le survol devient fluide (jusque-là, repli sur le
+        calcul direct — jamais bloquant)."""
+        if getattr(self, "_mesh", None) is not None and index is not None:
+            if getattr(index, "n_faces", -1) == len(self._mesh.faces):
+                self._orient_index = index
+
+    def _orient_set_marking(self, on: bool):
+        self._orient_click_mode = "zone" if on else (
+            "face" if getattr(self, "_orient_click_mode", None) == "face" else None)
+        self._viewer.set_marking_mode(bool(self._orient_click_mode))
+        if on:
+            self._show_status(_("orient.mark_hint"))
+            self._orient_prechauffer()
+
+    def _orient_set_facing(self, on: bool):
+        if on and not self._orient_verrou_pro():
+            # non-Pro : on relâche le bouton sans déclencher de récursion
+            self._analysis_panel.orientation.stop_click_modes()
+            return
+        self._orient_click_mode = "face" if on else (
+            "zone" if getattr(self, "_orient_click_mode", None) == "zone" else None)
+        self._viewer.set_marking_mode(bool(self._orient_click_mode))
+        if on:
+            self._show_status(_("orient.face_hint"))
+            self._orient_prechauffer()
+
+    def _orient_set_zone_scale(self, f: float):
+        self._orient_zone_scale = float(f)
+
+    def _orient_set_effort(self, code: str):
+        self._orient_effort = code or ""
+
+    def _orient_on_point(self, pt):
+        """Clic en mode marquage/poser-face : point 3D monde émis par le viewer."""
+        mesh = getattr(self, "_mesh", None)
+        mode = getattr(self, "_orient_click_mode", None)
+        if mesh is None or not mode or pt is None:
+            return
+        from core.geometry import orientation_advisor as _oa
+        from PySide6.QtWidgets import QApplication as _QA
+        # Retour IMMÉDIAT : sablier + message repeints AVANT le calcul, sinon
+        # l'utilisateur croit que son clic n'a rien fait et clique ailleurs.
+        _QA.setOverrideCursor(Qt.WaitCursor)
+        self._show_status(_("orient.working"))
+        _QA.processEvents()
+        try:
+            fid = _oa.face_la_plus_proche(mesh, pt)
+        finally:
+            _QA.restoreOverrideCursor()
+        if fid is None:
+            self._show_status(_("orient.mark_hint") if mode == "zone"
+                              else _("orient.face_hint"))
+            return                                   # clic à côté de la pièce
+        if mode == "face":
+            m4 = _oa.rotation_pour_poser_face(mesh, fid)
+            self._analysis_panel.orientation.stop_click_modes()
+            self._orient_apply(m4)
+            return
+        # mode zone : re-clic sur une zone existante = la retirer
+        for i, z in enumerate(list(self._orient_zones)):
+            if bool(z["mask"][fid]):
+                self._orient_zones.pop(i)
+                self._orient_refresh_zones()
+                return
+        import numpy as _np
+        rayon = _oa.rayon_zone_defaut(mesh) * getattr(self, "_orient_zone_scale", 1.0)
+        # Croissance le long de la SURFACE depuis la face cliquée : contour net
+        # (identique à l'aperçu au survol), et la zone ne traverse pas le vide.
+        mask = _oa.zone_mask_geodesique(mesh, int(fid), rayon)
+        if not bool(_np.any(mask)):
+            mask = _oa.zone_mask_autour(mesh, pt, rayon, face_index=fid)
+        if not bool(_np.any(mask)):
+            return
+        mask = _oa.etendre_aux_faces(mesh, mask)    # zone alignée sur les faces
+        self._orient_zones.append({"mask": mask, "center": tuple(float(v) for v in pt)})
+        self._viewer.hide_zone_preview()       # l'aperçu devient une vraie zone
+        self._orient_hover_last = None
+        self._orient_refresh_zones()
+        self._show_status(_("orient.mark_hint"))
+
+    def _orient_on_hover(self, pt):
+        """Survol en mode marquage : pré-affiche la zone qui serait créée par un
+        clic ici (aperçu translucide). Purement visuel, aucun état modifié.
+
+        Le survol doit rester FLUIDE : on n'appelle donc PAS `nearest.on_surface`
+        (coûteux), on se contente du masque géométrique — l'aperçu montre déjà
+        exactement les faces qui seraient retenues."""
+        mode = getattr(self, "_orient_click_mode", None)
+        if mode not in ("zone", "face"):
+            return
+        mesh = getattr(self, "_mesh", None)
+        if mesh is None or pt is None:
+            self._viewer.hide_zone_preview()      # masque, ne détruit pas
+            self._orient_hover_last = None
+            return
+        if mode == "face":
+            self._orient_hover_face(mesh, pt)
+            return
+        try:
+            import numpy as _np
+            from core.geometry import orientation_advisor as _oa
+            rayon = _oa.rayon_zone_defaut(mesh) * getattr(self, "_orient_zone_scale", 1.0)
+            # Micro-déplacements : si le curseur n'a quasiment pas bougé sur la
+            # surface, la zone serait identique → on ne recalcule ni ne repeint
+            # (aperçu STABLE et fluide au lieu de scintiller).
+            prev = getattr(self, "_orient_hover_last", None)
+            p = _np.asarray(pt, dtype=float)
+            if prev is not None and float(_np.linalg.norm(p - prev)) < rayon * 0.08:
+                return
+            index = getattr(self, "_orient_index", None)
+            # Zone « propre » : croissance le long de la surface depuis le
+            # triangle visé (même qualité de rendu que la sélection de face).
+            fid = (index.face_proche(pt) if index is not None
+                   else _oa.face_la_plus_proche(mesh, pt))
+            if fid is None:
+                self._viewer.hide_zone_preview()
+                self._orient_hover_last = None
+                return
+            # Maillage très dense : passer par le KD-tree déjà construit (O(log n))
+            # plutôt que par la croissance par adjacence — le contour reste lisse
+            # à l'œil (triangles minuscules) et le survol reste fluide.
+            if index is not None and len(mesh.faces) > _oa._SEUIL_ZONE_RAPIDE:
+                mask = index.masque(pt, rayon, face_index=int(fid))
+            else:
+                mask = _oa.zone_mask_geodesique(mesh, int(fid), rayon)
+            if not bool(_np.any(mask)):
+                self._viewer.hide_zone_preview()
+                self._orient_hover_last = None
+                return
+            # Épouser les FACES planes touchées : même netteté que la mise en
+            # évidence de face (plus de triangles coupés sur le contour).
+            mask = _oa.etendre_aux_faces(mesh, mask)
+            self._orient_hover_last = p
+            if index is not None:
+                pts, faces = index.surface_arrays(mask)
+                self._viewer.show_zone_preview((pts, faces))
+            else:
+                self._viewer.show_zone_preview(
+                    mesh.submesh([_np.where(mask)[0]], append=True))
+        except Exception:
+            self._viewer.hide_zone_preview()
+
+    def _orient_hover_face(self, mesh, pt):
+        """Survol en mode « poser sur une face » : met en évidence en VERT toute
+        la FACETTE PLANE survolée — celle qui viendra réellement contre le
+        plateau. L'utilisateur voit exactement ce qu'il s'apprête à poser."""
+        import numpy as _np
+        from core.geometry import orientation_advisor as _oa
+        try:
+            index = getattr(self, "_orient_index", None)
+            fid = (index.face_proche(pt) if index is not None
+                   else _oa.face_la_plus_proche(mesh, pt))
+            if fid is None:
+                self._viewer.hide_zone_preview()
+                self._orient_hover_face_id = None
+                return
+            # même facette que le survol précédent → rien à recalculer/repeindre
+            if getattr(self, "_orient_hover_face_id", None) == int(fid):
+                return
+            self._orient_hover_face_id = int(fid)
+            idx = _oa.facette_faces(mesh, int(fid))
+            if idx.size == 0:
+                self._viewer.hide_zone_preview()
+                return
+            if index is not None:
+                mask = _np.zeros(len(mesh.faces), dtype=bool)
+                mask[idx] = True
+                pts, faces = index.surface_arrays(mask)
+                self._viewer.show_zone_preview((pts, faces), color=FACE_PREVIEW_COLOR)
+            else:
+                self._viewer.show_zone_preview(mesh.submesh([idx], append=True),
+                                               color=FACE_PREVIEW_COLOR)
+        except Exception:
+            self._viewer.hide_zone_preview()
+
+    def _orient_refresh_zones(self):
+        """Surbrillance des zones + flèches d'axe local dans le viewer."""
+        import numpy as _np
+        from core.geometry import orientation_advisor as _oa
+        mesh = getattr(self, "_mesh", None)
+        zones_v = []
+        if mesh is not None:
+            for z in self._orient_zones:
+                idx = _np.where(z["mask"])[0]
+                if idx.size == 0:
+                    continue
+                try:
+                    sub = mesh.submesh([idx], append=True)
+                except Exception:
+                    continue
+                axis, _fiab = _oa.zone_axis(mesh, z["mask"])
+                centre = mesh.triangles_center[idx].mean(axis=0)
+                zones_v.append({"mesh": sub,
+                                "axis": (axis.tolist() if axis is not None else None),
+                                "center": centre.tolist()})
+        self._viewer.show_zone_overlays(zones_v)
+        if getattr(self, "_orient_panel", None) is not None:
+            self._orient_panel.set_zones(len(self._orient_zones))
+
+    def _orient_clear_zones(self):
+        self._orient_zones = []
+        self._viewer.clear_zone_overlays()
+        if getattr(self, "_orient_panel", None) is not None:
+            self._orient_panel.set_zones(0)
+
+    def _orient_compute(self):
+        """Calcule les propositions dans un thread (affinage ~1-2 s possible)."""
+        mesh = getattr(self, "_mesh", None)
+        if mesh is None or getattr(self, "_orient_panel", None) is None:
+            return
+        oa_w = self._orient_panel
+        # Pendant le calcul : uniquement l'indicateur de chargement. Tout aperçu
+        # fantôme resté à l'écran est nettoyé (sinon il « clignote » au clic).
+        self._viewer.clear_zone_preview()
+        oa_w.set_busy(True)
+        import numpy as _np
+        masks = [z["mask"] for z in self._orient_zones]
+        force = {"z": _np.array([0.0, 0.0, 1.0]), "x": _np.array([1.0, 0.0, 0.0]),
+                 "y": _np.array([0.0, 1.0, 0.0])}.get(self._orient_effort)
+        # sans zones seulement : les zones marquées priment sur le menu de repli
+        if masks:
+            force = None
+
+        class _OrientWorker(QThread):
+            done = Signal(object)
+
+            def __init__(self, m, mk, fa):
+                super().__init__()
+                self._m, self._mk, self._fa = m, mk, fa
+
+            def run(self):
+                try:
+                    from core.geometry.orientation_advisor import conseiller
+                    props = conseiller(self._m, zone_masks=self._mk,
+                                       force_axis=self._fa, fine=True)
+                except Exception:
+                    logger.exception("assistant orientation : calcul échoué")
+                    props = []
+                self.done.emit(props)
+
+        self._orient_worker = _OrientWorker(mesh.copy(), masks, force)
+        self._orient_worker.done.connect(self._orient_on_props)
+        self._orient_worker.start()
+
+    def _orient_on_props(self, props):
+        oa_w = getattr(self, "_orient_panel", None)
+        if oa_w is None:
+            return
+        oa_w.set_busy(False)
+        display = []
+        labels = {"actuelle": "orient.pose_actuelle", "retournee": "orient.pose_retournee",
+                  "cote_x_pos": "orient.pose_cote_x", "cote_x_neg": "orient.pose_cote_x_neg",
+                  "cote_y_pos": "orient.pose_cote_y", "cote_y_neg": "orient.pose_cote_y_neg",
+                  "inclinee": "orient.pose_inclinee"}
+        # L'explication cite les ZONES seulement s'il y en a : sinon la solidité
+        # vient de l'effort déclaré au menu — dire « zone marquée » serait faux.
+        _has_zones = bool(self._orient_zones)
+        for i, p in enumerate(props[:4]):
+            if p.zones_en_surplomb:
+                expl = _("orient.expl_scars")
+            elif p.score_solidite is not None and p.score_solidite > 0.8:
+                expl = _("orient.expl_layers_good" if _has_zones else "orient.expl_effort_good")
+            elif p.score_solidite is not None and p.score_solidite < 0.4:
+                expl = _("orient.expl_layers_bad" if _has_zones else "orient.expl_effort_bad")
+            else:
+                expl = ""
+            # % de surplombs formaté EXACTEMENT comme la jauge du panneau
+            # (mêmes règles : plancher « < 1% », arrondi identique).
+            _ratio = float(p.overhang_ratio)
+            _disp = max(_ratio, 0.01) if _ratio > 0 else 0.0
+            _pct = _disp * 100
+            _lab = "< 1%" if 0 < _pct < 1.5 else f"{round(_pct)}%"
+            display.append({
+                "titre": _(labels.get(p.label, "orient.pose_inclinee")),
+                "recommande": i == 0,
+                "solidite": p.score_solidite,
+                "surplombs": _disp,
+                "surplombs_label": _lab,
+                "adherence": p.score_adherence,
+                "stabilite": p.score_stabilite,     # même moteur que la jauge
+                "explication": expl,
+                "matrice": p.matrice.tolist(),
+            })
+        oa_w.set_propositions(display)
+
+    def _orient_apply(self, m4):
+        """Applique réellement l'orientation : mesh tourné + reposé, zones
+        conservées (masques par face), ré-analyse complète."""
+        mesh = getattr(self, "_mesh", None)
+        if mesh is None or m4 is None:
+            return
+        from core.geometry.orientation_advisor import appliquer_orientation
+        if self._orient_backup is None:
+            self._orient_backup = mesh.copy()
+        self._viewer.set_preview_matrix(None)
+        self._mesh = appliquer_orientation(mesh, m4)
+        self._original_mesh = self._mesh.copy()
+        self._orient_index = None        # nouveau mesh -> index à reconstruire
+        if getattr(self, "_orient_panel", None) is not None:
+            self._orient_panel.set_applied(True)
+        self._show_status(_("orient.applied"))
+        self._viewer.load_mesh(self._mesh)
+        self._orient_refresh_zones()          # les masques suivent la pièce
+        self._start_analysis()
+
+    def _orient_revert(self):
+        if self._orient_backup is None:
+            return
+        self._mesh = self._orient_backup.copy()
+        self._original_mesh = self._mesh.copy()
+        self._orient_index = None
+        self._orient_backup = None
+        if getattr(self, "_orient_panel", None) is not None:
+            self._orient_panel.set_applied(False)
+        self._viewer.set_preview_matrix(None)
+        self._viewer.load_mesh(self._mesh)
+        self._orient_refresh_zones()
         self._start_analysis()
 
     def _start_analysis(self):
@@ -3738,6 +4400,8 @@ class MainWindow(QMainWindow):
         logger.info(f"Analyse terminée en {report.analysis_time_ms:.0f}ms")
 
         self._analysis_panel.update_from_report(report)
+        self._orient_gate_multi()
+        self._orient_maj_badge_pro()
         self._progress_bar.hide()
         self._viewer.set_loading(False)
         self._intent_selector.set_loading(False)
@@ -3882,6 +4546,28 @@ class MainWindow(QMainWindow):
         else:
             logger.info(f"[objet] aucun état mémorisé pour {_oid}")
 
+        # « Réimprimer à l'identique » (bibliothèque de pièces) : le fichier vient
+        # d'être rechargé → réappliquer la config EXACTE mémorisée à l'export,
+        # par-dessus l'analyse fraîche (même mécanique que la restauration par
+        # objet ci-dessus). Consommé une seule fois.
+        _rp = getattr(self, "_pending_reprint", None)
+        if _rp is not None:
+            self._pending_reprint = None
+            try:
+                from core.parameters.print_config import PrintConfig
+                _cfg = PrintConfig(**(_rp.get("config") or {}))
+                self._current_config = _cfg
+                self._params_preview.update_from_config(_cfg, self._analysis, None)
+                self._analysis_panel.set_generation_active()
+                self._statusbar.set_export_enabled(True)
+                self._step_intent.set_done()
+                self._statusbar.set_message(
+                    _("library.reprint_ready", name=_rp.get("nom", "")), TELE_GREEN)
+                logger.info(f"[bibliothèque] config réappliquée : {_rp.get('nom')}")
+            except Exception:
+                logger.exception("bibliothèque : réapplication config échouée")
+                self._statusbar.set_message(_("library.reprint_failed"), AMBER)
+
     def _demarrer_thermomap_fragilite(self) -> None:
         """Lance EN ARRIÈRE-PLAN le calcul de la thermomap de fragilité pour la
         scène/objet courant, et affiche la case à cocher. Aucun overlay d'analyse.
@@ -3925,6 +4611,8 @@ class MainWindow(QMainWindow):
                 self._viewer.clear_fragility_data()
                 if _frag_upfront and self._analysis is not None:
                     self._analysis_panel.update_from_report(self._analysis)
+                    self._orient_gate_multi()
+                    self._orient_maj_badge_pro()
                 return
             _cb = (self._recolorer_viewer_si_multicouleur
                    if restore_neogen else None)
@@ -4939,6 +5627,41 @@ class MainWindow(QMainWindow):
                                 "reconstruction brandée depuis le mesh")
             logger.info(f"[EXPORT] src={_src_3mf} is_3mf={_is_3mf_input} threemf={self._threemf_data is not None}")
 
+            # ── MODE SÉRIE (×N exemplaires en grille) ─────────────────────────
+            # Applicable aux exports reconstruits depuis le mesh. Le chemin
+            # « injection 3MF source » ne peut pas dupliquer (structure du projet
+            # préservée telle quelle) → on prévient et on exporte à l'unité.
+            _n_serie = 1
+            _serie_groupes = None       # list[plateau] -> list[Trimesh]
+            try:
+                _n_serie = max(1, self._statusbar.serie_count())
+            except Exception:
+                pass
+            if _n_serie > 1 and _is_3mf_input:
+                # L'injection ne joue que pour la sortie Bambu vers une Bambu Lab ;
+                # partout ailleurs le 3MF source est RECONSTRUIT → série possible.
+                from core.prefs import PREFS as _PREFS0
+                from data.printers import is_catalogue_model as _icm0
+                if (_PREFS0.get("slicer_output", "bambu") == "bambu"
+                        and not _icm0(self._current_printer)):
+                    self._show_status(_("serie.not_applicable"))
+                    _n_serie = 1
+            if _n_serie > 1:
+                from core.geometry.serie import copies_serie
+                from data.printers import volume_impression
+                _bx, _by, _bz = volume_impression(self._current_printer)
+                try:
+                    _serie_groupes = copies_serie(self._mesh, _n_serie, (_bx, _by))
+                except ValueError:
+                    self._statusbar.set_message(_("serie.too_big"), AMBER)
+                    return
+            _mesh_export = self._mesh
+            _serie_extra: list = []
+            if _serie_groupes:
+                import trimesh as _tm
+                _mesh_export = _tm.util.concatenate(_serie_groupes[0])
+                _serie_extra = _serie_groupes[1:]
+
             from core.prefs import PREFS as _PREFS
             from data.printers import is_catalogue_model as _is_cat_model
             # plateau choisi (curr_bed_type Bambu/Orca) — cohérent avec l'imprimante
@@ -4947,7 +5670,7 @@ class MainWindow(QMainWindow):
                 # Sortie PrusaSlicer : format 3MF différent → toujours reconstruire depuis le mesh
                 from core.export.prusa_3mf_builder import PrusaThreeMFBuilder
                 path = PrusaThreeMFBuilder().build(
-                    mesh=self._mesh,
+                    mesh=_mesh_export,
                     config=config,
                     output_path=Path(output_path),
                     printer_ui_name=self._current_printer,
@@ -4959,7 +5682,7 @@ class MainWindow(QMainWindow):
                 # de Bambu/Prusa → toujours reconstruire depuis le mesh.
                 from core.export.cura_3mf_builder import CuraThreeMFBuilder
                 path = CuraThreeMFBuilder().build(
-                    mesh=self._mesh,
+                    mesh=_mesh_export,
                     config=config,
                     output_path=Path(output_path),
                     printer_ui_name=self._current_printer,
@@ -4972,7 +5695,7 @@ class MainWindow(QMainWindow):
                 from core.export.flashprint_builder import FlashPrintBuilder
                 _fpb = FlashPrintBuilder()
                 path = _fpb.build(
-                    mesh=self._mesh,
+                    mesh=_mesh_export,
                     config=config,
                     output_path=Path(output_path),
                     printer_ui_name=self._current_printer,
@@ -5000,9 +5723,24 @@ class MainWindow(QMainWindow):
                     nozzle_diameter_mm=nozzle_mm,
                     plate_type=_plate,
                 )
+            elif _serie_extra:
+                # Série débordant sur PLUSIEURS plateaux, sortie Bambu/Orca :
+                # UN seul 3MF multi-plateaux (writer litho généralisé), chaque
+                # copie sur son plateau, positions relatives préservées.
+                from core.export.multiplate_3mf import build_multiplate_bambu
+                _objs = []
+                for _pi, _grp in enumerate(_serie_groupes):
+                    for _ci, _m in enumerate(_grp):
+                        _objs.append({"mesh": _m, "config": config, "plate": _pi,
+                                      "name": f"{stl_stem}_{_pi * len(_serie_groupes[0]) + _ci + 1}"})
+                path = build_multiplate_bambu(
+                    _objs, config, Path(output_path),
+                    printer_ui_name=self._current_printer,
+                    filament_ui_name=self._current_filament,
+                    nozzle_diameter_mm=nozzle_mm, plate_type=_plate)
             else:
                 path = self._tmf_builder.build(
-                    mesh=self._mesh,
+                    mesh=_mesh_export,
                     config=config,
                     output_path=Path(output_path),
                     printer_ui_name=self._current_printer,
@@ -5010,6 +5748,40 @@ class MainWindow(QMainWindow):
                     nozzle_diameter_mm=nozzle_mm,
                     plate_type=_plate,
                 )
+
+            # Série multi-plateaux hors Bambu/Orca : un FICHIER par plateau
+            # supplémentaire (le format multi-plateaux n'y est pas garanti) —
+            # même builder, suffixe _plateau2, _plateau3…
+            if _serie_extra and _PREFS.get("slicer_output", "bambu") in (
+                    "prusa", "cura", "flashprint"):
+                import trimesh as _tm
+                _slicer_out = _PREFS.get("slicer_output", "bambu")
+                for _k, _grp in enumerate(_serie_extra, start=2):
+                    _p2 = Path(output_path)
+                    _p2 = _p2.with_name(f"{_p2.stem}_plateau{_k}{_p2.suffix}")
+                    _mesh_k = _tm.util.concatenate(_grp)
+                    if _slicer_out == "prusa":
+                        from core.export.prusa_3mf_builder import PrusaThreeMFBuilder
+                        PrusaThreeMFBuilder().build(
+                            mesh=_mesh_k, config=config, output_path=_p2,
+                            printer_ui_name=self._current_printer,
+                            filament_ui_name=self._current_filament,
+                            nozzle_diameter_mm=nozzle_mm)
+                    elif _slicer_out == "cura":
+                        from core.export.cura_3mf_builder import CuraThreeMFBuilder
+                        CuraThreeMFBuilder().build(
+                            mesh=_mesh_k, config=config, output_path=_p2,
+                            printer_ui_name=self._current_printer,
+                            filament_ui_name=self._current_filament,
+                            nozzle_diameter_mm=nozzle_mm)
+                    else:
+                        from core.export.flashprint_builder import FlashPrintBuilder
+                        FlashPrintBuilder().build(
+                            mesh=_mesh_k, config=config, output_path=_p2,
+                            printer_ui_name=self._current_printer,
+                            filament_ui_name=self._current_filament,
+                            nozzle_diameter_mm=nozzle_mm)
+                logger.info(f"[série] {len(_serie_extra)} fichier(s) plateau supplémentaires")
             logger.info(f"3MF exporté : {path}")
 
             # Espace Pro : la répartition des couleurs + décompte du stock est
@@ -5017,7 +5789,10 @@ class MainWindow(QMainWindow):
             selection = getattr(self, "_current_selection", None)
             self._show_success_dialog(config, selection, path)
 
-            if ok:
+            if _serie_groupes:
+                self._statusbar.set_message(
+                    _("serie.exported", n=_n_serie, p=len(_serie_groupes)), TELE_GREEN)
+            elif ok:
                 self._statusbar.set_message(_("status.export_ok"), TELE_GREEN)
             else:
                 self._statusbar.set_message(_("status.export_ok_warn", msg=result_msg), AMBER)
@@ -5026,9 +5801,82 @@ class MainWindow(QMainWindow):
             logger.exception("Erreur export")
             self._statusbar.set_message(_("status.export_err", msg=e), ERROR_RED)
 
+    def _enregistrer_bibliotheque(self, config) -> None:
+        """Bibliothèque de pièces (Espace Pro) : chaque export réussi mémorise la
+        pièce + ses réglages EXACTS (+ vignette du viewer) pour « Réimprimer à
+        l'identique ». Silencieux et jamais bloquant — l'export prime."""
+        try:
+            from core import licensing
+            if not licensing.est_pro():
+                return
+            src = getattr(self, "_stl_path", None)
+            if not src or not Path(src).exists():
+                return          # pas de fichier source rechargeable (rien à mémoriser)
+            from core.business import store
+            nom = getattr(self, "_active_object_name", None) if \
+                getattr(self, "_active_object_id", None) is not None else None
+            entry = store.add_library_entry({
+                "nom": str(nom or Path(src).stem),
+                "fichier": str(src),
+                "sha1": store.file_sha1(src),
+                "imprimante": self._current_printer or "",
+                "filament": self._current_filament or "",
+                "plateau": self._filament_selector.current_plate_type(),
+                "buse_mm": self._filament_selector.current_nozzle_diameter_mm(),
+                "config": config.model_dump() if config is not None else {},
+            })
+            vp = store.vignette_path(entry["id"])
+            if self._viewer.capture_vignette(vp):
+                store.update_library_entry(entry["id"], {"vignette": str(vp)})
+            logger.info(f"[bibliothèque] mémorisé : {entry['nom']} "
+                        f"(exports={entry.get('exports', 1)})")
+        except Exception:
+            logger.debug("bibliothèque : enregistrement ignoré", exc_info=True)
+
+    def _reimprimer_entree(self, entry: dict) -> None:
+        """« Réimprimer à l'identique » : recharge le fichier source, restaure
+        imprimante/filament/plateau/buse, puis (fin d'analyse) réapplique la
+        config EXACTE mémorisée à l'export — pas une régénération."""
+        from PySide6.QtWidgets import QMessageBox
+        src = entry.get("fichier") or ""
+        if not src or not Path(src).exists():
+            m = QMessageBox(self)
+            m.setWindowTitle(_("library.missing_title"))
+            m.setText(_("library.missing_file", path=src or "?"))
+            m.setIcon(QMessageBox.Warning)
+            m.exec()
+            return
+        try:
+            from core.business import store
+            sha = entry.get("sha1") or ""
+            if sha and store.file_sha1(src) != sha:
+                # Fichier modifié depuis l'export : on prévient, on continue (les
+                # réglages restent probablement valables pour une pièce retouchée).
+                self._show_status(_("library.changed_file"))
+        except Exception:
+            pass
+        try:
+            self._filament_selector.restaurer_choix(
+                entry.get("imprimante") or "", entry.get("filament") or "",
+                entry.get("plateau") or "", float(entry.get("buse_mm") or 0))
+            if entry.get("imprimante"):
+                self._current_printer = entry["imprimante"]
+            if entry.get("filament"):
+                self._current_filament = entry["filament"]
+        except Exception:
+            logger.debug("bibliothèque : restauration sélecteur échouée", exc_info=True)
+        self._on_stl_dropped(Path(src))
+        # APRÈS _on_stl_dropped (qui purge le drapeau d'un chargement précédent) ;
+        # l'analyse est asynchrone, le drapeau est bien en place avant sa fin.
+        self._pending_reprint = dict(entry)
+
     def _show_success_dialog(self, config, selection: "SelectionResult | None", tmf_path: "Path | None" = None):
         from PySide6.QtWidgets import QDialog, QFileDialog
         from data.filaments import FILAMENTS
+
+        # Bibliothèque de pièces : mémoriser AVANT d'afficher (l'utilisateur peut
+        # fermer l'app depuis la fenêtre de succès).
+        self._enregistrer_bibliotheque(config)
 
         filament_name = self._current_filament
         printer_name  = self._current_printer
@@ -5084,11 +5932,11 @@ class MainWindow(QMainWindow):
                 _parts.append("<b>" + _("export.flashprint_supports") + "</b>")
             info = QLabel("<br>".join(_parts))
         else:
-            info = QLabel(
-                "Les paramètres d'impression (qualité, vitesse, supports…) sont intégrés dans le 3MF.<br>"
-                "Les paramètres du <b>filament</b> (températures, ventilation, débit) doivent être "
-                "configurés manuellement dans le slicer."
-            )
+            # Clé i18n (le texte était en DUR en français → restait français en
+            # anglais) + renvoi explicite vers la fiche PDF : un utilisateur
+            # (Nicolas L.) demandait « un guide des derniers réglages filament »
+            # avec le bouton PDF sous les yeux, sans faire le lien.
+            info = QLabel(_("export.success_info"))
         info.setFont(QFont(FONT_MAIN, 9))
         info.setTextFormat(Qt.RichText)
         info.setStyleSheet(f"color: {_dp['TEXT_SECONDARY']};")

@@ -233,6 +233,10 @@ class Viewer3D(QWidget):
     objet_clique = Signal(str)          # object_id
     # bouton « ↩ Vue d'ensemble » (mode objet isolé) → revenir à tous les objets
     retour_ensemble = Signal()
+    # Assistant d'orientation — clic en mode marquage : point 3D monde (x, y, z)
+    point_marque = Signal(object)
+    # Survol en mode marquage : point 3D sous le curseur, ou None (hors pièce)
+    point_survole = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -896,6 +900,25 @@ class Viewer3D(QWidget):
         except Exception:
             pass
 
+    def capture_vignette(self, chemin, largeur: int = 360) -> bool:
+        """Capture la vue 3D courante en PNG (vignette bibliothèque de pièces).
+        Jamais bloquant : False si pas de plotter (OpenGL KO) ou échec d'écriture."""
+        if self._plotter is None:
+            return False
+        try:
+            img = self._plotter.screenshot(transparent_background=False,
+                                           return_img=True)
+            from PySide6.QtGui import QImage
+            h, w = img.shape[0], img.shape[1]
+            qimg = QImage(img.tobytes(), w, h, w * img.shape[2],
+                          QImage.Format_RGB888 if img.shape[2] == 3
+                          else QImage.Format_RGBA8888)
+            qimg = qimg.scaledToWidth(largeur, Qt.SmoothTransformation)
+            return bool(qimg.save(str(chemin), "PNG"))
+        except Exception as e:
+            logger.debug(f"capture vignette échouée : {e}")
+            return False
+
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1379,6 +1402,51 @@ class Viewer3D(QWidget):
                         return True
                 except Exception:
                     pass
+            # Mode MARQUAGE (assistant d'orientation) : un CLIC SIMPLE sur la pièce
+            # marque une zone de contrainte (même distinction clic/drag que le
+            # picking objet : un drag reste une orbite caméra). Prioritaire sur la
+            # sélection d'objet tant que le mode est actif.
+            if getattr(self, "_marking_mode", False):
+                from PySide6.QtCore import Qt as _QtM
+                if t == QEvent.MouseButtonPress and event.button() == _QtM.LeftButton:
+                    self._mark_press = (event.position() if hasattr(event, "position")
+                                        else event.pos())
+                elif t == QEvent.MouseButtonRelease and event.button() == _QtM.LeftButton:
+                    _mp = getattr(self, "_mark_press", None)
+                    self._mark_press = None
+                    if _mp is not None:
+                        _rp = (event.position() if hasattr(event, "position")
+                               else event.pos())
+                        if abs(_rp.x() - _mp.x()) + abs(_rp.y() - _mp.y()) < 6:
+                            try:
+                                _pt = self._pick_world_point(_rp)
+                                if _pt is not None:
+                                    # -> coordonnées du MESH (l'acteur affiché est
+                                    # recentré sur le plateau) : sinon la zone est
+                                    # marquée à côté de la pièce.
+                                    self.point_marque.emit(self._display_to_mesh(_pt))
+                            except Exception:
+                                logger.debug("picking marquage échoué", exc_info=True)
+                elif t == QEvent.MouseMove and not (event.buttons() & _QtM.LeftButton):
+                    # Pré-affichage de la zone sous le curseur. On NE traite PAS
+                    # ici : on mémorise la position et on planifie un traitement
+                    # unique (coalescence). Traiter chaque MouseMove en direct
+                    # accumulait du retard dès que le calcul dépassait l'intervalle
+                    # entre deux événements → l'aperçu « traînait » derrière le
+                    # curseur (vécu). Ici, les positions intermédiaires sont
+                    # abandonnées : l'aperçu colle toujours à la position ACTUELLE.
+                    self._hover_schedule(event.position() if hasattr(event, "position")
+                                         else event.pos())
+                elif t == QEvent.Leave:
+                    # la souris quitte le viewer (ex. vers un bouton du panneau) :
+                    # l'aperçu fantôme ne doit pas rester affiché puis « clignoter ».
+                    self.clear_zone_preview()
+                if t == QEvent.MouseButtonPress:
+                    self._user_interacting = True
+                    self._resume_timer.stop()
+                elif t == QEvent.MouseButtonRelease:
+                    self._resume_timer.start(800)
+                return False
             # Sélection d'objet (scène multi-objets) : un CLIC SIMPLE (press+release
             # sans bouger — un drag = orbite caméra, on l'ignore) isole l'objet visé.
             if getattr(self, "_multi_pick_mode", False):
@@ -2651,6 +2719,15 @@ class Viewer3D(QWidget):
         except Exception:
             pass
 
+    def purger_apercu(self) -> None:
+        """Efface un APERÇU neoGen/carte resté à l'écran (fermeture du panneau
+        SANS génération) : scène vidée + retour au mode normal. Sans effet dans
+        les autres modes — une pièce réellement chargée n'est jamais touchée."""
+        if getattr(self, "_view_mode", "normal") not in ("apercu_neogen", "carte"):
+            return
+        self.quitter_mode_carte()
+        self.reset()
+
     def quitter_mode_carte(self) -> None:
         """À appeler quand on ferme l'éditeur de carte : réarme un affichage
         normal au prochain chargement de pièce et coupe le drag d'éléments."""
@@ -2793,6 +2870,327 @@ class Viewer3D(QWidget):
                 if best_d is None or d < best_d:   # chevauchement → le plus centré
                     best, best_d = oid, d
         return best
+
+    # ── Assistant d'orientation : marquage de zones de contrainte ─────────────
+    def set_marking_mode(self, on: bool) -> None:
+        """Active/désactive le mode marquage : le clic sur la pièce émet
+        point_marque au lieu d'isoler un objet ; curseur croix ; rotation auto
+        coupée pendant le marquage (viser une zone sur une pièce qui tourne…)."""
+        self._marking_mode = bool(on)
+        try:
+            from PySide6.QtCore import Qt as _Qt
+            if on:
+                self.stop_auto_rotate()
+                # stop_auto_rotate RETIRE le filtre d'événements du plotter →
+                # sans ré-installation, aucun clic n'arrive au marquage (vécu :
+                # « poser sur une face » inerte). Idempotent dans Qt.
+                if self._plotter is not None:
+                    self._plotter.installEventFilter(self)
+                    # suivi de souris SANS bouton pressé → aperçu de zone au survol
+                    self._mouse_track_before = self._plotter.hasMouseTracking()
+                    self._plotter.setMouseTracking(True)
+                self._plotter.setCursor(_Qt.CrossCursor)
+            else:
+                if self._plotter is not None:
+                    self._plotter.setMouseTracking(
+                        bool(getattr(self, "_mouse_track_before", False)))
+                self._plotter.unsetCursor()
+                self.clear_zone_preview()
+                self._cell_picker = None      # locators liés à l'ancienne scène
+                self._hover_pending = None
+        except Exception:
+            pass
+
+    def _hover_schedule(self, pos) -> None:
+        """Mémorise la position survolée et planifie UN traitement au prochain
+        tour de boucle. Si dix MouseMove arrivent pendant un calcul, un seul
+        traitement suit — avec la dernière position : aucun retard cumulé."""
+        self._hover_pending = pos
+        t = getattr(self, "_hover_timer", None)
+        if t is None:
+            from PySide6.QtCore import QTimer as _QT
+            t = _QT(self)
+            t.setSingleShot(True)
+            t.setInterval(0)          # « dès que la file d'événements est vide »
+            t.timeout.connect(self._hover_process)
+            self._hover_timer = t
+        if not t.isActive():
+            t.start()
+
+    def _hover_process(self) -> None:
+        pos = getattr(self, "_hover_pending", None)
+        self._hover_pending = None
+        if pos is None or not getattr(self, "_marking_mode", False):
+            return
+        try:
+            pt = self._pick_world_point(pos)
+            self.point_survole.emit(self._display_to_mesh(pt) if pt is not None else None)
+        except Exception:
+            logger.debug("survol zone échoué", exc_info=True)
+
+    def show_zone_preview(self, sub_mesh, color: str = "#D55E00") -> None:
+        """Aperçu FANTÔME de la zone sous le curseur (mode marquage) : même
+        vermillon que les zones validées, mais translucide → on voit ce qu'on
+        s'apprête à marquer avant de cliquer.
+
+        L'acteur est PERSISTANT : on remplace ses données en place au lieu de le
+        détruire/recréer à chaque mouvement de souris — sinon l'aperçu clignote
+        (vécu). Un seul `render()` par mise à jour, aucun churn de scène."""
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+        if sub_mesh is None:
+            self.hide_zone_preview()
+            return
+        try:
+            import numpy as _np
+            _off = self._mesh_to_display_offset()
+            if isinstance(sub_mesh, tuple):
+                # (points, faces_vtk) — chemin RAPIDE du survol : aucun maillage
+                # intermédiaire à reconstruire (cf. IndexZones.surface_arrays).
+                pts, faces = sub_mesh
+                if pts is None or len(pts) == 0:
+                    self.hide_zone_preview()
+                    return
+                pts = _np.asarray(pts, dtype=float)
+                if _off is not None:
+                    pts = pts + _np.asarray(_off, dtype=float)
+                pvm = pv.PolyData(pts, faces)
+            else:
+                if len(getattr(sub_mesh, "faces", [])) == 0:
+                    self.hide_zone_preview()
+                    return
+                sub = sub_mesh.copy()
+                sub.vertices = sub.vertices + sub.vertex_normals * 0.15
+                if _off is not None:
+                    sub.vertices = sub.vertices + _np.asarray(_off, dtype=float)
+                pvm = pv.wrap(sub)
+            a = getattr(self, "_zone_preview_actor", None)
+            if a is not None and getattr(self, "_zone_preview_color", None) == color:
+                try:
+                    a.mapper.SetInputData(pvm)     # mise à jour EN PLACE
+                    a.SetVisibility(True)
+                    self._plotter.render()
+                    return
+                except Exception:
+                    self.clear_zone_preview()      # repli : on recrée proprement
+            elif a is not None:
+                self.clear_zone_preview()          # couleur différente → recréer
+            self._zone_preview_color = color
+            self._zone_preview_actor = self._plotter.add_mesh(
+                pvm, color=color, opacity=0.38, show_edges=False,
+                reset_camera=False, name="zone_preview")
+            self._plotter.render()
+        except Exception:
+            logger.debug("aperçu zone échoué", exc_info=True)
+
+    def hide_zone_preview(self) -> None:
+        """Masque l'aperçu SANS détruire l'acteur (réutilisable au prochain
+        survol) : évite le cycle destruction/création qui fait clignoter."""
+        a = getattr(self, "_zone_preview_actor", None)
+        if a is None:
+            return
+        try:
+            if a.GetVisibility():
+                a.SetVisibility(False)
+                self._plotter.render()
+        except Exception:
+            pass
+
+    def clear_zone_preview(self) -> None:
+        """Supprime réellement l'acteur d'aperçu (sortie de mode, nouvelle pièce)."""
+        a = getattr(self, "_zone_preview_actor", None)
+        if a is not None:
+            try:
+                self._plotter.remove_actor(a, render=False)
+            except Exception:
+                pass
+            self._zone_preview_actor = None
+            try:
+                self._plotter.render()
+            except Exception:
+                pass
+
+    def _mesh_to_display_offset(self):
+        """Translation (dx, dy, dz) à appliquer à des coordonnées MESH pour les
+        placer dans l'espace VIEWER (pièce recentrée/posée sur le plateau).
+        None si indéterminable."""
+        m = getattr(self, "_mesh", None)
+        if m is None:
+            return None
+        try:
+            act = self._plotter.renderer.actors.get("main_mesh")
+            if act is None:
+                return None
+            ab = act.GetBounds()
+            mb = m.bounds
+            return ((ab[0] + ab[1]) / 2.0 - (mb[0][0] + mb[1][0]) / 2.0,
+                    (ab[2] + ab[3]) / 2.0 - (mb[0][1] + mb[1][1]) / 2.0,
+                    ab[4] - mb[0][2])
+        except Exception:
+            return None
+
+    def _display_to_mesh(self, pt):
+        """Convertit un point monde du VIEWER en coordonnées du mesh en mémoire.
+
+        Le viewer POSE la pièce sur le plateau (recentrage XY + Z=0) : l'acteur
+        affiché est donc TRANSLATÉ par rapport aux données (ex. mesh X[-5;30]
+        affiché en X[-17,5;17,5] → 12,5 mm d'écart). Sans cette conversion, un
+        clic marque une zone au mauvais endroit — voire nulle part (vécu :
+        « aucune zone colorée n'apparaît »). Translation pure → simple différence
+        des centres (XY) et des minima (Z)."""
+        m = getattr(self, "_mesh", None)
+        if m is None or pt is None:
+            return pt
+        off = self._mesh_to_display_offset()
+        if off is None:
+            return pt
+        return (pt[0] - off[0], pt[1] - off[1], pt[2] - off[2])
+
+    def _pick_world_point(self, pos):
+        """Point 3D monde sous le curseur (impact réel sur la géométrie), ou None
+        si le rayon ne touche rien.
+
+        vtkCellPicker EN PREMIER : il fait un vrai lancer de rayon sur les
+        cellules → il touche la surface là où l'utilisateur la voit. Le
+        vtkPropPicker (repli) raisonne surtout sur les props/bounding boxes et
+        rate des impacts pourtant visibles (constaté : pick None sur un point
+        clairement sur la pièce). Deux moteurs = clic fiable partout."""
+        try:
+            x, y = self._carte_disp(pos)
+            ren = self._plotter.renderer
+            try:
+                from vtkmodules.vtkRenderingCore import vtkCellPicker
+                cp = getattr(self, "_cell_picker", None)
+                if cp is None:
+                    # picker RÉUTILISÉ : le recréer à chaque mouvement reconstruit
+                    # ses structures internes (locators) → survol saccadé.
+                    cp = vtkCellPicker()
+                    cp.SetTolerance(0.0025)
+                    # …et RESTREINT au maillage : sans liste de pick, le rayon est
+                    # testé contre TOUS les acteurs (plateau, grille, zones,
+                    # aperçu) à chaque mouvement de souris.
+                    try:
+                        a_main = self._plotter.renderer.actors.get("main_mesh")
+                        if a_main is not None:
+                            cp.InitializePickList()
+                            cp.AddPickList(a_main)
+                            cp.PickFromListOn()
+                    except Exception:
+                        pass
+                    self._cell_picker = cp
+                if cp.Pick(x, y, 0, ren):
+                    p = cp.GetPickPosition()
+                    return (float(p[0]), float(p[1]), float(p[2]))
+            except Exception:
+                logger.debug("vtkCellPicker indisponible", exc_info=True)
+            from vtkmodules.vtkRenderingCore import vtkPropPicker
+            pp = vtkPropPicker()
+            if pp.Pick(x, y, 0, ren):
+                p = pp.GetPickPosition()
+                return (float(p[0]), float(p[1]), float(p[2]))
+            return None
+        except Exception:
+            return None
+
+    def show_zone_overlays(self, zones: list, arrow_color: str = "#D55E00") -> None:
+        """Affiche les zones de contrainte marquées : chaque zone = sous-mesh
+        (trimesh) légèrement gonflé le long des normales (anti z-fighting) rendu
+        en vermillon Okabe-Ito (lisible aussi en mode daltonien), + une flèche
+        d'axe local si fourni. `zones` : [{mesh, axis|None, center}, …]."""
+        self.clear_zone_overlays()
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+        self._zone_actors = []
+        for z in zones:
+            sub = z.get("mesh")
+            if sub is None or len(getattr(sub, "faces", [])) == 0:
+                continue
+            try:
+                import numpy as _np
+                sub = sub.copy()
+                # gonfle de 0,15 mm le long des normales de sommets (z-fighting)
+                sub.vertices = sub.vertices + sub.vertex_normals * 0.15
+                # les zones arrivent en coordonnées MESH → les replacer dans
+                # l'espace VIEWER (pièce recentrée sur le plateau), sinon la
+                # surbrillance flotte à côté de la pièce.
+                _off = self._mesh_to_display_offset()
+                if _off is not None:
+                    sub.vertices = sub.vertices + _np.asarray(_off, dtype=float)
+                pvm = pv.wrap(sub)
+                # MÊME rendu que l'aperçu au survol (opacité douce, sans arêtes) :
+                # une zone validée à 0,85 paraissait « collée » et masquait le
+                # relief de la pièce, alors que la mise en évidence de face était
+                # nette. Uniformisé à la demande d'Emmanuel.
+                a = self._plotter.add_mesh(
+                    pvm, color=arrow_color, opacity=0.55, show_edges=False,
+                    smooth_shading=True,
+                    reset_camera=False, name=f"zone_mark_{len(self._zone_actors)}")
+                self._zone_actors.append(a)
+                axis = z.get("axis")
+                if axis is not None:
+                    c = _np.asarray(z.get("center"), dtype=float)
+                    if _off is not None:
+                        c = c + _np.asarray(_off, dtype=float)   # espace viewer
+                    ax = _np.asarray(axis, dtype=float)
+                    # flèche d'axe DISCRÈTE : elle informe sans écraser la zone
+                    L = max(float(getattr(self._mesh, "scale", 80.0) or 80.0) * 0.08, 5.0)
+                    arr = pv.Arrow(start=c - ax * L / 2, direction=ax, scale=L,
+                                   tip_length=0.28, tip_radius=0.07, shaft_radius=0.022)
+                    a2 = self._plotter.add_mesh(
+                        arr, color=arrow_color, reset_camera=False,
+                        name=f"zone_arrow_{len(self._zone_actors)}")
+                    self._zone_actors.append(a2)
+            except Exception:
+                logger.debug("overlay zone échoué", exc_info=True)
+        try:
+            self._plotter.render()
+        except Exception:
+            pass
+
+    def set_preview_matrix(self, m4) -> None:
+        """Aperçu d'orientation (survol d'une proposition) : applique une matrice
+        à l'acteur principal « main_mesh » + overlays de zones, SANS toucher aux
+        données ni à la caméra — instantané et réversible (None = retour)."""
+        if not HAS_PYVISTA or self._plotter is None:
+            return
+        try:
+            import numpy as _np
+            from vtkmodules.vtkCommonMath import vtkMatrix4x4
+            actors = []
+            try:
+                a_main = self._plotter.renderer.actors.get("main_mesh")
+                if a_main is not None:
+                    actors.append(a_main)
+            except Exception:
+                pass
+            actors += list(getattr(self, "_zone_actors", []) or [])
+            vm = None
+            if m4 is not None:
+                arr = _np.asarray(m4, dtype=float)
+                vm = vtkMatrix4x4()
+                for i in range(4):
+                    for j in range(4):
+                        vm.SetElement(i, j, float(arr[i, j]))
+            for a in actors:
+                try:
+                    a.SetUserMatrix(vm)
+                except Exception:
+                    pass
+            self._plotter.render()
+        except Exception:
+            logger.debug("aperçu orientation échoué", exc_info=True)
+
+    def clear_zone_overlays(self) -> None:
+        for a in getattr(self, "_zone_actors", []) or []:
+            try:
+                self._plotter.remove_actor(a, render=False)
+            except Exception:
+                pass
+        self._zone_actors = []
+        try:
+            self._plotter.render()
+        except Exception:
+            pass
 
     def _carte_mouse(self, event, t) -> bool | None:
         """Gère press/move/release pour le drag d'éléments. Renvoie True si

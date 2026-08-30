@@ -31,7 +31,7 @@ _NS_BBL = "http://schemas.bambulab.com/package/2021"
 _NS_PROD = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
 
 _TEMPLATE_CACHE: dict | None = None
-_PRINTER_TEMPLATE_CACHE: dict[str, dict] = {}  # cache par printer_id
+_PRINTER_TEMPLATE_CACHE: dict[tuple, dict] = {}  # cache par (printer_id, buse mm)
 _DATA_DIR = Path(__file__).parent.parent.parent / "data"
 _CACHE_FILE = _DATA_DIR / "bambu_config_template.json"
 _CLEAN_DEFAULTS_FILE = _DATA_DIR / "bambu_defaults_clean.json"
@@ -694,13 +694,16 @@ _UI_TO_BBL: dict[str, str] = {
     "H2D":           "H2D",
     "H2C":           "H2C",    # BS a ses propres profils H2C (machine/Bambu Lab H2C 0.4 nozzle.json)
     "H2S":           "H2S",
-    "H2D Pro":       "H2D",
+    "H2D Pro":       "H2DP",   # profils « @BBL H2DP » présents depuis BS 2.7
     # Série X
     "X1 Carbon":     "X1C",
     "X1E":           "X1C",    # X1E partage les profils process X1C
-    "X2D":           "X1C",    # X2D trop récent, pas encore dans profils système BS
+    # X2D : SES profils existent depuis BS 2.7 — l'ancien fallback X1C sortait
+    # un process X1 Carbon 0,4 pour une X2D 0,2 (bug remonté, largeurs doublées).
+    # Si les profils manquent (vieux BS), le resolver retombe proprement.
+    "X2D":           "X2D",
     # Série P
-    "P2S":           "P1S",    # P2S trop récent, fallback P1S
+    "P2S":           "P2S",    # profils « @BBL P2S » présents depuis BS 2.7
     "P1S":           "P1S",
     "P1":            "P1P",
     # Série A
@@ -1052,15 +1055,17 @@ class ThreeMFBuilder:
                 )
             bbl_id = printer_ui_name  # utiliser le nom tel quel ; écrasé si catalogue
 
-        # Paramètres : charger le template du bon printer (mis en cache par printer_id)
-        if bbl_id not in _PRINTER_TEMPLATE_CACHE:
+        # Paramètres : template du couple (printer, BUSE) — le process d'une buse
+        # 0,2 n'a rien à voir avec celui d'une 0,4 (largeurs, vitesses).
+        _tpl_key = (bbl_id, nozzle_diameter_mm)
+        if _tpl_key not in _PRINTER_TEMPLATE_CACHE:
             try:
                 from .bambu_config_resolver import resolve_from_system_profiles
-                resolved = resolve_from_system_profiles(bbl_id)
-                _PRINTER_TEMPLATE_CACHE[bbl_id] = resolved or self._template
+                resolved = resolve_from_system_profiles(bbl_id, nozzle_diameter_mm)
+                _PRINTER_TEMPLATE_CACHE[_tpl_key] = resolved or self._template
             except Exception:
-                _PRINTER_TEMPLATE_CACHE[bbl_id] = self._template
-        project_settings = dict(_PRINTER_TEMPLATE_CACHE[bbl_id])
+                _PRINTER_TEMPLATE_CACHE[_tpl_key] = self._template
+        project_settings = dict(_PRINTER_TEMPLATE_CACHE[_tpl_key])
         project_settings.update(_config_to_bambu_overrides(config))
 
         # Plateau choisi par l'utilisateur → curr_bed_type (Bambu/Orca). Les clés de
@@ -1081,6 +1086,13 @@ class ThreeMFBuilder:
         project_settings["inner_wall_line_width"]              = str(_iww)
         project_settings["initial_layer_line_width"]           = str(_ilw)
         project_settings["internal_solid_infill_line_width"]   = str(_lw)
+        # Largeurs restées au template 0,4 sur les autres buses (bug remonté :
+        # X2D 0,2 exportée avec sparse/support/top à 0,42–0,45). Ces filets ne
+        # servent que si le template par buse n'a pas pu être résolu — quand il
+        # l'est, ils re-posent les mêmes valeurs que le profil système.
+        project_settings["sparse_infill_line_width"]           = str(_iww)
+        project_settings["support_line_width"]                 = str(_lw)
+        project_settings["top_surface_line_width"]             = str(_lw)
 
         # ID machine — jamais de fallback X1C. Si inconnu, construire depuis le nom UI.
         _base_id = _UI_TO_PRINTER_ID.get(printer_ui_name)

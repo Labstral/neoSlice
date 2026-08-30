@@ -216,18 +216,32 @@ class DashboardPage(QWidget):
         outer.addWidget(scroll)
 
     def _do_export(self):
-        from PySide6.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox, QInputDialog
         if not store.list_invoices():
             QMessageBox.information(self, _("dash.export"), _("dash.export_none"))
             return
+        # Année à exporter : « Toutes » + les années réellement facturées —
+        # l'expert-comptable veut UN exercice, pas tout l'historique mélangé.
+        annee = None
+        years = store.invoice_years()
+        if len(years) > 1:
+            choix = [_("dash.export_all_years")] + [str(a) for a in years]
+            sel, ok = QInputDialog.getItem(self, _("dash.export"),
+                                           _("dash.export_year"), choix, 0, False)
+            if not ok:
+                return
+            annee = int(sel) if sel.isdigit() else None
+        elif years:
+            annee = years[0]
         from datetime import date as _d
-        default = f"neoslice_compta_{_d.today().isoformat()}.csv"
+        suffixe = str(annee) if annee else _d.today().isoformat()
+        default = f"neoslice_compta_{suffixe}.csv"
         path, _flt = QFileDialog.getSaveFileName(self, _("dash.export"), default,
                                                  "CSV (*.csv)")
         if not path:
             return
         from pathlib import Path
-        store.export_accounting_csv(Path(path))
+        store.export_accounting_csv(Path(path), annee=annee)
         QMessageBox.information(self, _("dash.export"), _("dash.export_done", path=path))
 
     def _section(self, title: str) -> QLabel:

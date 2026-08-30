@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """neoGen — PERSONNALISATEUR DE CARTE DE VISITE.
 
-Une carte = un socle (couleur de base) + des ÉLÉMENTS en relief (texte, logo),
-chacun avec SA couleur. À l'export, chaque couleur devient un CORPS séparé du
-3MF assigné à un slot de filament : dans le slicer, on retrouve autant de slots
-que de couleurs, pré-remplis — il ne reste qu'à charger le bon filament.
+Une carte = un socle (couleur de base, coins arrondis ou carrés) + des ÉLÉMENTS
+(texte, logo, QR code, trait, cadre), chacun avec SA couleur et SON style :
+relief (surélevé), gravé (creusé dans le socle) ou lisse (affleurant). À
+l'export, chaque couleur devient un CORPS séparé du 3MF assigné à un slot de
+filament ; une carte qui n'utilise qu'UNE couleur (ex. tout gravé ton sur ton,
+retour Pierre M.) reste une pièce simple mono-filament — l'app ne route en
+multicouleur qu'à partir de 2 couleurs.
 
 Positionnement STRUCTURÉ (v1) : chaque élément a un alignement (gauche/centre/
 droite × haut/milieu/bas) + un décalage fin X/Y. Fiable et rapide ; le
@@ -19,7 +22,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import trimesh
 from shapely.affinity import translate as _tr
-from shapely.geometry import Point, Polygon, MultiPolygon, box
+from shapely.geometry import LineString, Point, Polygon, MultiPolygon, box
 from shapely.ops import unary_union
 
 from loguru import logger
@@ -55,7 +58,8 @@ class ElementLogo:
     align_v: str = "milieu"
     dx: float = 0.0
     dy: float = 0.0
-    relief: float = 0.6
+    relief: float = 0.6                        # hauteur (relief) ou profondeur (gravé)
+    mode: str = "relief"                       # relief | grave | lisse
     couleur: str = "#111111"
     type: str = "logo"
 
@@ -65,11 +69,13 @@ class ElementTrait:
     longueur: float = 40.0
     epaisseur: float = 1.0
     orientation: str = "horizontal"           # horizontal | vertical
+    coins: str = "brut"                        # brut (carré) | arrondi (capsule)
     align_h: str = "centre"
     align_v: str = "milieu"
     dx: float = 0.0
     dy: float = 0.0
-    relief: float = 0.6
+    relief: float = 0.6                        # hauteur (relief) ou profondeur (gravé)
+    mode: str = "relief"                       # relief | grave | lisse
     couleur: str = "#111111"
     type: str = "trait"
 
@@ -79,13 +85,33 @@ class ElementCadre:
     largeur: float = 60.0
     hauteur: float = 35.0
     epaisseur: float = 1.5                     # épaisseur du trait du cadre (mm)
+    coins: str = "brut"                        # brut (carré) | arrondi
     align_h: str = "centre"
     align_v: str = "milieu"
     dx: float = 0.0
     dy: float = 0.0
-    relief: float = 0.6
+    relief: float = 0.6                        # hauteur (relief) ou profondeur (gravé)
+    mode: str = "relief"                       # relief | grave | lisse
     couleur: str = "#111111"
     type: str = "cadre"
+
+
+@dataclass
+class ElementQR:
+    """QR code sur la carte — même moteur 100 % local (segno) que l'objet QR de
+    la bibliothèque neoGen : rien n'est envoyé nulle part, c'est le téléphone
+    qui ouvrira le lien. Le footprint des modules suit la mécanique commune
+    (relief / gravé / lisse, couleur, alignement)."""
+    lien: str = ""
+    taille: float = 18.0                       # côté du carré (mm), quiet zone exclue
+    align_h: str = "centre"
+    align_v: str = "milieu"
+    dx: float = 0.0
+    dy: float = 0.0
+    relief: float = 0.6                        # hauteur (relief) ou profondeur (gravé)
+    mode: str = "relief"                       # relief | grave | lisse
+    couleur: str = "#111111"
+    type: str = "qr"
 
 
 @dataclass
@@ -93,7 +119,8 @@ class CarteSpec:
     largeur: float = 85.0                     # format standard 85 × 55 mm
     hauteur: float = 55.0
     ep: float = 1.6
-    rayon: float = 3.5                         # rayon des coins
+    rayon: float = 3.5                         # rayon des coins (si arrondis)
+    coins: str = "arrondi"                     # arrondi (défaut historique) | brut
     couleur_base: str = "#FFFFFF"
     elements: list = field(default_factory=list)
 
@@ -128,19 +155,55 @@ def _forme_element(el, spec: CarteSpec) -> MultiPolygon | None:
     if tp == "trait":
         L = max(1.0, float(el.longueur))
         e = max(0.3, float(el.epaisseur))
-        if getattr(el, "orientation", "horizontal") == "vertical":
+        vertical = getattr(el, "orientation", "horizontal") == "vertical"
+        if getattr(el, "coins", "brut") == "arrondi":
+            # CAPSULE : bouts en demi-cercle (segment axial bufferisé). La
+            # longueur HORS TOUT reste `longueur` : le segment fait L - e pour
+            # que les deux demi-cercles (rayon e/2) complètent exactement L.
+            lon = max(0.05, L - e)
+            seg = (LineString([(0, -lon / 2), (0, lon / 2)]) if vertical
+                   else LineString([(-lon / 2, 0), (lon / 2, 0)]))
+            return MultiPolygon([seg.buffer(e / 2)])
+        if vertical:
             L, e = e, L
         return MultiPolygon([box(-L / 2, -e / 2, L / 2, e / 2)])
     if tp == "cadre":
         L = max(3.0, float(el.largeur))
         H = max(3.0, float(el.hauteur))
         e = max(0.3, min(float(el.epaisseur), min(L, H) / 2 - 0.2))
-        cadre = box(-L / 2, -H / 2, L / 2, H / 2).difference(
-            box(-L / 2 + e, -H / 2 + e, L / 2 - e, H / 2 - e))
+        ext = box(-L / 2, -H / 2, L / 2, H / 2)
+        intr = box(-L / 2 + e, -H / 2 + e, L / 2 - e, H / 2 - e)
+        if getattr(el, "coins", "brut") == "arrondi":
+            # Coins arrondis façon socle (buffer −r puis +r). Rayon extérieur
+            # auto : proche du socle (3,5 mm) mais jamais dégénéré sur un petit
+            # cadre ; rayon intérieur = extérieur − épaisseur (bande régulière).
+            r_ext = min(3.5, L / 4, H / 4)
+            ext = ext.buffer(-r_ext, join_style=1).buffer(r_ext, join_style=1)
+            r_int = min(max(0.2, r_ext - e), (L - 2 * e) / 4, (H - 2 * e) / 4)
+            if r_int > 0.05:
+                intr = (intr.buffer(-r_int, join_style=1)
+                            .buffer(r_int, join_style=1))
+        cadre = ext.difference(intr)
         if isinstance(cadre, Polygon):
             cadre = MultiPolygon([cadre])
         return cadre if not cadre.is_empty else None
-    if tp == "logo":
+    if tp == "qr":
+        lien = (getattr(el, "lien", "") or "").strip()
+        if not lien:
+            return None
+        # Matrice + union des modules REPRIS de l'objet QR neoGen (segno local,
+        # dilatation ~2 % qui ponte les contacts en diagonale → étanche).
+        from core.neogen.qrcode_3d import _matrice, _modules_2d
+        mat = _matrice(lien)
+        n = int(mat.shape[0])
+        cote = max(10.0, float(getattr(el, "taille", 18.0)))
+        # Garde scan (même esprit que l'objet QR, adaptée carte) : module >=
+        # 0,8 mm = 2 largeurs d'extrusion en buse 0,4 — en dessous les modules
+        # fondent et le QR ne scanne plus. Un lien LONG (QR dense) agrandit
+        # donc le carré au lieu de devenir illisible.
+        cote = max(cote, n * 0.8)
+        mp = _modules_2d(mat, cote / n, quiet=0)   # le socle sert de quiet zone
+    elif tp == "logo":
         if not el.chemin:
             return None
         from pathlib import Path as _P
@@ -184,9 +247,11 @@ def _placer(mp, spec: CarteSpec, el) -> MultiPolygon:
 
 
 def _socle_2d(spec: CarteSpec) -> Polygon:
-    r = max(0.0, min(spec.rayon, min(spec.largeur, spec.hauteur) / 2 - 0.5))
     rect = box(-spec.largeur / 2, -spec.hauteur / 2,
                spec.largeur / 2, spec.hauteur / 2)
+    if getattr(spec, "coins", "arrondi") != "arrondi":
+        return rect                                                # coins carrés
+    r = max(0.0, min(spec.rayon, min(spec.largeur, spec.hauteur) / 2 - 0.5))
     return rect.buffer(-r, join_style=1).buffer(r, join_style=1)   # coins ronds
 
 
@@ -234,7 +299,11 @@ def _placer_elements(spec: CarteSpec):
             continue
         mode = getattr(el, "mode", "relief")
         r = max(0.3, float(getattr(el, "relief", 0.6)))
-        placs.append((i, mp, mode, r, el.couleur))
+        # Hex NORMALISÉ (majuscules) : le sélecteur Qt renvoie « #f2eee6 » quand
+        # le socle porte « #F2EEE6 » — sans ça, une carte ton sur ton serait
+        # comptée 2 couleurs et partirait à tort en multicouleur.
+        coul = (getattr(el, "couleur", "") or "#111111").upper()
+        placs.append((i, mp, mode, r, coul))
         if mode in ("grave", "lisse"):
             prof = _prof_decoupe(mode, r, spec.ep)
             for g in _geoms(mp):
@@ -273,10 +342,18 @@ def construire(spec: CarteSpec):
 
     scene = trimesh.Scene()
     scene.add_geometry(base, node_name="socle", geom_name="socle")
-    couleurs = [spec.couleur_base]
+    couleurs = [(spec.couleur_base or "#FFFFFF").upper()]
     for i, (coul, items) in enumerate(par_couleur.items()):
         solides = []
         for mp, mode, r in items:
+            # Gravé TON SUR TON (élément de la couleur du socle) : PAS de fond
+            # coloré — à profondeur <= 0,6 mm il remonterait à ras et REBOUCHERAIT
+            # le creux. On laisse le creux ouvert : c'est le rendu mono-couleur
+            # « tout en creux » (retour Pierre M.). Uniquement si la découpe a
+            # réussi (cut_ok) : sinon _corps_couleur retombe en relief et le
+            # corps reste nécessaire pour que l'élément soit visible.
+            if mode == "grave" and coul == couleurs[0] and cut_ok:
+                continue
             for g in _geoms(mp):
                 if g.area > 0:
                     solides += _corps_couleur(g, mode, r, spec.ep, cut_ok)
@@ -300,7 +377,14 @@ def construire_apercu(spec: CarteSpec):
 
     scene = trimesh.Scene()
     scene.add_geometry(base, node_name="socle", geom_name="socle")
+    base_hex = (spec.couleur_base or "#FFFFFF").upper()
     for i, mp, mode, r, coul in placs:
+        # Même règle que construire() : gravé ton sur ton = creux ouvert, pas de
+        # fond qui rebouche. L'aperçu montre alors EXACTEMENT le rendu exporté.
+        # (Contrepartie assumée : sans corps propre, cet élément n'est plus
+        # cliquable/déplaçable DANS le viewer — sa carte à droite reste là.)
+        if mode == "grave" and coul == base_hex and cut_ok:
+            continue
         solides = [m for g in _geoms(mp) if g.area > 0
                    for m in _corps_couleur(g, mode, r, spec.ep, cut_ok)]
         if not solides:
@@ -396,17 +480,24 @@ def rendre_carte_image(spec: CarteSpec, chemin, px_par_mm: float = 8.0):
 
 def generer_fichier_carte(spec: CarteSpec, litho: bool = False,
                           litho_params: dict | None = None):
-    """Écrit la carte dans le dossier de sorties neoGen et renvoie le Path (.3mf)
-    à CHARGER dans le pipeline normal (comme une pièce déposée). L'export final
-    correct (imprimante/filament/paramètres → « Générer le 3MF ») est ensuite fait
-    par le pipeline habituel, pas ici.
+    """Écrit la carte dans le dossier de sorties neoGen et renvoie
+    (Path .stl à CHARGER dans le pipeline normal, couleurs EFFECTIVES).
+    L'export final correct (imprimante/filament/paramètres → « Générer le 3MF »)
+    est ensuite fait par le pipeline habituel, pas ici.
 
-    En lithophanie : les couleurs sont retirées (matière unique translucide) et le
-    fichier est nommé « lithophanie… » pour que l'app applique automatiquement son
-    profil d'impression lithophanie au chargement."""
+    `couleurs` = celles réellement présentes sur la carte construite (socle +
+    éléments non vides, dédupliquées) : c'est SUR CE RETOUR que l'app décide
+    mono-couleur (pièce simple) vs multicouleur (un slot par couleur) — pas sur
+    les couleurs déclarées dans les widgets, qui peuvent appartenir à des
+    éléments vides.
+
+    En lithophanie : les couleurs sont retirées (matière unique translucide,
+    renvoie []) et le fichier est nommé « lithophanie… » pour que l'app applique
+    automatiquement son profil d'impression lithophanie au chargement."""
     import trimesh
     from core.neogen.pilote import DOSSIER_SORTIES
     DOSSIER_SORTIES.mkdir(parents=True, exist_ok=True)
+    couleurs: list[str] = []
     if litho:
         lp = litho_params or {}
         fusion = construire_lithophanie(
@@ -415,7 +506,7 @@ def generer_fichier_carte(spec: CarteSpec, litho: bool = False,
             inverser=bool(lp.get("inverser", False)))
         base = DOSSIER_SORTIES / "lithophanie_carte"
     else:
-        scene, _couleurs = construire(spec)
+        scene, couleurs = construire(spec)
         # VRAIE UNION (pas concatenate) : sinon les DESSOUS des reliefs (faces
         # tournées vers le bas, à l'intérieur du socle) subsistent et sont comptés
         # comme des surplombs → « 23 % de surplombs » + supports inutiles sur une
@@ -423,4 +514,4 @@ def generer_fichier_carte(spec: CarteSpec, litho: bool = False,
         fusion = union_solides(list(scene.geometry.values()))
         base = DOSSIER_SORTIES / "carte_visite"
     fusion.export(base.with_suffix(".stl"))
-    return base.with_suffix(".stl")
+    return base.with_suffix(".stl"), couleurs

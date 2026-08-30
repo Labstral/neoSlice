@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
@@ -48,7 +48,12 @@ class SpoolForm(QDialog):
     def __init__(self, parent=None, spool: dict | None = None):
         super().__init__(parent)
         self._spool = spool or {}
-        self._color_hex = self._spool.get("couleur_hex", "#1E90FF")
+        # Couleur(s) : la 1re est la principale, jusqu'à 4 au total pour les
+        # bobines dual/tri/quadri couleur (demande utilisateur Matthieu D.)
+        self._colors: list[str] = [self._spool.get("couleur_hex", "#1E90FF")]
+        for _c in (self._spool.get("couleurs_hex") or []):
+            if _c and _c not in self._colors and len(self._colors) < 4:
+                self._colors.append(_c)
         self.setWindowTitle(_("spool.edit") if spool else _("spool.add"))
         self.setMinimumWidth(420)
         self._edits: dict[str, QLineEdit] = {}
@@ -100,13 +105,15 @@ class SpoolForm(QDialog):
         row = self._add_edit(grid, row, "marque", _("spool.brand"))
         row = self._add_edit(grid, row, "couleur_nom", _("spool.color_name"))
 
-        # Couleur (bouton ouvrant un sélecteur)
-        self._color_btn = QPushButton()
-        self._color_btn.setFixedHeight(26)
-        self._color_btn.setCursor(Qt.PointingHandCursor)
-        self._color_btn.clicked.connect(self._pick_color)
+        # Couleur(s) — un bouton par couleur (clic = changer), ✕ pour retirer
+        # une couleur supplémentaire, ＋ pour en ajouter (max 4).
+        self._colors_host = QWidget()
+        self._colors_lay = QHBoxLayout(self._colors_host)
+        self._colors_lay.setContentsMargins(0, 0, 0, 0)
+        self._colors_lay.setSpacing(6)
         grid.addWidget(self._lbl(_("spool.color")), row, 0)
-        grid.addWidget(self._color_btn, row, 1); row += 1
+        grid.addWidget(self._colors_host, row, 1); row += 1
+        self._rebuild_colors()
 
         # Stock & coût
         row = self._add_edit(grid, row, "poids_total_g", _("spool.total_g"), num=True,
@@ -120,6 +127,64 @@ class SpoolForm(QDialog):
         # Détails
         row = self._add_edit(grid, row, "fournisseur", _("spool.vendor"))
         row = self._add_edit(grid, row, "emplacement", _("spool.location"))
+        # Suggestions d'emplacement : machines épinglées (« Mes machines ») + slots
+        # AMS — savoir d'un coup d'œil quelle bobine est sur quelle machine
+        # (retour Dominique). Saisie libre toujours possible.
+        try:
+            from core import mes_machines as _mm
+            from PySide6.QtWidgets import QCompleter
+            sugg: list[str] = []
+            for m in _mm.list_machines():
+                sugg.append(m["label"])
+                sugg.extend(f"{m['label']} — AMS {i}" for i in range(1, 5))
+            if sugg:
+                comp = QCompleter(sugg, self._edits["emplacement"])
+                comp.setCaseSensitivity(Qt.CaseInsensitive)
+                comp.setFilterMode(Qt.MatchContains)
+                self._edits["emplacement"].setCompleter(comp)
+        except Exception:
+            pass
+
+        # ── Calibration validée (facultative, repliée si vide) ────────────────
+        # Les valeurs qui marchent CHEZ L'UTILISATEUR pour cette bobine précise
+        # (tour de température / tests neoGen) — reprises sur la fiche PDF des
+        # réglages à l'export. Ferme la boucle : générer le test → imprimer →
+        # noter le résultat ici → ne plus jamais chercher ses températures.
+        from core.business.store import spool_est_calibree
+        cal = self._spool.get("calibration") or {}
+        deja = spool_est_calibree(self._spool) if self._spool else False
+        self._cal_toggle = QPushButton(("▼  " if deja else "▶  ") + _("spool.cal_title"))
+        self._cal_toggle.setCursor(Qt.PointingHandCursor)
+        self._cal_toggle.clicked.connect(self._toggle_cal)
+        lay.addWidget(self._cal_toggle)
+        self._cal_box = QWidget()
+        calv = QVBoxLayout(self._cal_box)
+        calv.setContentsMargins(0, 0, 0, 0); calv.setSpacing(6)
+        self._cal_hint = QLabel(_("spool.cal_hint"))
+        self._cal_hint.setFont(QFont(FONT_MAIN, 8)); self._cal_hint.setWordWrap(True)
+        calv.addWidget(self._cal_hint)
+        calg = QGridLayout(); calg.setHorizontalSpacing(10); calg.setVerticalSpacing(6)
+        calv.addLayout(calg)
+        self._cal_edits: dict[str, QLineEdit] = {}
+        cr = 0
+        for key, i18n_key in (("temp_buse", "spool.cal_temp_buse"),
+                              ("temp_plateau", "spool.cal_temp_plateau"),
+                              ("debit_pct", "spool.cal_debit"),
+                              ("retraction_mm", "spool.cal_retraction"),
+                              ("retraction_vit", "spool.cal_retraction_vit")):
+            v = float(cal.get(key) or 0)
+            e = QLineEdit(f"{v:g}" if v else "")
+            e.setFont(QFont(FONT_MONO, 9))
+            self._cal_edits[key] = e
+            calg.addWidget(self._lbl(_(i18n_key)), cr, 0)
+            calg.addWidget(e, cr, 1); cr += 1
+        e = QLineEdit(cal.get("notes", ""))
+        e.setFont(QFont(FONT_MONO, 9))
+        self._cal_edits["notes"] = e
+        calg.addWidget(self._lbl(_("spool.cal_notes")), cr, 0)
+        calg.addWidget(e, cr, 1)
+        self._cal_box.setVisible(deja)
+        lay.addWidget(self._cal_box)
 
         # Boutons
         btns = QHBoxLayout()
@@ -133,6 +198,12 @@ class SpoolForm(QDialog):
         btns.addWidget(self._cancel)
         btns.addWidget(self._save)
         lay.addLayout(btns)
+
+    def _toggle_cal(self):
+        vis = not self._cal_box.isVisible()
+        self._cal_box.setVisible(vis)
+        self._cal_toggle.setText(("▼  " if vis else "▶  ") + _("spool.cal_title"))
+        self.adjustSize()
 
     def _lbl(self, text: str) -> QLabel:
         q = QLabel(text)
@@ -150,24 +221,67 @@ class SpoolForm(QDialog):
         grid.addWidget(e, row, 1)
         return row + 1
 
-    def _pick_color(self):
+    def _rebuild_colors(self):
         from PySide6.QtGui import QColor
-        col = QColorDialog.getColor(QColor(self._color_hex), self, _("spool.color"))
-        if col.isValid():
-            self._color_hex = col.name()
-            self._refresh_color_btn()
+        while self._colors_lay.count():
+            it = self._colors_lay.takeAt(0)
+            if it.widget():
+                it.widget().deleteLater()
+        for i, hexa in enumerate(self._colors):
+            b = QPushButton(hexa)
+            b.setFixedHeight(26)
+            b.setCursor(Qt.PointingHandCursor)
+            fg = "#000000" if QColor(hexa).lightness() > 140 else "#FFFFFF"
+            b.setStyleSheet(
+                f"QPushButton {{ background: {hexa}; color: {fg}; "
+                f"border: 1px solid rgba(0,0,0,0.3); border-radius: 3px; "
+                f"padding: 0 4px; font-size: 10px; }}")
+            b.clicked.connect(lambda _c=False, ix=i: self._pick_color(ix))
+            self._colors_lay.addWidget(b, 1)
+            if i > 0:                       # la couleur principale ne se retire pas
+                x = QPushButton("✕")
+                x.setFixedSize(18, 26)
+                x.setCursor(Qt.PointingHandCursor)
+                x.setToolTip(_("spool.remove_color"))
+                x.setStyleSheet("QPushButton { background: transparent; "
+                                "color: #E05555; border: none; font-size: 11px; }")
+                x.clicked.connect(lambda _c=False, ix=i: self._remove_color(ix))
+                self._colors_lay.addWidget(x)
+        if len(self._colors) < 4:
+            plus = QPushButton("＋")
+            plus.setFixedSize(26, 26)
+            plus.setCursor(Qt.PointingHandCursor)
+            plus.setToolTip(_("spool.add_color"))
+            plus.setStyleSheet("QPushButton { background: transparent; "
+                               "border: 1px dashed rgba(127,127,127,0.7); "
+                               "border-radius: 3px; }")
+            plus.clicked.connect(self._add_color)
+            self._colors_lay.addWidget(plus)
 
-    def _refresh_color_btn(self):
-        self._color_btn.setText(self._color_hex)
-        self._color_btn.setStyleSheet(
-            f"QPushButton {{ background: {self._color_hex}; color: white; "
-            f"border: 1px solid rgba(0,0,0,0.3); border-radius: 3px; }}"
-        )
+    def _pick_color(self, ix: int = 0):
+        from PySide6.QtGui import QColor
+        col = QColorDialog.getColor(QColor(self._colors[ix]), self, _("spool.color"))
+        if col.isValid():
+            self._colors[ix] = col.name()
+            self._rebuild_colors()
+
+    def _add_color(self):
+        from PySide6.QtGui import QColor
+        col = QColorDialog.getColor(QColor("#FFFFFF"), self, _("spool.color"))
+        if col.isValid() and len(self._colors) < 4:
+            self._colors.append(col.name())
+            self._rebuild_colors()
+
+    def _remove_color(self, ix: int):
+        if 0 < ix < len(self._colors):
+            self._colors.pop(ix)
+            self._rebuild_colors()
 
     def data(self) -> dict:
         out = {"materiau": self._material.currentData() or "PLA",
                "finition": self._finition.currentData() or "",
-               "couleur_hex": self._color_hex}
+               "couleur_hex": self._colors[0],
+               "couleurs_hex": self._colors[1:]}
         for key, e in self._edits.items():
             txt = e.text().strip()
             if key in ("poids_total_g", "poids_restant_g", "cout_total", "seuil_reappro_g"):
@@ -177,6 +291,16 @@ class SpoolForm(QDialog):
                     out[key] = 0.0
             else:
                 out[key] = txt
+
+        def _cf(k):
+            try:
+                return float(self._cal_edits[k].text().strip().replace(",", ".") or 0)
+            except ValueError:
+                return 0.0
+        out["calibration"] = {k: _cf(k) for k in
+                              ("temp_buse", "temp_plateau", "debit_pct",
+                               "retraction_mm", "retraction_vit")}
+        out["calibration"]["notes"] = self._cal_edits["notes"].text().strip()
         return out
 
     def _apply_theme(self):
@@ -193,7 +317,7 @@ class SpoolForm(QDialog):
         for q in self.findChildren(QLabel):
             if q is not self._title:
                 q.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
-        self._refresh_color_btn()
+        self._rebuild_colors()
         self._save.setStyleSheet(
             f"QPushButton {{ background: {pal['ACCENT']}; color: #fff; border: none; "
             f"border-radius: 3px; padding: 5px 16px; font-weight: bold; }}"
@@ -523,12 +647,12 @@ class _SpoolCard(QFrame):
         lay.setContentsMargins(12, 10, 12, 10)
         lay.setSpacing(12)
 
-        # Pastille couleur
+        # Pastille couleur (secteurs si bobine multi-couleur — dual/tri/quadri)
+        from ui.components.spool_visuals import spool_pixmap
         swatch = QLabel()
         swatch.setFixedSize(34, 34)
-        swatch.setStyleSheet(
-            f"background: {s.get('couleur_hex', '#888')}; border-radius: 17px; "
-            f"border: 2px solid {pal['BG_SURFACE']};")
+        swatch.setPixmap(spool_pixmap(store.spool_couleurs(s), 34))
+        swatch.setStyleSheet("background: transparent;")
         lay.addWidget(swatch)
 
         # Infos
@@ -542,10 +666,30 @@ class _SpoolCard(QFrame):
         titre = f"{mat_fin} · {marque}".strip(" ·")
         if nom and nom != mat:
             titre = f"{titre} — {nom}" if titre else nom
+        # Titre + badge EMPLACEMENT (machine/AMS — retour Dominique : savoir d'un
+        # coup d'œil quelle bobine est sur quelle machine)
+        trow = QHBoxLayout(); trow.setSpacing(8)
         t = QLabel(titre)
         t.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
         t.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
-        info.addWidget(t)
+        trow.addWidget(t)
+        emp = str(s.get("emplacement") or "").strip()
+        if emp:
+            badge = QLabel(emp)
+            badge.setFont(QFont(FONT_MAIN, 8))
+            badge.setStyleSheet(
+                f"color: {pal['ACCENT']}; background: transparent; "
+                f"border: 1px solid {pal['ACCENT']}; border-radius: 3px; padding: 1px 7px;")
+            trow.addWidget(badge)
+        if store.spool_est_calibree(s):
+            cal = QLabel(_("spool.cal_badge"))
+            cal.setFont(QFont(FONT_MAIN, 8))
+            cal.setStyleSheet(
+                f"color: {pal['TELE_GREEN']}; background: transparent; "
+                f"border: 1px solid {pal['TELE_GREEN']}; border-radius: 3px; padding: 1px 7px;")
+            trow.addWidget(cal)
+        trow.addStretch()
+        info.addLayout(trow)
 
         rem = float(s.get("poids_restant_g") or 0)
         tot = float(s.get("poids_total_g") or 0)
@@ -614,6 +758,9 @@ class ProHubDialog(QDialog):
     """Fenêtre Espace Pro. `devis_launcher` : callable() ouvrant le devis (contexte
     fourni par la fenêtre principale)."""
 
+    # Bibliothèque de pièces : « Réimprimer à l'identique » (entrée mémorisée).
+    reimpression_demandee = Signal(dict)
+
     def __init__(self, parent=None, devis_context: dict | None = None,
                  initial_tab: str | None = None):
         super().__init__(parent)
@@ -673,7 +820,10 @@ class ProHubDialog(QDialog):
                    getattr(self, "_clients_page", None),
                    getattr(self, "_dashboard_page", None),
                    getattr(self, "_orders_page", None),
-                   getattr(self, "_products_page", None)):
+                   getattr(self, "_products_page", None),
+                   getattr(self, "_journal_page", None),
+                   getattr(self, "_apporteurs_page", None),
+                   getattr(self, "_library_page", None)):
             if pg is not None:
                 try:
                     _T.unregister(pg.apply_theme)
@@ -710,6 +860,8 @@ class ProHubDialog(QDialog):
             ("purchases", _("pro.tab_purchases"), self._build_purchases_page),
             ("quote",     _("pro.tab_quote"),     self._build_devis_page),
             ("orders",    _("pro.tab_orders"),    self._build_orders_page),
+            ("journal",   _("pro.tab_journal"),   self._build_journal_page),
+            ("library",   _("pro.tab_library"),   self._build_library_page),
             ("invoice",   _("pro.tab_invoice"),   self._build_invoice_page),
             ("clients",   _("pro.tab_clients"),   self._build_clients_page),
             ("apporteurs", _("pro.tab_apporteurs"), self._build_apporteurs_page),
@@ -1314,6 +1466,18 @@ class ProHubDialog(QDialog):
         from ui.components.apporteurs_page import ApporteursPage
         self._apporteurs_page = ApporteursPage(self)
         return self._apporteurs_page
+
+    def _build_journal_page(self) -> QWidget:
+        from ui.components.journal_page import JournalPage
+        self._journal_page = JournalPage(self)
+        return self._journal_page
+
+    def _build_library_page(self) -> QWidget:
+        from ui.components.library_page import LibraryPage
+        self._library_page = LibraryPage(self)
+        # Remonté à la fenêtre principale (qui recharge la pièce + ses réglages).
+        self._library_page.reprint_requested.connect(self.reimpression_demandee)
+        return self._library_page
 
     # ── Page Facturation ──────────────────────────────────────────────────────
     def _build_invoice_page(self) -> QWidget:

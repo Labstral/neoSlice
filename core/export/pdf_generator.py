@@ -391,6 +391,38 @@ def generate_filament_pdf(
         ], {0, 1, 2} if force_ret else set())
     ]))
 
+    # ── Section 6 : Vos bobines calibrées (Pro) ───────────────────────────
+    # Les réglages fins notés bobine par bobine dans l'Espace Pro rejoignent
+    # la fiche du matériau correspondant. Jamais bloquant pour le PDF.
+    try:
+        from core.licensing import est_pro
+        if est_pro():
+            from core.business import store as _store
+            from data.filaments import base_materiau as _base_mat
+            _cals = _store.spools_calibrees(_base_mat(filament_name))
+            if _cals:
+                _rows = []
+                for _s in _cals[:8]:
+                    _c = _s.get("calibration") or {}
+                    _nom = " — ".join(x for x in (_s.get("marque", ""),
+                                                  _s.get("couleur_nom", "")) if x) \
+                           or _s.get("materiau", "")
+                    _parts = []
+                    if _c.get("temp_buse"):      _parts.append(_("pdf.cal_buse", v=_c["temp_buse"]))
+                    if _c.get("temp_plateau"):   _parts.append(_("pdf.cal_plateau", v=_c["temp_plateau"]))
+                    if _c.get("debit_pct"):      _parts.append(_("pdf.cal_debit", v=f"{_c['debit_pct']:g}"))
+                    if _c.get("retraction_mm"):  _parts.append(_("pdf.cal_retract", v=f"{_c['retraction_mm']:g}"))
+                    if _c.get("retraction_vit"): _parts.append(_("pdf.cal_retract_vit", v=f"{_c['retraction_vit']:g}"))
+                    _rows.append(_row(_nom, " · ".join(_parts), "",
+                                      (_c.get("notes") or "")[:60], True))
+                story.append(KeepTogether(_section_title(_("pdf.sec_spools_cal")) + [
+                    Paragraph(_("pdf.spools_cal_note"), s_note),
+                    Spacer(1, 0.15*cm),
+                    _table(_rows, set(range(len(_rows)))),
+                ]))
+    except Exception as e:
+        logger.warning(f"Section bobines calibrées ignorée : {e}")
+
     sechage = fil.get("sechage", "")
     if sechage:
         story.append(Spacer(1, 0.3*cm))

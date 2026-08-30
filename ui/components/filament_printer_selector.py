@@ -234,6 +234,8 @@ class FilamentPrinterSelector(QWidget):
     """Widget compact en deux étapes guidées : imprimante → filament."""
 
     selection_changed  = Signal(str, str)  # printer_name, filament_name
+    slicer_switched    = Signal(str)       # « Mes machines » a basculé le slicer de sortie
+    status_message     = Signal(str)       # message court pour la barre d'état
     printer_confirmed  = Signal()          # émis quand l'étape ① est validée
     filament_confirmed = Signal()          # émis quand l'étape ② est validée
     nozzle_changed     = Signal(float)     # diamètre buse (mm) quand l'utilisateur change
@@ -269,6 +271,15 @@ class FilamentPrinterSelector(QWidget):
         self._printer_combo.selectionChanged.connect(self._on_changed)
         row_p.addWidget(self._printer_combo, 1)
 
+        # Épingler dans « Mes machines » (★ = épinglée) — glyphe discret, pas d'emoji
+        self._pin_btn = QPushButton("☆")
+        self._pin_btn.setFixedSize(30, 32)
+        self._pin_btn.setCursor(Qt.PointingHandCursor)
+        self._pin_btn.setToolTip(_("selector.pin_tip"))
+        self._pin_btn.clicked.connect(self._on_pin_clicked)
+        row_p.addWidget(self._pin_btn)
+        self._refresh_pin_btn()
+
         # ── Sélecteur buse (inline, toujours actif) ───────────────────────
         self._nozzle_combo = QComboBox()
         self._nozzle_combo.setStyleSheet(_NOZZLE_COMBO_STYLE)
@@ -298,8 +309,10 @@ class FilamentPrinterSelector(QWidget):
         self._printer_note = QLabel("")
         self._printer_note.setFont(QFont(FONT_MAIN, 8))
         self._printer_note.setWordWrap(True)
-        # Orange foncé (et non jaune) → lisible sur fond clair ET sombre
-        self._printer_note.setStyleSheet("color: #E07000; background: transparent;")
+        # Ambre de la palette (comme l'avertissement plateau) : l'orange en dur
+        # ignorait le thème et ternissait sur fond sombre. Rejoué par refresh_theme.
+        self._printer_note.setStyleSheet(
+            f"color: {_T.palette()['AMBER']}; background: transparent;")
         self._printer_note.hide()
         layout.addWidget(self._printer_note)
         layout.addSpacing(2)
@@ -472,6 +485,44 @@ class FilamentPrinterSelector(QWidget):
         self._hint_filament.hide()
         self.printer_confirmed.emit()
 
+    # ── « Mes machines » : épingler la machine courante ───────────────────────
+    def _refresh_pin_btn(self):
+        """★ si la machine courante est épinglée, ☆ sinon (thème via _COMBO_STYLE-like)."""
+        if not hasattr(self, "_pin_btn"):
+            return
+        try:
+            from core import mes_machines as _mm
+            slicer = PREFS.get("slicer_output", "bambu")
+            printer = self.current_printer()
+            pinned = bool(printer) and _mm.is_pinned(slicer, printer)
+        except Exception:
+            pinned = False
+        pal = _T.palette()
+        col = pal["ACCENT"] if pinned else pal["TEXT_LABEL"]
+        self._pin_btn.setText("★" if pinned else "☆")
+        # L'étoile est une BASCULE : dire ce que le clic va faire, sinon l'infobulle
+        # promet « épingler » alors qu'elle va retirer (personne ne devine le retrait).
+        self._pin_btn.setToolTip(_("selector.unpin_tip") if pinned
+                                 else _("selector.pin_tip"))
+        self._pin_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {col}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 3px; font-size: 13px; }}"
+            f"QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}")
+
+    def _on_pin_clicked(self):
+        try:
+            from core import mes_machines as _mm
+            slicer = PREFS.get("slicer_output", "bambu")
+            printer = self.current_printer()
+            if not printer:
+                return
+            label = self._printer_combo._key_label.get(printer, printer)
+            _mm.toggle(slicer, printer, label)
+            self._populate_printers()       # le groupe « Mes machines » suit
+            self._refresh_pin_btn()
+        except Exception:
+            pass
+
     def _on_confirm_filament(self):
         self._filament_done = True
         pal = _T.palette()
@@ -551,10 +602,36 @@ class FilamentPrinterSelector(QWidget):
             groups.append((b, models(b)))
         if others:
             groups.append(("Autres marques", [(b, models(b)) for b in others]))
+
+        # « Mes machines » EN TÊTE : les imprimantes épinglées (toutes marques et
+        # tous slicers confondus) — en choisir une bascule slicer + imprimante
+        # d'un seul geste (cf. _on_changed).
+        try:
+            from core import mes_machines as _mm
+            pinned = _mm.list_machines()
+            if pinned:
+                entries = [(f"{m['label']}  ·  {_mm.slicer_label(m['slicer'])}",
+                            _mm.machine_key(m)) for m in pinned]
+                groups.insert(0, (_("selector.my_machines"), entries))
+        except Exception:
+            pass
         return groups
 
     def _populate_printers(self):
         self._printer_combo.set_groups(self._printer_groups())
+        # La sélection par DÉFAUT ne doit jamais être une entrée « Mes machines »
+        # (clé spéciale @mm) : au premier peuplement, le combo prend la première
+        # feuille du menu — qui serait justement ce groupe s'il existe. On
+        # rebascule silencieusement sur la première vraie imprimante.
+        try:
+            from core import mes_machines as _mm
+            if _mm.parse_machine_key(self._printer_combo.current_key()) is not None:
+                for _k in self._printer_combo._key_label:
+                    if _mm.parse_machine_key(_k) is None:
+                        self._printer_combo.set_current_key(_k, emit=False)
+                        break
+        except Exception:
+            pass
 
     def _populate_filaments(self):
         model = QStandardItemModel()
@@ -587,6 +664,44 @@ class FilamentPrinterSelector(QWidget):
     # ── Logique ─────────────────────────────────────────────────────────────
 
     def _on_changed(self):
+        # « Mes machines » : clé spéciale @mm:<slicer>:<imprimante> → basculer le
+        # slicer de sortie si besoin, puis sélectionner la vraie imprimante (la
+        # re-sélection repasse par la voie normale ci-dessous).
+        try:
+            from core import mes_machines as _mm
+            _pk = _mm.parse_machine_key(self._printer_combo.current_key())
+        except Exception:
+            _pk = None
+        if _pk is not None:
+            _slicer_cible, _printer_cible = _pk
+            if PREFS.get("slicer_output", "bambu") != _slicer_cible:
+                PREFS.set("slicer_output", _slicer_cible)
+                self.refresh_printers()             # catalogue + plateaux du slicer
+                self.slicer_switched.emit(_slicer_cible)
+            if _printer_cible in self._printer_combo._key_label:
+                self._printer_combo.set_current_key(_printer_cible, emit=True)
+            else:
+                # Clé catalogue disparue (catalogue régénéré, machine renommée…).
+                # On la RETIRE de « Mes machines » : sans ça le favori restait dans
+                # le menu sans jamais pouvoir être sélectionné — donc l'étoile ne
+                # passait jamais en ★ et il devenait IMPOSSIBLE à dépingler.
+                _lbl = _printer_cible
+                for _m in _mm.list_machines():
+                    if _m["slicer"] == _slicer_cible and _m["printer"] == _printer_cible:
+                        _lbl = _m.get("label") or _printer_cible
+                        break
+                _mm.unpin(_slicer_cible, _printer_cible)
+                self._populate_printers()
+                self.status_message.emit(
+                    _("selector.pin_stale").format(
+                        name=_lbl, slicer=_mm.slicer_label(_slicer_cible)))
+                # puis première VRAIE imprimante, jamais une entrée @mm (aucune boucle)
+                for _k in self._printer_combo._key_label:
+                    if _mm.parse_machine_key(_k) is None:
+                        self._printer_combo.set_current_key(_k, emit=True)
+                        break
+            return
+        self._refresh_pin_btn()
         self._sync_nozzles()
         self._update_printer_note()
         self._populate_plates()          # les plateaux dépendent de l'imprimante choisie
@@ -621,6 +736,55 @@ class FilamentPrinterSelector(QWidget):
         if not name:
             return
         self._printer_combo.set_current_key(name, emit=False)
+
+    def restaurer_choix(self, printer: str, filament: str,
+                        plate: str = "", nozzle_mm: float = 0.0) -> None:
+        """Restaure une sélection complète et VALIDE les deux étapes (✓) — utilisé
+        par « Réimprimer à l'identique » (bibliothèque de pièces). Chaque bloc est
+        isolé : une imprimante disparue du catalogue n'empêche pas de restaurer
+        le filament, etc."""
+        if printer:
+            try:
+                self._printer_combo.set_current_key(printer, emit=False)
+                self._sync_nozzles()
+                self._populate_plates()
+                self._update_printer_note()
+                self._refresh_pin_btn()
+            except Exception:
+                pass
+        if nozzle_mm:
+            try:
+                for i in range(self._nozzle_combo.count()):
+                    if abs(float(self._nozzle_combo.itemData(i)) - nozzle_mm) < 1e-6:
+                        self._nozzle_combo.setCurrentIndex(i)
+                        break
+            except Exception:
+                pass
+        if filament:
+            try:
+                model = self._filament_combo.model()
+                for i in range(model.rowCount()):
+                    it = model.item(i)
+                    if it and it.isEnabled() and \
+                            (it.data(Qt.UserRole) or it.text().strip()) == filament:
+                        self._filament_combo.setCurrentIndex(i)
+                        break
+            except Exception:
+                pass
+        try:
+            if not self._printer_done:
+                self._on_confirm_printer()
+            if not self._filament_done:
+                self._on_confirm_filament()
+        except Exception:
+            pass
+        if plate:
+            try:
+                idx = self._plate_combo.findData(plate)
+                if idx >= 0:
+                    self._plate_combo.setCurrentIndex(idx)
+            except Exception:
+                pass
 
     def est_valide(self) -> bool:
         """Étape ① complète : imprimante ET filament validés (✓) — le plateau
@@ -856,7 +1020,11 @@ class FilamentPrinterSelector(QWidget):
 
         self._hint_filament.setStyleSheet(f"color: {inc}; background: transparent;")
         self._plate_warn_lbl.setStyleSheet(f"color: {amb}; background: transparent;")
+        self._printer_note.setStyleSheet(f"color: {amb}; background: transparent;")
         self._compat_badge.setStyleSheet(f"color: {tg}; background: transparent;")
+        # L'étoile « Mes machines » a son style figé à sa dernière bascule : sans
+        # ce rappel elle gardait la couleur de l'ANCIEN thème jusqu'au prochain clic.
+        self._refresh_pin_btn()
         self._update_compatibility()
 
 

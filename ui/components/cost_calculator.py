@@ -257,11 +257,15 @@ class CostCalculatorDialog(QDialog):
             if not spools:
                 return None
             combo = QComboBox()
+            from ui.components.spool_visuals import spool_icon, combo_icon_size, emplacement_suffix
+            from core.business import store as _bstore
+            combo_icon_size(combo)
             combo.addItem("—", None)
             for s in spools:
                 label = (f"{s.get('materiau','')} · {s.get('marque','')} "
                          f"{s.get('couleur_nom','')}").strip(" ·")
-                combo.addItem(label, s["id"])
+                combo.addItem(spool_icon(_bstore.spool_couleurs(s)),
+                              label + emplacement_suffix(s), s["id"])
             combo.currentIndexChanged.connect(self._on_spool_pick)
             return combo
         except Exception:
@@ -409,6 +413,9 @@ class CostCalculatorDialog(QDialog):
                 self._quote_client_combo.addItem(_st.client_label(_c), _c["id"])
         except Exception:
             pass
+        # Sélection d'un client → si un apporteur lui est rattaché et actif, il est
+        # choisi automatiquement dans « Canal de vente » (cf. _on_quote_client_changed).
+        self._quote_client_combo.currentIndexChanged.connect(self._on_quote_client_changed)
         flay.addLayout(self._row("fact.client_select", self._quote_client_combo))
         # Quantité
         self._qty_edit = self._num_edit()
@@ -424,11 +431,22 @@ class CostCalculatorDialog(QDialog):
         self._power_edit = self._num_edit()
         flay.addLayout(self._row("cost.power", self._power_edit))
 
-        # Note estimation (sous le poids)
+        # Note estimation (sous le poids) — passe en VERT quand les chiffres
+        # viennent d'un fichier découpé (voir _importer_fichier_tranche).
         self._est_note = QLabel(_("cost.estimated_note"))
         self._est_note.setFont(QFont(FONT_MAIN, 8))
         self._est_note.setWordWrap(True)
         flay.addWidget(self._est_note)
+
+        # CHIFFRES EXACTS : au lieu de recopier les valeurs du slicer à la main
+        # (ce que la note demandait), on lit directement le fichier découpé
+        # (.gcode.3mf Bambu/Orca, .gcode Prusa/Cura) → poids et durée exacts.
+        self._btn_sliced = QPushButton(_("cost.import_sliced"))
+        self._btn_sliced.setFont(QFont(FONT_MAIN, 8))
+        self._btn_sliced.setCursor(Qt.PointingHandCursor)
+        self._btn_sliced.clicked.connect(self._importer_fichier_tranche)
+        flay.addWidget(self._btn_sliced)
+        self._exact_source = None
 
         flay.addSpacing(8)
         sep_mid = _make_sep(); self._seps.append(sep_mid)
@@ -475,6 +493,15 @@ class CostCalculatorDialog(QDialog):
         flay.addLayout(self._money_row("cost.labor_rate", self._num_edit("labor")))
         flay.addLayout(self._money_row("cost.packaging", self._num_edit("packaging")))
         flay.addLayout(self._row("cost.failure", self._num_edit("failure")))
+        # TAUX RÉEL depuis le Journal d'impressions (Pro) : dès qu'il y a assez
+        # de données (>= 5 impressions), remplacer le forfait 5 % en un clic.
+        self._real_rate_btn = QPushButton("")
+        self._real_rate_btn.setFont(QFont(FONT_MAIN, 8))
+        self._real_rate_btn.setCursor(Qt.PointingHandCursor)
+        self._real_rate_btn.clicked.connect(self._appliquer_taux_reel)
+        self._real_rate_btn.hide()
+        flay.addWidget(self._real_rate_btn)
+        self._maj_taux_reel()
         flay.addLayout(self._row("cost.margin", self._num_edit("margin")))
 
         # ── Section CANAL DE VENTE (commission apporteur / plateforme) ──────
@@ -772,6 +799,27 @@ class CostCalculatorDialog(QDialog):
                 self._commission_edit.setText(f"{float(a['commission']):g}")
         self._recompute()
 
+    def _on_quote_client_changed(self, *_a):
+        """Client choisi : s'il a un apporteur rattaché ET actif (période en cours),
+        on bascule le canal sur « Apporteur d'affaires » et on le sélectionne (sa
+        commission se pré-remplit). Sans apporteur actif, on défait seulement une
+        sélection apporteur précédente (on ne touche pas à un canal choisi à la main)."""
+        cid = self._quote_client_combo.currentData()
+        from core.business import store
+        aid = store.apporteur_actif_du_client(cid) if cid else ""
+        if aid:
+            ci = self._channel_combo.findData("apporteur")
+            if ci >= 0:
+                self._channel_combo.setCurrentIndex(ci)   # -> _on_channel_changed (affiche+reload)
+            self._reload_apporteurs()
+            ai = self._apporteur_combo.findData(aid)
+            if ai >= 0:
+                self._apporteur_combo.setCurrentIndex(ai)  # -> _on_apporteur_changed (commission)
+        elif self._channel_combo.currentData() == "apporteur":
+            di = self._channel_combo.findData("direct")
+            if di >= 0:
+                self._channel_combo.setCurrentIndex(di)
+
     def _add_apporteur(self):
         """Création rapide d'un apporteur depuis le devis (nom + commission =
         celle déjà saisie), puis sélection automatique."""
@@ -802,8 +850,10 @@ class CostCalculatorDialog(QDialog):
 
     def _on_field_changed(self, *_a):
         # Une saisie manuelle du poids OU de la durée annule l'étiquette « estimé »
+        # ET l'étiquette « chiffres exacts » (la valeur ne vient plus du fichier)
         if self.sender() in (self._weight_edit, self._time_edit):
             self._estimated = False
+            self._exact_source = None
             self._refresh_note()
         # Une saisie manuelle de commission est mémorisée pour le canal courant
         if self.sender() is getattr(self, "_commission_edit", None):
@@ -909,7 +959,79 @@ class CostCalculatorDialog(QDialog):
         self._last_qty = qty
 
     def _refresh_note(self):
+        pal = _T.palette()
+        if getattr(self, "_exact_source", None):
+            self._est_note.setText(_("cost.exact_note", name=self._exact_source))
+            self._est_note.setStyleSheet(
+                f"color: {pal['TELE_GREEN']}; background: transparent;")
+            self._est_note.setVisible(True)
+            return
+        self._est_note.setText(_("cost.estimated_note"))
+        self._est_note.setStyleSheet(
+            f"color: {pal['AMBER']}; background: transparent;")
         self._est_note.setVisible(self._estimated)
+
+    def _maj_taux_reel(self):
+        """Affiche le taux d'échec RÉEL (journal d'impressions) sous le champ —
+        seulement à partir de 5 impressions (avant, le chiffre ne veut rien dire)."""
+        try:
+            from core.business import store as _st
+            s = _st.failure_stats()
+            if s["taux_pct"] is not None and s["n"] >= 5:
+                self._taux_reel = s["taux_pct"]
+                self._real_rate_btn.setText(
+                    _("journal.real_rate", pct=f"{s['taux_pct']:g}", n=s["n"]))
+                self._real_rate_btn.show()
+            else:
+                self._real_rate_btn.hide()
+        except Exception:
+            self._real_rate_btn.hide()
+
+    def _appliquer_taux_reel(self):
+        taux = getattr(self, "_taux_reel", None)
+        if taux is None:
+            return
+        self._rate_edits["failure"].setText(f"{taux:g}")
+        self._recompute()
+
+    def _importer_fichier_tranche(self):
+        """Fichier découpé → poids/durée EXACTS dans le devis. Si la quantité du
+        devis est > 1, on demande si le fichier contient 1 pièce ou toutes."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        chemin, _f_ = QFileDialog.getOpenFileName(
+            self, _("cost.import_sliced_title"), "",
+            "Fichier découpé (*.gcode.3mf *.3mf *.gcode)")
+        if not chemin:
+            return
+        try:
+            from core.slicer_report import lire_fichier_tranche
+            r = lire_fichier_tranche(chemin)
+        except Exception as exc:
+            QMessageBox.warning(self, _("cost.import_sliced_title"),
+                                _("cost.import_sliced_err", msg=str(exc)[:120]))
+            return
+        qty = max(1, int(_f(self._qty_edit.text(), 1)))
+        div = 1
+        if qty > 1:
+            # Le plateau découpé contient-il 1 exemplaire ou la série entière ?
+            box = QMessageBox(self)
+            box.setWindowTitle(_("cost.import_sliced_title"))
+            box.setText(_("cost.sliced_contains",
+                          g=f"{r['poids_g']:.1f}", h=f"{r['duree_s'] / 3600:.2f}"))
+            b_un = box.addButton(_("cost.sliced_one"), QMessageBox.AcceptRole)
+            box.addButton(_("cost.sliced_all", n=qty), QMessageBox.AcceptRole)
+            box.exec()
+            div = 1 if box.clickedButton() is b_un else qty
+        # setText déclencherait _on_field_changed (= « saisie manuelle ») qui
+        # annulerait l'état « exact » à l'instant où on le pose → signaux bloqués.
+        for w, val in ((self._weight_edit, f"{r['poids_g'] / div:.2f}"),
+                       (self._time_edit, f"{r['duree_s'] / 3600 / div:.2f}")):
+            w.blockSignals(True); w.setText(val); w.blockSignals(False)
+        # exact=False (poids Cura estimé par densité) : rester honnête → note ambre
+        self._exact_source = Path(chemin).name if r.get("exact") else None
+        self._estimated = not r.get("exact")
+        self._refresh_note()
+        self._recompute()
 
     # ── Enregistrement du devis ───────────────────────────────────────────────
     def current_quote(self) -> dict:
@@ -1005,7 +1127,11 @@ class CostCalculatorDialog(QDialog):
         cid = inp.get("client_id", q.get("client_id", "")) or ""
         ci = self._quote_client_combo.findData(cid)
         if ci >= 0:
+            # signaux bloqués : le devis rouvert impose SON canal/apporteur, on ne
+            # laisse pas la sélection du client le redériver et l'écraser.
+            self._quote_client_combo.blockSignals(True)
             self._quote_client_combo.setCurrentIndex(ci)
+            self._quote_client_combo.blockSignals(False)
 
         # Canal de vente + commission : régler le canal (signaux bloqués), normaliser
         # l'état actif via _on_channel_changed, puis restaurer la commission du devis.
@@ -1029,8 +1155,10 @@ class CostCalculatorDialog(QDialog):
                 self._apporteur_combo.setCurrentIndex(ai)
                 self._apporteur_combo.blockSignals(False)
 
-        # Valeurs choisies par l'utilisateur → ce n'est plus une « estimation ».
+        # Valeurs choisies par l'utilisateur → ce n'est plus une « estimation »,
+        # ni des « chiffres exacts » d'un fichier (le devis rechargé fait foi).
         self._estimated = False
+        self._exact_source = None
         self._refresh_note()
 
         self._editing_quote_id = q.get("id")
@@ -1301,6 +1429,16 @@ class CostCalculatorDialog(QDialog):
         for lbl in self._field_labels:
             lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         self._est_note.setStyleSheet(f"color: {pal['AMBER']}; background: transparent;")
+        self._btn_sliced.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['TEXT_SECONDARY']};"
+            f" border: 1px dashed {pal['INACTIVE']}; border-radius: 3px;"
+            f" padding: 4px 8px; text-align: left; }}"
+            f"QPushButton:hover {{ color: {pal['ACCENT']}; border-color: {pal['ACCENT']}; }}")
+        self._real_rate_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['TELE_GREEN']};"
+            f" border: none; padding: 2px 0; text-align: left;"
+            f" text-decoration: underline; }}"
+            f"QPushButton:hover {{ color: {pal['ACCENT']}; }}")
         self._rates_note.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent; font-style: italic;")
         self._channel_note.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent; font-style: italic;")
         self._refresh_note()

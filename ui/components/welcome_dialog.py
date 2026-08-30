@@ -15,7 +15,7 @@ from version import __version__
 from ui.styles.theme import FONT_MONO, MANAGER as _T, FONT_MAIN
 
 _PREFS_FILE = Path.home() / ".neoslice" / "prefs.json"
-_COFFEE_URL = "https://buymeacoffee.com/bambulabpourlesnuls"
+_COFFEE_URL = "https://buymeacoffee.com/soutien"
 
 
 def _load_prefs() -> dict:
@@ -35,6 +35,11 @@ def _save_prefs(prefs: dict) -> None:
 
 
 def should_show_welcome() -> bool:
+    # Échappatoire pour les tests automatisés / captures d'écran : la fenêtre de
+    # bienvenue est modale et bloquerait un lancement scripté.
+    import os
+    if os.environ.get("NEOSLICE_NO_WELCOME"):
+        return False
     prefs = _load_prefs()
     if prefs.get("last_seen_version") != __version__:
         return True
@@ -49,6 +54,43 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v2.0.0",
+     "• Assistant d'orientation : cliquez sur la pièce les zones qui doivent "
+     "rester belles ou solides — neoSlice propose des orientations notées "
+     "Solidité / Supports / Adhérence, expliquées, avec aperçu au survol et "
+     "application en un clic. Vous pouvez aussi poser la pièce sur une face.\n"
+     "• Nouvelle jauge de stabilité : basée sur l'angle de renversement réel — "
+     "les pièces hautes et fines ne sont plus jugées trop stables.\n"
+     "• neoSlice parle 3 nouvelles langues : Español, Deutsch, Italiano "
+     "(Réglages → Langue).\n"
+     "• Mode série : un compteur « × N » près du bouton Exporter duplique la "
+     "pièce en grille — et déborde proprement sur plusieurs plateaux.\n"
+     "• Bibliothèque de pièces (Pro) : chaque export est mémorisé avec ses "
+     "réglages exacts et une vignette — « Réimprimer à l'identique » retrouve "
+     "tout, même des mois plus tard.\n"
+     "• Chiffres exacts du slicer dans le devis (Pro) : importez le fichier "
+     "tranché (.gcode.3mf / .gcode) et le devis utilise le poids et la durée "
+     "EXACTS au lieu d'estimations.\n"
+     "• Journal d'impressions (Pro) : réussites et échecs, taux d'échec réel "
+     "par machine et par filament — applicable au devis en un clic.\n"
+     "• Calibration par bobine (Pro) : notez les réglages qui marchent pour "
+     "chaque bobine (températures, débit, rétraction) — badge CALIBRÉE et "
+     "rappel dans la fiche PDF des réglages.\n"
+     "• Bobines multi-couleurs (Pro) : jusqu'à 4 couleurs par bobine, avec "
+     "une pastille à secteurs reconnaissable dans tous les menus.\n"
+     "• Relances d'impayés (Pro) : lettre PDF prête à envoyer, rédigée dans "
+     "la langue de votre client, et export comptable CSV par année.\n"
+     "• Réparations de fichiers visibles : trous rebouchés, unités converties "
+     "— neoSlice vous dit maintenant ce qu'il a réparé au chargement.\n"
+     "• Carte de visite enrichie : styles relief / gravé / découpe pour chaque "
+     "élément, QR code, coins arrondis ou droits, impression une ou deux "
+     "couleurs.\n"
+     "• « Mes machines » : épinglez vos imprimantes en tête de liste — en "
+     "changer bascule aussi le slicer de sortie automatiquement.\n"
+     "• Recherche neoGen instantanée, avec une liste de résultats classés.\n"
+     "• Correctif important : l'export tient désormais compte de la buse "
+     "montée (0,2 / 0,6 / 0,8 mm) — largeurs de ligne et hauteurs adaptées, "
+     "au lieu des valeurs 0,4 mm pour tous."),
     ("Nouveautés v0.1.9.2",
      "• Devis modifiable (Pro) : rouvrez un devis enregistré pour ajuster ses "
      "valeurs et le mettre à jour, au lieu d'en recréer un à chaque fois.\n"
@@ -296,7 +338,10 @@ class WelcomeDialog(QDialog):
     def _setup_ui(self):
         pal = self._pal
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        # 1 px de marge = l'épaisseur du liseré ACCENT du QDialog : les enfants
+        # opaques (pied de page) ne recouvrent plus la bordure → le cadre bleu
+        # fait le tour COMPLET de la fenêtre, bas compris.
+        outer.setContentsMargins(1, 1, 1, 1)
         outer.setSpacing(0)
 
         # Contenu DÉFILANT : la fenêtre ne doit jamais dépasser l'écran, sinon le
@@ -511,10 +556,12 @@ class WelcomeDialog(QDialog):
         root.addSpacing(4)
 
         # ── Pied de page FIXE (hors zone défilante → toujours accessible) ──
+        # Pas de border-top (trait jugé laid) ; rayons bas à 5 px pour épouser
+        # l'intérieur du cadre arrondi de la fenêtre (6 px − 1 px de marge).
         footer_box = QWidget()
         footer_box.setStyleSheet(
-            f"QWidget{{background:{pal['BG_PANEL']};border-top:1px solid {pal['INACTIVE']};"
-            "border-bottom-left-radius:6px;border-bottom-right-radius:6px;}"
+            f"QWidget{{background:{pal['BG_PANEL']};border:none;"
+            "border-bottom-left-radius:5px;border-bottom-right-radius:5px;}"
         )
         footer = QHBoxLayout(footer_box)
         footer.setContentsMargins(36, 12, 36, 16)

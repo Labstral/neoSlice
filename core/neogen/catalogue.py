@@ -798,7 +798,7 @@ _SYNONYMES: dict[str, str] = {
     "coquetier": "oeuf coque petit dejeuner",
     "gobelet": "verre tasse pot brosses dents",
     "entonnoir": "verser transvaser liquide",
-    "pot_crayons": "crayons stylos pot gobelet",
+    "pot_crayons": "crayons stylos pot gobelet ranger rangement bureau feutre pinceau desk pen holder",
     "pot_fleur": "plante fleur jardiniere cache pot",
     "lettre_3d": "lettre initiale alphabet caractere",
     "numero_maison": "numero maison porte adresse rue boite lettres",
@@ -839,28 +839,110 @@ _SYNONYMES: dict[str, str] = {
     "presentoir_bijoux": "presentoir bijoux colliers bracelets boucles arche portique boutique",
     "organiseur_bureau": "organiseur bureau rangement stylos crayons trombones bac compartiment",
     "porte_cartes": "porte cartes visite presentoir comptoir boutique accueil",
+    # — synonymes ajoutés pour la recherche (objets qui n'en avaient aucun) —
+    "hueforge": "photo couleur image multicouleur filament degrade portrait tableau color image multicolor gradient picture",
+    "bac_compartiments": "organiseur cases compartiments rangement bac tri boite composants perles trombones tray compartment organizer sorting bin",
+    "plateau": "vide poche coupelle rangement cles monnaie entree bijoux dish catchall tray bowl keys coins entryway valet",
+    "butee_porte": "butee arret stop bloque porte door stopper doorstop",
+    "cale_porte": "cale coin bloque porte wedge door doorstop chock",
+    "pied_meuble": "pied patin table chaise meuble reglable furniture foot leg pad glide",
+    "separateur_tiroir": "separateur division cloison tiroir rangement drawer divider organizer partition",
+    "protege_coin": "protege angle securite enfant bebe meuble corner protector guard bumper safety child",
+    "emporte_piece": "patisserie biscuit gateau cuisine moule pate cookie cutter baking dough fondant",
+    "oeuf_pied": "coupe verre pied dessert glace coquetier cup footed goblet bowl dessert",
+    "support_tel": "support telephone tablette smartphone portable dock socle bureau chevet phone tablet stand holder cradle",
+    "clip_cable": "clip serre attache range fil cordon bureau cable management wire holder clamp",
+    "gobelet_sdb": "gobelet verre brosses dents salle bain lavabo toothbrush cup bathroom holder tumbler",
+    "tour_temperature": "tour temperature calibration test reglage pla petg abs temp tower calibration tuning",
+    "test_surplombs": "test surplomb pont angle porte a faux calibration overhang bridge angle test",
+    "jeton": "jeton poker caddie chariot monnaie marqueur token chip cart coin marker",
+    "socle_figurine": "socle base support statuette figurine miniature figure stand miniature display",
+    "pion_jeu": "pion piece plateau societe echec dame pawn game piece meeple token",
+    "porte_cartes_jeu": "support cartes jouer main jeu societe presentoir card holder playing hand rack stand",
+    "rondelle": "rondelle joint plate washer spacer shim ring",
+    "entretoise": "entretoise espaceur cale colonne standoff spacer pillar",
+    "organiseur_forets": "bloc forets meches embouts rangement perceuse visseuse drill bit holder block organizer",
 }
-# index normalisé id -> ensemble de mots-clés (nom FR + EN + synonymes)
-_INDEX_RECHERCHE: dict[str, set] = {}
+import re as _re
+import difflib as _difflib
+import unicodedata as _ud
+
+# index normalisé id -> {mot: poids} (nom FR/EN pèse plus que synonymes/domaine)
+_INDEX_RECHERCHE: dict[str, dict] = {}
+
+# Poids par provenance du mot-clé (nom = signal fort, domaine = contexte faible).
+_W_NOM, _W_SYN, _W_DOM = 2.0, 1.0, 1.0
+# Score minimal pour qu'un objet soit proposé (évite les faux « sûr » à 1 mot bruit).
+_SEUIL_PERTINENCE = 0.9
+
+_STOPWORDS = {
+    "un", "une", "de", "des", "du", "le", "la", "les", "avec", "et", "en",
+    "mm", "cm", "pour", "sur", "the", "a", "an", "with", "of", "je", "veux",
+    "faire", "creer", "genere", "generer", "voudrais", "aimerais", "mon", "ma",
+    "mes", "au", "aux", "ou", "qui", "que", "dans", "me", "quelque", "chose",
+}
+
+
+def _fold(w: str) -> str:
+    """Repli pluriel simple : retire un « s » final sur les mots ≥ 4 lettres
+    (boites→boite, crayons→crayon) — appliqué à l'index ET à la requête."""
+    return w[:-1] if len(w) >= 4 and w.endswith("s") else w
 
 
 def _mots_norm(txt: str) -> set:
-    import re
-    import unicodedata
-    t = unicodedata.normalize("NFKD", txt.lower()).encode("ascii", "ignore").decode()
-    return set(re.findall(r"[a-z0-9]+", t)) - {
-        "un", "une", "de", "des", "du", "le", "la", "les", "avec", "et", "en",
-        "mm", "cm", "pour", "sur", "the", "a", "an", "with", "of", "je", "veux",
-        "faire", "creer", "genere", "generer", "voudrais", "aimerais"}
+    """Ensemble de tokens normalisés (minuscule, sans accent, pluriel replié),
+    hors mots vides."""
+    t = _ud.normalize("NFKD", (txt or "").lower()).encode("ascii", "ignore").decode()
+    return {_fold(w) for w in _re.findall(r"[a-z0-9]+", t)} - _STOPWORDS
+
+
+def _labels_domaines() -> dict:
+    """id domaine -> libellés FR+EN (natifs + domaines de la base téléchargée)."""
+    labels = {d[0]: f"{d[1]} {d[2]}" for d in DOMAINES}
+    try:
+        from core.neogen import objets_module
+        for dm in objets_module.domaines_module():
+            labels.setdefault(dm["id"], f"{dm.get('fr', '')} {dm.get('en', '')}")
+    except Exception:
+        pass
+    return labels
 
 
 def _construire_index() -> None:
+    _INDEX_RECHERCHE.clear()
+    doml = _labels_domaines()
     for e in CATALOGUE:
-        # synonymes : table native, complétée par ceux des objets de la base
-        # téléchargeable (_SYNO_MODULE) — la recherche trouve donc aussi ces objets.
+        idx: dict[str, float] = {}
+        # nom FR + EN (signal fort)
+        for w in _mots_norm(e["fr"]) | _mots_norm(e["en"]):
+            idx[w] = max(idx.get(w, 0.0), _W_NOM)
+        # synonymes : table native + base téléchargeable (_SYNO_MODULE)
         syn = _SYNONYMES.get(e["id"], "") + " " + _SYNO_MODULE.get(e["id"], "")
-        mots = _mots_norm(e["fr"]) | _mots_norm(e["en"]) | _mots_norm(syn)
-        _INDEX_RECHERCHE[e["id"]] = mots
+        for w in _mots_norm(syn):
+            idx[w] = max(idx.get(w, 0.0), _W_SYN)
+        # domaine/catégorie : permet de retrouver un objet par sa famille
+        for w in _mots_norm(doml.get(e.get("domaine", ""), "")):
+            idx[w] = max(idx.get(w, 0.0), _W_DOM)
+        _INDEX_RECHERCHE[e["id"]] = idx
+
+
+def _score_mot(qw: str, idx: dict) -> float:
+    """Meilleure correspondance d'un mot de requête `qw` contre l'index d'un objet :
+    exact > sous-chaîne > proximité (fautes de frappe, mots collés), pondérée."""
+    best = 0.0
+    for w, wt in idx.items():
+        if qw == w:
+            s = 1.0
+        elif len(qw) >= 4 and len(w) >= 4 and (qw in w or w in qw):
+            s = 0.85                                   # sous-chaîne (porteclé↔porte)
+        else:
+            r = _difflib.SequenceMatcher(None, qw, w).ratio()
+            s = r if r >= 0.84 else 0.0                # faute de frappe tolérée
+        if s > 0:
+            best = max(best, s * wt)
+            if best >= 2.0:                            # match nom parfait : inutile de continuer
+                break
+    return best
 
 
 _construire_index()
@@ -878,19 +960,35 @@ def recharger_objets_module() -> int:
     return sum(1 for e in CATALOGUE if e.get("_module"))
 
 
+def rechercher_liste(phrase: str, limite: int = 8) -> list[tuple[str, float]]:
+    """Liste CLASSÉE des objets les plus pertinents pour une demande en langage
+    naturel (mots-clés pondérés + sous-chaîne + tolérance aux fautes, SANS modèle
+    -> instantané et fiable). Renvoie [(id, score), …] trié par pertinence
+    décroissante, filtré au seuil de pertinence. Vide si rien de pertinent."""
+    qwords = _mots_norm(phrase or "")
+    if not qwords:
+        return []
+    scored: list[tuple[str, float, int]] = []
+    for eid, idx in _INDEX_RECHERCHE.items():
+        total, couvert = 0.0, 0
+        for qw in qwords:
+            best = _score_mot(qw, idx)
+            if best > 0:
+                total += best
+                couvert += 1                       # nb de mots de la requête matchés
+        if total >= _SEUIL_PERTINENCE:
+            scored.append((eid, total, couvert))
+    # Tri : d'abord la COUVERTURE (un objet qui matche + de mots de la requête est
+    # plus pertinent — « coupe de champion » -> Trophée bat « Coupe »), puis le
+    # score pondéré, puis le nom (stable, fini les égalités par ordre de catalogue).
+    scored.sort(key=lambda t: (-t[2], -t[1], PAR_ID[t[0]]["fr"].lower()))
+    return [(eid, sc) for eid, sc, _cov in scored[:max(1, limite)]]
+
+
 def rechercher(phrase: str) -> str | None:
-    """Objet de bibliothèque le plus proche d'une demande en langage naturel
-    (recouvrement de mots-clés, SANS modèle -> instantané et fiable). Renvoie
-    l'id, ou None si rien de pertinent (score nul)."""
-    mots = _mots_norm(phrase or "")
-    if not mots:
-        return None
-    best_id, best_score = None, 0
-    for eid, cles in _INDEX_RECHERCHE.items():
-        score = len(mots & cles)
-        if score > best_score:
-            best_id, best_score = eid, score
-    return best_id
+    """Objet unique le plus proche (compat) : tête de rechercher_liste, ou None."""
+    res = rechercher_liste(phrase, 1)
+    return res[0][0] if res else None
 
 
 def par_domaine() -> list[tuple[tuple, list[dict]]]:

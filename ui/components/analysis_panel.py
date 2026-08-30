@@ -280,6 +280,11 @@ class AnalysisPanel(QWidget):
         self._skip_row.hide()
         root.addWidget(self._skip_row)
 
+        # ── Assistant d'orientation (carte compacte, cachée avant analyse) ──
+        from ui.components.orientation_assistant import OrientationAssistant
+        self.orientation = OrientationAssistant()
+        root.addWidget(self.orientation)
+
         # ── Données dimensionnelles ────────────────────────────────────────
         self._geo_box = geo = QWidget()
         geo.setStyleSheet(f"background: {_pi['BG_SURFACE']}; border-radius: 3px;")
@@ -350,12 +355,29 @@ class AnalysisPanel(QWidget):
         self._material_warn.setStyleSheet("background: transparent;")
         root.addWidget(self._material_warn)
 
+        # Réparations automatiques du fichier au chargement (trous rebouchés,
+        # unités converties…) — la réparation existait mais était MUETTE.
+        self._repair_info = QLabel()
+        self._repair_info.setFont(QFont(FONT_MONO, 8))
+        self._repair_info.setWordWrap(True)
+        self._repair_info.setContentsMargins(0, 0, 0, 0)
+        self._repair_info.setStyleSheet("background: transparent;")
+        root.addWidget(self._repair_info)
+
     # ── API publique ───────────────────────────────────────────────────────
 
     def update_from_report(self, report: AnalysisReport):
         self._last_report = report
         self._dot_stl.set_active()
         self._dot_anlys.set_active()
+
+        # Carte ORIENTATION (assistant) : score de la pose actuelle + gain détecté.
+        # main_window peut la re-masquer ensuite (plateau multi-pièces non isolé).
+        try:
+            self.orientation.set_score(report.orientation_score * 100.0,
+                                       report.orientation_improvement_pct)
+        except Exception:
+            pass
 
         # Surplombs sautés ? La RAISON vient du rapport (décision par pièce du
         # mode Auto, ou mode Économique manuel) — plus d'une lecture de PREFS
@@ -535,6 +557,10 @@ class AnalysisPanel(QWidget):
     def set_loading(self):
         self._dot_stl.set_active()
         self._dot_anlys.set_busy()
+        try:
+            self.orientation.set_visible_card(False)   # ré-affichée par le rapport
+        except Exception:
+            pass
         for g in (self._g_overhangs, self._g_stability, self._g_fragility, self._g_support):
             g.reset()
         self.set_progress(0, _("analysis.progress_init"))
@@ -603,6 +629,21 @@ class AnalysisPanel(QWidget):
             self._material_warn.setText("")
             self._material_warn.setStyleSheet("background: transparent;")
 
+    def show_repair_info(self, lines: list[str], warn: bool = False) -> None:
+        """Réparations appliquées au fichier chargé. `warn=True` (ambre) quand le
+        fichier reste non étanche malgré la réparation ; sinon vert informatif."""
+        if not lines:
+            self._repair_info.setText("")
+            self._repair_info.setStyleSheet("background: transparent;")
+            return
+        pal = _T.palette()
+        col = pal["AMBER"] if warn else pal["TELE_GREEN"]
+        _r, _g, _b = (int(col[i:i + 2], 16) for i in (1, 3, 5))
+        self._repair_info.setText("\n".join(lines))
+        self._repair_info.setStyleSheet(
+            f"color: {col}; background: rgba({_r},{_g},{_b},0.10); "
+            f"border-left: 2px solid {col}; border-radius: 2px; padding: 3px 6px;")
+
     def set_file_kind(self, kind: str):
         """Libellé de l'étape 2 cohérent avec le fichier chargé (STL/OBJ/3MF)."""
         self._dot_stl.set_label(kind or _("analysis.dot_stl"))
@@ -634,3 +675,5 @@ class AnalysisPanel(QWidget):
         self._status_block.setText("")
         self._material_warn.setText("")
         self._material_warn.setStyleSheet("background: transparent;")
+        self._repair_info.setText("")
+        self._repair_info.setStyleSheet("background: transparent;")

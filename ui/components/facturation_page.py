@@ -565,6 +565,11 @@ class FacturationPage(QWidget):
         days_late = store.days_overdue(inv)
         late_tag = (f"  <span style='color:{pal['ERROR_RED']}'>⚠ {_('fact.overdue')} "
                     f"({days_late} j)</span>") if days_late > 0 else ""
+        # Dernière relance envoyée : visible d'un coup d'œil (évite de relancer
+        # deux fois le même client la même semaine).
+        if days_late > 0 and inv.get("relance_le"):
+            late_tag += (f"  <span style='color:{pal['TEXT_LABEL']}'>"
+                         f"{_('fact.relance_last', date=inv['relance_le'])}</span>")
         info = QLabel(f"<b>{inv.get('number','')}</b> · {cli}  —  "
                       f"{ttc:.2f} {inv.get('currency','')}{late_tag}")
         info.setFont(QFont(FONT_MAIN, 9)); info.setObjectName("fld")
@@ -637,6 +642,18 @@ class FacturationPage(QWidget):
                           f"color: {pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
                           f"border-radius: 3px; padding: 6px; }}")
         v.addWidget(box)
+        btns = QHBoxLayout(); btns.setSpacing(8); btns.addStretch()
+        # Lettre PDF prête à envoyer (courrier formel, langue du pays de la
+        # facture — même mécanique que la facture elle-même).
+        pdf_btn = QPushButton(_("fact.relance_pdf"))
+        pdf_btn.setCursor(Qt.PointingHandCursor); pdf_btn.setFixedHeight(30)
+        pdf_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['ACCENT']}; "
+            f"border: 1px solid {pal['ACCENT']}; border-radius: 3px; "
+            f"padding: 5px 16px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {pal['ACCENT']}; color: #fff; }}")
+        pdf_btn.clicked.connect(lambda _c=False, i=inv, d=dlg: self._relance_pdf(i, d))
+        btns.addWidget(pdf_btn)
         copy = QPushButton("📋 " + _("fact.copy"))
         copy.setCursor(Qt.PointingHandCursor); copy.setFixedHeight(30)
         copy.setStyleSheet(
@@ -645,9 +662,25 @@ class FacturationPage(QWidget):
             f"QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}")
         from PySide6.QtWidgets import QApplication
         copy.clicked.connect(lambda: QApplication.clipboard().setText(msg))
-        v.addWidget(copy, alignment=Qt.AlignRight)
+        btns.addWidget(copy)
+        v.addLayout(btns)
         dlg.exec()
         self._refresh_invoices()
+
+    def _relance_pdf(self, inv: dict, parent_dlg=None):
+        """Génère la lettre de relance PDF (langue du document) et l'ouvre."""
+        from PySide6.QtWidgets import QFileDialog
+        from core.export.relance_pdf import render_relance
+        default = f"relance_{inv.get('number', '').replace('/', '-')}.pdf"
+        path, _flt = QFileDialog.getSaveFileName(
+            parent_dlg or self, _("fact.relance_pdf"), default, "PDF (*.pdf)")
+        if not path:
+            return
+        try:
+            render_relance(path, inv, store.get_company())
+            self._open_file(path)
+        except Exception as e:
+            self._msg(_("fact.relance_title"), str(e), "warn")
 
     def prefill_from_quote(self, q: dict):
         """Pré-remplit le formulaire de facture à partir d'un devis enregistré."""

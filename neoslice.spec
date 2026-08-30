@@ -166,6 +166,11 @@ a = Analysis(
         *certifi_datas,
     ],
     hiddenimports=[
+        # Langues chargées à la demande (imports dans set_lang) — ceinture et
+        # bretelles : les imports littéraux sont normalement détectés.
+        'core.i18n_langs.es',
+        'core.i18n_langs.de',
+        'core.i18n_langs.it',
         *pyside6_hidden,
         *pyvista_hidden,
         *pyvistaqt_hidden,

@@ -68,6 +68,27 @@ TERMS: dict[str, dict[str, str]] = {
     "unassigned":   {"fr": "(bobine non assignée)", "en": "(spool unassigned)", "de": "(Spule nicht zugewiesen)", "nl": "(spoel niet toegewezen)", "it": "(bobina non assegnata)", "es": "(bobina no asignada)"},
     "notes":        {"fr": "Notes", "en": "Notes", "de": "Anmerkungen", "nl": "Opmerkingen", "it": "Note", "es": "Notas"},
     "wo_footer":    {"fr": "Document de production interne", "en": "Internal production document", "de": "Internes Produktionsdokument", "nl": "Intern productiedocument", "it": "Documento di produzione interno", "es": "Documento de producción interno"},
+    # ── Lettre de relance (facture impayée) ──
+    "reminder_title": {"fr": "RELANCE", "en": "PAYMENT REMINDER", "de": "ZAHLUNGSERINNERUNG", "nl": "BETALINGSHERINNERING", "it": "SOLLECITO DI PAGAMENTO", "es": "RECORDATORIO DE PAGO"},
+    "reminder_obj":   {"fr": "Objet : relance de la facture {number}", "en": "Re: reminder for invoice {number}", "de": "Betreff: Zahlungserinnerung zur Rechnung {number}", "nl": "Betreft: herinnering factuur {number}", "it": "Oggetto: sollecito fattura {number}", "es": "Asunto: recordatorio de la factura {number}"},
+    "reminder_greeting": {"fr": "Madame, Monsieur,", "en": "Dear Sir or Madam,", "de": "Sehr geehrte Damen und Herren,", "nl": "Geachte heer, mevrouw,", "it": "Gentile Cliente,", "es": "Estimado cliente:"},
+    "reminder_body": {
+        "fr": "Sauf erreur ou omission de notre part, la facture {number} du {date}, d'un montant de {amount}, arrivée à échéance le {due}, demeure impayée à ce jour ({days} jours de retard). Nous vous remercions de bien vouloir procéder à son règlement dans les meilleurs délais.",
+        "en": "Unless we are mistaken, invoice {number} dated {date}, for the amount of {amount} and due on {due}, remains unpaid to date ({days} days overdue). We kindly ask you to settle it at your earliest convenience.",
+        "de": "Sofern uns kein Fehler unterlaufen ist, ist die Rechnung {number} vom {date} über {amount}, fällig am {due}, bis heute unbezahlt ({days} Tage überfällig). Wir bitten Sie, den Betrag baldmöglichst zu begleichen.",
+        "nl": "Tenzij wij ons vergissen, is factuur {number} van {date}, ten bedrage van {amount} en vervallen op {due}, tot op heden onbetaald ({days} dagen te laat). Wij verzoeken u vriendelijk deze zo spoedig mogelijk te voldoen.",
+        "it": "Salvo errori od omissioni da parte nostra, la fattura {number} del {date}, per un importo di {amount}, scaduta il {due}, risulta a oggi non pagata ({days} giorni di ritardo). La preghiamo di provvedere al saldo quanto prima.",
+        "es": "Salvo error u omisión por nuestra parte, la factura {number} de fecha {date}, por un importe de {amount} y vencida el {due}, sigue pendiente de pago a día de hoy ({days} días de retraso). Le rogamos proceda a su liquidación a la mayor brevedad.",
+    },
+    "reminder_body2": {
+        "fr": "Si votre règlement a été effectué entre-temps, nous vous prions de ne pas tenir compte de ce courrier. Nous restons à votre disposition pour toute question.",
+        "en": "If your payment has been made in the meantime, please disregard this letter. We remain at your disposal for any questions.",
+        "de": "Sollte sich Ihre Zahlung mit diesem Schreiben überschnitten haben, betrachten Sie es bitte als gegenstandslos. Für Rückfragen stehen wir gerne zur Verfügung.",
+        "nl": "Indien uw betaling inmiddels is verricht, kunt u deze brief als niet verzonden beschouwen. Wij staan tot uw beschikking voor vragen.",
+        "it": "Qualora il pagamento fosse già stato effettuato, La preghiamo di non tenere conto della presente. Restiamo a disposizione per qualsiasi chiarimento.",
+        "es": "Si el pago ya se ha efectuado, le rogamos que no tenga en cuenta esta carta. Quedamos a su disposición para cualquier consulta.",
+    },
+    "reminder_sign": {"fr": "Cordialement,", "en": "Kind regards,", "de": "Mit freundlichen Grüßen", "nl": "Met vriendelijke groet,", "it": "Cordiali saluti,", "es": "Atentamente,"},
     # ── Statuts de commande ──
     "st_todo":      {"fr": "À faire", "en": "To do", "de": "Offen", "nl": "Te doen", "it": "Da fare", "es": "Pendiente"},
     "st_printing":  {"fr": "En impression", "en": "Printing", "de": "Im Druck", "nl": "Aan het printen", "it": "In stampa", "es": "Imprimiendo"},

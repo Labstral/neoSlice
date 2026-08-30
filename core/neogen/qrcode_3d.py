@@ -53,7 +53,7 @@ def _modules_2d(mat: np.ndarray, module_mm: float, quiet: int):
     Les carrés sont très légèrement dilatés (join carré) pour PONTER les modules qui
     ne se touchent qu'en diagonale (contact ponctuel = maillage non-manifold, non
     imprimable) : les modules deviennent des solides propres, étanches et scannables."""
-    from shapely.geometry import box as _box
+    from shapely.geometry import MultiPolygon, box as _box
     from shapely.ops import unary_union
     eps = module_mm * 0.02                            # pont diagonal minimal (~2 %)
     n = mat.shape[0]
@@ -66,7 +66,14 @@ def _modules_2d(mat: np.ndarray, module_mm: float, quiet: int):
             cy = (quiet + (n - 1 - r) + 0.5) * module_mm
             h = module_mm / 2.0 + eps
             carres.append(_box(cx - h, cy - h, cx + h, cy + h))
-    return unary_union(carres)
+    u = unary_union(carres)
+    # PURGER les sommets colinéaires laissés par l'union (contours « escalier ») :
+    # extrude_polygon les triangule MAL sur un polygone À TROU (les yeux du QR)
+    # → mesh non étanche → booléens refusés (mesuré : 53 sommets → 5, aire
+    # strictement conservée, watertight rétabli).
+    if isinstance(u, MultiPolygon):
+        return MultiPolygon([g.simplify(1e-6) for g in u.geoms])
+    return u.simplify(1e-6)
 
 
 def _extrude_multi(poly, hauteur: float, z0: float) -> trimesh.Trimesh:

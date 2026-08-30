@@ -9,12 +9,40 @@ calculateur, et cette page affiche pour chacun le CUMUL des commissions :
 """
 from __future__ import annotations
 
+from datetime import date
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QPushButton,
-    QScrollArea, QFrame, QMessageBox, QPlainTextEdit, QDialog,
+    QScrollArea, QFrame, QMessageBox, QPlainTextEdit, QDialog, QComboBox,
 )
+
+_MOIS_FR = ["", "janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+            "août", "septembre", "octobre", "novembre", "décembre"]
+_MONTHS_EN = ["", "January", "February", "March", "April", "May", "June", "July",
+              "August", "September", "October", "November", "December"]
+
+
+def _periodes(n: int = 12) -> list:
+    """[(label, debut_iso, fin_iso), …] : les n derniers mois (courant en tête) +
+    « Tout ». Sert au filtre « commissions réalisées par période »."""
+    from core.i18n import lang
+    import calendar
+    en = (lang() == "en")
+    today = date.today()
+    y, m = today.year, today.month
+    out = []
+    for _i in range(n):
+        last = calendar.monthrange(y, m)[1]
+        label = f"{(_MONTHS_EN if en else _MOIS_FR)[m]} {y}"
+        out.append((label, f"{y:04d}-{m:02d}-01", f"{y:04d}-{m:02d}-{last:02d}"))
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    out.append((_("app.period_all"), "", ""))
+    return out
 
 from core.i18n import _
 from core.business import store
@@ -128,6 +156,22 @@ class ApporteursPage(QWidget):
         header.addWidget(self._add_btn)
         lay.addLayout(header)
 
+        # Sélecteur de période : « commissions réalisées » du mois choisi = montant
+        # à régler à chaque apporteur en fin de mois.
+        prow = QHBoxLayout()
+        self._period_lbl = QLabel(_("app.period"))
+        self._period_lbl.setFont(QFont(FONT_MAIN, 9))
+        prow.addWidget(self._period_lbl)
+        self._period_combo = QComboBox()
+        self._period_combo.setFont(QFont(FONT_MAIN, 9))
+        self._periodes = _periodes()
+        for label, _d, _f in self._periodes:
+            self._period_combo.addItem(label)
+        self._period_combo.setCurrentIndex(0)   # mois courant par défaut
+        self._period_combo.currentIndexChanged.connect(self._on_period_changed)
+        prow.addWidget(self._period_combo, 1)
+        lay.addLayout(prow)
+
         self._scroll = QScrollArea(); self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._host = QWidget()
@@ -179,10 +223,21 @@ class ApporteursPage(QWidget):
         self._empty.setVisible(not apps)
         self._scroll.setVisible(bool(apps))
 
+    def _periode_courante(self):
+        idx = self._period_combo.currentIndex() if getattr(self, "_period_combo", None) else 0
+        if 0 <= idx < len(self._periodes):
+            return self._periodes[idx]
+        return self._periodes[0]
+
+    def _on_period_changed(self, *_a):
+        self.refresh()
+
     def _card(self, a: dict) -> QFrame:
         pal = _T.palette()
-        cum = store.commissions_for_apporteur(a["id"])
-        cur = cum.get("currency", "")
+        label, debut, fin = self._periode_courante()
+        allc = store.commissions_for_apporteur(a["id"])                 # cumul total
+        per = store.commissions_for_apporteur(a["id"], debut, fin)      # période choisie
+        cur = allc.get("currency", "")
         card = QFrame(); card.setObjectName("acard")
         card.setStyleSheet(f"QFrame#acard {{ background: {pal['BG_ELEVATED']}; "
                            f"border: 1px solid {pal['INACTIVE']}; border-radius: 6px; }}")
@@ -199,20 +254,23 @@ class ApporteursPage(QWidget):
         info.addWidget(sub)
         lay.addLayout(info, 1)
 
-        # Cumul : Prévu (tous devis) + Réalisé (facturés) — côte à côte
+        # À régler pour la PÉRIODE (réalisé/facturé) — le montant du mois — en avant,
+        # puis le cumul total (réalisé / prévu) en petit pour le contexte.
         stats = QVBoxLayout(); stats.setSpacing(2)
-        prevu = QLabel(_("app.prevu", total=f"{cum['total_prevu']:.2f} {cur}", n=cum["n_quotes"]))
-        prevu.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
-        # Prévu = pipeline (neutre) ; Réalisé = argent réellement gagné (vert) →
-        # distinction nette en thème clair comme sombre (l'accent vire au vert en clair).
-        prevu.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
-        prevu.setAlignment(Qt.AlignRight)
-        stats.addWidget(prevu)
-        realise = QLabel(_("app.realise", total=f"{cum['total_realise']:.2f} {cur}", n=cum["n_invoiced"]))
-        realise.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
-        realise.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
-        realise.setAlignment(Qt.AlignRight)
-        stats.addWidget(realise)
+        a_regler = QLabel(_("app.to_pay", label=label,
+                            total=f"{per['total_realise']:.2f} {cur}", n=per["n_invoiced"]))
+        a_regler.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
+        a_regler.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
+        a_regler.setAlignment(Qt.AlignRight)
+        a_regler.setWordWrap(True)
+        stats.addWidget(a_regler)
+        cumul = QLabel(_("app.cumul_total",
+                         realise=f"{allc['total_realise']:.2f} {cur}",
+                         prevu=f"{allc['total_prevu']:.2f} {cur}"))
+        cumul.setFont(QFont(FONT_MAIN, 8))
+        cumul.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
+        cumul.setAlignment(Qt.AlignRight)
+        stats.addWidget(cumul)
         lay.addLayout(stats)
 
         for txt, cb, col in (
@@ -256,6 +314,12 @@ class ApporteursPage(QWidget):
         self._host.setStyleSheet("background: transparent;")
         self._intro.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         self._empty.setStyleSheet(f"color: {pal['TEXT_LABEL']}; background: transparent;")
+        self._period_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        self._period_combo.setStyleSheet(
+            f"QComboBox {{ background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 5px; padding: 4px 8px; }}"
+            f"QComboBox QAbstractItemView {{ background: {pal['BG_ELEVATED']}; "
+            f"color: {pal['TEXT_PRIMARY']}; selection-background-color: {pal['ACCENT']}; }}")
         self._add_btn.setStyleSheet(
             f"QPushButton {{ background: {pal['ACCENT']}; color: #fff; border: none; "
             f"border-radius: 4px; padding: 0 14px; font-weight: bold; }}"

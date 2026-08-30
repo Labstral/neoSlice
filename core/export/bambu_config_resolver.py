@@ -99,8 +99,56 @@ def detect_printer_model() -> str | None:
     return None  # aucune imprimante détectée
 
 
-def resolve_from_system_profiles(printer_model: str | None = None) -> dict | None:
-    """Construit un config Bambu Studio complet depuis les fichiers système.
+def _profil_standard(bbl_id: str, nozzle_mm: float):
+    """Fichier « … Standard @BBL <id> [<D> nozzle].json » de la BONNE buse.
+
+    Bambu nomme ses process par hauteur de couche + buse : « 0.20mm Standard
+    @BBL X1C.json » (0,4, sans suffixe) mais « 0.10mm Standard @BBL X1C 0.2
+    nozzle.json ». On scanne le dossier (robuste aux nouveaux modèles — la X2D
+    n'était dans aucun dict) et on prend la hauteur la plus proche de D/2, le
+    défaut Bambu par buse. None si rien (vieux BS, modèle absent)."""
+    import re
+    if not _BBL_PROCESS.exists():
+        return None
+    suffixe = "" if abs(nozzle_mm - 0.4) < 1e-6 else f" {nozzle_mm:g} nozzle"
+    motif = re.compile(
+        rf"^(\d+\.\d+)mm Standard @BBL {re.escape(bbl_id)}{re.escape(suffixe)}\.json$")
+    cands = []
+    for f in _BBL_PROCESS.iterdir():
+        m = motif.match(f.name)
+        if m:
+            cands.append((abs(float(m.group(1)) - nozzle_mm / 2), f.name))
+    return min(cands)[1] if cands else None
+
+
+def _resolve_par_inherits(nom_profil: str) -> dict:
+    """Fusion de la VRAIE chaîne d'héritage Bambu (champ « inherits »), racine
+    vers feuille — c'est elle qui porte les largeurs de ligne par buse. La
+    chaîne figée historique ignorait les variantes de buse : un export en 0,2
+    gardait les largeurs 0,42–0,50 du fdm_process_common (bug remonté par un
+    utilisateur X2D 0,2 — largeurs doublées, 30 h d'impression évitées)."""
+    chaine, nom, vus = [], nom_profil, set()
+    while nom and nom not in vus and len(chaine) < 10:
+        vus.add(nom)
+        path = _BBL_PROCESS / f"{nom}.json"
+        if not path.exists():
+            logger.warning(f"Chaînon inherits manquant : {nom}")
+            break
+        chaine.append(_load_json_flat(path))
+        try:
+            nom = json.loads(path.read_text(encoding="utf-8")).get("inherits") or ""
+        except Exception:
+            break
+    merged: dict = {}
+    for d in reversed(chaine):        # racine d'abord, la feuille surcharge
+        merged.update(d)
+    return merged
+
+
+def resolve_from_system_profiles(printer_model: str | None = None,
+                                 nozzle_mm: float = 0.4) -> dict | None:
+    """Construit un config Bambu Studio complet depuis les fichiers système,
+    pour LE couple (imprimante, buse) — plus jamais le process 0,4 pour tous.
 
     Fonctionne sur toute installation Bambu Studio sans nécessiter de .3mf.
     Retourne None si Bambu Studio n'est pas installé.
@@ -117,25 +165,26 @@ def resolve_from_system_profiles(printer_model: str | None = None) -> dict | Non
 
     merged: dict = {}
 
-    # 1. Fusionner la chaîne process de base
-    for filename in _PROCESS_CHAIN_0_20:
-        path = _BBL_PROCESS / filename
-        if path.exists():
-            data = _load_json_flat(path)
-            merged.update(data)
+    # 1+2. Process : le profil « Standard » du couple (printer, buse), résolu par
+    # sa vraie chaîne inherits. Repli : l'ancienne chaîne figée 0,20 mm / 0,4.
+    std = _profil_standard(printer_model, nozzle_mm)
+    if std:
+        merged.update(_resolve_par_inherits(Path(std).stem))
+        logger.info(f"Profil process résolu par inherits : {std}")
+    else:
+        for filename in _PROCESS_CHAIN_0_20:
+            path = _BBL_PROCESS / filename
+            if path.exists():
+                merged.update(_load_json_flat(path))
+            else:
+                logger.warning(f"Profil système manquant : {filename}")
+        printer_profile = _PRINTER_PROCESS_PROFILES.get(printer_model)
+        if printer_profile and (_BBL_PROCESS / printer_profile).exists():
+            merged.update(_load_json_flat(_BBL_PROCESS / printer_profile))
+            logger.info(f"Profil process chargé (chaîne figée) : {printer_profile}")
         else:
-            logger.warning(f"Profil système manquant : {filename}")
-
-    # 2. Profil printer-specific — pas de fallback X1C, chaque printer garde son identité
-    printer_profile = _PRINTER_PROCESS_PROFILES.get(printer_model)
-    if printer_profile:
-        path = _BBL_PROCESS / printer_profile
-        if path.exists():
-            data = _load_json_flat(path)
-            merged.update(data)
-            logger.info(f"Profil process chargé : {printer_profile}")
-        else:
-            logger.warning(f"Profil process introuvable pour {printer_model} : {printer_profile}")
+            logger.warning(f"Aucun profil process buse/printer pour {printer_model} "
+                           f"(buse {nozzle_mm:g}) — chaîne de base seule.")
 
     # 3. Ajouter les clés filament (PLA générique)
     for filename in _GENERIC_PLA_CHAIN:

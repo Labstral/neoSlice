@@ -48,11 +48,12 @@ _FR: dict[str, str] = {
     "neogen.tab_library":   "Bibliothèque",
     "neogen.tab_free":      "Création libre",
     "neogen.tab_search":    "Rechercher",
-    "neogen.search_subtitle": "Décrivez ce que vous cherchez : neoGen ouvre l'objet de la bibliothèque le plus proche, paramètres pré-remplis. Vous n'avez plus qu'à ajuster.",
+    "neogen.search_subtitle": "Décrivez ce que vous cherchez : neoGen affiche les objets de la bibliothèque les plus proches. Cliquez celui qui convient pour l'ouvrir, paramètres pré-remplis.",
     "neogen.search_placeholder": "Ex. : un aimant frigo, un support téléphone, une lithophanie…",
     "neogen.search_btn":    "Rechercher",
     "neogen.searching":     "Recherche de l'objet le plus proche…",
     "neogen.search_found":  "Trouvé : {nom} — ajustez puis régénérez si besoin.",
+    "neogen.search_results": "{n} objet(s) trouvé(s) — cliquez pour ouvrir.",
     "neogen.search_none":   "Aucun objet proche — parcourez la bibliothèque ci-contre.",
     "neogen.not_installed": "neoGen n'est pas installé. Rendez-vous dans les Paramètres (section NEOGEN) pour télécharger son moteur de génération (~7,6 Go) — indépendant de l'assistant Oen.",
     "neogen.free_subtitle": "Cherchez l'objet qu'il vous faut : neoGen ouvre celui de la bibliothèque le plus proche, paramètres pré-remplis, prêt à personnaliser.",
@@ -137,6 +138,11 @@ _FR: dict[str, str] = {
 
     # ── Export / Success Dialog ────────────────────────────────────────────────
     "export.btn":               "↓  EXPORTER .3MF  →  {slicer}",
+    # Mode série (×N exemplaires en grille)
+    "serie.tip":                "Mode série : nombre d'exemplaires à exporter, disposés en grille. Au-delà d'un plateau, la série continue sur les plateaux suivants.",
+    "serie.not_applicable":     "Mode série indisponible pour un projet 3MF injecté tel quel — export à l'unité",
+    "serie.too_big":            "Pièce plus grande que le plateau : série impossible",
+    "serie.exported":           "Série exportée : {n} exemplaires sur {p} plateau(x)",
     # Édition par objet / multi-plateaux
     "export.perobj_title":      "Réglages par objet",
     "export.perobj_incompat":   "« {slicer} » ne sait pas lire plusieurs réglages différents par objet dans un seul fichier 3MF.",
@@ -156,6 +162,27 @@ _FR: dict[str, str] = {
     "export.multiplate_sep_text":  "{n} fichier(s) exporté(s), un par plateau :\n{files}\n\nDossier : {folder}",
     "export.multiplate_status": "{n} plateaux exportés séparément",
     "export.pdf_error_title":   "Erreur PDF",
+    # Réparation automatique du fichier au chargement (panneau d'analyse)
+    "repair.holes":          "✓ Fichier abîmé réparé automatiquement — trous rebouchés, pièce rendue étanche",
+    "repair.holes_partial":  "⚠ Fichier abîmé, réparation partielle — la pièce reste non étanche, vérifiez le résultat dans votre slicer",
+    "repair.degenerate":     "✓ {n} face(s) dégénérée(s) retirée(s) du fichier",
+    "repair.units":          "✓ Unités converties automatiquement — fichier en {unit}, ramené en mm",
+    "repair.unit_m":         "mètres",
+    "repair.unit_dm":        "décimètres",
+    "repair.unit_cm":        "centimètres",
+    "repair.unit_in":        "pouces",
+
+    "neogen.suggest_object": "Un objet vous manque ? Proposez-le, il pourra rejoindre la bibliothèque.",
+
+    # Import des chiffres exacts depuis le fichier découpé (calculateur de devis)
+    "cost.import_sliced":       "⇪  Importer les chiffres du slicer (fichier découpé)…",
+    "cost.import_sliced_title": "Chiffres du slicer",
+    "cost.import_sliced_err":   "Fichier découpé illisible : {msg}",
+    "cost.exact_note":          "✓ Chiffres exacts du slicer — {name}",
+    "cost.sliced_contains":     "Fichier lu : {g} g · {h} h.\nCe fichier contient…",
+    "cost.sliced_one":          "1 pièce",
+    "cost.sliced_all":          "les {n} pièces du devis",
+
     "export.pdf_error_failed":  "Génération échouée — reportlab installé ?",
     "export.dialog_title":      "Enregistrer le fichier .3MF",
     "export.dialog_filter":     "Fichiers 3MF (*.3mf)",
@@ -163,7 +190,9 @@ _FR: dict[str, str] = {
     "export.success_info":      (
         "Les paramètres d'impression (qualité, vitesse, supports…) sont intégrés dans le 3MF.<br>"
         "Les paramètres du <b>filament</b> (températures, ventilation, débit) doivent être "
-        "configurés manuellement dans votre slicer."
+        "configurés manuellement dans votre slicer.<br>"
+        "→ Ces réglages filament sont <b>détaillés, onglet par onglet, dans la fiche PDF</b> "
+        "ci-dessous."
     ),
     "export.dlg_title":         "Fichier .3MF généré",
     "export.btn_bambu":         "  Ouvrir dans Bambu Studio",
@@ -208,6 +237,50 @@ _FR: dict[str, str] = {
     "analysis.vol":         "VOL",
     "analysis.faces":       "FACES",
     "analysis.orient_btn":  "↻  Appliquer l'orientation recommandée",
+    # ── Assistant d'orientation ──
+    "orient.title":         "ORIENTATION",
+    "orient.open":          "ASSISTANT D'ORIENTATION",
+    "orient.close":         "FERMER L'ASSISTANT",
+    "orient.lay_face":      "POSER SUR UNE FACE",
+    "orient.gain":          "Gain possible : −{pct} % de surface en surplomb",
+    "orient.optimal":       "Orientation déjà favorable",
+    "orient.hard_part":     "Pièce difficile à orienter — comparez les propositions",
+    "orient.working":       "Calcul en cours…",
+    "orient.mark_zones":    "MARQUER LES ZONES DE CONTRAINTE",
+    "orient.mark_zones_on": "MARQUAGE ACTIF — cliquez sur la pièce",
+    "orient.zone_size":     "Taille de zone",
+    "orient.zones_none":    "Aucune zone marquée — cliquez là où la pièce subira un effort (pliure, accroche, vis…).",
+    "orient.zones_n":       "{n} zone(s) marquée(s)",
+    "orient.clear_zones":   "Effacer",
+    "orient.effort":        "Effort principal (si aucune zone)",
+    "orient.effort_none":   "— Aucun —",
+    "orient.effort_z":      "Vertical (haut-bas)",
+    "orient.effort_x":      "Horizontal (X)",
+    "orient.effort_y":      "Horizontal (Y)",
+    "orient.analyse":       "PROPOSER DES ORIENTATIONS",
+    "orient.computing":     "Évaluation des orientations…",
+    "orient.recommended":   "RECOMMANDÉE",
+    "orient.apply":         "Appliquer",
+    "orient.revert":        "Revenir à l'orientation d'origine",
+    "orient.bar_strength":  "Solidité",
+    "orient.bar_supports":  "Supports",
+    "orient.bar_adhesion":  "Adhérence",
+    "orient.expl_layers_good": "Les couches longent la zone marquée : résistance maximale.",
+    "orient.expl_layers_bad":  "L'effort tirerait perpendiculairement aux couches : risque de casse.",
+    "orient.expl_scars":       "Attention : des supports toucheraient une zone marquée.",
+    "orient.pose_actuelle": "Pose actuelle",
+    "orient.pose_retournee": "Retournée",
+    "orient.pose_cote_x":   "Couchée (côté X)",
+    "orient.pose_cote_x_neg": "Couchée (côté X, opposé)",
+    "orient.pose_cote_y":   "Couchée (côté Y)",
+    "orient.pose_cote_y_neg": "Couchée (côté Y, opposé)",
+    "orient.pose_inclinee": "Inclinée (pose naturelle)",
+    "orient.expl_effort_good": "L'effort déclaré travaille dans le sens des couches : bonne résistance.",
+    "orient.expl_effort_bad":  "L'effort déclaré tirerait perpendiculairement aux couches : risque de casse.",
+    "orient.applied":       "Orientation appliquée — ré-analyse en cours…",
+    "orient.mark_hint":     "Cliquez sur la pièce pour marquer une zone de contrainte (re-clic sur une zone pour la retirer).",
+    "orient.face_hint":     "Cliquez sur la face de la pièce à poser sur le plateau.",
+    "orient.multi_hint":    "Disponible sur une pièce seule ou un objet isolé (cliquez une pièce du plateau pour l'isoler).",
     "analysis.progress_init": "Initialisation...",
     "analysis.verdict_ok":  "✓  PRÊT À IMPRIMER",
     "analysis.verdict_warn":"✓  PRÊT — neoSlice a adapté les réglages pour vous",
@@ -581,6 +654,10 @@ _FR: dict[str, str] = {
 
     # ── Filament / Printer Selector ───────────────────────────────────────────
     "selector.lbl_printer":        "IMPRIMANTE CIBLE",
+    "selector.my_machines":        "Mes machines",
+    "selector.pin_tip":            "Épingler cette machine dans « Mes machines » (en tête du menu, avec bascule automatique du slicer de sortie)",
+    "selector.unpin_tip":          "Retirer cette machine de « Mes machines »",
+    "selector.pin_stale":          "Favori retiré : « {name} » n'existe plus dans le catalogue {slicer}",
     "selector.lbl_filament":       "FILAMENT",
     "selector.lbl_plate":          "PLATEAU",
     "selector.validate_btn":       "VALIDER",
@@ -807,6 +884,13 @@ _FR: dict[str, str] = {
     "pdf.retract_dsp":      "Vitesse de réinsertion",
     "pdf.retract_long":     "Rétraction longue (coupe)",
     "pdf.retract_long_dist":"Distance rétraction coupe",
+    "pdf.sec_spools_cal":   "Vos bobines calibrées",
+    "pdf.spools_cal_note":  "Réglages fins notés bobine par bobine dans votre Espace Pro — ils priment sur les valeurs génériques ci-dessus.",
+    "pdf.cal_buse":         "Buse {v}°C",
+    "pdf.cal_plateau":      "Plateau {v}°C",
+    "pdf.cal_debit":        "Débit {v}%",
+    "pdf.cal_retract":      "Rétr. {v} mm",
+    "pdf.cal_retract_vit":  "à {v} mm/s",
     "pdf.drying":           "Séchage recommandé : {value}",
 
     "pdf.sec_geometry":     "Analyse géométrique",
@@ -1009,6 +1093,48 @@ _FR: dict[str, str] = {
     "pro.tab_invoice":               "Facturation",
     "pro.tab_dashboard":             "Tableau de bord",
     "pro.tab_orders":                "Commandes",
+    "pro.tab_journal":               "Journal",
+
+    # Journal des impressions
+    "journal.intro":          "Notez chaque impression, réussie ou ratée : au fil des semaines, vous obtenez votre taux d'échec RÉEL par machine et par filament. Les commandes passées en « Terminé » s'ajoutent toutes seules.",
+    "journal.new":            "Enregistrer une impression",
+    "journal.none":           "Aucune impression enregistrée.\nLes commandes terminées s'ajouteront automatiquement — et notez surtout vos ratés : c'est eux qui affinent vos devis.",
+    "journal.create_title":   "Enregistrer une impression",
+    "journal.edit_title":     "Modifier l'impression",
+    "journal.piece":          "Pièce",
+    "journal.machine":        "Machine",
+    "journal.filament":       "Filament",
+    "journal.status":         "Résultat",
+    "journal.status_ok":      "Réussie",
+    "journal.status_fail":    "Ratée",
+    "journal.defect":         "Défaut",
+    "journal.defect_hint":    "warping, stringing, décollement…",
+    "journal.grams":          "Filament (g)",
+    "journal.duration":       "Durée (h)",
+    "journal.notes":          "Notes",
+    "journal.save":           "Enregistrer",
+    "journal.delete":         "Supprimer",
+    "journal.delete_confirm": "Supprimer cette entrée du journal ?",
+    "journal.badge_ok":       "RÉUSSIE",
+    "journal.badge_fail":     "RATÉE",
+    "journal.stats":          "{n} impression(s) enregistrée(s) — taux d'échec réel : {pct} %",
+    "journal.stats_machines": "Par machine : {detail}",
+    "journal.real_rate":      "Taux réel de votre atelier : {pct} % ({n} impressions) — cliquez pour l'appliquer",
+
+    # ── Bibliothèque de pièces (réimprimer à l'identique) ──
+    "pro.tab_library":        "Bibliothèque",
+    "library.intro":          "Chaque export mémorise automatiquement la pièce et ses réglages exacts (imprimante, filament, plateau, buse, configuration générée). « Réimprimer à l'identique » recharge tout, même des mois plus tard. Le fichier source n'est pas copié : s'il est déplacé ou supprimé, la réimpression devient impossible.",
+    "library.none":           "Aucune pièce mémorisée pour l'instant.\nExportez une pièce : elle apparaîtra ici automatiquement.",
+    "library.reprint":        "Réimprimer à l'identique",
+    "library.delete":         "Supprimer",
+    "library.delete_confirm": "Retirer cette pièce de la bibliothèque ?\n(Le fichier source n'est pas touché.)",
+    "library.file_missing":   "Fichier source introuvable (déplacé ou supprimé)",
+    "library.exports":        "{n} exports",
+    "library.missing_title":  "Fichier introuvable",
+    "library.missing_file":   "Le fichier source de cette pièce est introuvable :\n{path}\n\nIl a été déplacé ou supprimé depuis l'export.",
+    "library.changed_file":   "Le fichier a été modifié depuis cet export — les réglages mémorisés sont réappliqués tels quels",
+    "library.reprint_ready":  "« {name} » rechargée — réglages d'origine réappliqués, prête à exporter",
+    "library.reprint_failed": "Réglages mémorisés illisibles — régénérez la configuration",
     "pro.tab_products":              "Articles",
     "pro.tab_apporteurs":            "Apporteurs",
     "purchase.add":                  "Nouvel achat",
@@ -1113,6 +1239,8 @@ _FR: dict[str, str] = {
     "fact.copy":          "Copier",
     "fact.relance_done":  "Relance enregistrée. Copiez le message ci-dessous pour votre client :",
     "fact.relance_msg":   "Bonjour,\n\nSauf erreur de notre part, la facture {number} d'un montant de {amount} reste impayée (échéance : {due}).\nNous vous remercions de bien vouloir procéder à son règlement.\n\nCordialement,\n{company}",
+    "fact.relance_pdf":   "Lettre PDF",
+    "fact.relance_last":  "· relancée le {date}",
     # ── Tableau de bord (production / retards / rapport) ──
     "dash.sec_orders":    "PRODUCTION",
     "dash.orders_active": "Commandes en cours",
@@ -1124,6 +1252,8 @@ _FR: dict[str, str] = {
     "dash.export":        "Exporter la compta (CSV)",
     "dash.export_done":   "Export comptable enregistré : {path}",
     "dash.export_none":   "Aucune facture à exporter.",
+    "dash.export_year":   "Année à exporter",
+    "dash.export_all_years": "Toutes les années",
     "dash.legend_paid":   "Encaissé",
     "dash.legend_billed": "Facturé (en attente)",
     # ── Stock / réappro ──
@@ -1175,6 +1305,8 @@ _FR: dict[str, str] = {
     "spool.material":                "Matériau",
     "spool.brand":                   "Marque",
     "spool.color":                   "Couleur",
+    "spool.add_color":               "Ajouter une couleur (bobine bicolore, tricolore…)",
+    "spool.remove_color":            "Retirer cette couleur",
     "spool.color_name":              "Nom de la couleur",
     "spool.finish":                  "Finition",
     "spool.finish_none":             "Standard",
@@ -1206,6 +1338,16 @@ _FR: dict[str, str] = {
     "spool.section_id":              "Identité",
     "spool.section_stock":           "Stock & coût",
     "spool.section_extra":           "Détails",
+    # Calibration par bobine (réglages fins mémorisés)
+    "spool.cal_title":               "Calibration de cette bobine",
+    "spool.cal_hint":                "Notez ici les réglages fins trouvés pour CETTE bobine (0 = non calibré). Ils apparaîtront dans la fiche réglages PDF.",
+    "spool.cal_temp_buse":           "Temp. buse (°C)",
+    "spool.cal_temp_plateau":        "Temp. plateau (°C)",
+    "spool.cal_debit":               "Débit (%)",
+    "spool.cal_retraction":          "Rétraction (mm)",
+    "spool.cal_retraction_vit":      "Vit. rétraction (mm/s)",
+    "spool.cal_notes":               "Notes de calibration",
+    "spool.cal_badge":               "CALIBRÉE",
     # Déduction après export
     "spool.deduct_title":            "Filament utilisé",
     "spool.deduct_prompt":           "Déduire ~{g} g de votre stock ?",
@@ -1328,6 +1470,12 @@ _FR: dict[str, str] = {
     "client.zip":            "Code postal",
     "client.city":           "Ville",
     "client.country":        "Pays",
+    "client.apporteur":      "Apporteur d'affaires",
+    "client.apporteur_none": "— Aucun —",
+    "client.apporteur_debut": "Début d'attribution",
+    "client.apporteur_duree": "Durée d'attribution",
+    "client.apporteur_duree_tip": "Durée pendant laquelle cet apporteur touche sa commission sur les devis de ce client (0 = illimitée).",
+    "client.months":         "mois",
     "client.email":          "E-mail",
     "client.phone":          "Téléphone",
     "client.taxid":          "N° fiscal / TVA",
@@ -1449,6 +1597,10 @@ _FR: dict[str, str] = {
     "app.delete":                    "Supprimer",
     "app.delete_confirm":            "Supprimer l'apporteur « {name} » ? Les devis liés seront conservés.",
     "app.default_commission":        "Commission par défaut : {pct} %",
+    "app.period":                    "Période :",
+    "app.period_all":                "Tout",
+    "app.to_pay":                    "À régler ({label}) : {total}  ·  {n} facturé(s)",
+    "app.cumul_total":               "Cumul — réalisé {realise}  ·  prévu {prevu}",
     "app.prevu":                     "Prévu : {total}  ·  {n} devis",
     "app.realise":                   "Réalisé : {total}  ·  {n} facturés",
     "cost.total_qty":                "Total ({n} pièces)",
@@ -1538,11 +1690,12 @@ _EN: dict[str, str] = {
     "neogen.tab_library":   "Library",
     "neogen.tab_free":      "Free creation",
     "neogen.tab_search":    "Search",
-    "neogen.search_subtitle": "Describe what you're looking for: neoGen opens the closest library object with parameters pre-filled. Just adjust it.",
+    "neogen.search_subtitle": "Describe what you're looking for: neoGen lists the closest library objects. Click the one you want to open it, parameters pre-filled.",
     "neogen.search_placeholder": "E.g.: a fridge magnet, a phone stand, a lithophane…",
     "neogen.search_btn":    "Search",
     "neogen.searching":     "Finding the closest object…",
     "neogen.search_found":  "Found: {nom} — adjust then regenerate if needed.",
+    "neogen.search_results": "{n} object(s) found — click to open.",
     "neogen.search_none":   "No close match — browse the library on the right.",
     "neogen.not_installed": "neoGen is not installed. Go to Settings (NEOGEN section) to download its generation engine (~7.6 GB) — independent from the Oen assistant.",
     "neogen.free_subtitle": "Find the object you need: neoGen opens the closest one from the library, parameters pre-filled, ready to personalize.",
@@ -1628,6 +1781,10 @@ _EN: dict[str, str] = {
 
     # ── Export / Success Dialog ────────────────────────────────────────────────
     "export.btn":               "↓  EXPORT .3MF  →  {slicer}",
+    "serie.tip":                "Batch mode: number of copies to export, laid out in a grid. Beyond one plate, the batch continues on the next plates.",
+    "serie.not_applicable":     "Batch mode unavailable for a 3MF project injected as-is — exporting a single copy",
+    "serie.too_big":            "Part larger than the plate: batch impossible",
+    "serie.exported":           "Batch exported: {n} copies across {p} plate(s)",
     # Per-object / multi-plate editing
     "export.perobj_title":      "Per-object settings",
     "export.perobj_incompat":   "“{slicer}” cannot read several different per-object settings in a single 3MF file.",
@@ -1647,6 +1804,27 @@ _EN: dict[str, str] = {
     "export.multiplate_sep_text":  "{n} file(s) exported, one per plate:\n{files}\n\nFolder: {folder}",
     "export.multiplate_status": "{n} plates exported separately",
     "export.pdf_error_title":   "PDF error",
+    # Automatic file repair on load (analysis panel)
+    "repair.holes":          "✓ Damaged file repaired automatically — holes filled, part made watertight",
+    "repair.holes_partial":  "⚠ Damaged file, partial repair — the part is still not watertight, check the result in your slicer",
+    "repair.degenerate":     "✓ {n} degenerate face(s) removed from the file",
+    "repair.units":          "✓ Units converted automatically — file in {unit}, brought back to mm",
+    "repair.unit_m":         "meters",
+    "repair.unit_dm":        "decimeters",
+    "repair.unit_cm":        "centimeters",
+    "repair.unit_in":        "inches",
+
+    "neogen.suggest_object": "Missing an object? Suggest it — it may join the library.",
+
+    # Exact figures imported from the sliced file (cost calculator)
+    "cost.import_sliced":       "⇪  Import slicer figures (sliced file)…",
+    "cost.import_sliced_title": "Slicer figures",
+    "cost.import_sliced_err":   "Unreadable sliced file: {msg}",
+    "cost.exact_note":          "✓ Exact slicer figures — {name}",
+    "cost.sliced_contains":     "File read: {g} g · {h} h.\nThis file contains…",
+    "cost.sliced_one":          "1 part",
+    "cost.sliced_all":          "all {n} parts of the quote",
+
     "export.pdf_error_failed":  "Generation failed — is reportlab installed?",
     "export.dialog_title":      "Save .3MF file",
     "export.dialog_filter":     "3MF Files (*.3mf)",
@@ -1654,7 +1832,8 @@ _EN: dict[str, str] = {
     "export.success_info":      (
         "Print parameters (quality, speed, supports…) are embedded in the 3MF.<br>"
         "The <b>filament</b> parameters (temperatures, cooling, flow rate) must be "
-        "configured manually in your slicer."
+        "configured manually in your slicer.<br>"
+        "→ These filament settings are <b>detailed, tab by tab, in the PDF sheet</b> below."
     ),
     "export.dlg_title":         ".3MF file generated",
     "export.btn_bambu":         "  Open in Bambu Studio",
@@ -1699,6 +1878,50 @@ _EN: dict[str, str] = {
     "analysis.vol":         "VOL",
     "analysis.faces":       "FACES",
     "analysis.orient_btn":  "↻  Apply recommended orientation",
+    # ── Orientation assistant ──
+    "orient.title":         "ORIENTATION",
+    "orient.open":          "ORIENTATION ASSISTANT",
+    "orient.close":         "CLOSE ASSISTANT",
+    "orient.lay_face":      "LAY ON A FACE",
+    "orient.gain":          "Possible gain: −{pct}% overhang area",
+    "orient.optimal":       "Orientation already favorable",
+    "orient.hard_part":     "Hard part to orient — compare the suggestions",
+    "orient.working":       "Working…",
+    "orient.mark_zones":    "MARK STRESS ZONES",
+    "orient.mark_zones_on": "MARKING ACTIVE — click the part",
+    "orient.zone_size":     "Zone size",
+    "orient.zones_none":    "No zone marked — click where the part will bear stress (bend, hook, screw…).",
+    "orient.zones_n":       "{n} zone(s) marked",
+    "orient.clear_zones":   "Clear",
+    "orient.effort":        "Main stress (if no zones)",
+    "orient.effort_none":   "— None —",
+    "orient.effort_z":      "Vertical (top-down)",
+    "orient.effort_x":      "Horizontal (X)",
+    "orient.effort_y":      "Horizontal (Y)",
+    "orient.analyse":       "SUGGEST ORIENTATIONS",
+    "orient.computing":     "Evaluating orientations…",
+    "orient.recommended":   "RECOMMENDED",
+    "orient.apply":         "Apply",
+    "orient.revert":        "Back to original orientation",
+    "orient.bar_strength":  "Strength",
+    "orient.bar_supports":  "Supports",
+    "orient.bar_adhesion":  "Adhesion",
+    "orient.expl_layers_good": "Layers run along the marked zone: maximum strength.",
+    "orient.expl_layers_bad":  "Stress would pull across the layers: breakage risk.",
+    "orient.expl_scars":       "Warning: supports would touch a marked zone.",
+    "orient.pose_actuelle": "Current pose",
+    "orient.pose_retournee": "Flipped",
+    "orient.pose_cote_x":   "Laid on side (X)",
+    "orient.pose_cote_x_neg": "Laid on side (X, opposite)",
+    "orient.pose_cote_y":   "Laid on side (Y)",
+    "orient.pose_cote_y_neg": "Laid on side (Y, opposite)",
+    "orient.pose_inclinee": "Tilted (natural rest)",
+    "orient.expl_effort_good": "The declared stress works along the layers: good strength.",
+    "orient.expl_effort_bad":  "The declared stress would pull across the layers: breakage risk.",
+    "orient.applied":       "Orientation applied — re-analysing…",
+    "orient.mark_hint":     "Click the part to mark a stress zone (click a zone again to remove it).",
+    "orient.face_hint":     "Click the face of the part to lay on the plate.",
+    "orient.multi_hint":    "Available on a single part or an isolated object (click a part on the plate to isolate it).",
     "analysis.progress_init": "Initializing...",
     "analysis.verdict_ok":  "✓  READY TO PRINT",
     "analysis.verdict_warn":"✓  READY — neoSlice adapted the settings for you",
@@ -2058,6 +2281,10 @@ _EN: dict[str, str] = {
 
     # ── Filament / Printer Selector ───────────────────────────────────────────
     "selector.lbl_printer":        "TARGET PRINTER",
+    "selector.my_machines":        "My machines",
+    "selector.pin_tip":            "Pin this machine in “My machines” (top of the menu, with automatic output-slicer switch)",
+    "selector.unpin_tip":          "Remove this machine from “My machines”",
+    "selector.pin_stale":          "Favourite removed: “{name}” no longer exists in the {slicer} catalogue",
     "selector.lbl_filament":       "FILAMENT",
     "selector.lbl_plate":          "BUILD PLATE",
     "selector.validate_btn":       "CONFIRM",
@@ -2278,6 +2505,13 @@ _EN: dict[str, str] = {
     "pdf.retract_dsp":      "Deretraction speed",
     "pdf.retract_long":     "Long retraction (cut)",
     "pdf.retract_long_dist":"Long retraction distance",
+    "pdf.sec_spools_cal":   "Your calibrated spools",
+    "pdf.spools_cal_note":  "Fine-tuned settings recorded spool by spool in your Pro Space — they take precedence over the generic values above.",
+    "pdf.cal_buse":         "Nozzle {v}°C",
+    "pdf.cal_plateau":      "Bed {v}°C",
+    "pdf.cal_debit":        "Flow {v}%",
+    "pdf.cal_retract":      "Retr. {v} mm",
+    "pdf.cal_retract_vit":  "at {v} mm/s",
     "pdf.drying":           "Recommended drying: {value}",
 
     "pdf.sec_geometry":     "Geometric analysis",
@@ -2478,6 +2712,47 @@ _EN: dict[str, str] = {
     "pro.tab_invoice":               "Invoicing",
     "pro.tab_dashboard":             "Dashboard",
     "pro.tab_orders":                "Orders",
+    "pro.tab_journal":               "Log",
+
+    # Print log
+    "journal.intro":          "Log every print, successful or failed: over the weeks you get your REAL failure rate per machine and per filament. Orders moved to “Done” are added automatically.",
+    "journal.new":            "Log a print",
+    "journal.none":           "No print logged yet.\nFinished orders will be added automatically — and above all log your failures: they are what sharpen your quotes.",
+    "journal.create_title":   "Log a print",
+    "journal.edit_title":     "Edit print entry",
+    "journal.piece":          "Part",
+    "journal.machine":        "Machine",
+    "journal.filament":       "Filament",
+    "journal.status":         "Result",
+    "journal.status_ok":      "Successful",
+    "journal.status_fail":    "Failed",
+    "journal.defect":         "Defect",
+    "journal.defect_hint":    "warping, stringing, bed adhesion…",
+    "journal.grams":          "Filament (g)",
+    "journal.duration":       "Duration (h)",
+    "journal.notes":          "Notes",
+    "journal.save":           "Save",
+    "journal.delete":         "Delete",
+    "journal.delete_confirm": "Delete this log entry?",
+    "journal.badge_ok":       "SUCCESS",
+    "journal.badge_fail":     "FAILED",
+    "journal.stats":          "{n} print(s) logged — real failure rate: {pct} %",
+    "journal.stats_machines": "Per machine: {detail}",
+    "journal.real_rate":      "Your workshop's real rate: {pct} % ({n} prints) — click to apply",
+
+    "pro.tab_library":        "Library",
+    "library.intro":          "Every export automatically saves the part and its exact settings (printer, filament, plate, nozzle, generated configuration). \"Reprint identically\" reloads everything, even months later. The source file is not copied: if it is moved or deleted, reprinting becomes impossible.",
+    "library.none":           "No parts saved yet.\nExport a part: it will appear here automatically.",
+    "library.reprint":        "Reprint identically",
+    "library.delete":         "Delete",
+    "library.delete_confirm": "Remove this part from the library?\n(The source file is not affected.)",
+    "library.file_missing":   "Source file not found (moved or deleted)",
+    "library.exports":        "{n} exports",
+    "library.missing_title":  "File not found",
+    "library.missing_file":   "The source file for this part cannot be found:\n{path}\n\nIt has been moved or deleted since the export.",
+    "library.changed_file":   "The file has changed since this export — the saved settings are reapplied as they are",
+    "library.reprint_ready":  "\"{name}\" reloaded — original settings reapplied, ready to export",
+    "library.reprint_failed": "Saved settings unreadable — regenerate the configuration",
     "pro.tab_products":              "Products",
     "pro.tab_apporteurs":            "Introducers",
     "pro.edit":                      "Edit",
@@ -2582,6 +2857,8 @@ _EN: dict[str, str] = {
     "fact.copy":          "Copy",
     "fact.relance_done":  "Reminder logged. Copy the message below for your client:",
     "fact.relance_msg":   "Hello,\n\nUnless we are mistaken, invoice {number} for {amount} remains unpaid (due date: {due}).\nWe would be grateful if you could arrange payment.\n\nBest regards,\n{company}",
+    "fact.relance_pdf":   "PDF letter",
+    "fact.relance_last":  "· reminded on {date}",
     # ── Dashboard (production / overdue / report) ──
     "dash.sec_orders":    "PRODUCTION",
     "dash.orders_active": "Active orders",
@@ -2593,6 +2870,8 @@ _EN: dict[str, str] = {
     "dash.export":        "Export accounting (CSV)",
     "dash.export_done":   "Accounting export saved: {path}",
     "dash.export_none":   "No invoice to export.",
+    "dash.export_year":   "Year to export",
+    "dash.export_all_years": "All years",
     "dash.legend_paid":   "Collected",
     "dash.legend_billed": "Billed (pending)",
     # ── Stock / reorder ──
@@ -2644,6 +2923,8 @@ _EN: dict[str, str] = {
     "spool.material":                "Material",
     "spool.brand":                   "Brand",
     "spool.color":                   "Color",
+    "spool.add_color":               "Add a color (dual/tri-color spool…)",
+    "spool.remove_color":            "Remove this color",
     "spool.color_name":              "Color name",
     "spool.finish":                  "Finish",
     "spool.finish_none":             "Standard",
@@ -2675,6 +2956,15 @@ _EN: dict[str, str] = {
     "spool.section_id":              "Identity",
     "spool.section_stock":           "Stock & cost",
     "spool.section_extra":           "Details",
+    "spool.cal_title":               "This spool's calibration",
+    "spool.cal_hint":                "Record here the fine-tuned settings found for THIS spool (0 = not calibrated). They will appear in the PDF settings sheet.",
+    "spool.cal_temp_buse":           "Nozzle temp (°C)",
+    "spool.cal_temp_plateau":        "Bed temp (°C)",
+    "spool.cal_debit":               "Flow (%)",
+    "spool.cal_retraction":          "Retraction (mm)",
+    "spool.cal_retraction_vit":      "Retraction speed (mm/s)",
+    "spool.cal_notes":               "Calibration notes",
+    "spool.cal_badge":               "CALIBRATED",
     "spool.deduct_title":            "Filament used",
     "spool.deduct_prompt":           "Deduct ~{g} g from your stock?",
     "spool.deduct_choose":           "Spool to deduct from",
@@ -2796,6 +3086,12 @@ _EN: dict[str, str] = {
     "client.zip":            "Postal code",
     "client.city":           "City",
     "client.country":        "Country",
+    "client.apporteur":      "Business introducer",
+    "client.apporteur_none": "— None —",
+    "client.apporteur_debut": "Attribution start",
+    "client.apporteur_duree": "Attribution duration",
+    "client.apporteur_duree_tip": "Period during which this introducer earns commission on this client's quotes (0 = unlimited).",
+    "client.months":         "months",
     "client.email":          "Email",
     "client.phone":          "Phone",
     "client.taxid":          "Tax / VAT no.",
@@ -2917,6 +3213,10 @@ _EN: dict[str, str] = {
     "app.delete":                    "Delete",
     "app.delete_confirm":            "Delete introducer “{name}”? Linked quotes will be kept.",
     "app.default_commission":        "Default commission: {pct}%",
+    "app.period":                    "Period:",
+    "app.period_all":                "All",
+    "app.to_pay":                    "To pay ({label}): {total}  ·  {n} invoiced",
+    "app.cumul_total":               "Total — realized {realise}  ·  forecast {prevu}",
     "app.prevu":                     "Forecast: {total}  ·  {n} quotes",
     "app.realise":                   "Realized: {total}  ·  {n} invoiced",
     "cost.total_qty":                "Total ({n} pcs)",
@@ -2970,25 +3270,42 @@ _EN: dict[str, str] = {
 
 # ── Engine ────────────────────────────────────────────────────────────────────
 
+# Langues disponibles : fr/en (dans ce fichier) + es/de/it (core/i18n_langs/,
+# chargées à la demande). Repli d'une clé manquante : langue active → EN → FR.
+LANGUES = ("fr", "en", "es", "de", "it")
+
 _current: dict[str, str] = _FR
+_lang_code: str = "fr"
 
 
 def set_lang(lang: str) -> None:
-    global _current
+    global _current, _lang_code
     if lang == "en":
-        _current = _EN
+        _current, _lang_code = _EN, "en"
+    elif lang in ("es", "de", "it"):
+        try:
+            # imports LITTÉRAUX (détectés par PyInstaller), chargés à la demande
+            if lang == "es":
+                from core.i18n_langs import es as _m
+            elif lang == "de":
+                from core.i18n_langs import de as _m
+            else:
+                from core.i18n_langs import it as _m
+            _current, _lang_code = _m.TR, lang
+        except Exception:               # module absent/corrompu → anglais
+            _current, _lang_code = _EN, "en"
     else:
-        _current = _FR
+        _current, _lang_code = _FR, "fr"
 
 
 def lang() -> str:
-    """Code de la langue active ('en' ou 'fr')."""
-    return "en" if _current is _EN else "fr"
+    """Code de la langue active ('fr', 'en', 'es', 'de' ou 'it')."""
+    return _lang_code
 
 
 def _(key: str, **kwargs) -> str:
     """Retourne la traduction du key dans la langue active."""
-    s = _current.get(key) or _FR.get(key, key)
+    s = _current.get(key) or _EN.get(key) or _FR.get(key, key)
     if kwargs:
         try:
             return s.format(**kwargs)
