@@ -118,6 +118,13 @@ def _config_to_bambu_overrides(config: PrintConfig) -> dict:
         overrides["wall_generator"] = config.wall_generator
     if "wall_sequence" in fields:
         overrides["wall_sequence"] = config.wall_sequence
+        # « Paroi extérieure d'abord » (choisi pour la qualité de surface) rend
+        # l'option « paroi précise » inopérante : le slicer l'ignore et AVERTIT à
+        # l'ouverture (« The precise wall option will be ignored… »), ce qui
+        # inquiète pour rien. On la désactive explicitement — aucun effet sur la
+        # géométrie, puisqu'elle était de toute façon ignorée.
+        if config.wall_sequence != "inner wall/outer wall":
+            overrides["precise_outer_wall"] = "0"
     if "top_shell_layers" in fields:
         overrides["top_shell_layers"] = s(config.top_shell_layers)
     if "bottom_shell_layers" in fields:
@@ -471,6 +478,22 @@ _BED_TYPE_CODE = {
     "Textured Cool Plate": "textured_cool_plate",
 }
 _BED_TYPE_CODE_DEFAULT = "textured_plate"
+
+# Nom écrit dans `curr_bed_type`. « Smooth PEI Plate » est le libellé RÉCENT
+# d'OrcaSlicer pour la plaque haute température : les slicers basés sur une
+# version antérieure (Snapmaker Orca, forks constructeurs) ne le reconnaissent
+# pas et le remplacent SILENCIEUSEMENT par un autre plateau — vécu : « "Smooth
+# PEI Plate" a été remplacé par "Engineering Plate" » à l'ouverture, avec la
+# mauvaise température de plateau à la clé. « High Temp Plate » désigne la même
+# plaque et reste compris par Bambu Studio comme par toutes les versions d'Orca.
+_BED_TYPE_SORTIE = {
+    "Smooth PEI Plate": "High Temp Plate",
+}
+
+
+def _bed_type_sortie(plate_type: str) -> str:
+    """Nom de plateau à écrire dans le 3MF (compatible toutes versions)."""
+    return _BED_TYPE_SORTIE.get(plate_type, plate_type)
 
 
 def _slicer_vocab(slicer: str) -> set | None:
@@ -910,7 +933,7 @@ class ThreeMFBuilder:
         project_settings = dict(_original_ps)  # base = settings originaux du fichier
         project_settings.update(_config_to_bambu_overrides(config))
         if plate_type:                          # plateau choisi (voir _build_native)
-            project_settings["curr_bed_type"] = plate_type
+            project_settings["curr_bed_type"] = _bed_type_sortie(plate_type)
 
         _D = nozzle_diameter_mm
         _lw = round(_D + 0.02, 2)
@@ -1072,7 +1095,7 @@ class ThreeMFBuilder:
         # température de plateau sont déjà toutes renseignées (voir _apply_filament_temps),
         # donc curr_bed_type suffit à faire afficher le bon plateau (cf. règle 3MF plateau).
         if plate_type:
-            project_settings["curr_bed_type"] = plate_type
+            project_settings["curr_bed_type"] = _bed_type_sortie(plate_type)
 
         # ── Overrides nozzle — valeurs exactes mesurées sur fichiers Bambu Studio réels ──
         # Données extraites de 4 fichiers BS (0.2/0.4/0.6/0.8 mm).

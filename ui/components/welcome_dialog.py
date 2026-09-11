@@ -54,6 +54,24 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v2.2.0",
+     "• Le choix du logiciel de slicing est maintenant dans la colonne de "
+     "gauche, juste au-dessus de l'imprimante, et il suit automatiquement la "
+     "marque de l'imprimante choisie : fini le 3MF préparé pour le mauvais "
+     "logiciel.\n"
+     "• Résistance renforcée plus raisonnable : 25 % de remplissage au lieu "
+     "de 40 %, en motif gyroïde. La solidité vient surtout des parois, pour "
+     "moins de matière et moins de temps d'impression.\n"
+     "• Snapmaker U1 : les fichiers 3MF s'ouvrent avec le bon profil de buse, "
+     "le plateau Smooth PEI est reconnu et les messages d'erreur à "
+     "l'ouverture ont disparu.\n"
+     "• Mac Apple Silicon : la configuration recommandée reconnaît enfin la "
+     "puce et sa mémoire.\n"
+     "• Espace Pro : importez vos clients depuis un fichier CSV (colonnes "
+     "reconnues automatiquement, doublons évités, compatible avec les exports "
+     "de CRM et d'outils de prospection) et exportez vos clients, devis et "
+     "commandes en CSV. Nouveau champ « référence externe » sur la fiche "
+     "client."),
     ("Nouveautés v2.1.0",
      "• Mode série clarifié : le compteur « SÉRIE × N » n'apparaît que quand "
      "une pièce est prête à exporter, avec son étiquette et des flèches "

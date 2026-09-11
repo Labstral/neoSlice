@@ -2,13 +2,13 @@
 
 **neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v2.1.0** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v2.2.0** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
 ## Fonctionnalités
 
-- **9 slicers, 80+ marques, 600+ imprimantes** — le catalogue et les plateaux s'adaptent au slicer et à la machine choisis
+- **9 slicers, 80+ marques, 600+ imprimantes** — le catalogue et les plateaux s'adaptent au slicer et à la machine choisis, et le slicer suit automatiquement la marque de l'imprimante
 - **Import STL, OBJ & 3MF** — chargez vos fichiers directement, y compris les 3MF multi-plateau et les assemblages complexes
 - **Analyse géométrique** — détection des surplombs, stabilité, fragilité — avec **carte de fragilité par pièce** (chaque pièce colorée selon sa solidité) et **mode daltonien**
 - **Édition par pièce** — isolez une pièce d'un plateau multi-pièces d'un clic et donnez-lui ses propres réglages ; les pièces fragiles sont **renforcées automatiquement** ; export en un seul 3MF (réglages par pièce) ou en fichiers séparés selon le slicer
@@ -20,7 +20,7 @@
 - **neoGen — générateur d'objets 3D** *(Pro)* — bibliothèque d'objets personnalisables au millimètre (porte-clés, cadres photo, QR codes 3D bicolores, cartes de visite, clips de câble, joints, vis et écrous, objets resto/mariage/boutique…), texte en relief ou gravé, générés étanches et sans support ; **photo HueForge multi-filament** et **lithophanie avec boîte lumineuse sur deux plateaux**
 - **Oen — assistant IA local** *(Pro)* — un modèle Qwen3 tourne sur votre machine (hors ligne, privé), nourri d'une base de connaissances imprimantes ; **mode Réflexion** activable pour des réponses raisonnées
 - **Export multicouleur** *(Pro)* — coloriez vos pièces après export 3MF, appliquez les filaments par slot, et le **stock est déduit automatiquement** après impression
-- **Espace Pro — gestion d'atelier** *(Pro)* — bobines, devis (ré-éditables), factures internationales, clients, commandes, apporteurs d'affaires et catalogue d'articles, tous connectés ; **canal de vente à commission** (apporteur / plateforme) avec prix rehaussé pour préserver votre marge
+- **Espace Pro — gestion d'atelier** *(Pro)* — bobines, devis (ré-éditables), factures internationales, clients, commandes, apporteurs d'affaires et catalogue d'articles, tous connectés ; **canal de vente à commission** (apporteur / plateforme) avec prix rehaussé pour préserver votre marge ; **import de clients et exports en CSV** (clients, devis, commandes)
 - **Mise à jour automatique** — vérification et installation directement depuis l'application ; modules et bases de connaissances mis à jour **sans réinstaller**
 
 ## Plateformes supportées
@@ -48,6 +48,13 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v2.2.0
+- **Logiciel de slicing dans la colonne de gauche**, au-dessus de l'imprimante, et choisi automatiquement selon la marque de l'imprimante : plus de 3MF préparé pour le mauvais logiciel.
+- **Résistance renforcée plus raisonnable** : 25 % de remplissage au lieu de 40 %, en motif gyroïde ; la solidité vient surtout des parois.
+- **Snapmaker U1** : bon profil de buse, plateau Smooth PEI reconnu, plus de messages d'erreur à l'ouverture du 3MF.
+- **Mac Apple Silicon** : la configuration recommandée reconnaît la puce et sa mémoire.
+- **Import / export CSV** *(Pro)* : import de clients depuis un fichier CSV (colonnes reconnues automatiquement, doublons évités) et export des clients, devis et commandes ; nouveau champ « référence externe ».
 
 ### v2.1.0
 - **Mode série clarifié** : compteur « SÉRIE × N » étiqueté, visible seulement quand une pièce est prête à exporter, flèches nettes.

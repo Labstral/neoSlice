@@ -20,9 +20,12 @@ FRAG_ORANGE = 0.60   # ≥ → pièce fragile (orange) : renfort modéré
 FRAG_RED = 0.82      # ≥ → pièce très fragile (rouge) : renfort fort
 
 # Paramètres de renfort par niveau (jamais EN-DESSOUS de la config de base).
+# Le renfort mise d'abord sur les PAROIS : à 4-5 parois, monter le remplissage
+# au-delà de ~30 % n'apporte quasiment plus de résistance mais alourdit le temps
+# d'impression et la matière (aligné sur le profil « Renforcée » à 25 %).
 _RENFORT = {
-    "orange": {"wall_loops": 4, "infill_density": 30},
-    "red":    {"wall_loops": 5, "infill_density": 40},
+    "orange": {"wall_loops": 4, "infill_density": 25},
+    "red":    {"wall_loops": 5, "infill_density": 30},
 }
 
 

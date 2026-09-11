@@ -337,7 +337,15 @@ def _by_model() -> dict:
             "max_accel": e.get("max_accel_mms2", 10000),
             "gcode": e.get("gcode_flavor", ""),
         })
-        slot["nozzles"][str(e.get("nozzle_diameter", "0.4"))] = name
+        # Une machine MULTI-BUSES (ex. « Snapmaker U1 (0.4+0.6 nozzle) », variante
+        # « 0.4+0.6 ») porte le MÊME nozzle_diameter que la variante simple : selon
+        # l'ordre du catalogue, elle écrasait « (0.4 nozzle) » et un export en 0,4
+        # annonçait deux buses dans le slicer (retour utilisatrice Snapmaker U1).
+        # La variante SIMPLE prime ; la composite ne sert que de repli.
+        _nz = str(e.get("nozzle_diameter", "0.4"))
+        _composite = "+" in str(e.get("printer_variant", "") or "")
+        if not _composite or _nz not in slot["nozzles"]:
+            slot["nozzles"][_nz] = name
         slot["slicers"].update(e.get("slicers", ["bambu", "orca"]))
     return out
 
@@ -413,6 +421,33 @@ def is_catalogue_model(model_key: str) -> bool:
 def brand_of(model_key: str) -> str:
     """Marque d'un model_key catalogue ('' si Bambu/inconnu)."""
     return _by_model().get(model_key, {}).get("marque", "")
+
+
+# Slicer « maison » d'une marque : la sortie naturelle quand on choisit une de
+# ses machines. Les marques absentes n'ont pas de logiciel propre → OrcaSlicer.
+_SLICER_PAR_MARQUE = {
+    "Anycubic":  "anycubic",
+    "Creality":  "creality",
+    "Elegoo":    "elegoo",
+    "Flashforge": "flashprint",
+    "Prusa":     "prusa",
+    "Snapmaker": "snapmaker",
+    "UltiMaker": "cura",
+}
+# Table inverse : un slicer PROPRE à une marque. Y exporter la machine d'une
+# AUTRE marque produit un fichier brandé pour le mauvais logiciel.
+_MARQUE_PAR_SLICER = {v: k for k, v in _SLICER_PAR_MARQUE.items()}
+
+
+def slicer_de_marque(marque: str) -> str:
+    """Code du slicer maison d'une marque ('' si elle n'en a pas)."""
+    return _SLICER_PAR_MARQUE.get(marque or "", "")
+
+
+def marque_du_slicer(slicer: str) -> str:
+    """Marque dont ce slicer est le logiciel maison ('' si slicer générique —
+    OrcaSlicer, Bambu Studio… qui acceptent légitimement toutes les marques)."""
+    return _MARQUE_PAR_SLICER.get(slicer or "", "")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

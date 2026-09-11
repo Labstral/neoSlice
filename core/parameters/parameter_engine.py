@@ -260,7 +260,7 @@ class ParameterEngine:
         # Résistance extérieure secondaire
         if intent.outdoor_resistance > 0.5 and dom != "outdoor_resistance":
             config.wall_loops = max(config.wall_loops, 4)
-            config.infill_density = max(config.infill_density, 35)
+            config.infill_density = max(config.infill_density, 30)
             config.infill_pattern = "gyroid"
             config.top_shell_layers = max(config.top_shell_layers, 6)
             config.bottom_shell_layers = max(config.bottom_shell_layers, 5)
@@ -382,10 +382,17 @@ class ParameterEngine:
             config.support_on_build_plate_only = False
 
         # ── Mission solidité → minimum structurel ────────────────────
+        # La résistance vient des PAROIS et des couches pleines, pas du
+        # remplissage : au-delà de ~25 %, chaque point coûte du temps et du
+        # filament pour un gain quasi nul (retour utilisateur : « 40 %, c'est
+        # abusé »). Le plancher accompagne donc les 4 parois sans les doubler.
         if intent.strength > 0.7:
             config.wall_loops = max(config.wall_loops, 4)
-            config.infill_density = max(config.infill_density, 40)
-            if config.infill_density >= 50 and config.infill_pattern in ("grid", "honeycomb"):
+            config.infill_density = max(config.infill_density, 25)
+            # Motif isotrope dès que la solidité est demandée (la grille et le
+            # nid d'abeille cassent de façon anisotrope), quelle que soit la
+            # densité — l'ancien seuil à 50 % n'est plus jamais atteint.
+            if config.infill_pattern in ("grid", "honeycomb"):
                 config.infill_pattern = "gyroid"
 
         # ── Volume important → optimiser le pattern ───────────────────

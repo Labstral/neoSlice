@@ -637,7 +637,10 @@ def _client_defaults() -> dict:
             # Attribution apporteur d'affaires : l'apporteur touche sa commission
             # sur les devis de ce client tant que la période [début, fin] est active.
             "apporteur_id": "", "apporteur_debut": "", "apporteur_duree_mois": 0,
-            "apporteur_fin": ""}
+            "apporteur_fin": "",
+            # Identifiant du client dans un AUTRE outil (CRM, outil commercial) :
+            # relie les deux fiches et évite les doublons à la réimportation CSV.
+            "ref_externe": ""}
 
 
 def list_clients() -> list[dict]:

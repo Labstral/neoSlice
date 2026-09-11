@@ -99,6 +99,20 @@ _BTN_DONE = f"""
 _NOZZLE_SIZES = [0.2, 0.4, 0.6, 0.8]
 _NOZZLE_DEFAULT = 0.4
 
+# Logiciels de découpe proposés en sortie (code stocké, clé i18n du libellé).
+# Même liste et même ordre que l'ancien réglage, pour ne dérouter personne.
+_SLICERS_SORTIE = [
+    ("bambu",      "settings.slicer_bambu"),
+    ("orca",       "settings.slicer_orca"),
+    ("prusa",      "settings.slicer_prusa"),
+    ("creality",   "settings.slicer_creality"),
+    ("elegoo",     "settings.slicer_elegoo"),
+    ("anycubic",   "settings.slicer_anycubic"),
+    ("snapmaker",  "settings.slicer_snapmaker"),
+    ("cura",       "settings.slicer_cura"),
+    ("flashprint", "settings.slicer_flashprint"),
+]
+
 # Types de plateau Bambu/Orca (label affiché, VALEUR = curr_bed_type écrit dans le
 # 3MF). Noms canoniques OrcaSlicer (l'univers réel des profils Orca : 6 types), lus
 # aussi par Bambu Studio pour les communs. La liste MONTRÉE dépend de l'imprimante :
@@ -255,6 +269,36 @@ class FilamentPrinterSelector(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
+
+        # ── Logiciel de découpe (destination du fichier) ───────────────────
+        # EN TÊTE de la colonne, et non plus caché dans les Réglages : c'est lui
+        # qui détermine le catalogue d'imprimantes proposé (78 machines pour
+        # Bambu Studio, 367 pour OrcaSlicer…). Une utilisatrice a exporté sa
+        # Elegoo en fichier « Snapmaker Orca » sans jamais voir ce réglage —
+        # elle avait pourtant bien choisi son imprimante (vécu).
+        # Il reste au-dessus de l'imprimante parce qu'il CONDITIONNE la liste ;
+        # le filet ci-dessous le sépare du vrai premier choix, l'imprimante.
+        self._lbl_slicer = QLabel(_("selector.lbl_slicer"))
+        self._lbl_slicer.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
+        self._lbl_slicer.setStyleSheet(_LABEL_STYLE)
+        layout.addWidget(self._lbl_slicer)
+
+        self._slicer_combo = QComboBox()
+        self._slicer_combo.setStyleSheet(_COMBO_STYLE)
+        _make_combo_shrinkable(self._slicer_combo)
+        for _code, _cle in _SLICERS_SORTIE:
+            self._slicer_combo.addItem(_(_cle), _code)
+        self._slicer_combo.setToolTip(_("selector.slicer_tip"))
+        self._sync_slicer_combo()
+        self._slicer_combo.currentIndexChanged.connect(self._on_slicer_combo)
+        layout.addWidget(self._slicer_combo)
+
+        self._sep_slicer = QFrame()
+        self._sep_slicer.setFrameShape(QFrame.Shape.HLine)
+        self._sep_slicer.setFixedHeight(1)
+        self._sep_slicer.setStyleSheet(f"background: {INACTIVE}; border: none;")
+        layout.addWidget(self._sep_slicer)
+        layout.addSpacing(2)
 
         # ── ① Imprimante ──────────────────────────────────────────────────
         self._lbl_p = QLabel(_("selector.lbl_printer"))
@@ -464,7 +508,93 @@ class FilamentPrinterSelector(QWidget):
         if skip_cb.isChecked():
             PREFS.set("a2l_bs_warning_skip", True)
 
+    def _sync_slicer_combo(self) -> None:
+        """Aligne le combo sur la préférence, SANS réémettre de signal (appelé
+        aussi après une bascule automatique — sinon il afficherait l'ancien
+        logiciel alors que la sortie a changé)."""
+        code = PREFS.get("slicer_output", "bambu")
+        i = self._slicer_combo.findData(code)
+        self._slicer_combo.blockSignals(True)
+        self._slicer_combo.setCurrentIndex(i if i >= 0 else 0)
+        self._slicer_combo.blockSignals(False)
+
+    def _reset_validation(self) -> None:
+        """Remet l'étape ① à « à valider » : le catalogue a changé sous les
+        pieds de l'utilisateur, son imprimante validée n'existe plus telle
+        quelle — la laisser cochée ✓ afficherait une machine qu'il n'a pas
+        choisie."""
+        self._printer_done = False
+        self._filament_done = False
+        self._btn_confirm_printer.setText(_("selector.validate_btn"))
+        self._btn_confirm_printer.setEnabled(True)
+        self._btn_confirm_filament.setText(_("selector.validate_btn"))
+        self._btn_confirm_filament.setEnabled(False)
+        self._filament_combo.setEnabled(False)
+        self._plate_combo.setEnabled(False)
+        self._hint_filament.show()
+        self._compat_badge.hide()
+        self.refresh_theme()          # libellés/boutons cohérents avec l'état
+
+    def _on_slicer_combo(self) -> None:
+        """L'utilisateur choisit son logiciel de découpe : le catalogue
+        d'imprimantes le suit immédiatement."""
+        code = self._slicer_combo.currentData() or "bambu"
+        if code == PREFS.get("slicer_output", "bambu"):
+            return
+        avant = self.current_printer()
+        PREFS.set("slicer_output", code)
+        self.refresh_printers()               # catalogue + buses + plateaux
+        if self.current_printer() != avant:   # la machine validée a disparu
+            self._reset_validation()
+        self.slicer_switched.emit(code)       # bouton d'export, etc.
+
+    def _corriger_slicer_selon_marque(self) -> bool:
+        """Aligne le SLICER DE SORTIE sur la marque de l'imprimante validée.
+
+        Snapmaker Orca embarque toute la bibliothèque OrcaSlicer : neoSlice y
+        propose 367 machines, dont 19 Snapmaker seulement. Une utilisatrice a
+        donc pu choisir sa « Elegoo Centauri Carbon » avec une sortie restée sur
+        Snapmaker Orca — elle avait bien renseigné son imprimante, mais le
+        fichier partait pour le mauvais logiciel (vécu).
+
+        On ne touche JAMAIS aux slicers génériques (OrcaSlicer, Bambu Studio…) :
+        y exporter n'importe quelle marque est un choix légitime. Retourne True
+        si le slicer a été basculé."""
+        from data.printers import (brand_of, is_catalogue_model, models_for_brand,
+                                   marque_du_slicer, slicer_de_marque)
+        printer = self.current_printer()
+        if not printer or not is_catalogue_model(printer):
+            return False                       # Bambu Lab / clé inconnue
+        courant = PREFS.get("slicer_output", "bambu")
+        if not marque_du_slicer(courant):
+            return False                       # slicer générique → on respecte
+        marque = brand_of(printer)
+        cible = slicer_de_marque(marque)
+        if not marque or not cible or cible == courant:
+            return False
+        # La machine doit exister dans le catalogue du slicer CIBLE, sinon on
+        # basculerait vers une sortie où elle n'est plus sélectionnable.
+        if printer not in {mk for _lbl, mk in models_for_brand(marque, cible)}:
+            return False
+
+        label = self._printer_combo._key_label.get(printer, printer)
+        PREFS.set("slicer_output", cible)
+        self.refresh_printers()                # catalogue + buses + plateaux
+        self._sync_slicer_combo()              # le combo en tête suit la bascule
+        self._printer_combo.set_current_key(printer, emit=False)
+        self._sync_nozzles()
+        self._populate_plates()
+        self._update_printer_note()
+        self._refresh_pin_btn()
+        self.slicer_switched.emit(cible)
+        from core import mes_machines as _mm
+        self.status_message.emit(
+            _("selector.slicer_auto", printer=label,
+              slicer=_mm.slicer_label(cible)))
+        return True
+
     def _on_confirm_printer(self):
+        self._corriger_slicer_selon_marque()
         self._printer_done = True
         pal = _T.palette()
         tg = pal["TELE_GREEN"]; tl = pal["TEXT_LABEL"]
@@ -989,13 +1119,18 @@ class FilamentPrinterSelector(QWidget):
                 selection-background-color: {acc}; selection-color: #020408; outline: none;
             }}
         """
-        for combo in (self._printer_combo, self._filament_combo, self._plate_combo):
+        for combo in (self._printer_combo, self._filament_combo, self._plate_combo,
+                      self._slicer_combo):
             combo.setStyleSheet(combo_style)
+        # Filet de séparation logiciel / imprimante : sans ce rappel, il gardait
+        # la teinte de l'ANCIEN thème (invisible en clair après un passage sombre).
+        self._sep_slicer.setStyleSheet(f"background: {inc}; border: none;")
         self._printer_combo.apply_theme()   # style du menu déroulant en cascade
         self._nozzle_combo.setStyleSheet(nozzle_style)
 
         label_active = f"color: {tl}; letter-spacing: 2px; background: transparent;"
         label_dim    = f"color: {inc}; letter-spacing: 2px; background: transparent;"
+        self._lbl_slicer.setStyleSheet(label_active)
         self._lbl_p.setStyleSheet(label_active)
         self._lbl_f.setStyleSheet(label_active if self._printer_done else label_dim)
         self._lbl_plate.setStyleSheet(label_active if self._filament_done else label_dim)

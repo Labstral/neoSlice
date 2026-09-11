@@ -175,40 +175,30 @@ _STEPS_FR: list[_Step] = [
         "Bienvenue dans neoSlice",
         "neoSlice analyse votre fichier STL, OBJ ou 3MF et génère automatiquement "
         "les paramètres d'impression optimaux pour votre imprimante.\n\n"
-        "Désormais compatible avec <b>5 slicers</b> — Bambu Studio, OrcaSlicer, "
-        "PrusaSlicer, CrealityPrint et ElegooSlicer — et <b>plus de 80 marques / "
-        "600 imprimantes</b> : Bambu Lab, Creality, Prusa, Anycubic, Elegoo, Sovol, "
+        "Compatible avec <b>9 logiciels de découpe</b> — Bambu Studio, OrcaSlicer, "
+        "PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, "
+        "UltiMaker Cura et FlashPrint — et <b>plus de 80 marques / 600 "
+        "imprimantes</b> : Bambu Lab, Creality, Prusa, Anycubic, Elegoo, Sovol, "
         "Qidi, Flashforge, Voron et bien d'autres.\n\n"
         "Ce guide vous présente le workflow complet, du fichier à l'export, ainsi "
         "que les fonctionnalités <b>Pro</b>.\n"
         "Cliquez sur <b>Suivant</b> pour commencer.",
     ),
     _Step(
-        "settings",
-        "Première étape : choisissez votre slicer de sortie",
-        "La toute première chose à faire : cliquez sur la <b>roue de réglages</b> "
-        "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE713;</span> "
-        "(en haut à droite) et sélectionnez votre <b>slicer de sortie</b> — "
-        "<b>Bambu Studio</b>, <b>OrcaSlicer</b>, <b>PrusaSlicer</b>, "
-        "<b>CrealityPrint</b> ou <b>ElegooSlicer</b>.\n\n"
-        "C'est essentiel : <b>toutes les imprimantes ne sont pas compatibles avec "
-        "tous les slicers</b>. Le catalogue d'imprimantes <b>s'adapte au slicer "
-        "choisi</b> — par exemple, les <b>Prusa</b> (XL, CORE One…) n'apparaissent "
-        "qu'en sélectionnant <b>PrusaSlicer</b> ou <b>OrcaSlicer</b>.\n\n"
-        "Choisissez donc d'abord votre slicer pour voir apparaître l'imprimante que "
-        "vous cherchez.",
-        pad=10,
-    ),
-    _Step(
         "config",
-        "① Configuration — Imprimante, Filament & Plateau",
-        "Sélectionnez votre <b>imprimante cible</b> et votre <b>diamètre de buse</b>, "
-        "puis cliquez sur <b>VALIDER</b>.\n"
-        "Faites de même pour votre <b>filament</b>.\n\n"
-        "Choisissez enfin votre <b>type de plateau</b> : la liste <b>s'adapte à "
-        "votre slicer</b> (plateaux Bambu Studio / OrcaSlicer, ou sheets "
-        "PrusaSlicer), et neoSlice ajuste automatiquement les températures et "
-        "l'adhérence.",
+        "① Configuration — Logiciel, Imprimante, Filament & Plateau",
+        "Tout se passe dans cette colonne, de haut en bas.\n\n"
+        "Commencez par le <b>logiciel de découpe</b> : celui dans lequel vous "
+        "ouvrirez le fichier. Il détermine les imprimantes proposées juste en "
+        "dessous — les <b>Prusa</b> (XL, CORE One…), par exemple, n'apparaissent "
+        "qu'avec <b>PrusaSlicer</b> ou <b>OrcaSlicer</b>.\n\n"
+        "Choisissez ensuite votre <b>imprimante cible</b> et votre <b>diamètre de "
+        "buse</b>, puis cliquez sur <b>VALIDER</b>. Si votre imprimante est d'une "
+        "autre marque que le logiciel affiché, neoSlice <b>bascule tout seul</b> "
+        "sur le bon (une Elegoo passe sur ElegooSlicer) et vous le signale.\n\n"
+        "Faites de même pour votre <b>filament</b>, puis choisissez votre "
+        "<b>type de plateau</b> : neoSlice ajuste automatiquement les "
+        "températures et l'adhérence.",
         pad=12,
     ),
     _Step(
@@ -348,8 +338,9 @@ _STEPS_EN: list[_Step] = [
         "Welcome to neoSlice",
         "neoSlice analyzes your STL, OBJ or 3MF file and automatically generates "
         "the optimal print settings for your printer.\n\n"
-        "Now compatible with <b>5 slicers</b> — Bambu Studio, OrcaSlicer, PrusaSlicer, "
-        "CrealityPrint and ElegooSlicer — and <b>80+ brands / 600+ printers</b>: Bambu "
+        "Compatible with <b>9 slicing programs</b> — Bambu Studio, OrcaSlicer, "
+        "PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, "
+        "UltiMaker Cura and FlashPrint — and <b>80+ brands / 600+ printers</b>: Bambu "
         "Lab, Creality, Prusa, Anycubic, Elegoo, Sovol, Qidi, Flashforge, Voron and "
         "many more.\n\n"
         "This guide walks you through the full workflow, from file to export, plus "
@@ -357,28 +348,18 @@ _STEPS_EN: list[_Step] = [
         "Click <b>Next</b> to begin.",
     ),
     _Step(
-        "settings",
-        "First step: choose your output slicer",
-        "The very first thing to do: click the <b>settings gear</b> "
-        "<span style='font-family:\"Segoe MDL2 Assets\";font-size:11pt;color:#E8F4FF;'>&#xE713;</span>"
-        " (top right) and select your <b>output slicer</b> — <b>Bambu Studio</b>, "
-        "<b>OrcaSlicer</b>, <b>PrusaSlicer</b>, <b>CrealityPrint</b> or "
-        "<b>ElegooSlicer</b>.\n\n"
-        "This matters: <b>not all printers work with every slicer</b>. The printer "
-        "catalog <b>adapts to the slicer you choose</b> — for example, <b>Prusa</b> "
-        "models (XL, CORE One…) only appear when you pick <b>PrusaSlicer</b> or "
-        "<b>OrcaSlicer</b>.\n\n"
-        "So pick your slicer first to reveal the printer you are looking for.",
-        pad=10,
-    ),
-    _Step(
         "config",
-        "① Setup — Printer, Filament & Plate",
-        "Select your <b>target printer</b> and <b>nozzle diameter</b>, "
-        "then click <b>CONFIRM</b>.\n"
-        "Do the same for your <b>filament</b>.\n\n"
-        "Finally choose your <b>plate type</b>: the list <b>adapts to your "
-        "slicer</b> (Bambu Studio / OrcaSlicer plates, or PrusaSlicer sheets), and "
+        "① Setup — Software, Printer, Filament & Plate",
+        "Everything happens in this column, from top to bottom.\n\n"
+        "Start with the <b>slicing software</b>: the one you'll open the file in. "
+        "It determines which printers appear just below — <b>Prusa</b> models "
+        "(XL, CORE One…), for example, only show up with <b>PrusaSlicer</b> or "
+        "<b>OrcaSlicer</b>.\n\n"
+        "Then pick your <b>target printer</b> and <b>nozzle diameter</b>, and click "
+        "<b>CONFIRM</b>. If your printer is from a different brand than the software "
+        "shown, neoSlice <b>switches over by itself</b> (an Elegoo moves to "
+        "ElegooSlicer) and tells you.\n\n"
+        "Do the same for your <b>filament</b>, then choose your <b>plate type</b>: "
         "neoSlice automatically adjusts temperatures and adhesion.",
         pad=12,
     ),

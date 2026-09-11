@@ -9,7 +9,7 @@ wall_generator: "arachne"
 wall_sequence: "inner wall/outer wall"
 top_shell_layers: 7
 bottom_shell_layers: 6
-infill_density: 80
+infill_density: 45
 infill_pattern: "gyroid"
 top_surface_pattern: "monotonic"
 ironing_type: "no ironing"

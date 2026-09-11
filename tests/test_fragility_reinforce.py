@@ -36,17 +36,31 @@ def test_renforcer_green_returns_none():
 def test_renforcer_orange_and_red():
     base = PrintConfig()
     o = renforcer_config(base, 0.70)
-    assert o.wall_loops >= 4 and o.infill_density >= 30
+    assert o.wall_loops == 4 and o.infill_density == 25
     assert {"wall_loops", "infill_density"} <= o.model_fields_set
     r = renforcer_config(base, 0.90)
-    assert r.wall_loops >= 5 and r.infill_density >= 40
+    assert r.wall_loops == 5 and r.infill_density == 30
+    # le rouge renforce PLUS que l'orange (gradation cohérente)
+    assert r.wall_loops > o.wall_loops and r.infill_density > o.infill_density
+
+
+def test_renfort_mise_sur_les_parois_pas_le_remplissage():
+    """Garde-fou (retour utilisateur « 40 %, c'est abusé ») : le renfort auto
+    ajoute des parois mais ne fait jamais exploser le remplissage — au-delà de
+    ~30 %, le gain de résistance est négligeable et le temps d'impression
+    grimpe pour rien."""
+    base = PrintConfig()
+    for sev in (0.65, 0.70, 0.85, 0.95, 1.0):
+        cfg = renforcer_config(base, sev)
+        assert cfg.infill_density <= 30, f"remplissage trop élevé à {sev}"
+        assert cfg.wall_loops >= 4
 
 
 def test_renforcer_never_reduces_below_base():
     strong = PrintConfig()
     strong.wall_loops = 8
     strong.infill_density = 60
-    o = renforcer_config(strong, 0.70)     # renfort orange = 4/30 < base
+    o = renforcer_config(strong, 0.70)     # renfort orange = 4/25 < base
     assert o.wall_loops == 8 and o.infill_density == 60
 
 

@@ -196,10 +196,12 @@ class DashboardPage(QWidget):
         rep_head = QHBoxLayout()
         rep_head.addWidget(self._section(_("dash.report_title")))
         rep_head.addStretch()
-        self._export_btn = QPushButton(_("dash.export"))
+        # Un seul point d'export : factures (compta), clients, devis, commandes —
+        # pour l'expert-comptable comme pour un outil commercial externe.
+        self._export_btn = QPushButton(_("dash.export_menu") + "  ▾")
         self._export_btn.setFont(QFont(FONT_MAIN, 8)); self._export_btn.setFixedHeight(28)
         self._export_btn.setCursor(Qt.PointingHandCursor)
-        self._export_btn.clicked.connect(self._do_export)
+        self._export_btn.clicked.connect(self._menu_export)
         rep_head.addWidget(self._export_btn)
         lay.addLayout(rep_head)
         self._chart = _RevenueChart()
@@ -214,6 +216,50 @@ class DashboardPage(QWidget):
 
         scroll.setWidget(host)
         outer.addWidget(scroll)
+
+    def _menu_export(self):
+        """Menu d'export : factures (comptabilité), clients, devis, commandes."""
+        m = self._construire_menu_export()
+        m.exec(self._export_btn.mapToGlobal(self._export_btn.rect().bottomLeft()))
+
+    def _construire_menu_export(self):
+        """Menu thémé AU MOMENT de l'ouverture (suit le thème courant)."""
+        from PySide6.QtWidgets import QMenu
+        pal = _T.palette()
+        m = QMenu(self)
+        m.setStyleSheet(
+            f"QMenu {{ background: {pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']}; "
+            f"border: 1px solid {pal['INACTIVE']}; padding: 4px; }}"
+            f"QMenu::item {{ padding: 6px 18px; border-radius: 3px; }}"
+            f"QMenu::item:selected {{ background: {pal['ACCENT']}; color: #fff; }}")
+        m.addAction(_("dash.exp_invoices"), self._do_export)
+        m.addSeparator()
+        m.addAction(_("dash.exp_clients"), lambda: self._export_liste("clients"))
+        m.addAction(_("dash.exp_quotes"), lambda: self._export_liste("devis"))
+        m.addAction(_("dash.exp_orders"), lambda: self._export_liste("commandes"))
+        return m
+
+    def _export_liste(self, quoi: str):
+        """Export CSV des clients, devis ou commandes (statut compris)."""
+        from datetime import date as _d
+        from pathlib import Path
+        from PySide6.QtWidgets import QMessageBox
+        from core.business import csv_io
+        lister, exporter, prefixe = {
+            "clients":   (store.list_clients, csv_io.export_clients_csv, "neoslice_clients"),
+            "devis":     (store.list_quotes, csv_io.export_devis_csv, "neoslice_devis"),
+            "commandes": (store.list_orders, csv_io.export_commandes_csv, "neoslice_commandes"),
+        }[quoi]
+        if not lister():
+            QMessageBox.information(self, _("dash.export_menu"), _("dash.exp_empty"))
+            return
+        default = f"{prefixe}_{_d.today().isoformat()}.csv"
+        path, _flt = QFileDialog.getSaveFileName(self, _("dash.export_menu"), default,
+                                                 "CSV (*.csv)")
+        if not path:
+            return
+        exporter(Path(path))
+        QMessageBox.information(self, _("dash.export_menu"), _("dash.export_done", path=path))
 
     def _do_export(self):
         from PySide6.QtWidgets import QMessageBox, QInputDialog

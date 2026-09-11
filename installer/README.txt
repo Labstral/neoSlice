@@ -1,6 +1,6 @@
 ==============================================================================
   neoSlice - AI-Powered 3D Print Optimizer
-  Guide d'installation et de démarrage - v0.1.8
+  Guide d'installation et de démarrage - v2.2.0
 ==============================================================================
   © 2026 Emmanuel Percheron - Tous droits réservés
 
@@ -15,7 +15,7 @@ SOMMAIRE
   5. Premier démarrage
   6. Désinstallation
   7. Questions fréquentes (FAQ)
-  8. Nouveautés v0.1.8
+  8. Nouveautés v2.2.0
   9. Contact et support
 
 
@@ -40,7 +40,7 @@ SOMMAIRE
 2. CONTENU DU PACKAGE
 ------------------------------------------------------------------------------
 
-  neoSlice_Setup_v0.1.8_Windows.exe  ->  Installateur Windows
+  neoSlice_Setup_v2.2.0_Windows.exe  ->  Installateur Windows
   README.txt                       ->  Ce guide
   LICENSE.txt                      ->  Accord de licence utilisateur final
 
@@ -58,7 +58,7 @@ SOMMAIRE
 
   ÉTAPE 2 - Lancer l'installateur
   ---------------------------------
-  Double-cliquez sur : neoSlice_Setup_v0.1.8_Windows.exe
+  Double-cliquez sur : neoSlice_Setup_v2.2.0_Windows.exe
 
   Si Windows affiche "Windows a protégé votre PC" :
     -> Cliquez sur "Informations complémentaires"
@@ -160,7 +160,7 @@ SOMMAIRE
   Un tutoriel pas à pas se lance automatiquement à la première utilisation.
   Il vous guide à travers les 4 étapes du workflow neoSlice :
 
-    1. Configuration  - Choix du slicer de sortie, de l'imprimante et du filament
+    1. Configuration  - Choix du logiciel de slicing, de l'imprimante et du filament
     2. Import STL     - Glisser-déposer votre fichier 3D
     3. Mission        - Réglage des critères d'impression
     4. Export         - Génération du fichier .3MF pour votre slicer
@@ -220,8 +220,10 @@ SOMMAIRE
   Q : Quelles imprimantes et quels slicers neoSlice supporte-t-il ?
   R : neoSlice couvre plus de 80 marques et 600 imprimantes (Bambu Lab,
       Creality, Prusa, Anycubic, Elegoo, Sovol...). La sortie est compatible
-      avec 5 slicers : Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et
-      ElegooSlicer. Le catalogue d'imprimantes s'adapte au slicer choisi.
+      avec 9 slicers : Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint,
+      ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et
+      FlashPrint. Le slicer est choisi automatiquement selon la marque de
+      l'imprimante.
 
   Q : Puis-je utiliser neoSlice sans connexion internet ?
   R : Oui. neoSlice ne nécessite aucune connexion internet pour fonctionner.
@@ -244,73 +246,51 @@ SOMMAIRE
 
 
 ------------------------------------------------------------------------------
-8. NOUVEAUTÉS v0.1.8
+8. NOUVEAUTÉS v2.2.0
 ------------------------------------------------------------------------------
 
-  NEOGEN - GÉNÉRATEUR D'OBJETS 3D (Pro)
+  LOGICIEL DE SLICING ET IMPRIMANTE AU MÊME ENDROIT
+  --------------------------------------------------
+  * Le choix du logiciel de slicing est dans la colonne de gauche, juste
+    au-dessus de l'imprimante.
+  * Il suit automatiquement la marque de l'imprimante choisie : fini le
+    fichier 3MF préparé pour le mauvais logiciel.
+
+  RÉSISTANCE RENFORCÉE PLUS RAISONNABLE
   --------------------------------------
-  * Bibliothèque d'objets prêts à imprimer, tous personnalisables au
-    millimètre : porte-clés, cadres photo, QR codes 3D en deux couleurs,
-    cartes de visite, clips de câble au diamètre exact, joints, équerres,
-    vis et écrous, objets pour la restauration, le mariage et la boutique.
-  * Texte en relief ou gravé, choix de la police et des couleurs.
-  * Chaque pièce est générée étanche et pensée pour sortir sans support.
+  * 25 % de remplissage au lieu de 40 %, en motif gyroïde. La solidité
+    vient surtout des parois, pour moins de matière et moins de temps.
 
-  CARTE DE FRAGILITÉ PAR PIÈCE
-  -----------------------------
-  * Sur un plateau multi-pièces, cochez "Fragilité" dans la vue 3D :
-    chaque pièce se colore selon sa solidité (vert = solide, jaune = un peu
-    fragile, rouge = fragile).
+  SNAPMAKER U1
+  -------------
+  * Les fichiers 3MF s'ouvrent avec le bon profil de buse, le plateau
+    Smooth PEI est reconnu et les messages d'erreur ont disparu.
 
-  FLASHPRINT - 9e SLICER COMPATIBLE
-  ----------------------------------
-  * Sortie vers FlashPrint (FlashForge) avec dépôt automatique du profil
-    d'impression.
-  * Les plateaux proposés s'adaptent désormais à chaque imprimante.
+  MAC APPLE SILICON
+  ------------------
+  * La configuration recommandée reconnaît la puce et sa mémoire.
 
-  MODE PERFORMANCE AUTOMATIQUE
-  -----------------------------
-  * neoSlice choisit seul, pièce par pièce, le meilleur compromis entre
-    vitesse d'analyse et précision selon votre machine.
-  * Les fichiers 3MF complexes qui pouvaient bloquer le chargement
-    s'ouvrent maintenant en quelques secondes.
+  ESPACE PRO : IMPORT ET EXPORT CSV (Pro)
+  ----------------------------------------
+  * Importez vos clients depuis un fichier CSV : colonnes reconnues
+    automatiquement, doublons évités, compatible avec les exports de CRM
+    et d'outils de prospection.
+  * Exportez vos clients, devis et commandes en CSV.
+  * Nouveau champ "référence externe" sur la fiche client.
 
 
 ------------------------------------------------------------------------------
-RAPPEL - NOUVEAUTÉS v0.1.7
+RAPPEL - LES GRANDES NOUVEAUTÉS DE LA v2
 ------------------------------------------------------------------------------
 
-  OEN - ASSISTANT IA LOCAL (Pro)
-  ----------------------------------
-  * Un modèle Qwen3 tourne directement sur votre machine (hors ligne, privé),
-    nourri d'une base de connaissances imprimantes toutes marques.
-  * Activez le mode "Réflexion" pour des réponses raisonnées.
-  * La base de connaissances se met à jour depuis GitHub sans réinstaller
-    l'application.
-
-  EXPORT MULTICOULEUR (Pro)
-  -----------------------------
-  * Coloriez vos pièces après l'export 3MF et appliquez un filament par slot.
-  * Obtenez le grammage par couleur/bobine et le stock est déduit
-    automatiquement après impression.
-
-  5 SLICERS, 80+ MARQUES, 600+ IMPRIMANTES
-  ---------------------------------------------
-  * Sortie compatible Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint et
-    ElegooSlicer - le catalogue d'imprimantes s'adapte au slicer choisi.
-  * Nouvelles machines : Flashforge Creator 5 / 5 Pro, Phrozen Arco et gamme
-    Anycubic Kobra étendue.
-
-  VERSION PRO
-  ---------------
-  * Le Diagnostic IA et Oen deviennent des fonctionnalités Pro ; l'interface
-    standard reste entièrement gratuite pour optimiser et exporter ses pièces.
-
-  CORRECTIFS
-  --------------
-  * Barre de titre sombre native fiable sous Windows (plus de retour au
-    thème clair).
-  * Tutoriel enrichi (Oen + export multicouleur), adapté selon Pro/standard.
+  * Assistant d'orientation : cliquez les zones à préserver sur la pièce,
+    neoSlice propose des orientations notées et expliquées.
+  * Interface en 5 langues : français, English, Español, Deutsch, Italiano.
+  * Mode série : dupliquez une pièce en grille, sur plusieurs plateaux.
+  * Bibliothèque de pièces, journal d'impressions, calibration par bobine,
+    relances d'impayés en PDF (Pro).
+  * neoGen, générateur d'objets 3D personnalisables, et Oen, assistant IA
+    local hors ligne (Pro).
 
 
 ------------------------------------------------------------------------------

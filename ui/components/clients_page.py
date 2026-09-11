@@ -41,7 +41,8 @@ class ClientForm(QDialog):
         rows = [("client.name", "nom"), ("client.company", "societe"),
                 ("client.address", "adresse"), ("client.zip", "cp"),
                 ("client.city", "ville"), ("client.email", "email"),
-                ("client.phone", "tel"), ("client.taxid", "id_fiscal")]
+                ("client.phone", "tel"), ("client.taxid", "id_fiscal"),
+                ("client.ref_ext", "ref_externe")]
         r = 0
         for key_i18n, key in rows:
             g.addWidget(self._lbl(_(key_i18n)), r, 0)
@@ -123,12 +124,15 @@ class ClientForm(QDialog):
         pal = _T.palette()
         self.setStyleSheet(f"QDialog {{ background: {pal['BG_PANEL']}; }}")
         self._title.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
+        # Flèche des listes (Pays, Apporteur) = icône du thème : le triangle en
+        # bordures CSS sortait en simple trait vertical sous Windows (audit).
+        from ui.styles.theme import arrow_icon
+        fleche = arrow_icon("down", pal["TEXT_SECONDARY"]).replace("\\", "/")
         css = (f"QLineEdit, QComboBox, QPlainTextEdit, QDateEdit, QSpinBox {{ background: {pal['BG_INPUT']}; "
                f"color: {pal['TEXT_PRIMARY']}; border: 1px solid {pal['INACTIVE']}; "
                f"border-radius: 3px; padding: 3px 6px; min-height: 22px; }}"
-               f"QComboBox::down-arrow {{ width:0;height:0;border-left:4px solid transparent;"
-               f"border-right:4px solid transparent;border-top:5px solid {pal['TEXT_SECONDARY']};"
-               f"margin-right:6px; }}"
+               f"QComboBox::drop-down {{ border: none; width: 20px; }}"
+               f"QComboBox::down-arrow {{ image: url(\"{fleche}\"); width: 9px; height: 6px; }}"
                f"QComboBox QAbstractItemView {{ background: {pal['BG_ELEVATED']}; "
                f"color: {pal['TEXT_PRIMARY']}; selection-background-color: {pal['ACCENT']}; }}"
                f"QCalendarWidget QWidget {{ background: {pal['BG_ELEVATED']}; color: {pal['TEXT_PRIMARY']}; }}"
@@ -192,6 +196,13 @@ class ClientsPage(QWidget):
         page = QWidget()
         lay = QVBoxLayout(page); lay.setContentsMargins(22, 16, 22, 18); lay.setSpacing(10)
         header = QHBoxLayout(); header.addStretch()
+        # Import CSV (outil commercial, CRM, tableur) : évite de ressaisir à la
+        # main des clients qui existent déjà ailleurs (demande d'un client Pro).
+        self._import_btn = QPushButton(_("client.import"))
+        self._import_btn.setCursor(Qt.PointingHandCursor); self._import_btn.setFixedHeight(30)
+        self._import_btn.setToolTip(_("client.import_tip"))
+        self._import_btn.clicked.connect(self._import_clients)
+        header.addWidget(self._import_btn)
         self._add_btn = QPushButton("＋ " + _("client.add"))
         self._add_btn.setCursor(Qt.PointingHandCursor); self._add_btn.setFixedHeight(30)
         self._add_btn.clicked.connect(self._add_client)
@@ -273,6 +284,40 @@ class ClientsPage(QWidget):
         if self._ask(_("client.delete"), _("client.delete_confirm")):
             store.delete_client(c["id"])
             self._refresh_clients()
+
+    def _info(self, title: str, text: str) -> None:
+        m = QMessageBox(self); m.setWindowTitle(title); m.setText(text)
+        m.setIcon(QMessageBox.Information)
+        m.setStyleSheet(self._box_qss())
+        m.exec()
+
+    def _import_clients(self):
+        """CSV → aperçu des colonnes → import (création ou complément)."""
+        from pathlib import Path
+        from PySide6.QtWidgets import QFileDialog
+        from core.business import csv_io
+        from ui.components.import_clients_dialog import ImportClientsDialog
+        chemin, _flt = QFileDialog.getOpenFileName(
+            self, _("csvio.title"), "", "CSV (*.csv *.txt)")
+        if not chemin:
+            return
+        try:
+            entetes, lignes = csv_io.lire_csv(chemin)
+        except Exception as e:
+            self._info(_("csvio.title"), _("csvio.read_error", err=e))
+            return
+        if not lignes:
+            self._info(_("csvio.title"), _("csvio.empty"))
+            return
+        dlg = ImportClientsDialog(self, entetes, lignes, Path(chemin).name)
+        if not dlg.exec():
+            return
+        clients = dlg.clients()
+        res = csv_io.importer_clients(clients)
+        self._refresh_clients()
+        self._info(_("csvio.title"),
+                   _("csvio.done", crees=res["crees"], maj=res["maj"],
+                     inchanges=res["inchanges"], ignores=len(lignes) - len(clients)))
 
     # ── Fiche détail (historique) ─────────────────────────────────────────────
     def _open_client(self, c: dict):
@@ -387,4 +432,8 @@ class ClientsPage(QWidget):
                   f"border-radius: 4px; padding: 0 14px; font-weight: bold; }}"
                   f"QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}")
         self._add_btn.setStyleSheet(accent)
+        self._import_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {pal['TEXT_SECONDARY']}; "
+            f"border: 1px solid {pal['INACTIVE']}; border-radius: 4px; padding: 0 12px; }}"
+            f"QPushButton:hover {{ border-color: {pal['ACCENT']}; color: {pal['ACCENT']}; }}")
         self._refresh_clients()

@@ -34,12 +34,37 @@ class _BenchmarkWorker(QThread):
     result_ready = Signal(object)
 
     @staticmethod
-    def _detect_gpu() -> tuple[str, float, bool]:
-        """(nom, vram_gb, dédié). VRAM fiable seulement via nvidia-smi ;
-        sinon nom via CIM et VRAM 0 (les modèles locaux tourneront sur CPU —
-        Ollama sous Windows n'accélère en pratique que sur NVIDIA)."""
+    def _detect_gpu() -> tuple[str, float, bool, str]:
+        """(nom, vram_gb, dédié, accélération). `accélération` vaut « cuda »,
+        « metal » ou "" — c'est elle qui dit si les modèles locaux tourneront
+        vite, pas la seule VRAM.
+
+        macOS Apple Silicon : le GPU est intégré au SoC, sans VRAM séparée, et
+        Ollama l'exploite via Metal en mémoire unifiée. La détection ne couvrait
+        que Windows : un Mac Studio M2 Ultra (60 cœurs GPU !) s'affichait « GPU
+        non détecté », avec le conseil d'acheter une carte NVIDIA — impossible
+        sur un Mac, et inutile puisque la machine est justement très à l'aise
+        (retour utilisateur)."""
         import subprocess as _sp
         _NOWIN = 0x08000000 if sys.platform == "win32" else 0
+
+        if sys.platform == "darwin":
+            import platform as _plat
+            if _plat.machine() == "arm64":
+                nom = "Apple Silicon"
+                try:                       # « Apple M2 Ultra », « Apple M4 Pro »…
+                    r = _sp.run(["sysctl", "-n", "machdep.cpu.brand_string"],
+                                capture_output=True, text=True, timeout=6)
+                    if r.returncode == 0 and (r.stdout or "").strip():
+                        nom = r.stdout.strip()
+                except Exception:
+                    pass
+                # Pas de VRAM dédiée : la mémoire unifiée sert de VRAM, donc on
+                # jugera la vitesse à la RAM totale (voir _on_benchmark_done).
+                return nom, 0.0, True, "metal"
+            # Mac Intel : GPU AMD/Intel, non exploité par Ollama → CPU.
+            return "", 0.0, False, ""
+
         try:
             r = _sp.run(["nvidia-smi", "--query-gpu=name,memory.total",
                          "--format=csv,noheader,nounits"],
@@ -48,7 +73,7 @@ class _BenchmarkWorker(QThread):
             line = (r.stdout or "").strip().splitlines()
             if r.returncode == 0 and line:
                 nom, mem = line[0].rsplit(",", 1)
-                return nom.strip(), float(mem.strip()) / 1024.0, True
+                return nom.strip(), float(mem.strip()) / 1024.0, True, "cuda"
         except Exception:
             pass
         try:
@@ -64,10 +89,10 @@ class _BenchmarkWorker(QThread):
                     low = nom.lower()
                     integre = any(k in low for k in (
                         "intel", "uhd", "iris", "radeon(tm) graphics", "vega"))
-                    return nom, 0.0, not integre
+                    return nom, 0.0, not integre, ""
         except Exception:
             pass
-        return "", 0.0, False
+        return "", 0.0, False, ""
 
     def run(self):
         reps = 3
@@ -125,7 +150,7 @@ class _BenchmarkWorker(QThread):
         except Exception:
             pass
 
-        gpu_name, vram_gb, gpu_dedie = self._detect_gpu()
+        gpu_name, vram_gb, gpu_dedie, gpu_accel = self._detect_gpu()
 
         disk_free_gb = 0.0
         try:
@@ -147,6 +172,7 @@ class _BenchmarkWorker(QThread):
             "ram_gb": ram_gb, "avail_gb": avail_gb,
             "cores": os.cpu_count() or 0,
             "gpu_name": gpu_name, "vram_gb": vram_gb, "gpu_dedie": gpu_dedie,
+            "gpu_accel": gpu_accel,
             "disk_free_gb": disk_free_gb,
         })
 
@@ -329,33 +355,10 @@ class SettingsDialog(QDialog):
         lay.addLayout(printer_row)
         lay.addSpacing(8)
 
-        # Slicer de sortie (Bambu/Orca par défaut | PrusaSlicer)
-        slicer_row = QHBoxLayout()
-        slicer_row.setContentsMargins(0, 0, 0, 0)
-        self._slicer_lbl = QLabel(_("settings.slicer_output"))
-        self._slicer_lbl.setFont(QFont(FONT_MAIN, 9))
-        self._slicer_combo = QComboBox()
-        self._slicer_combo.setFixedWidth(160)
-        self._slicer_combo.addItem(_("settings.slicer_bambu"), "bambu")
-        self._slicer_combo.addItem(_("settings.slicer_orca"), "orca")
-        self._slicer_combo.addItem(_("settings.slicer_prusa"), "prusa")
-        self._slicer_combo.addItem(_("settings.slicer_creality"), "creality")
-        self._slicer_combo.addItem(_("settings.slicer_elegoo"), "elegoo")
-        self._slicer_combo.addItem(_("settings.slicer_anycubic"), "anycubic")
-        self._slicer_combo.addItem(_("settings.slicer_snapmaker"), "snapmaker")
-        self._slicer_combo.addItem(_("settings.slicer_cura"), "cura")
-        self._slicer_combo.addItem(_("settings.slicer_flashprint"), "flashprint")
-        _saved_slicer = PREFS.get("slicer_output", "bambu")
-        _slicer_idx = {"bambu": 0, "orca": 1, "prusa": 2, "creality": 3,
-                       "elegoo": 4, "anycubic": 5, "snapmaker": 6,
-                       "cura": 7, "flashprint": 8}.get(_saved_slicer, 0)
-        self._slicer_combo.setCurrentIndex(_slicer_idx)
-        self._slicer_combo.currentIndexChanged.connect(self._on_slicer_changed)
-        slicer_row.addWidget(self._slicer_lbl)
-        slicer_row.addStretch()
-        slicer_row.addWidget(self._slicer_combo)
-        lay.addLayout(slicer_row)
-        lay.addSpacing(8)
+        # (Le LOGICIEL DE DÉCOUPE a quitté les Réglages : il est désormais en tête
+        #  de la colonne de gauche, au-dessus de l'imprimante. Caché ici, il était
+        #  invisible au moment du choix de la machine — une utilisatrice a exporté
+        #  sa Elegoo en fichier Snapmaker sans jamais le voir.)
 
         # Renforcement automatique des pièces fragiles (scènes multi-objets) :
         # les pièces oranges/rouges (thermomap) reçoivent + parois + remplissage.
@@ -845,12 +848,6 @@ class SettingsDialog(QDialog):
     def _on_printer_changed(self, key: str = ""):
         PREFS.set("printer_default", self._printer_combo.current_key() or "")
 
-    def _on_slicer_changed(self):
-        PREFS.set("slicer_output", self._slicer_combo.currentData() or "bambu")
-        # Le catalogue d'imprimantes dépend du slicer → reconstruire la liste
-        # « imprimante par défaut » immédiatement (sinon elle garde l'ancien slicer).
-        self._populate_printers()
-
     def _on_browse_folder(self):
         current = self._folder_edit.text() or str(Path.home())
         folder = QFileDialog.getExistingDirectory(self, _("settings.browse_title"), current)
@@ -950,21 +947,36 @@ class SettingsDialog(QDialog):
         else:
             lignes.append((_("settings.cfg_line_diag"), V, "✓", _("settings.cfg_diag_ok")))
 
-        # Oen (qwen3:8b ≈ 5 Go) : GPU NVIDIA ≥ 6 Go = rapide ; sinon CPU = lent.
+        # Accélération réelle des modèles locaux : VRAM NVIDIA (CUDA) OU Metal
+        # sur Apple Silicon, où la mémoire unifiée tient lieu de VRAM — c'est la
+        # RAM totale qui compte alors, pas une VRAM qui n'existe pas.
+        metal = info.get("gpu_accel") == "metal"
+        # Sur Mac, conseiller une carte NVIDIA n'a aucun sens (pas installable).
+        cpu_txt = _("settings.cfg_oen_cpu_mac" if sys.platform == "darwin"
+                    else "settings.cfg_oen_cpu")
+
+        # Oen (qwen3:8b ≈ 5 Go) : GPU NVIDIA ≥ 6 Go, ou Apple Silicon ≥ 16 Go.
         if vram >= 6.0:
             lignes.append((_("settings.cfg_line_oen"), V, "✓",
                            _("settings.cfg_oen_gpu", vram=f"{vram:.0f}")))
+        elif metal and ram >= 16.0:
+            lignes.append((_("settings.cfg_line_oen"), V, "✓",
+                           _("settings.cfg_oen_metal", gpu=gpu_name)))
         elif ram >= 16.0:
-            lignes.append((_("settings.cfg_line_oen"), A, "△", _("settings.cfg_oen_cpu")))
+            lignes.append((_("settings.cfg_line_oen"), A, "△", cpu_txt))
         elif ram >= 8.0:
             lignes.append((_("settings.cfg_line_oen"), A, "△",
                            _("settings.cfg_oen_limit", ram=f"{ram:.0f}")))
         else:
             lignes.append((_("settings.cfg_line_oen"), R, "✗", _("settings.cfg_oen_no")))
 
-        # neoGen (modèle local ~12B ≈ 9 Go) : plus lourd qu'Oen.
+        # neoGen (modèle local ~12B ≈ 9 Go) : plus lourd qu'Oen — il faut de la
+        # marge au-delà du modèle, d'où 24 Go de mémoire unifiée demandés.
         if vram >= 10.0:
             lignes.append((_("settings.cfg_line_neogen"), V, "✓", _("settings.cfg_neogen_gpu")))
+        elif metal and ram >= 24.0:
+            lignes.append((_("settings.cfg_line_neogen"), V, "✓",
+                           _("settings.cfg_neogen_metal", gpu=gpu_name)))
         elif ram >= 16.0:
             lignes.append((_("settings.cfg_line_neogen"), A, "△", _("settings.cfg_neogen_cpu")))
         elif ram >= 12.0:
@@ -1091,7 +1103,7 @@ class SettingsDialog(QDialog):
         """)
 
         row_lbl_style = f"color: {pal['TEXT_PRIMARY']}; background: transparent;"
-        for lbl in (self._dark_lbl, self._scan_lbl, self._lang_lbl, self._slicer_lbl,
+        for lbl in (self._dark_lbl, self._scan_lbl, self._lang_lbl,
                     self._printer_lbl, self._perf_lbl, self._reinforce_lbl,
                     self._colorblind_lbl):
             lbl.setStyleSheet(row_lbl_style)
@@ -1136,7 +1148,7 @@ class SettingsDialog(QDialog):
                 border: 1px solid {pal['INACTIVE']};
             }}
         """
-        for combo in (self._lang_combo, self._printer_combo, self._slicer_combo, self._perf_combo):
+        for combo in (self._lang_combo, self._printer_combo, self._perf_combo):
             combo.setStyleSheet(combo_style)
         self._printer_combo.apply_theme()   # style du menu déroulant en cascade
 
