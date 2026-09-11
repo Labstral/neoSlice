@@ -57,7 +57,7 @@ def embed_mesh(chemin: str) -> dict:
 
 
 VERSION = "2026-08-27"
-NOTES = "Nouveau : bac Gridfinity — dimensions libres au millimètre près, compartiments réglables, et accroche automatique dans les plaques Gridfinity standard (pieds 42 mm placés tout seuls sous le bac)."
+NOTES = "Nouveau : le bac Gridfinity. Dimensions libres au millimètre près, compartiments réglables, et accroche automatique dans les plaques Gridfinity standard (pieds 42 mm placés tout seuls sous le bac)."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
 # NOUVELLE catégorie neoGen SANS rebuild (fusionnées par catalogue.par_domaine).
