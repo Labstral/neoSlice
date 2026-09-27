@@ -931,6 +931,7 @@ class Viewer3D(QWidget):
                 pal = _T.palette()
                 self.setStyleSheet(f"background: {pal['VIEWER_BG']};")
                 self._plotter = QtInteractor(self)
+                self._museler_les_touches_vtk()
                 self._plotter.set_background(pal["VIEWER_BG"], top=pal["VIEWER_BG_TOP"])
                 self._plotter.hide_axes()
                 layout.addWidget(self._plotter)
@@ -944,6 +945,30 @@ class Viewer3D(QWidget):
                 self._gl_failed = True
 
         self._build_viewer_placeholder(layout)
+
+    def _museler_les_touches_vtk(self):
+        """Coupe les raccourcis clavier que VTK s'attribue tout seul.
+
+        Son style d'interaction ecoute le clavier et repond de lui meme a une
+        dizaine de lettres, sans que rien ne l'annonce : `s` repasse TOUS les
+        acteurs en surface pleine (le plateau, dessine en fil de fer, disparait
+        alors), `w` met tout en fil de fer, `r` recadre la camera, `e` et `q`
+        demandent la SORTIE de l'application, `f`, `p` et `3` ont chacune leur
+        effet. Constate dans neoForge par Emmanuel (2026-09-26, « quand j'appuie
+        sur S la grille a disparu ») ; le viewer de neoSlice partage le meme
+        moteur, donc le meme piege. neoSlice n'utilise aucun raccourci VTK : on
+        retire l'ecoute, le clavier reste entierement a Qt.
+        """
+        try:
+            self._plotter.iren.clear_key_event_callbacks()
+        except Exception:
+            pass
+        try:
+            brut = self._plotter.iren.interactor
+            brut.RemoveObservers("CharEvent")
+            brut.RemoveObservers("KeyPressEvent")
+        except Exception:
+            pass
 
     def _build_viewer_placeholder(self, layout):
         """Message d'indisponibilité du viewer, distinct selon la cause :
@@ -2463,6 +2488,12 @@ class Viewer3D(QWidget):
                 self._plotter.reset_camera(bounds=_pv_b)
             except TypeError:
                 self._plotter.reset_camera()
+                # Repli : on REMET l'angle de vue avant de resserrer.
+                # vtkCamera.Zoom DIVISE l'angle au lieu de reculer la
+                # camera, donc deux passages ici l'auraient divise deux
+                # fois et la vue se serait aplatie un peu plus a chaque
+                # chargement (meme piege que dans neoForge, 2026-09-24).
+                self._plotter.camera.view_angle = 30.0
                 self._plotter.camera.zoom(2.0)
             self._plotter.renderer.ResetCameraClippingRange()
         except Exception as _ce:
@@ -3400,6 +3431,12 @@ class Viewer3D(QWidget):
                     self._plotter.reset_camera(bounds=_pv_b)
                 except TypeError:
                     self._plotter.reset_camera()
+                    # Repli : on REMET l'angle de vue avant de resserrer.
+                    # vtkCamera.Zoom DIVISE l'angle au lieu de reculer la
+                    # camera, donc deux passages ici l'auraient divise deux
+                    # fois et la vue se serait aplatie un peu plus a chaque
+                    # chargement (meme piege que dans neoForge, 2026-09-24).
+                    self._plotter.camera.view_angle = 30.0
                     self._plotter.camera.zoom(2.0)
                 self._plotter.renderer.ResetCameraClippingRange()
             except Exception:
@@ -3467,6 +3504,12 @@ class Viewer3D(QWidget):
                     self._plotter.reset_camera(bounds=_pv_b)
                 except TypeError:
                     self._plotter.reset_camera()
+                    # Repli : on REMET l'angle de vue avant de resserrer.
+                    # vtkCamera.Zoom DIVISE l'angle au lieu de reculer la
+                    # camera, donc deux passages ici l'auraient divise deux
+                    # fois et la vue se serait aplatie un peu plus a chaque
+                    # chargement (meme piege que dans neoForge, 2026-09-24).
+                    self._plotter.camera.view_angle = 30.0
                     self._plotter.camera.zoom(2.0)
                 self._plotter.renderer.ResetCameraClippingRange()
             except Exception:

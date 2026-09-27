@@ -54,6 +54,19 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v2.3.0",
+     "• neoForge, le modeleur 3D (version Pro) : un nouveau module pour "
+     "dessiner vos pièces sans rien connaître à la CAO. Vous posez des "
+     "formes, vous les étirez, vous les percez, vous arrondissez les "
+     "arêtes, vous mesurez d'un point à un autre, et la pièce part "
+     "directement dans neoSlice, prête à imprimer.\n"
+     "• neoGen : le texte des objets s'écrit maintenant sur plusieurs "
+     "lignes, la touche Entrée va simplement à la ligne.\n"
+     "• Enregistrement : toutes les fenêtres proposent le dossier "
+     "Téléchargements, ou celui que vous avez choisi dans les réglages.\n"
+     "• Vue 3D : des raccourcis clavier cachés faisaient disparaître le "
+     "plateau, et deux d'entre eux pouvaient fermer l'application. Ils "
+     "sont neutralisés."),
     ("Nouveautés v2.2.0",
      "• Le choix du logiciel de slicing est maintenant dans la colonne de "
      "gauche, juste au-dessus de l'imprimante, et il suit automatiquement la "

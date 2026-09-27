@@ -139,8 +139,16 @@ def _ligne_texte(texte: str, hauteur_mm: float,
 def texte_multilignes(texte: str, hauteur_ligne: float = 10.0,
                       police: str | None = None,
                       espacement: float | None = None) -> MultiPolygon:
-    """Texte multi-lignes (séparateur « | »), lignes centrées, centre en (0,0)."""
-    lignes = [l.strip() for l in texte.split("|") if l.strip()]
+    """Texte multi-lignes, lignes centrées, centre en (0,0).
+
+    Deux séparateurs valent la ligne : la barre verticale, historique, et le
+    VRAI retour à la ligne, depuis que le champ de saisie de neoGen accepte la
+    touche Entrée. Sans cette normalisation, un texte tapé avec Entrée arrivait
+    ici comme une SEULE ligne contenant un caractère invisible (« je ne peux
+    toujours pas aller à la ligne », Emmanuel, 2026-09-26).
+    """
+    brut = str(texte).replace(chr(13) + chr(10), chr(10)).replace(chr(13), chr(10))
+    lignes = [l.strip() for l in brut.replace(chr(10), "|").split("|") if l.strip()]
     if not lignes:
         raise ValueError("Texte vide.")
     interligne = hauteur_ligne * 1.45

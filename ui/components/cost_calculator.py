@@ -1215,9 +1215,11 @@ class CostCalculatorDialog(QDialog):
         self._part_name = self._partname_edit.text().strip() or "—"
         base = self._part_name if self._part_name != "—" else "piece"
         default_name = f"devis_{base}".replace(" ", "_")[:40] + ".pdf"
-        # Dossier Téléchargements par défaut (Windows + macOS), repli sur le home
-        downloads = Path.home() / "Downloads"
-        start_dir = downloads if downloads.is_dir() else Path.home()
+        # Dossier de sortie partagé par toute l'application (réglage utilisateur,
+        # sinon Téléchargements) : « Downloads » en dur ratait le dossier d'un
+        # Windows en français et ignorait le réglage.
+        from core.prefs import dossier_sortie
+        start_dir = dossier_sortie()
 
         # Dialogue NATIF (look du système, ce que l'utilisateur veut). Ancré sur la
         # FENÊTRE PRINCIPALE et non sur la petite fenêtre devis : le natif se centre

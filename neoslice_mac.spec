@@ -29,7 +29,9 @@ _PYSIDE6_UNUSED = {
     'QtBluetooth', 'QtLocation', 'QtPositioning', 'QtSensors',
     'QtSerialPort', 'QtSpatialAudio', 'QtTextToSpeech', 'QtVirtualKeyboard',
     'QtPdf', 'QtRemoteObjects', 'QtStateMachine', 'QtTest', 'QtSql',
-    'QtUiTools', 'QtDesigner', 'QtHelp', 'QtNetwork', 'QtConcurrent',
+    # QtNetwork est INDISPENSABLE : le pont neoSlice ↔ neoForge passe par une
+    # liaison locale (QLocalSocket). L'exclure coupe l'envoi des pièces.
+    'QtUiTools', 'QtDesigner', 'QtHelp', 'QtConcurrent',
     'QtNfc', 'QtSCXML', 'QtLottie', 'QtQuickTimeline', 'QtShaderTools',
     'QtAxContainer', 'QtDBus', 'PySide6_Addons',
 }
@@ -180,6 +182,11 @@ a = Analysis(
         'shapely', 'shapely.geometry', 'shapely.ops', 'shapely.validation',
         'reportlab', 'reportlab.pdfgen', 'reportlab.lib', 'reportlab.lib.pagesizes',
         'reportlab.platypus', 'reportlab.lib.styles', 'reportlab.lib.units',
+        # neoForge : côté neoSlice seulement (installation, pont, lanceur).
+        # Le logiciel neoForge lui-même n'est PAS embarqué : il est téléchargé.
+        'PySide6.QtNetwork',
+        'core.neoforge', 'core.neoforge.installation', 'core.neoforge.pont',
+        'core.neoforge.lanceur', 'core.neoforge.signature',
         'trimesh', 'trimesh.creation', 'trimesh.repair',
         'trimesh.smoothing', 'trimesh.transformations',
         'trimesh.voxel', 'trimesh.voxel.creation',
@@ -227,7 +234,7 @@ a = Analysis(
         'PySide6.QtTextToSpeech', 'PySide6.QtVirtualKeyboard',
         'PySide6.QtPdf', 'PySide6.QtPdfWidgets', 'PySide6.QtRemoteObjects',
         'PySide6.QtStateMachine', 'PySide6.QtTest', 'PySide6.QtSql',
-        'PySide6.QtUiTools', 'PySide6.QtHelp', 'PySide6.QtNetwork',
+        'PySide6.QtUiTools', 'PySide6.QtHelp',
         'PySide6.QtNfc', 'PySide6.QtSCXML', 'PySide6.QtShaderTools',
         'PySide6.QtLottie', 'PySide6.QtQuickTimeline', 'PySide6_Addons',
     ],

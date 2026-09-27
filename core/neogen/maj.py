@@ -151,7 +151,8 @@ def appliquer_objets(manifest: dict, progress_cb=None) -> tuple[int, int]:
     atomiquement les seuls objets prouvés sains. Renvoie (acceptés, écartés).
     Du code distant n'atteint JAMAIS l'utilisateur sans être prouvé imprimable."""
     from core.neogen import libre as L
-    from core.neogen.objets_module import _defauts, mesh_depuis_champ, FICHIER_LOCAL
+    from core.neogen.objets_module import (_defauts, mesh_depuis_champ,
+                                          verifier_variantes, FICHIER_LOCAL)
     valides, ecartes = [], 0
     objets = manifest.get("objets", [])
     for i, obj in enumerate(objets):
@@ -178,9 +179,18 @@ def appliquer_objets(manifest: dict, progress_cb=None) -> tuple[int, int]:
             if obj.get("texte", "aucun") != "aucun":
                 ns["texte"] = "Test"
             piece = L.poser_au_sol(L.executer_sandbox(str(obj["code"]), ns))
-            if L.verifier(piece) is None:
+            err = L.verifier(piece)
+            if err is None:
+                # CHAQUE option est éprouvée, pas seulement les défauts : une
+                # branche jamais exécutée ici partirait cassée chez
+                # l'utilisateur et ne se verrait qu'au moment où il la coche.
+                err = verifier_variantes(obj, ns)
+            if err is None:
                 valides.append(obj)
             else:
+                # On DIT lequel et pourquoi : un objet écarté en silence est
+                # introuvable quand on cherche pourquoi il manque.
+                logger.warning(f"neoGen : objet {obj.get('id')!r} écarté ({err})")
                 ecartes += 1
         except Exception:
             ecartes += 1

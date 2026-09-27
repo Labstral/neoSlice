@@ -253,7 +253,8 @@ class DashboardPage(QWidget):
         if not lister():
             QMessageBox.information(self, _("dash.export_menu"), _("dash.exp_empty"))
             return
-        default = f"{prefixe}_{_d.today().isoformat()}.csv"
+        from core.prefs import dossier_sortie
+        default = str(dossier_sortie() / f"{prefixe}_{_d.today().isoformat()}.csv")
         path, _flt = QFileDialog.getSaveFileName(self, _("dash.export_menu"), default,
                                                  "CSV (*.csv)")
         if not path:
@@ -281,7 +282,8 @@ class DashboardPage(QWidget):
             annee = years[0]
         from datetime import date as _d
         suffixe = str(annee) if annee else _d.today().isoformat()
-        default = f"neoslice_compta_{suffixe}.csv"
+        from core.prefs import dossier_sortie
+        default = str(dossier_sortie() / f"neoslice_compta_{suffixe}.csv")
         path, _flt = QFileDialog.getSaveFileName(self, _("dash.export"), default,
                                                  "CSV (*.csv)")
         if not path:

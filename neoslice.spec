@@ -51,7 +51,9 @@ _PYSIDE6_UNUSED = {
     'QtBluetooth', 'QtLocation', 'QtPositioning', 'QtSensors',
     'QtSerialPort', 'QtSpatialAudio', 'QtTextToSpeech', 'QtVirtualKeyboard',
     'QtPdf', 'QtRemoteObjects', 'QtStateMachine', 'QtTest', 'QtSql',
-    'QtUiTools', 'QtDesigner', 'QtHelp', 'QtNetwork', 'QtConcurrent',
+    # QtNetwork est INDISPENSABLE : le pont neoSlice ↔ neoForge passe par une
+    # liaison locale (QLocalSocket). L'exclure coupe l'envoi des pièces.
+    'QtUiTools', 'QtDesigner', 'QtHelp', 'QtConcurrent',
     'QtNfc', 'QtSCXML', 'QtLottie', 'QtQuickTimeline', 'QtShaderTools',
     'PySide6_Addons',
 }
@@ -228,6 +230,11 @@ a = Analysis(
         'shapely.validation',
         'certifi',
         'version',
+        # neoForge : côté neoSlice seulement (installation, pont, lanceur).
+        # Le logiciel neoForge lui-même n'est PAS embarqué : il est téléchargé.
+        'PySide6.QtNetwork',
+        'core.neoforge', 'core.neoforge.installation', 'core.neoforge.pont',
+        'core.neoforge.lanceur', 'core.neoforge.signature',
     ],
     hookspath=[],
     hooksconfig={},

@@ -133,6 +133,54 @@ class _NeoGenBaseWorker(QThread):
             self.failed.emit(str(e))
 
 
+class _NeoForgeInstallWorker(QThread):
+    """Installe / met à jour neoForge depuis GitHub (paquets signés)."""
+    progress = Signal(str, float)
+    done = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._annule = False
+
+    def cancel(self):
+        self._annule = True
+
+    def run(self):
+        try:
+            from core.neoforge import installation as I
+            info = I.installer(progress=lambda e, f: self.progress.emit(e, f),
+                               annule=lambda: self._annule)
+            self.done.emit(info)
+        except Exception as e:
+            self.failed.emit(getattr(e, "code", "") or str(e))
+
+
+class _NeoForgeCheckWorker(QThread):
+    """Cherche une nouvelle version de neoForge (appel réseau, jamais d'exception)."""
+    result = Signal(object)
+
+    def run(self):
+        try:
+            from core.neoforge import installation as I
+            self.result.emit(I.verifier_maj())
+        except Exception:
+            self.result.emit(None)
+
+
+class _NeoForgeUninstallWorker(QThread):
+    done = Signal()
+    failed = Signal(str)
+
+    def run(self):
+        try:
+            from core.neoforge import installation as I
+            I.desinstaller()
+            self.done.emit()
+        except Exception as e:
+            self.failed.emit(getattr(e, "code", "") or str(e))
+
+
 class _KBCheckWorker(QThread):
     """Verifie (appel reseau) si une nouvelle base d'Oen existe."""
     result = Signal(object)
@@ -174,8 +222,10 @@ def etat_modules() -> list[tuple[str, bool]]:
     from core.assistant.engine import AssistantEngine
     from core.assistant.installer import is_installed
     from core.neogen import installation
+    from core.neoforge import installation as forge
     return [("Oen", is_installed() or AssistantEngine.available()),
-            ("neoGen", installation.est_installe())]
+            ("neoGen", installation.est_installe()),
+            ("neoForge", forge.est_installe())]
 
 
 def resume_etat() -> str:
@@ -215,6 +265,7 @@ class ModulesDialog(QDialog):
 
         lay.addWidget(self._carte_oen())
         lay.addWidget(self._carte_neogen())
+        lay.addWidget(self._carte_neoforge())
         lay.addStretch()
 
         self._assist_worker = None
@@ -224,8 +275,12 @@ class ModulesDialog(QDialog):
         self._neogen_worker = None
         self._neogen_un_worker = None
         self._neogen_base_worker = None
+        self._forge_worker = None
+        self._forge_check_worker = None
+        self._forge_un_worker = None
         self._refresh_assistant_status()
         self._refresh_neogen_status()
+        self._refresh_neoforge_status()
 
     # ── Fabrique de cartes ────────────────────────────────────────────────────
     def _cadre(self) -> tuple[QFrame, QVBoxLayout]:
@@ -316,6 +371,199 @@ class ModulesDialog(QDialog):
         row.addWidget(self._neogen_btn)
         v.addLayout(row)
         return f
+
+    # ── Carte NEOFORGE ───────────────────────────────────────────────────────
+    def _carte_neoforge(self) -> QFrame:
+        f, v = self._cadre()
+        v.addWidget(self._titre_carte("neoForge", _("modules.neoforge_pitch")))
+        self._forge_status_lbl = QLabel()
+        self._forge_status_lbl.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
+        self._forge_status_lbl.setWordWrap(True)
+        v.addWidget(self._forge_status_lbl)
+        self._forge_progress = QProgressBar()
+        self._forge_progress.setRange(0, 100)
+        self._forge_progress.setTextVisible(True)
+        self._forge_progress.setFixedHeight(16)
+        self._forge_progress.hide()
+        v.addWidget(self._forge_progress)
+        row = QHBoxLayout()
+        self._forge_maj_btn = QPushButton(_("neoforge.update"))
+        self._forge_open_btn = QPushButton(_("neoforge.open"))
+        self._forge_btn = QPushButton()
+        for b, gras in ((self._forge_maj_btn, False), (self._forge_open_btn, True),
+                        (self._forge_btn, True)):
+            b.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold if gras else QFont.Weight.Normal))
+            b.setFixedHeight(26)
+            b.setCursor(Qt.PointingHandCursor)
+        self._forge_maj_btn.clicked.connect(self._on_forge_maj)
+        self._forge_open_btn.clicked.connect(self._on_forge_open)
+        self._forge_btn.clicked.connect(self._on_forge_btn)
+        row.addStretch()
+        row.addWidget(self._forge_maj_btn)
+        row.addSpacing(6)
+        row.addWidget(self._forge_btn)
+        row.addSpacing(6)
+        row.addWidget(self._forge_open_btn)
+        v.addLayout(row)
+        return f
+
+    # ═══════════════ neoForge : statut / installer / ouvrir / désinstaller ════
+    def _style_btn(self, b: QPushButton, genre: str):
+        pal = _T.palette()
+        if genre == "accent":
+            b.setStyleSheet(f"""
+                QPushButton {{ background: {pal['ACCENT']}; color: #ffffff; border: none;
+                               border-radius: 4px; padding: 4px 14px; }}
+                QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
+                QPushButton:disabled {{ background: {pal['INACTIVE']}; color: {pal['BG_PANEL']}; }}
+            """)
+        else:
+            survol = pal['ERROR_RED'] if genre == "danger" else pal['ACCENT']
+            b.setStyleSheet(f"""
+                QPushButton {{ background: transparent; color: {pal['TEXT_SECONDARY']};
+                               border: 1px solid {pal['INACTIVE']}; border-radius: 4px;
+                               padding: 3px 10px; }}
+                QPushButton:hover {{ border-color: {survol}; color: {survol}; }}
+                QPushButton:disabled {{ color: {pal['INACTIVE']}; border-color: {pal['INACTIVE']}; }}
+            """)
+
+    def _forge_statut(self, texte: str, couleur: str):
+        self._forge_status_lbl.setText(texte)
+        self._forge_status_lbl.setStyleSheet(f"color: {couleur}; background: transparent;")
+
+    def _refresh_neoforge_status(self):
+        from core.neoforge import installation as I
+        from core import licensing
+        pal = _T.palette()
+        installe = I.est_installe()
+        pro = licensing.est_pro()
+        occupe = bool(self._forge_worker or self._forge_check_worker or self._forge_un_worker)
+        self._style_btn(self._forge_maj_btn, "secondaire")
+        self._style_btn(self._forge_open_btn, "accent")
+        self._forge_maj_btn.setVisible(installe and pro)
+        self._forge_open_btn.setVisible(installe and pro)
+        for b in (self._forge_maj_btn, self._forge_open_btn, self._forge_btn):
+            b.setEnabled(not occupe)
+        if installe:
+            info = I.etat() or {}
+            self._forge_statut(_("neoforge.ready", v=info.get("version", "")), pal["TELE_GREEN"])
+            self._forge_btn.setText(_("neoforge.uninstall"))
+            self._style_btn(self._forge_btn, "danger")
+            self._forge_btn.show()
+            return
+        if not pro:
+            self._forge_statut(_("neoforge.pro_only"), pal["TEXT_SECONDARY"])
+            self._forge_btn.hide()
+            return
+        plat = I.plateforme()
+        if plat is None:
+            self._forge_statut(_("neoforge.unsupported"), pal["TEXT_SECONDARY"])
+            self._forge_btn.hide()
+            return
+        dl, disque = I.TAILLES.get(plat, (0, 0))
+        self._forge_statut(_("neoforge.install_pitch", dl=dl, disque=disque),
+                           pal["TEXT_SECONDARY"])
+        self._forge_btn.setText(_("neoforge.install"))
+        self._style_btn(self._forge_btn, "accent")
+        self._forge_btn.show()
+
+    def _forge_erreur(self, code: str):
+        pal = _T.palette()
+        cle = f"neoforge.err_{code}"
+        texte = _(cle)
+        if texte == cle:                     # erreur imprévue : on montre le détail
+            texte = _("neoforge.err_autre", err=code[:140])
+        self._forge_statut(texte, pal["ERROR_RED"])
+
+    def _on_forge_btn(self):
+        from core.neoforge import installation as I, pont
+        if I.est_installe():
+            if pont.neoforge_en_cours():
+                self._forge_statut(_("neoforge.close_first"), _T.palette()["AMBER"])
+                return
+            rep = QMessageBox.question(
+                self, _("neoforge.uninstall_title"), _("neoforge.uninstall_confirm"),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if rep != QMessageBox.Yes:
+                return
+            self._forge_un_worker = _NeoForgeUninstallWorker(self)
+            self._forge_un_worker.done.connect(self._on_forge_un_done)
+            self._forge_un_worker.failed.connect(self._on_forge_failed)
+            self._forge_un_worker.start()
+            self._refresh_neoforge_status()
+            return
+        self._lancer_installation_forge()
+
+    def _lancer_installation_forge(self):
+        if self._forge_worker is not None:
+            return
+        self._forge_worker = _NeoForgeInstallWorker(self)
+        self._forge_worker.progress.connect(self._on_forge_progress)
+        self._forge_worker.done.connect(self._on_forge_done)
+        self._forge_worker.failed.connect(self._on_forge_failed)
+        self._forge_progress.setValue(0)
+        self._forge_progress.show()
+        self._forge_btn.setText(_("neoforge.installing"))
+        self._forge_worker.start()
+        self._refresh_neoforge_status()
+        self._forge_btn.setText(_("neoforge.installing"))
+
+    def _on_forge_progress(self, etape: str, frac: float):
+        self._forge_progress.setValue(int(frac * 100))
+        self._forge_progress.setFormat(f"{_('neoforge.step_' + etape)}  %p%")
+
+    def _on_forge_done(self, info: dict):
+        self._forge_worker = None
+        self._forge_progress.hide()
+        self._refresh_neoforge_status()
+
+    def _on_forge_un_done(self):
+        self._forge_un_worker = None
+        self._refresh_neoforge_status()
+
+    def _on_forge_failed(self, code: str):
+        self._forge_worker = None
+        self._forge_un_worker = None
+        self._forge_progress.hide()
+        self._refresh_neoforge_status()
+        self._forge_erreur(code)
+
+    def _on_forge_maj(self):
+        if self._forge_check_worker is not None:
+            return
+        self._forge_statut(_("neoforge.checking"), _T.palette()["TEXT_SECONDARY"])
+        self._forge_check_worker = _NeoForgeCheckWorker(self)
+        self._forge_check_worker.result.connect(self._on_forge_checked)
+        self._forge_check_worker.start()
+        self._refresh_neoforge_status()
+        self._forge_statut(_("neoforge.checking"), _T.palette()["TEXT_SECONDARY"])
+
+    def _on_forge_checked(self, manifeste):
+        from core.neoforge import pont
+        self._forge_check_worker = None
+        self._refresh_neoforge_status()
+        pal = _T.palette()
+        if not manifeste:
+            self._forge_statut(_("neoforge.uptodate"), pal["TELE_GREEN"])
+            return
+        if pont.neoforge_en_cours():
+            self._forge_statut(_("neoforge.close_first"), pal["AMBER"])
+            return
+        msg = _("neoforge.update_available", v=manifeste.get("version", ""))
+        notes = manifeste.get("notes", "")
+        if notes:
+            msg += "\n\n" + notes
+        rep = QMessageBox.question(self, _("neoforge.update_title"), msg,
+                                   QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if rep == QMessageBox.Yes:
+            self._lancer_installation_forge()
+
+    def _on_forge_open(self):
+        from core.neoforge import pont
+        if pont.lancer_neoforge():
+            self.accept()
+        else:
+            self._forge_erreur("lancement")
 
     # ═══════════════ Oen : statut / installer / désinstaller / base ══════════
     def _refresh_assistant_status(self):

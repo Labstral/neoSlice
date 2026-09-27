@@ -23,8 +23,33 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QTabWidget, QDoubleSpinBox, QCheckBox,
-    QComboBox, QFormLayout, QScrollArea, QFrame,
+    QComboBox, QFormLayout, QScrollArea, QFrame, QPlainTextEdit,
 )
+
+class _ChampTexte(QPlainTextEdit):
+    """Champ de texte sur PLUSIEURS LIGNES : la touche Entrée y va à la ligne.
+
+    « Je ne peux toujours pas aller à la ligne dans le texte de la pancarte »
+    (Emmanuel, 2026-09-26). Le champ était un QLineEdit, qui ne peut
+    physiquement pas contenir de saut de ligne ; il fallait passer par une
+    barre verticale, ce que personne ne devine.
+
+    Il expose `text()` et `setText()` comme un QLineEdit : tout le reste du
+    formulaire continue de le traiter comme un champ ordinaire.
+    """
+
+    def __init__(self, lignes: int = 3, parent=None):
+        super().__init__(parent)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.setTabChangesFocus(True)          # Tab passe au champ suivant
+        self.setFixedHeight(self.fontMetrics().lineSpacing() * lignes + 14)
+
+    def text(self) -> str:
+        return self.toPlainText()
+
+    def setText(self, valeur) -> None:
+        self.setPlainText(str(valeur))
+
 
 from core.i18n import _, lang
 from ui.styles.theme import MANAGER as _THEME, spinbox_qss as _spinbox_qss
@@ -307,7 +332,7 @@ class NeoGenPanel(QWidget):
             try:
                 if k == "__image":
                     vals[k] = w                       # chemin (str)
-                elif isinstance(w, QLineEdit):
+                elif isinstance(w, (QLineEdit, _ChampTexte)):
                     vals[k] = ("text", w.text())
                 elif isinstance(w, _ColorButton):
                     vals[k] = ("hex", w.hex)
@@ -628,7 +653,7 @@ class NeoGenPanel(QWidget):
         # certaines sections les rendaient trop étroites pour être cliquées)
         # + popup de combo stylée (sinon illisible en thème clair)
         style_champ = f"""
-            QDoubleSpinBox, QComboBox, QLineEdit {{
+            QDoubleSpinBox, QComboBox, QLineEdit, QPlainTextEdit {{
                 background: {pal['BG_SURFACE']}; color: {pal['TEXT_PRIMARY']};
                 border: 1px solid {pal['INACTIVE']}; border-radius: 4px;
                 padding: 3px 6px; min-width: 90px; }}
@@ -801,22 +826,44 @@ class NeoGenPanel(QWidget):
         #   e["visible_si"] = {champ: flag} -> champ visible SEULEMENT si le flag coché
         #   e["cache_si"]   = {champ: flag} -> champ CACHÉ si le flag coché
         # (ex. boîte lumineuse : profondeur/sortie visibles si « lightbox » ; cadre caché).
+        # La condition s'écrit « case » pour une case à cocher, ou
+        # « menu=valeur » pour un menu déroulant. Le second cas manquait : un
+        # objet qui propose plusieurs CONTENUS (ex. un insert de jeu : cartes,
+        # jetons ou meeples) montrait tous les réglages à la fois, dont ceux
+        # qui ne veulent rien dire pour le contenu choisi.
         _vis = e.get("visible_si") or {}
         _cache = e.get("cache_si") or {}
+
+        def _condition_vraie(_regle, _ch):
+            nom, _, attendu = str(_regle).partition("=")
+            widget = _ch.get(nom)
+            if widget is None:
+                return False
+            if attendu:                      # menu déroulant : on compare la valeur
+                try:
+                    return str(widget.currentData()) == attendu
+                except Exception:
+                    return False
+            return bool(widget.isChecked())  # case à cocher
+
         if _vis or _cache:
             def _appliquer_vis(*_a, _v=_vis, _c=_cache, _ch=champs, _f=form):
-                for _fid, _ctrl in _v.items():
-                    _cw = _ch.get(_ctrl); _fw = _ch.get(_fid)
+                for _fid, _regle in _v.items():
+                    _fw = _ch.get(_fid)
                     if _fw is not None:
-                        _f.setRowVisible(_fw, bool(_cw is not None and _cw.isChecked()))
-                for _fid, _ctrl in _c.items():
-                    _cw = _ch.get(_ctrl); _fw = _ch.get(_fid)
+                        _f.setRowVisible(_fw, _condition_vraie(_regle, _ch))
+                for _fid, _regle in _c.items():
+                    _fw = _ch.get(_fid)
                     if _fw is not None:
-                        _f.setRowVisible(_fw, not bool(_cw is not None and _cw.isChecked()))
-            for _ctrl in set(list(_vis.values()) + list(_cache.values())):
-                _cw = champs.get(_ctrl)
-                if _cw is not None and hasattr(_cw, "toggled"):
+                        _f.setRowVisible(_fw, not _condition_vraie(_regle, _ch))
+            for _regle in set(list(_vis.values()) + list(_cache.values())):
+                _cw = champs.get(str(_regle).partition("=")[0])
+                if _cw is None:
+                    continue
+                if hasattr(_cw, "toggled"):
                     _cw.toggled.connect(_appliquer_vis)
+                elif hasattr(_cw, "currentIndexChanged"):
+                    _cw.currentIndexChanged.connect(_appliquer_vis)
             _appliquer_vis()
         # Sélecteurs de COULEUR (objet, texte…) → objet bicolore : 2 slots à l'export
         for (cid, cfr, cen, hexd) in e.get("couleurs", []):
@@ -827,7 +874,7 @@ class NeoGenPanel(QWidget):
             # mode « lien » (URL, ex. QR code) : champ simple SANS police / espacement /
             # relief-gravure — ces réglages ne veulent rien dire pour une adresse web.
             _is_lien = (e["texte"] == "lien")
-            le = QLineEdit()
+            le = QLineEdit() if _is_lien else _ChampTexte()
             if _is_lien:
                 le.setPlaceholderText(_("neogen.link_placeholder"))
                 form.addRow(_lbl(_("neogen.link_label")), le)
@@ -1029,7 +1076,7 @@ class NeoGenPanel(QWidget):
                     wdg.setCurrentIndex(idx)
             elif isinstance(wdg, QCheckBox):
                 wdg.setChecked(bool(val))
-            elif isinstance(wdg, QLineEdit):
+            elif isinstance(wdg, (QLineEdit, _ChampTexte)):
                 wdg.setText(str(val))
         self._tabs.setCurrentIndex(0)          # bascule sur la Bibliothèque
         # génération immédiate si tout le nécessaire est là (sinon on laisse
@@ -1056,7 +1103,7 @@ class NeoGenPanel(QWidget):
                 params[k] = wdg.currentData()
             elif isinstance(wdg, QCheckBox):
                 params[k] = wdg.isChecked()
-            elif isinstance(wdg, QLineEdit):
+            elif isinstance(wdg, (QLineEdit, _ChampTexte)):
                 params[k] = wdg.text().strip()
         return params
 
@@ -1073,7 +1120,7 @@ class NeoGenPanel(QWidget):
                 wdg.currentIndexChanged.connect(self._planifier_apercu_objet)
             elif isinstance(wdg, QCheckBox):
                 wdg.toggled.connect(self._planifier_apercu_objet)
-            elif isinstance(wdg, QLineEdit):
+            elif isinstance(wdg, (QLineEdit, _ChampTexte)):
                 wdg.textChanged.connect(self._planifier_apercu_objet)
 
     def _planifier_apercu_objet(self, *args) -> None:

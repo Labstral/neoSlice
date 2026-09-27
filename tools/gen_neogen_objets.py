@@ -56,8 +56,8 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-08-27"
-NOTES = "Nouveau : le bac Gridfinity. Dimensions libres au millimètre près, compartiments réglables, et accroche automatique dans les plaques Gridfinity standard (pieds 42 mm placés tout seuls sous le bac)."
+VERSION = "2026-09-27"
+NOTES = "Deux nouveautés. Le RANGEMENT DE JEU de société, un insert à la taille de votre boîte, avec au choix un logement de cartes et son échancrure pour attraper le paquet, des godets ronds pour les jetons, ou des cases pour les meeples (idée de Sébastien). Et la PANCARTE DE PORTE à suspendre à la poignée, avec votre texte en relief ou gravé, sur plusieurs lignes, et au choix un trou fermé ou un crochet ouvert (idée de Pierre)."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
 # NOUVELLE catégorie neoGen SANS rebuild (fusionnées par catalogue.par_domaine).
@@ -540,6 +540,452 @@ outil = extrusion(fusionner(*poches) if len(poches) > 1 else poches[0],
                   H - base_z - fond + 6.0, base_z + fond)
 piece = poser_au_sol(percer(piece, outil))''',
     },
+    {
+        "id": "bac_empilable",
+        "fr": "Bac empilable", "en": "Stackable bin",
+        "domaine": "maison", "texte": "aucun",
+        "synonymes": "bac empilable rangement caisse bin ajoure grillage nid "
+                     "abeille alveole trous poignee prise panier",
+        "params": [
+            ["longueur", "Longueur", "Length", 60, 220, 120, 5],
+            ["largeur", "Largeur", "Width", 50, 180, 90, 5],
+            ["hauteur", "Hauteur", "Height", 25, 100, 50, 5],
+        ],
+        "flags": [["poignees", "Poignées (prise en main)", "Hand grips", False]],
+        "choix": [["motif", "Parois", "Walls",
+                   [["plein", "Pleines", "Solid"],
+                    ["nid_abeille", "Nid d'abeille", "Honeycomb"],
+                    ["rond", "Trous ronds", "Round holes"]], "plein"],
+                  ["style_poignee", "Forme des poignées", "Grip shape",
+                   [["alveolee", "Encoche nid d'abeille", "Honeycomb notch"],
+                    ["ovale", "Encoche arrondie", "Rounded notch"],
+                    ["fermee_alveolee", "Trou nid d'abeille", "Honeycomb hole"],
+                    ["fermee_ovale", "Trou ovale", "Oval hole"]], "alveolee"]],
+        # Parois ajourées + poignées : suggestion de Nicolas (2026-09-20).
+        # Le fond, les angles et la collerette d'empilage restent PLEINS :
+        # ce sont eux qui tiennent la pile. Hexagone pointe en haut (flancs
+        # à 60°) et poignée ELLIPTIQUE : rien à ponter à l'impression.
+        "code": r'''
+p = 2.0
+fond = 2.4
+evase_h = 8.0
+jeu = 0.3
+eps = 0.01
+L = longueur
+La = largeur
+H = hauteur
+r_ext = min(4.0, L * 0.08, La * 0.2)
+
+# Corps : fond plein, murs droits, puis collerette EVASEE en 6 tranches.
+# Le bas du bac suivant se pose dedans et s'auto-centre (jeu 0,3 mm).
+morceaux = [extrusion(rectangle_arrondi(L, La, r_ext), fond)]
+mur2d = percer(rectangle_arrondi(L, La, r_ext),
+               rectangle_arrondi(L - 2 * p, La - 2 * p, max(0.5, r_ext - p)))
+morceaux.append(extrusion(mur2d, H - fond - evase_h + eps, fond - eps))
+n_tr = 6
+dz = evase_h / n_tr
+for i in range(n_tr):
+    d = (p + jeu) * (i + 1) / n_tr
+    anneau = percer(rectangle_arrondi(L + 2 * d, La + 2 * d, r_ext + d),
+                    rectangle_arrondi(L + 2 * d - 2 * p, La + 2 * d - 2 * p,
+                                      max(0.5, r_ext + d - p)))
+    morceaux.append(extrusion(anneau, dz + eps, H - evase_h + i * dz - eps))
+piece = fusionner(*morceaux)
+
+# Bande de paroi DROITE percable : au dessus du fond, sous la collerette, et
+# en retrait des angles. Fond, angles et collerette restent PLEINS.
+marge = 8.0
+marge_v = 4.0
+z0 = fond + marge_v
+z1 = H - evase_h - marge_v
+haut_v = z1 - z0
+zc = (z0 + z1) / 2.0
+
+if (motif != "plein" or poignees) and haut_v >= 6.5:
+    # Alveoles DIMENSIONNEES sur la bande : a pas fige, une paroi n'en logeait
+    # qu'une seule rangee.
+    rangs = max(1, int(round(haut_v / 11.0)))
+    pas = haut_v / max(0.84, 0.866 * rangs - 0.02)
+    pas = max(6.0, min(pas, 22.0))
+    r_alv = pas * 0.42
+    ecart_v = pas * 0.866
+
+    cote_prise = "x" if L >= La else "y"
+    prise = None
+    Lp = 0.0
+    Hp = 0.0
+    if poignees:
+        cote_u = La if cote_prise == "x" else L
+        Lp = max(35.0, min(cote_u * 0.55, cote_u - 2 * marge))
+        Hp = max(10.0, min(haut_v * 0.8, 32.0))
+        # DEUX familles de poignee, au choix (Emmanuel, 2026-09-21) :
+        #  - ENCOCHE ouverte sur le haut : la paroi est decoupee jusqu'au bord,
+        #    collerette comprise, et on passe les doigts PAR DESSUS le bord
+        #    (c'est ce que montre l'image de Nicolas) ;
+        #  - TROU ferme : l'ancienne poignee, entierement dans la paroi droite,
+        #    on enfile la main dedans.
+        # Chacune existe en nid d'abeille (meme langage visuel que les parois)
+        # et en arrondi.
+        ouverte = style_poignee in ("alveolee", "ovale")
+        arrondie = style_poignee in ("ovale", "fermee_ovale")
+        if Lp > 12.0 and Hp > 8.0:
+            if ouverte:
+                # PROFONDEUR de l'encoche sous le bord : de quoi passer les
+                # doigts, pas plus. Calculee depuis Hp, elle descendait a 35 mm
+                # sur un bac de 50 et devorait presque tout le petit cote (vu
+                # au rendu).
+                prof_encoche = min(max(16.0, haut_v * 0.6), 26.0)
+                z_bas = max(fond + 10.0, H - prof_encoche)  # jamais pres du fond
+                Hp = min(Hp, max(8.0, (H - z_bas) * 0.9))
+                v_fond = (z_bas + Hp / 2.0) - zc
+            else:
+                # Trou ferme : centre sur la bande percable, donc a distance
+                # egale du fond et de la collerette.
+                v_fond = 0.0
+            if arrondie:
+                forme_p = ellipse(Lp, Hp)
+            else:
+                # Une cellule du nid d'abeille ETIREE, pointe en haut : rien a
+                # ponter a l'impression, comme l'ellipse.
+                pts_p = []
+                for t in range(6):
+                    ang = 30.0 + t * 60.0
+                    pts_p.append((cos(ang) * Lp / 2.0, sin(ang) * Hp / 2.0))
+                forme_p = polygone(pts_p)
+            prise = deplacer(forme_p, 0, v_fond)
+            if ouverte:
+                # La decoupe droite part du CENTRE de la forme et monte au dela
+                # du bord : la moitie haute de la forme disparait avec elle.
+                monte = (H + 6.0) - (v_fond + zc)
+                fente = polygone([(-Lp / 2.0, 0.0), (Lp / 2.0, 0.0),
+                                  (Lp / 2.0, monte), (-Lp / 2.0, monte)])
+                prise = fusionner(prise, deplacer(fente, 0, v_fond))
+
+    outils = []
+    for selon in ("y", "x"):
+        long_u = L if selon == "y" else La
+        demi = La / 2.0 if selon == "y" else L / 2.0
+        util = long_u - 2 * marge
+        dessins = []
+        if motif != "plein" and util > 2 * r_alv and haut_v >= 2 * r_alv - 0.001:
+            # On COMPTE ce qui tient puis on CENTRE : sinon le dernier trou ne
+            # retombe pas a la meme distance de l'autre bord et le motif penche.
+            n_rangs = int((haut_v - 2 * r_alv) / ecart_v) + 1
+            n_cols = int((util - 2 * r_alv) / pas) + 1
+            for j in range(n_rangs):
+                v = (j - (n_rangs - 1) / 2.0) * ecart_v
+                # Une rangee sur deux compte une alveole de MOINS, centree elle
+                # aussi : elle tombe alors pile entre celles d'en dessous.
+                nc = n_cols if j % 2 == 0 else n_cols - 1
+                if nc < 1:
+                    continue
+                for k in range(nc):
+                    u = (k - (nc - 1) / 2.0) * pas
+                    if motif == "rond":
+                        forme = disque(r_alv * 2)
+                    else:
+                        pts = []
+                        for t in range(6):
+                            # ATTENTION : cos/sin du KIT prennent des DEGRES.
+                            # En radians, les 6 points se tassaient sur un
+                            # demi-degre et l'hexagone valait 0,0016 mm2 : le
+                            # percage ne retirait RIEN (mesure).
+                            ang = 30.0 + t * 60.0
+                            pts.append((cos(ang) * r_alv, sin(ang) * r_alv))
+                        forme = polygone(pts)
+                    dessins.append(deplacer(forme, u, v))
+        if prise is not None and selon == cote_prise:
+            # On ecarte les alveoles que la prise effleure : sinon il reste des
+            # eclats de paroi de moins d'un millimetre tout autour.
+            # La garde epouse l'ENCOCHE entiere, pas seulement sa partie
+            # arrondie : sinon les alveoles bordant la decoupe droite
+            # laisseraient des eclats de paroi de moins d'un millimetre.
+            garde = deplacer(ellipse(Lp + 6.0, Hp + 6.0), 0, v_fond)
+            if ouverte:
+                monte_g = (H + 8.0) - (v_fond + zc)
+                garde = fusionner(garde, deplacer(polygone(
+                    [(-Lp / 2.0 - 3.0, 0.0), (Lp / 2.0 + 3.0, 0.0),
+                     (Lp / 2.0 + 3.0, monte_g),
+                     (-Lp / 2.0 - 3.0, monte_g)]), 0, v_fond))
+            restants = []
+            for dessin in dessins:
+                if percer(dessin, garde).area > dessin.area * 0.999:
+                    restants.append(dessin)
+            dessins = restants
+            dessins.append(prise)
+        if len(dessins) > 0:
+            ep = p + 4.0
+            plaque = tourner(extrusion(fusionner(*dessins), ep), "x", 90)
+            for bord in (-demi, demi):
+                if selon == "y":
+                    outils.append(deplacer(plaque, 0, bord + ep / 2.0, zc))
+                else:
+                    outils.append(deplacer(tourner(plaque, "z", 90),
+                                           bord - ep / 2.0, 0, zc))
+    if len(outils) > 0:
+        piece = percer(piece, fusionner(*outils))
+
+piece = poser_au_sol(piece)
+''',
+    },
+    {
+        "id": "cheville",
+        "fr": "Cheville de meuble", "en": "Furniture dowel",
+        "domaine": "atelier", "texte": "aucun",
+        "synonymes": "cheville tourillon goujon baton batonnet bois meuble kit "
+                     "assemblage dowel pin raccord montage etagere",
+        "params": [
+            ["diametre", "Diamètre", "Diameter", 4, 16, 8, 0.5],
+            ["longueur", "Longueur", "Length", 12, 80, 35, 1],
+        ],
+        "flags": [["cannelures", "Cannelures (évacuation de la colle)",
+                   "Glue flutes", True]],
+        # Demande de Nicolas (2026-09-21) : les batonnets des meubles en kit,
+        # « 1 diametre et 1 longueur ». Imprimee DEBOUT : le diametre sort rond
+        # et juste, ce qui est tout l'enjeu pour entrer dans un trou perce.
+        "code": r'''
+r = diametre / 2.0
+# Chanfrein aux DEUX bouts : la cheville se presente toute seule dans le trou,
+# et le bourrelet de premiere couche ne gene plus l'entree.
+c = min(1.5, diametre * 0.18)
+piece = revolution([(r - c, 0.0), (r, c), (r, longueur - c), (r - c, longueur)])
+
+if cannelures:
+    # Rainures longitudinales, comme les vraies chevilles de menuiserie : elles
+    # laissent la colle et l'air REMONTER au lieu d'etre chasses vers le fond.
+    # Elles traversent les chanfreins de PART EN PART : arretees au pied du
+    # chanfrein, elles etaient bouchees aux deux bouts et ne debouchaient sur
+    # rien, donc l'air restait piege au fond du trou (retour de Nicolas, capture
+    # a l'appui). Elles depassent donc d'un millimetre de chaque cote.
+    prof = max(0.35, diametre * 0.07)
+    outils = []
+    for i in range(6):
+        ang = i * 60.0
+        outils.append(deplacer(cylindre(prof * 2.4, longueur + 2.0),
+                               cos(ang) * (r + prof * 0.5),
+                               sin(ang) * (r + prof * 0.5), -1.0))
+    piece = percer(piece, fusionner(*outils))
+
+piece = poser_au_sol(piece)
+''',
+    },
+    {
+        "id": "pancarte_porte",
+        "fr": "Pancarte de porte", "en": "Door hanger",
+        "domaine": "maison", "texte": "optionnel",
+        "synonymes": "pancarte porte poignee suspendre panneau plaque signaletique "
+                     "ne pas deranger reunion chambre bureau door hanger sign "
+                     "accroche texte message",
+        "params": [
+            ["largeur", "Largeur", "Width", 55, 140, 85, 5],
+            ["hauteur", "Hauteur", "Height", 110, 250, 210, 5],
+            ["epaisseur", "Épaisseur", "Thickness", 2, 8, 3, 0.5],
+            ["diametre_trou", "Diamètre du trou", "Hole diameter", 25, 70, 40, 1],
+            ["taille_texte", "Taille du texte", "Text size", 8, 90, 30, 1],
+            ["relief_texte", "Relief ou creux du texte", "Text depth", 0.4, 3.0, 1.0, 0.1],
+        ],
+        "flags": [
+            # ⚠️ Ce drapeau DOIT s'appeler « grave » : sans lui, l'interface
+            # ajoute d'office sa propre case « Gravé » pour tout objet à texte,
+            # et cette case là n'arriverait PAS dans la recette (la validation
+            # d'installation ne connaît que les options déclarées). L'objet
+            # serait écarté au premier clic sur la case.
+            ["grave", "Texte gravé (creux)", "Engraved text", False],
+        ],
+        "choix": [["suspension", "Accroche", "Hanger",
+                   [["trou", "Trou fermé", "Closed hole"],
+                    ["crochet", "Crochet ouvert", "Open hook"]], "trou"]],
+        # Idée de Pierre Mathez (formulaire du site, 2026-09-26) : « pancarte à
+        # suspendre à la poignée de porte, avec possibilité de mettre un texte,
+        # relief ou creux ».
+        #
+        # Cotes de la pancarte d'hôtel : 85 × 210 mm, trou de 40 mm, qui passe
+        # sur une béquille comme sur la plupart des boutons. Le texte s'écrit
+        # sur PLUSIEURS LIGNES en les séparant par une barre verticale, par
+        # exemple « NE PAS | DÉRANGER ».
+        "code": r'''
+ep = max(1.6, epaisseur)
+larg = max(40.0, largeur)
+haut = max(80.0, hauteur)
+
+# Coins arrondis : une pancarte à angles vifs accroche et se fend au coin.
+r_coin = min(14.0, larg * 0.16, haut * 0.08)
+plaque_2d = rectangle_arrondi(larg, haut, r_coin)
+
+# Le trou de poignée, en haut, avec une bande PLEINE au dessus de lui : c'est
+# elle qui porte tout le poids, elle ne doit jamais devenir un fil.
+d_trou = max(18.0, min(diametre_trou, larg - 24.0, haut * 0.45))
+marge_haut = max(9.0, d_trou * 0.30)
+y_trou = haut / 2.0 - marge_haut - d_trou / 2.0
+outil = deplacer(disque(d_trou), 0.0, y_trou)
+
+if suspension == "crochet":
+    # CROCHET OUVERT : l'accroche débouche sur le CÔTÉ, à mi hauteur du trou.
+    # La pancarte se glisse sur la poignée d'un geste horizontal et le poids la
+    # plaque ensuite au fond du crochet : elle ne peut pas retomber toute seule,
+    # alors qu'une ouverture par le BAS la ferait glisser, et une ouverture par
+    # le HAUT n'a aucun intérêt puisque le trou passe déjà sur la béquille.
+    # ⚠️ Le crochet se dessine d'UN SEUL TENANT, et non en réunissant un disque
+    # et un couloir. Cette réunion là créait des micro segments là où le
+    # couloir croisait les facettes du disque : contour valide en 2D, mais
+    # 393 sommets dont des longueurs quasi nulles, et la plaque extrudée
+    # n'était plus étanche (mesuré : 14 corps au lieu d'un). En posant nous
+    # mêmes chaque sommet, le problème ne peut pas naître.
+    bouche = 30.0                      # demi angle de l'ouverture, en degrés
+    r_trou = d_trou / 2.0
+    gauche = -larg / 2.0 - 2.0
+    pts = [(gauche, y_trou + r_trou * sin(bouche))]
+    for k in range(49):
+        ang = (180.0 - bouche) - (360.0 - 2.0 * bouche) * k / 48.0
+        pts.append((r_trou * cos(ang), y_trou + r_trou * sin(ang)))
+    pts.append((gauche, y_trou - r_trou * sin(bouche)))
+    outil = polygone(pts)
+plaque_2d = percer(plaque_2d, outil)
+piece = extrusion(plaque_2d, ep)
+
+# Le texte occupe TOUT ce qui reste sous le trou, et rien de plus.
+# Les lignes se séparent par une barre verticale OU par un vrai retour à la
+# ligne : l'interface passera bientôt à un champ multi lignes, et une pancarte
+# écrite avec la touche Entrée doit se construire pareil.
+lignes = str(texte).replace("\r", "").replace("\n", "|")
+if len(lignes.replace("|", " ").strip()) > 0:
+    zone_haut = y_trou - d_trou / 2.0 - 8.0
+    zone_bas = -haut / 2.0 + 9.0
+    dispo_h = max(5.0, zone_haut - zone_bas)
+    dispo_l = max(10.0, larg - 18.0)
+    h_txt = min(taille_texte, dispo_h)
+    bloc = texte_2d(lignes, h_txt)
+    # On réduit JUSQU'À CE QUE ça tienne vraiment. Une seule réduction, à la
+    # proportion, laissait déborder : mesuré, une ligne de 38 lettres sortait
+    # encore à 100 mm de large sur une pancarte de 85, et les lettres tombées
+    # hors de la plaque faisaient une pièce en cinq morceaux. Rogner aurait
+    # coupé des lettres, laisser déborder aurait donné une pièce inimprimable.
+    for _essai in range(4):
+        bords = bloc.bounds
+        large_txt = max(0.01, bords[2] - bords[0])
+        if large_txt <= dispo_l:
+            break
+        h_txt = max(1.5, h_txt * dispo_l / large_txt * 0.98)
+        bloc = texte_2d(lignes, h_txt)
+    bloc = deplacer(bloc, 0.0, (zone_haut + zone_bas) / 2.0)
+    # Jamais plus profond que la plaque : il doit rester au moins 0,8 mm de
+    # fond, sinon la gravure perce la pancarte de part en part.
+    prof = max(0.3, min(relief_texte, ep - 0.8))
+    if grave:
+        piece = percer(piece, extrusion(bloc, prof + 1.0, ep - prof))
+    else:
+        piece = fusionner(piece, extrusion(bloc, prof, ep))
+
+piece = poser_au_sol(piece)
+''',
+    },
+    {
+        "id": "rangement_jeu",
+        "fr": "Rangement de jeu", "en": "Board game insert",
+        "domaine": "maison", "texte": "aucun",
+        "synonymes": "rangement jeu societe insert boite plateau cartes jetons "
+                     "meeples pions des tuiles casier godet organisateur board "
+                     "game insert tray token card holder",
+        "params": [
+            ["longueur", "Longueur", "Length", 40, 250, 140, 5],
+            ["largeur", "Largeur", "Width", 40, 250, 90, 5],
+            ["hauteur", "Hauteur", "Height", 10, 90, 30, 1],
+            ["paroi", "Épaisseur des parois", "Wall thickness", 1.2, 5, 1.6, 0.2],
+            ["carte_largeur", "Largeur d'une carte", "Card width", 30, 120, 63.5, 0.5],
+            ["carte_hauteur", "Hauteur d'une carte", "Card height", 40, 160, 88, 0.5],
+            ["cases_x", "Cases en longueur", "Cells across", 1, 10, 4, 1],
+            ["cases_y", "Cases en largeur", "Cells deep", 1, 8, 3, 1],
+        ],
+        "flags": [
+            ["sous_pochette", "Cartes sous pochette", "Sleeved cards", False],
+            ["encoche", "Échancrure pour attraper", "Finger notch", True],
+        ],
+        "choix": [["contenu", "Contenu", "Contents",
+                   [["cartes", "Cartes", "Cards"],
+                    ["jetons", "Jetons (godets ronds)", "Tokens (round wells)"],
+                    ["meeples", "Meeples et pions (cases)", "Meeples (square cells)"]],
+                   "cartes"]],
+        # Chaque réglage ne s'affiche que pour le contenu qui le concerne.
+        # La condition « menu=valeur » vient d'être ajoutée à l'interface pour
+        # cet objet : avant, seules les cases à cocher pouvaient piloter un champ.
+        "visible_si": {
+            "carte_largeur": "contenu=cartes",
+            "carte_hauteur": "contenu=cartes",
+            "sous_pochette": "contenu=cartes",
+            "encoche": "contenu=cartes",
+        },
+        "cache_si": {
+            "cases_x": "contenu=cartes",
+            "cases_y": "contenu=cartes",
+        },
+        # Idée de Sébastien Dehay (formulaire du site, 2026-09-27) : « pour la
+        # bibliothèque de neoGen, étant grand fan de jeu de société, des inserts
+        # pour mettre des cartes et jeton ou meeple ».
+        #
+        # Un seul bac, taillé dans un bloc PLEIN : c'est ce qui laisse des
+        # cloisons entre les cases. Creuser la boîte d'abord ne laisserait
+        # qu'un bac vide, sans séparation (essayé, et le rendu était vide).
+        "code": r'''
+p = max(1.2, paroi)
+fond = max(1.2, p)
+L_ = max(40.0, longueur)
+l_ = max(40.0, largeur)
+h_ = max(10.0, hauteur)
+# ⚠️ Les primitives du KIT sont POSÉES sur z = 0, pas centrées : un outil
+# déplacé de h/2 ne mordait que la moitié haute du bloc (piège vécu).
+bloc = boite_3d(L_, l_, h_)
+creux = max(2.0, h_ - fond)
+
+if contenu == "cartes":
+    # Jeu volontaire : une carte qui frotte ne se sort plus à une main.
+    jeu = 3.0 if sous_pochette else 1.5
+    lc = min(carte_largeur + jeu, L_ - 2 * p)
+    hc = min(carte_hauteur + jeu, l_ - 2 * p)
+    bloc = percer(bloc, deplacer(boite_3d(lc, hc, creux + 1.0), 0, 0, fond))
+    if encoche:
+        # Demi lune dans la paroi avant, pour glisser le pouce sous le paquet.
+        # Elle ne traverse QUE cette paroi : de part en part, le bac perdrait
+        # ses deux faces et tiendrait beaucoup moins bien.
+        d = min(lc * 0.66, 38.0)
+        prof = p + hc / 2.0 + 1.0
+        # ⚠️ Le BAS de la demi lune doit rester au dessus du fond. Placée à
+        # mi hauteur, elle descendait sous z = 0 sur un bac courant (rayon 19,
+        # centre à 17,2) et PERÇAIT LE FOND : les cartes seraient tombées au
+        # travers. On la pose donc 2 mm au dessus du fond ; elle ressort par le
+        # haut de la paroi, ce qui est justement la forme qu'on veut.
+        z_encoche = fond + 2.0 + d / 2.0
+        bloc = percer(bloc, deplacer(tourner(cylindre(d, prof), "x", 90),
+                                     0, -l_ / 2.0 + prof, z_encoche))
+else:
+    ux = L_ - 2 * p
+    uy = l_ - 2 * p
+    # On RAMÈNE le nombre de cases à ce qui tient vraiment, au lieu de renoncer.
+    # Avec l'ancien garde-fou, demander 10 × 8 cases sur un bac de 40 × 40 ne
+    # creusait RIEN : on obtenait un bloc plein, sans le moindre message
+    # (mesuré : 100 % de matière). Une option qui ne fait rien en silence est
+    # un défaut, pas un choix. Six millimètres est le plus petit casier où l'on
+    # arrive encore à prendre un jeton avec les doigts.
+    mini = 6.0
+    nx = max(1, min(int(cases_x), int((ux + p) / (mini + p))))
+    ny = max(1, min(int(cases_y), int((uy + p) / (mini + p))))
+    cx = (ux - (nx - 1) * p) / nx
+    cy = (uy - (ny - 1) * p) / ny
+    if cx > 2.0 and cy > 2.0:
+        outils = []
+        for i in range(nx):
+            for j in range(ny):
+                x = -ux / 2.0 + cx / 2.0 + i * (cx + p)
+                y = -uy / 2.0 + cy / 2.0 + j * (cy + p)
+                if contenu == "jetons":
+                    outils.append(deplacer(cylindre(min(cx, cy), creux + 1.0),
+                                           x, y, fond))
+                else:
+                    outils.append(deplacer(boite_3d(cx, cy, creux + 1.0), x, y, fond))
+        bloc = percer(bloc, fusionner(*outils))
+
+piece = poser_au_sol(bloc)
+''',
+    },
 ]
 
 
@@ -556,7 +1002,7 @@ def _make_test_image() -> str:
 
 def main() -> int:
     from core.neogen import libre as L
-    from core.neogen.objets_module import _defauts
+    from core.neogen.objets_module import _defauts, verifier_variantes
 
     _IMAGE_TEST = _make_test_image()
     valides, ecartes = [], []
@@ -582,6 +1028,8 @@ def main() -> int:
                 ns["image"] = _IMAGE_TEST          # image d'essai pour valider le code
             piece = L.poser_au_sol(L.executer_sandbox(obj["code"], ns))
             err = L.verifier(piece)
+            if err is None:
+                err = verifier_variantes(obj, ns)
             if err is None:
                 valides.append(obj)
                 import trimesh as _tm

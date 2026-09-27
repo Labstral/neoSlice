@@ -381,3 +381,200 @@ def test_cookbook_recettes_toutes_valides():
     for _cles, demande, code in L.COOKBOOK:
         p = L.poser_au_sol(L.executer_sandbox(code))
         assert L.verifier(p) is None, demande
+
+
+# ── Bac empilable : parois ajourées + poignées (suggestion de Nicolas) ───────
+def _bacs(**kw):
+    from core.neogen.formes import bac_empilable
+    return bac_empilable(120, 90, 50, **kw)
+
+
+@pytest.mark.parametrize("motif", ["nid_abeille", "rond"])
+def test_bac_parois_ajourees_economise_du_filament(motif):
+    """Suggestion de Nicolas : ajourer les parois pour consommer moins.
+    Le gain mesuré va de 4 % sur le plus petit bac à 18 % sur le plus grand."""
+    plein, ajoure = _bacs(), _bacs(motif=motif)
+    assert ajoure.is_watertight, motif
+    assert ajoure.volume < plein.volume * 0.95, motif
+    # L'encombrement ne bouge pas d'un cheveu : le bac s'empile toujours.
+    d_plein = plein.bounds[1] - plein.bounds[0]
+    d_ajoure = ajoure.bounds[1] - ajoure.bounds[0]
+    assert abs(d_ajoure - d_plein).max() < 0.01, motif
+
+
+def test_bac_ajoure_garde_son_FOND_plein():
+    """Un fond ajouré laisserait tomber les petites pièces : on ne perce QUE
+    les parois. On vérifie qu'un point au cœur du fond est toujours dans la
+    matière."""
+    for piece in (_bacs(), _bacs(motif="nid_abeille", poignees=True)):
+        assert piece.contains([[60.0, 45.0, 1.0]])[0]
+
+
+def test_bac_poignees_seules_ouvrent_bien_la_paroi():
+    """Sans motif, cocher les poignées doit quand même percer quelque chose :
+    une option qui ne fait rien EN SILENCE est un défaut, pas un choix."""
+    assert _bacs(poignees=True).volume < _bacs().volume - 500.0
+
+
+@pytest.mark.parametrize("dims", [(60, 50, 25), (90, 70, 35), (220, 180, 100)])
+def test_bac_ajoure_a_TOUTES_les_tailles(dims):
+    """Le plus petit bac du catalogue ignorait l'option en silence (bande trop
+    courte, puis égalité rejetée par un garde-fou) : il doit être ajouré lui
+    aussi, et rester imprimable."""
+    from core.neogen.formes import bac_empilable
+    L, l, h = dims
+    plein = bac_empilable(L, l, h)
+    ajoure = bac_empilable(L, l, h, motif="nid_abeille", poignees=True)
+    assert ajoure.is_watertight and ajoure.bounds[0][2] < 0.01
+    assert ajoure.volume < plein.volume, dims
+
+
+def test_bac_motif_inconnu_retombe_sur_plein():
+    """Un fichier plus ancien ou abîmé ne doit pas casser la génération."""
+    assert _bacs(motif="n_importe_quoi").volume == pytest.approx(_bacs().volume)
+
+
+def test_bac_options_declarees_au_catalogue():
+    """Déclarées ici, elles apparaissent automatiquement dans le formulaire."""
+    from core.neogen import catalogue as C
+    e = C.PAR_ID["bac_empilable"]
+    assert any(c[0] == "motif" for c in e["choix"])
+    assert any(f[0] == "poignees" for f in e["flags"])
+    piece = C.construire("bac_empilable", {"motif": "nid_abeille",
+                                           "poignees": True})
+    assert piece.is_watertight and piece.bounds[0][2] < 0.01
+
+
+def test_dessous_de_plat_toujours_intact():
+    """Garde-fou : le bac reprend le pavage du dessous-de-plat, il ne doit pas
+    l'abîmer en passant (c'est arrivé : un remplacement trop large avait cassé
+    son indentation)."""
+    from core.neogen.formes import dessous_de_plat
+    plein = dessous_de_plat(motif="plein")
+    for motif in ("nid_abeille", "rond"):
+        ajoure = dessous_de_plat(motif=motif)
+        assert ajoure.is_watertight and ajoure.volume < plein.volume, motif
+
+
+def _grille_paroi(m, axe: int, mini: bool, n_u: int = 96, n_z: int = 24):
+    """Carte matière/vide au MILIEU de l'épaisseur d'une paroi.
+
+    L'échantillonnage est symétrique par rapport au milieu de la face, ce qui
+    permet de comparer la carte à son image miroir."""
+    import numpy as np
+    b0, b1 = m.bounds
+    ep = 3.3                       # débord de collerette (2.3) + demi paroi (1.0)
+    fixe = (b0[axe] + ep) if mini else (b1[axe] - ep)
+    autre = 1 - axe
+    us = np.linspace(b0[autre] + 4.0, b1[autre] - 4.0, n_u)
+    zs = np.linspace(b0[2] + 8.0, b1[2] - 14.0, n_z)
+    pts = np.zeros((n_z * n_u, 3))
+    pts[:, axe] = fixe
+    pts[:, autre] = np.tile(us, n_z)
+    pts[:, 2] = np.repeat(zs, n_u)
+    return m.contains(pts).reshape(n_z, n_u)
+
+
+@pytest.mark.parametrize("axe,mini", [(0, True), (0, False), (1, True), (1, False)])
+def test_bac_les_QUATRE_parois_sont_traversees(axe, mini):
+    """DEUX faces sur quatre n'étaient pas percées (retour d'Emmanuel, capture à
+    l'appui). La collerette évasée déborde de 2,3 mm : en perçant APRÈS avoir
+    recentré la pièce sur zéro, l'outil ne mordait que 0,7 mm des 2 mm de paroi
+    du côté du minimum. On perce donc tant que l'empreinte est centrée."""
+    from core.neogen.formes import bac_empilable
+    carte = _grille_paroi(bac_empilable(120, 90, 50, motif="nid_abeille"),
+                          axe, mini)
+    vide = (~carte).sum()
+    assert vide > carte.size * 0.15, f"paroi axe={axe} mini={mini} : {vide} vides"
+
+
+@pytest.mark.parametrize("dims", [(120, 90, 50), (95, 65, 45), (220, 180, 100)])
+def test_bac_trous_SYMETRIQUES_sur_chaque_face(dims):
+    """« J'ai deux trous à gauche de la poignée et un seul à droite, c'est pas
+    beau. » Le pavage partait d'un bord au pas fixe : le dernier trou ne
+    retombait pas à la même distance de l'autre bord. On compte désormais ce qui
+    tient, puis on centre, rangée par rangée."""
+    import numpy as np
+    from core.neogen.formes import bac_empilable
+    m = bac_empilable(*dims, motif="nid_abeille", poignees=True)
+    for axe, mini in ((0, True), (0, False), (1, True), (1, False)):
+        carte = _grille_paroi(m, axe, mini)
+        assert np.array_equal(carte, carte[:, ::-1]), f"axe={axe} mini={mini}"
+
+
+def test_bac_poignee_percee_des_DEUX_cotes():
+    """La prise doit traverser les deux petits côtés, pas un seul."""
+    import numpy as np
+    from core.neogen.formes import bac_empilable
+    m = bac_empilable(120, 90, 50, motif="plein", poignees=True)
+    vides = [(~_grille_paroi(m, 0, mini)).sum() for mini in (True, False)]
+    assert all(v > 40 for v in vides), vides
+    assert abs(vides[0] - vides[1]) <= 2, vides        # les deux, à l'identique
+
+
+# ── Validation des OPTIONS d'un objet de base (pas seulement les défauts) ────
+def _manifeste(code: str, flags=None, choix=None) -> dict:
+    return {"version": "t-opt", "objets": [{
+        "id": "essai_option", "fr": "Essai", "en": "Test", "domaine": "maison",
+        "texte": "aucun", "flags": flags or [], "choix": choix or [],
+        "params": [["taille", "Taille", "Size", 10, 40, 20, 1]],
+        "code": code,
+    }]}
+
+
+def test_variantes_liste_chaque_option_une_fois():
+    from core.neogen.objets_module import variantes
+    obj = {"flags": [["poignees", "P", "H", False]],
+           "choix": [["motif", "M", "W", [["plein", "a", "a"], ["nid", "b", "b"],
+                                          ["rond", "c", "c"]], "plein"]]}
+    assert variantes(obj) == [("poignees", True), ("motif", "nid"), ("motif", "rond")]
+
+
+def test_une_OPTION_cassee_fait_ecarter_l_objet(tmp_path, monkeypatch):
+    """Le cœur de l'affaire : seules les valeurs par DÉFAUT étaient éprouvées,
+    donc une branche derrière une option partait cassée chez l'utilisateur et ne
+    se voyait qu'au moment où il la cochait (arrivé avec le nid d'abeille du bac
+    empilable, dont les angles étaient en radians au lieu de degrés)."""
+    from core.neogen import maj
+    from core.neogen import objets_module as OM
+    monkeypatch.setattr(OM, "FICHIER_LOCAL", tmp_path / "objets.json")
+    manifeste = _manifeste(
+        "piece = boite_3d(taille, taille, taille)\n"
+        "if geant:\n"
+        "    piece = boite_3d(1000, 1000, 1000)",
+        flags=[["geant", "Géant", "Giant", False]])
+    assert maj.appliquer_objets(manifeste) == (0, 1)
+
+
+def test_un_objet_dont_TOUTES_les_options_tiennent_est_accepte(tmp_path, monkeypatch):
+    from core.neogen import maj
+    from core.neogen import objets_module as OM
+    monkeypatch.setattr(OM, "FICHIER_LOCAL", tmp_path / "objets.json")
+    manifeste = _manifeste(
+        "piece = boite_3d(taille, taille, taille)\n"
+        "if creux:\n"
+        "    piece = creuser(piece, 2.0)",
+        flags=[["creux", "Creux", "Hollow", False]])
+    assert maj.appliquer_objets(manifeste) == (1, 0)
+
+
+def test_un_MENU_dont_une_valeur_casse_fait_ecarter(tmp_path, monkeypatch):
+    """Une seule valeur fautive sur trois suffit à écarter l'objet."""
+    from core.neogen import maj
+    from core.neogen import objets_module as OM
+    monkeypatch.setattr(OM, "FICHIER_LOCAL", tmp_path / "objets.json")
+    manifeste = _manifeste(
+        "piece = boite_3d(taille, taille, taille)\n"
+        "if forme == 'casse':\n"
+        "    piece = boite_3d(1000, 1000, 1000)",
+        choix=[["forme", "Forme", "Shape",
+                [["cube", "Cube", "Cube"], ["casse", "Cassé", "Broken"]], "cube"]])
+    assert maj.appliquer_objets(manifeste) == (0, 1)
+
+
+def test_un_objet_SANS_option_reste_valide_comme_avant(tmp_path, monkeypatch):
+    from core.neogen import maj
+    from core.neogen import objets_module as OM
+    monkeypatch.setattr(OM, "FICHIER_LOCAL", tmp_path / "objets.json")
+    assert maj.appliquer_objets(
+        _manifeste("piece = boite_3d(taille, taille, taille)")) == (1, 0)

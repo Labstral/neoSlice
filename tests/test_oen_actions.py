@@ -61,18 +61,43 @@ def test_new_verbs_registered():
 
 
 def test_auto_think_heuristic():
+    """La reflexion coute ~10 s de SILENCE avant le premier mot (mesure au
+    chronometre). Elle est donc reservee aux questions VRAIMENT fournies : un
+    diagnostic courant et court doit repondre tout de suite. Le bouton manuel
+    reste disponible quand on veut du raisonnement."""
     from core.assistant.engine import should_auto_think as S
-    # diagnostic / how-to -> reflexion
-    assert S("pourquoi ma piece se decolle ?")
-    assert S("quel reglage pour reduire le stringing ?")
-    assert S("comment calibrer ma X1C ?")
-    assert S("mon PLA fait des fils")
+    # diagnostic COURT -> rapide (c'etait l'inverse avant : 10 s pour rien)
+    assert not S("pourquoi ma piece se decolle ?")
+    assert not S("comment calibrer ma X1C ?")
+    assert not S("mon PLA fait des fils")
+    # probleme LONG et circonstancie -> la reflexion se justifie
+    assert S("pourquoi ma piece se decolle du plateau apres deux heures alors "
+             "que la premiere couche est parfaite, le plateau propre et la "
+             "temperature stable a 60 degres ?")
     # commandes / lectures -> rapide
     assert not S("ajoute une bobine de PLA rouge")
     assert not S("supprime le client Marie")
     assert not S("combien de PLA noir me reste-t-il ?")
     assert not S("marque la facture 2026-0001 payee")
     assert not S("bonjour")
+
+
+def test_prompt_stable_devant_variable_derriere():
+    """Ollama ne reutilise son cache que sur le PREFIXE identique. Tout ce qui
+    est stable (prompt, savoir expert, plan d'interface, garde) doit donc
+    preceder tout ce qui varie (contexte machine, documentation, question).
+    Mesure : le GUARD place APRES la question faisait retraiter ~1500 jetons a
+    chaque fois, soit 6 s avant le premier mot au lieu de 2,8 s."""
+    from core.assistant.engine import AssistantEngine, _GUARD, _RAPPEL
+    msgs, reduced = AssistantEngine.instance()._build_messages(
+        [{"role": "user", "content": "test"}])
+    textes = [m["content"] for m in msgs]
+    assert _GUARD in textes, "la garde doit rester envoyee au modele"
+    assert textes.index(_GUARD) <= 3, "la garde est STABLE : elle va dans le prefixe"
+    assert textes[-1] == _RAPPEL, "le rappel court garde la position de recence"
+    assert msgs[-2]["role"] == "user", "la question juste avant le rappel"
+    for liste in (msgs, reduced):
+        assert liste[-1]["content"] == _RAPPEL
 
 
 def test_fake_success_detector():

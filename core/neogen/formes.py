@@ -361,13 +361,99 @@ def bac_compartiments(longueur: float = 140, largeur: float = 90,
     return piece
 
 
+def _pavage_alveoles(long_u: float, haut_v: float, motif: str,
+                     visee: float = 11.0) -> list:
+    """Alvéoles en quinconce dans un rectangle (u, v) centré sur l'origine.
+
+    Le pavage du dessous-de-plat, mais destiné à une paroi VERTICALE et
+    DIMENSIONNÉ sur la bande disponible. À pas fixe, une paroi de bac n'en
+    logeait qu'UNE rangée (mesuré : 4 % de matière en moins seulement, le
+    pavage ne couvrait presque rien) : on vise donc des alvéoles d'environ
+    `visee` mm et on ajuste le pas pour que les rangées tiennent entières.
+
+    L'hexagone est pointe en haut : ses flancs montent à 60°, il s'imprime donc
+    sans support et sans pont."""
+    if long_u <= 8.0 or haut_v <= 5.0:
+        return []      # au dessous, la paroi n'a plus de quoi tenir
+    # Rangées centrées en -H/2 + r + k*0.866*pas : la dernière tient si
+    # pas * (0.866 * rangs - 0.026) <= H, avec r = 0.42 * pas.
+    # (Avec -0.084 au lieu de -0.026, le pas sortait trop grand et la dernière
+    # rangée tombait juste en dehors : la paroi restait vide sur sa moitié
+    # haute, visible au rendu.)
+    rangs = max(1, int(round(haut_v / visee)))
+    pas = haut_v / max(0.84, 0.866 * rangs - 0.02)
+    pas = max(6.0, min(pas, 22.0))
+    r_alv = pas * 0.42
+    # Comparaison TOLÉRANTE : à une seule rangée, la formule donne une alvéole
+    # dont la hauteur vaut EXACTEMENT la bande, et un `<=` strict éliminait donc
+    # toujours ce cas (mesuré : le plus petit bac ne recevait aucune alvéole).
+    if long_u <= r_alv * 2 or haut_v < r_alv * 2 - 1e-6:
+        return []
+    # On COMPTE ce qui tient, puis on CENTRE, au lieu de partir d'un bord et
+    # d'avancer au pas : sinon le dernier trou ne retombe pas à la même
+    # distance de l'autre bord et le motif penche (retour d'Emmanuel :
+    # « que les trous soient bien symétriques par rapport à chacune des faces »).
+    ecart_v = pas * 0.866
+    n_rangs = int((haut_v - 2 * r_alv) // ecart_v) + 1
+    n_cols = int((long_u - 2 * r_alv) // pas) + 1
+    if n_rangs < 1 or n_cols < 1:
+        return []
+    trous = []
+    for j in range(n_rangs):
+        v = (j - (n_rangs - 1) / 2.0) * ecart_v
+        # Une rangée sur deux compte une alvéole de moins : centrée elle aussi,
+        # elle tombe alors pile entre celles d'en dessous. C'est le quinconce
+        # du nid d'abeille, et il reste symétrique.
+        n = n_cols if j % 2 == 0 else n_cols - 1
+        if n < 1:
+            continue
+        for k in range(n):
+            u = (k - (n - 1) / 2.0) * pas
+            trous.append(translate(
+                _empreinte("rond" if motif == "rond" else "hexagone", r_alv * 2),
+                xoff=u, yoff=v))
+    return trous
+
+
+def _outil_paroi(dessins: list, epaisseur: float, centre, selon: str):
+    """Dresse un dessin 2D (u, v) en outil de perçage pour une paroi verticale.
+
+    On dessine à plat, puis on bascule de 90° : le v du dessin devient la
+    hauteur. C'est ce qui permet de reprendre tel quel un pavage pensé pour une
+    plaque horizontale."""
+    if not dessins:
+        return None
+    solides = _extruder(unary_union(dessins), epaisseur, -epaisseur / 2)
+    if not solides:
+        return None
+    outil = union_solides(solides)
+    outil.apply_transform(
+        trimesh.transformations.rotation_matrix(np.radians(90), [1, 0, 0]))
+    if selon == "x":            # paroi perpendiculaire à X : un quart de tour de plus
+        outil.apply_transform(
+            trimesh.transformations.rotation_matrix(np.radians(90), [0, 0, 1]))
+    outil.apply_translation(centre)
+    return outil
+
+
 def bac_empilable(longueur: float = 120, largeur: float = 90,
-                  hauteur: float = 50) -> trimesh.Trimesh:
+                  hauteur: float = 50, motif: str = "plein",
+                  poignees: bool = False) -> trimesh.Trimesh:
     """Bac ouvert empilable : murs droits + collerette ÉVASÉE sur les 8
-    derniers mm (entonnoir). Le bas du bac suivant — même taille — s'y pose
-    et s'auto-centre, jeu 0.3 mm. (L'ancienne lèvre RENTRANTE était plus
-    petite que le fond : les bacs ne s'emboîtaient pas.) Évasement par
-    tranches -> pente ~16°, aucun surplomb."""
+    derniers mm (entonnoir). Le bas du bac suivant, de même taille, s'y pose et
+    s'auto-centre, jeu 0.3 mm. (L'ancienne lèvre RENTRANTE était plus petite
+    que le fond : les bacs ne s'emboîtaient pas.) Évasement par tranches ->
+    pente ~16°, aucun surplomb.
+
+    `motif` ajoure les PAROIS, en nid d'abeille ou en trous ronds : moins de
+    filament, moins de temps, et on voit ce que contient le bac (suggestion de
+    Nicolas). `poignees` ouvre une prise sur les deux plus petits côtés pour
+    attraper le bac.
+
+    Restent PLEINS dans tous les cas : le fond, les angles, la bande basse et
+    la collerette d'empilage. Ce sont eux qui tiennent la pile, les ajourer
+    reviendrait à économiser du filament en cassant la fonction de l'objet."""
+    motif = motif if motif in ("nid_abeille", "rond", "plein") else "plein"
     p, fond, evase_h, jeu = 2.0, 2.4, 8.0, 0.3
     emp = _empreinte("rect", longueur, largeur)
     solides = _extruder(emp, fond)
@@ -381,8 +467,68 @@ def bac_empilable(longueur: float = 120, largeur: float = 90,
         mur = ext.difference(ext.buffer(-p, join_style=1))
         solides += _extruder(mur, dz + CHEV, z - CHEV)
     piece = union_solides(solides)
-    piece.apply_translation(-piece.bounds[0])
-    return piece
+    if motif == "plein" and not poignees:
+        piece.apply_translation(-piece.bounds[0])
+        return piece
+    # ATTENTION : on perce AVANT de recentrer la pièce sur zéro. La collerette
+    # évasée déborde de (p + jeu) au delà des parois droites, si bien qu'après
+    # recentrage la paroi n'est plus en 0 mais en 2.3 : les outils posés sur les
+    # cotes nominales ne mordaient que 0.7 mm des 2 mm de paroi, et DEUX faces
+    # sur quatre n'étaient pas traversées (retour d'Emmanuel). Ici l'empreinte
+    # est encore centrée sur l'origine, donc les parois sont exactement en
+    # ±longueur/2 et ±largeur/2.
+
+    # Bande de paroi DROITE réellement perçable : au dessus du fond, sous la
+    # collerette, et en retrait des angles.
+    marge, marge_v = 8.0, 4.0          # angles protégés, hauteur peu rognée
+    z0, z1 = fond + marge_v, hauteur - evase_h - marge_v
+    if z1 - z0 < 6.5:
+        # Bac vraiment trop bas : plus rien ne tient entre le fond et la
+        # collerette. Seuil descendu de 10 à 6.5 mm, sinon le plus petit bac du
+        # catalogue (25 mm) ignorait l'option EN SILENCE (mesuré).
+        return piece
+    zc, haut_v = (z0 + z1) / 2.0, z1 - z0
+
+    prise, cote_prise = None, ("x" if longueur >= largeur else "y")
+    if poignees:
+        from shapely.affinity import scale as shp_scale
+        cote_u = largeur if cote_prise == "x" else longueur
+        L = max(35.0, min(cote_u * 0.55, cote_u - 2 * marge))
+        H = max(10.0, min(haut_v * 0.8, 32.0))
+        if L > 12.0 and 8.0 < H <= haut_v:
+            # Une ELLIPSE, pas une fente : son sommet est une pointe, donc rien
+            # à ponter. Une fente à dessus plat aurait demandé un pont de
+            # plusieurs centimètres en plein milieu de la paroi.
+            forme = shp_scale(Point(0, 0).buffer(1, resolution=64),
+                              xfact=L / 2, yfact=H / 2)
+            haut_prise = min(z1, hauteur - evase_h - 4.0)
+            prise = translate(forme, yoff=(haut_prise - H / 2) - zc)
+
+    outils = []
+    for selon, long_u, demi in (("y", longueur, largeur / 2.0),
+                                ("x", largeur, longueur / 2.0)):
+        dessins = (_pavage_alveoles(long_u - 2 * marge, haut_v, motif)
+                   if motif != "plein" else [])
+        if prise is not None and selon == cote_prise:
+            # On écarte les alvéoles que la prise effleure : sinon il reste des
+            # éclats de paroi de moins d'un millimètre tout autour.
+            garde = prise.buffer(2.5, join_style=1)
+            dessins = [d for d in dessins if not d.intersects(garde)]
+            dessins.append(prise)
+        if not dessins:
+            continue
+        ep = p + 4.0                      # outil plus épais que la paroi
+        for bord in (-demi, demi):
+            centre = ([0.0, bord, zc] if selon == "y" else [bord, 0.0, zc])
+            outil = _outil_paroi(dessins, ep, centre, selon)
+            if outil is not None:
+                outils.append(outil)
+    if not outils:
+        return piece
+    perce = trimesh.boolean.difference([piece, union_solides(outils)],
+                                       engine="manifold")
+    perce.apply_translation(-perce.bounds[0])
+    return perce
 
 
 def plateau(longueur: float = 200, largeur: float = 140, rebord: float = 12,

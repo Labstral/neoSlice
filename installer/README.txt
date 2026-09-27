@@ -1,6 +1,6 @@
 ==============================================================================
   neoSlice - AI-Powered 3D Print Optimizer
-  Guide d'installation et de démarrage - v2.2.0
+  Guide d'installation et de démarrage - v2.3.0
 ==============================================================================
   © 2026 Emmanuel Percheron - Tous droits réservés
 
@@ -15,8 +15,9 @@ SOMMAIRE
   5. Premier démarrage
   6. Désinstallation
   7. Questions fréquentes (FAQ)
-  8. Nouveautés v2.2.0
-  9. Contact et support
+  8. Nouveautés v2.3.0
+  9. Nouveautés v2.2.0
+  10. Contact et support
 
 
 ------------------------------------------------------------------------------
@@ -40,7 +41,7 @@ SOMMAIRE
 2. CONTENU DU PACKAGE
 ------------------------------------------------------------------------------
 
-  neoSlice_Setup_v2.2.0_Windows.exe  ->  Installateur Windows
+  neoSlice_Setup_v2.3.0_Windows.exe  ->  Installateur Windows
   README.txt                       ->  Ce guide
   LICENSE.txt                      ->  Accord de licence utilisateur final
 
@@ -58,7 +59,7 @@ SOMMAIRE
 
   ÉTAPE 2 - Lancer l'installateur
   ---------------------------------
-  Double-cliquez sur : neoSlice_Setup_v2.2.0_Windows.exe
+  Double-cliquez sur : neoSlice_Setup_v2.3.0_Windows.exe
 
   Si Windows affiche "Windows a protégé votre PC" :
     -> Cliquez sur "Informations complémentaires"
@@ -246,7 +247,32 @@ SOMMAIRE
 
 
 ------------------------------------------------------------------------------
-8. NOUVEAUTÉS v2.2.0
+8. NOUVEAUTÉS v2.3.0
+------------------------------------------------------------------------------
+
+  neoFORGE, LE MODELEUR 3D (version Pro)
+  ---------------------------------------
+  * Un nouveau module pour dessiner vos pièces sans connaître la CAO.
+  * Vous posez des formes, vous les étirez, vous les percez, vous
+    arrondissez les arêtes et vous mesurez d'un point à un autre.
+  * La pièce part directement dans neoSlice, prête à imprimer.
+
+  neoGEN : TEXTE SUR PLUSIEURS LIGNES
+  ------------------------------------
+  * La touche Entrée va simplement à la ligne dans le texte d'un objet.
+
+  ENREGISTREMENT DANS TÉLÉCHARGEMENTS
+  ------------------------------------
+  * Toutes les fenêtres d'enregistrement proposent le dossier
+    Téléchargements, ou celui que vous avez choisi dans les réglages.
+
+  VUE 3D
+  -------
+  * Des raccourcis clavier cachés faisaient disparaître le plateau, et
+    deux d'entre eux pouvaient fermer l'application. Ils sont neutralisés.
+
+------------------------------------------------------------------------------
+9. NOUVEAUTÉS v2.2.0
 ------------------------------------------------------------------------------
 
   LOGICIEL DE SLICING ET IMPRIMANTE AU MÊME ENDROIT
@@ -294,7 +320,7 @@ RAPPEL - LES GRANDES NOUVEAUTÉS DE LA v2
 
 
 ------------------------------------------------------------------------------
-9. CONTACT ET SUPPORT
+10. CONTACT ET SUPPORT
 ------------------------------------------------------------------------------
 
   Développeur  : Emmanuel Percheron

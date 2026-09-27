@@ -654,6 +654,7 @@ class _TopBar(QWidget):
     diag_clicked      = Signal()
     cost_clicked      = Signal()
     neogen_clicked    = Signal()      # bouton neoGen (bibliothèque d'objets à personnaliser)
+    neoforge_clicked  = Signal()      # bouton neoForge (modeleur 3D, programme séparé)
     pro_clicked       = Signal()      # bouton « neoSlice Pro » (ouvre le paywall)
 
     def __init__(self, parent=None):
@@ -708,6 +709,15 @@ class _TopBar(QWidget):
         self._neogen_btn.setCursor(Qt.PointingHandCursor)
         self._neogen_btn.setToolTip(_("neogen.tooltip"))
         self._neogen_btn.clicked.connect(self.neogen_clicked)
+
+        # Bouton NEOFORGE (modeleur 3D : dessiner sa pièce de zéro) — Pro, module
+        # téléchargeable ; s'ouvre dans son propre programme.
+        self._neoforge_btn = QPushButton(_("app.btn_neoforge"))
+        self._neoforge_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
+        self._neoforge_btn.setFixedHeight(26)
+        self._neoforge_btn.setCursor(Qt.PointingHandCursor)
+        self._neoforge_btn.setToolTip(_("neoforge.tooltip"))
+        self._neoforge_btn.clicked.connect(self.neoforge_clicked)
 
         self._diag_btn = QPushButton(_("app.btn_diag"))
         self._diag_btn.setFont(QFont(FONT_MAIN, 7, QFont.Bold))
@@ -782,9 +792,10 @@ class _TopBar(QWidget):
         """)
         self._new_btn.clicked.connect(self.new_piece_clicked)
         layout.addWidget(self._new_btn)
-        # NEOGEN + DIAGNOSTIC + ESPACE PRO : trois boutons séparés, mais UN seul
-        # dégradé cyan→violet continu qui s'étend sur les trois.
+        # NEOGEN + NEOFORGE + DIAGNOSTIC + ESPACE PRO : quatre boutons séparés,
+        # mais UN seul dégradé cyan→violet continu qui s'étend sur les quatre.
         layout.addWidget(self._neogen_btn)
+        layout.addWidget(self._neoforge_btn)
         layout.addWidget(self._diag_btn)
         layout.addWidget(self._cost_btn)
         layout.addWidget(self._pro_cta_btn)
@@ -905,14 +916,16 @@ class _TopBar(QWidget):
         coming = getattr(_lic, "PRO_COMING_SOON", False)
         self._pro_badge.setVisible(is_pro)
         self._neogen_btn.setVisible(is_pro)
+        self._neoforge_btn.setVisible(is_pro)
         self._diag_btn.setVisible(is_pro)
         self._cost_btn.setVisible(is_pro)
         self._pro_cta_btn.setVisible(not is_pro)
         if is_pro:
-            # Trois boutons distincts ; UN dégradé cyan→violet continu sur les trois
-            self._neogen_btn.setStyleSheet(_PRO_BTN_LEFT)
-            self._diag_btn.setStyleSheet(_PRO_BTN_MID)
-            self._cost_btn.setStyleSheet(_PRO_BTN_RIGHT)
+            # Quatre boutons distincts ; UN dégradé cyan→violet continu sur les quatre
+            self._neogen_btn.setStyleSheet(_PRO_BTN_Q1)
+            self._neoforge_btn.setStyleSheet(_PRO_BTN_Q2)
+            self._diag_btn.setStyleSheet(_PRO_BTN_Q3)
+            self._cost_btn.setStyleSheet(_PRO_BTN_Q4)
         else:
             self._pro_cta_btn.setText("neoSlice Pro")
             self._pro_cta_btn.setToolTip(
@@ -1689,6 +1702,10 @@ class MainWindow(QMainWindow):
         self._brands_update_ready.connect(self._on_brands_updated)
         QTimer.singleShot(9000, self._check_brands_update)
 
+        # Pont neoForge : le modeleur tourne dans un programme séparé et envoie
+        # ses pièces ICI, en mémoire (ni export ni réimport manuel).
+        self._demarrer_pont_neoforge()
+
         # L'assistant IA lit l'etat courant de l'appli (params + analyse viewer)
         try:
             from core.assistant import context as _assist_ctx
@@ -1790,6 +1807,7 @@ class MainWindow(QMainWindow):
         self._topbar.diag_clicked.connect(self._open_diagnostic)
         self._topbar.cost_clicked.connect(self._open_pro_hub)
         self._topbar.neogen_clicked.connect(self._open_neogen)
+        self._topbar.neoforge_clicked.connect(self._open_neoforge)
         # Bouton CTA « neoSlice Pro » : « bientôt disponible » en pré-lancement,
         # sinon ouvre le diagnostic (essais gratuits → paywall).
         self._topbar.pro_clicked.connect(self._on_pro_cta)
@@ -2298,6 +2316,93 @@ class MainWindow(QMainWindow):
         try:
             if hasattr(self, "_statusbar") and hasattr(self._statusbar, "_export_btn"):
                 self._statusbar._export_btn.setText(_("export.btn", slicer=_slicer_name()))
+        except Exception:
+            pass
+
+    # ── neoForge (modeleur 3D, programme séparé) ──────────────────────────────
+    def _open_neoforge(self):
+        """Ouvre neoForge. Pro obligatoire ; si le module n'est pas installé, on
+        ouvre le gestionnaire de modules plutôt qu'un bouton qui ne fait rien."""
+        from core import licensing
+        if not licensing.est_pro():
+            self._viewer.masquer_sphere_pour_modal(True)
+            try:
+                from ui.components.paywall_dialog import PaywallDialog
+                PaywallDialog(self).exec()
+            finally:
+                self._viewer.masquer_sphere_pour_modal(False)
+            if not licensing.est_pro():
+                return
+            self._topbar.refresh_pro()
+        from core.neoforge import lanceur, pont
+        if not lanceur.disponible():
+            self._viewer.masquer_sphere_pour_modal(True)
+            try:
+                from ui.components.modules_dialog import ModulesDialog
+                ModulesDialog(self).exec()
+            finally:
+                self._viewer.masquer_sphere_pour_modal(False)
+            return
+        ok = pont.lancer_neoforge()
+        self._statusbar.set_message(
+            _("neoforge.ouverture") if ok else _("neoforge.echec_lancement"), AMBER)
+
+    def _demarrer_pont_neoforge(self):
+        """Serveur local qui écoute neoForge : renseigne l'imprimante courante et
+        reçoit les pièces terminées."""
+        try:
+            from core.neoforge import pont
+        except Exception:
+            return
+
+        def repondre(entete, charge):
+            genre = entete.get("type")
+            if genre == "imprimante":
+                from data.printers import volume_impression
+                x, y, z = volume_impression(self._current_printer)
+                return pont.emballer({
+                    "type": "imprimante", "nom": self._current_printer,
+                    "plateau": [x, y, z],
+                    "buse": float(getattr(self, "_current_nozzle_mm", 0.4) or 0.4)})
+            if genre == "piece":
+                V, F = pont.piece_depuis_message(entete, charge)
+                nom = str(entete.get("nom") or "piece")
+                QTimer.singleShot(0, lambda: self._recevoir_piece_neoforge(nom, V, F))
+            return None
+
+        try:
+            self._pont_neoforge = pont.Serveur(pont.NOM_PONT, repondre, parent=self)
+            if not self._pont_neoforge.demarrer():
+                logger.warning("neoForge : pont indisponible (nom déjà pris)")
+        except Exception:
+            logger.exception("neoForge : pont non démarré")
+
+    def _recevoir_piece_neoforge(self, nom: str, V, F):
+        """Pièce terminée dans neoForge. Elle arrive EN MÉMOIRE ; on l'enregistre
+        dans un fichier de travail temporaire pour la faire passer par le
+        chargeur habituel (réparations, bibliothèque de pièces, nom d'export)."""
+        import re
+        import tempfile
+        import trimesh
+        try:
+            tige = re.sub(r"[^A-Za-z0-9_-]+", "_", nom).strip("_") or "piece"
+            # Ces noms déclenchent des profils spéciaux au chargement.
+            if tige.lower().startswith("lithophanie") or "hueforge" in tige.lower():
+                tige = f"piece_{tige}"
+            dossier = Path(tempfile.gettempdir()) / "neoforge"
+            dossier.mkdir(parents=True, exist_ok=True)
+            chemin = dossier / f"{tige}.stl"
+            trimesh.Trimesh(V, F, process=False).export(chemin)
+        except Exception:
+            logger.exception("neoForge : pièce reçue illisible")
+            return
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self._on_stl_dropped(chemin)
+        try:
+            self._statusbar.set_message(_("neoforge.piece_recue", nom=tige), AMBER)
         except Exception:
             pass
 
@@ -5499,14 +5604,13 @@ class MainWindow(QMainWindow):
         return True
 
     def _dossier_export_defaut(self) -> Path:
-        """Dossier d'export par défaut (préférence utilisateur sinon Téléchargements)."""
-        from PySide6.QtCore import QStandardPaths
-        _exp = PREFS.get("export_folder", "")
-        if _exp and Path(_exp).is_dir():
-            return Path(_exp)
-        _dl = QStandardPaths.writableLocation(
-            QStandardPaths.StandardLocation.DownloadLocation)
-        return Path(_dl) if _dl else Path.home()
+        """Dossier d'export par défaut (préférence utilisateur sinon Téléchargements).
+
+        L'implémentation vit dans `core.prefs.dossier_sortie` : toutes les
+        fenêtres d'enregistrement de l'application partagent la même, pour
+        qu'elles proposent toutes le même dossier."""
+        from core.prefs import dossier_sortie
+        return dossier_sortie()
 
     def _on_export_requested(self):
         if not hasattr(self, "_current_config") or self._mesh is None:
@@ -5561,13 +5665,7 @@ class MainWindow(QMainWindow):
                                          or "objet")
             if _obj_nm:
                 stl_stem = _obj_nm
-        _exp_folder = PREFS.get("export_folder", "")
-        if _exp_folder and Path(_exp_folder).is_dir():
-            downloads = Path(_exp_folder)
-        else:
-            _dl_str = QStandardPaths.writableLocation(
-                QStandardPaths.StandardLocation.DownloadLocation)
-            downloads = Path(_dl_str) if _dl_str else Path.home()
+        downloads = self._dossier_export_defaut()
         default_name = str(downloads / f"{stl_stem}_neoslice_output.3mf")
         import sys as _sys
         if _sys.platform == "darwin":
@@ -6115,9 +6213,7 @@ class MainWindow(QMainWindow):
             from PySide6.QtWidgets import QMessageBox
             safe_name = _re.sub(r'[<>:"/\\|?*]', '_',
                                 f"neoSlice_{filament_name}_{printer_name}.pdf")
-            _dl_str = QStandardPaths.writableLocation(
-                QStandardPaths.StandardLocation.DownloadLocation)
-            _dl = Path(_dl_str) if _dl_str else Path.home()
+            _dl = self._dossier_export_defaut()
             _dl.mkdir(parents=True, exist_ok=True)
             save_path = str(_dl / safe_name)
             _plate_type = self._filament_selector.current_plate_type()

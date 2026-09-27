@@ -510,8 +510,8 @@ class FacturationPage(QWidget):
                 return
             inv = store.add_invoice(self._build_invoice_dict())
             self._refresh_invoices()
-        downloads = Path.home() / "Downloads"
-        start = downloads if downloads.is_dir() else Path.home()
+        from core.prefs import dossier_sortie
+        start = dossier_sortie()
         default = f"facture_{inv.get('number','')}.pdf"
         path, _f = QFileDialog.getSaveFileName(self, _("fact.gen_pdf"),
                                                str(start / default), "PDF (*.pdf)")
@@ -671,7 +671,9 @@ class FacturationPage(QWidget):
         """Génère la lettre de relance PDF (langue du document) et l'ouvre."""
         from PySide6.QtWidgets import QFileDialog
         from core.export.relance_pdf import render_relance
-        default = f"relance_{inv.get('number', '').replace('/', '-')}.pdf"
+        from core.prefs import dossier_sortie
+        default = str(dossier_sortie()
+                      / f"relance_{inv.get('number', '').replace('/', '-')}.pdf")
         path, _flt = QFileDialog.getSaveFileName(
             parent_dlg or self, _("fact.relance_pdf"), default, "PDF (*.pdf)")
         if not path:

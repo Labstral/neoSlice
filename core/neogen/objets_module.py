@@ -68,6 +68,50 @@ def _defauts(obj: dict) -> dict:
     return ns
 
 
+def variantes(obj: dict) -> list:
+    """Les options à éprouver EN PLUS des valeurs par défaut : chaque booléen
+    inversé, chaque valeur de menu autre que celle par défaut.
+
+    Une à une, et non toutes les combinaisons : on veut que CHAQUE branche du
+    code soit exécutée au moins une fois, sans faire exploser le temps de
+    validation."""
+    essais = []
+    for t in obj.get("flags", []):
+        if len(t) >= 4:
+            essais.append((t[0], not bool(t[3])))
+    for t in obj.get("choix", []):
+        if len(t) >= 5:
+            for val in t[3]:
+                if val and val[0] != t[4]:
+                    essais.append((t[0], val[0]))
+    return essais
+
+
+def verifier_variantes(obj: dict, ns_base: dict) -> str | None:
+    """Valide l'objet SOUS CHACUNE de ses options. Renvoie None si tout passe.
+
+    Sans cela, seules les valeurs par DÉFAUT étaient éprouvées : une branche de
+    code jamais exécutée partait chez l'utilisateur et ne cassait qu'au moment
+    où il cochait l'option. C'est arrivé le 2026-09-20 avec le nid d'abeille du
+    bac empilable, dont les angles étaient calculés en radians alors que les
+    `cos`/`sin` du KIT prennent des DEGRÉS : l'hexagone valait 0,0016 mm², le
+    perçage ne retirait rien, et la validation par défaut ne voyait rien."""
+    if not obj.get("code"):
+        return None                       # objet importé (maillage) : rien à exécuter
+    from core.neogen import libre as L
+    for cle, valeur in variantes(obj):
+        ns = dict(ns_base)
+        ns[cle] = valeur
+        try:
+            piece = L.poser_au_sol(L.executer_sandbox(str(obj["code"]), ns))
+        except Exception as e:
+            return f"option {cle}={valeur} : {e}"
+        err = L.verifier(piece)
+        if err is not None:
+            return f"option {cle}={valeur} : {err}"
+    return None
+
+
 def _make_builder(obj: dict):
     """Fabrique le constructeur d'un objet-recette : exécute son `code` dans le
     bac à sable avec les paramètres de l'utilisateur injectés."""

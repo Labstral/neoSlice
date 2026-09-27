@@ -335,6 +335,19 @@ _GUARD = (
 )
 
 
+# Rappel COURT place en DERNIER (apres la question) : c'est l'instruction la
+# plus recente, donc la mieux suivie. Le GUARD complet, lui, est stable et vit
+# desormais dans le prefixe mis en cache par Ollama (voir _build_messages) :
+# replace a la fin, ses 6092 caracteres etaient retraites a CHAQUE question.
+_RAPPEL = (
+    "RAPPEL (ne le recite jamais) : reponds en FRANCAIS, sans URL, et reste sur "
+    "l'impression 3D. VA DROIT AU BUT : 6 lignes maximum, la cause la plus "
+    "probable d'abord, puis le geste concret a faire. Pas de preambule, pas de "
+    "resume de la question, pas de liste de tout ce qui pourrait arriver. Si le "
+    "sujet merite plus, termine par une phrase proposant d'approfondir."
+)
+
+
 # ── Auto-reflexion (thinking) : Qwen3 raisonne mieux sur les questions DIFFICILES ────
 # On active le mode reflexion tout seul pour les diagnostics/how-to complexes, et on le
 # laisse OFF sur les commandes atelier et lectures (rapides). Le toggle manuel prime.
@@ -375,11 +388,14 @@ def should_auto_think(text: str) -> bool:
         return False
     if _CMD_RE.search(t) and len(t) < 90:        # commande d'action -> jamais de thinking
         return False
-    if _HARD_THINK_RE.search(t):                 # diagnostic/how-to -> reflexion (prioritaire)
-        return True
     if _READ_RE.search(t) and len(t) < 80:       # lecture simple -> rapide
         return False
-    return len(t) > 160 and "?" in t             # question longue et ouverte
+    # La reflexion coute ~10 s de SILENCE avant le premier mot (mesure) : on la
+    # reserve aux questions vraiment fournies. Un diagnostic courant comme
+    # « ma premiere couche n'adhere pas » la declenchait, pour rien.
+    if _HARD_THINK_RE.search(t):
+        return len(t) > 120
+    return len(t) > 200 and "?" in t             # question longue et ouverte
 
 
 class AssistantEngine:
@@ -635,7 +651,11 @@ class AssistantEngine:
             # num_ctx 16384 : le savoir expert + le prompt + le RAG + l'historique
             # depassent 12288 -> on agrandit la fenetre pour eviter tout debordement
             # (le savoir est un prefixe STABLE, mis en cache par Ollama).
-            "options": {"temperature": 0.25, "top_p": 0.9, "num_ctx": 16384},
+            # num_predict : filet de securite. La brievete est demandee dans le
+            # RAPPEL ; ce plafond evite seulement les pavés de 1000 jetons
+            # mesures (26 s de frappe a eux seuls).
+            "options": {"temperature": 0.25, "top_p": 0.9, "num_ctx": 16384,
+                        "num_predict": 700},
         }
         data = json.dumps(payload).encode()
         for i in range(attempts):
@@ -668,6 +688,10 @@ class AssistantEngine:
             sys_msgs.append({"role": "system", "content": UI_GUIDE})
         except Exception:
             pass
+        # Le GUARD complet est STABLE : il appartient au prefixe mis en cache.
+        sys_msgs.append({"role": "system", "content": _GUARD})
+        stables = sys_msgs
+        ctx_msg = pk_msg = None
         last_user = next((m["content"] for m in reversed(history)
                           if m.get("role") == "user"), "")
         configured_printer = ""
@@ -676,7 +700,7 @@ class AssistantEngine:
             configured_printer = context.configured_printer()
             ctx = context.build_context_block()
             if ctx:
-                sys_msgs.append({"role": "system", "content": ctx})
+                ctx_msg = {"role": "system", "content": ctx}
         except Exception:
             pass
         # Faits imprimante cibles (machine configuree et/ou citee dans la question)
@@ -684,7 +708,7 @@ class AssistantEngine:
             from core.assistant import printer_kb
             pk = printer_kb.facts_for(last_user, configured_printer)
             if pk:
-                sys_msgs.append({"role": "system", "content": pk})
+                pk_msg = {"role": "system", "content": pk}
         except Exception:
             pass
         # RAG : passages de wiki pertinents. Isole pour pouvoir le RETIRER en repli.
@@ -696,10 +720,16 @@ class AssistantEngine:
                 rag_msg = {"role": "system", "content": kb}
         except Exception:
             pass
-        # Guard place APRES l'historique = instruction la plus recente, la plus obeie.
-        guard_msg = {"role": "system", "content": _GUARD}
-        full = sys_msgs + ([rag_msg] if rag_msg else []) + history + [guard_msg]
-        reduced = sys_msgs + history + [guard_msg]
+        # ORDRE : tout ce qui est STABLE devant, tout ce qui VARIE derriere.
+        # Ollama ne reutilise son cache que sur le PREFIXE identique : le GUARD
+        # (6092 car, jamais modifie) place apres la question faisait retraiter
+        # ~1500 jetons a chaque fois. Mesure : 1er mot a 6 s sur une question
+        # neuve, 2,2 s quand le prompt etait identique. Le GUARD passe donc dans
+        # le prefixe, et seul un RAPPEL court garde la position de recence.
+        variables = [m for m in (ctx_msg, pk_msg, rag_msg) if m]
+        rappel_msg = {"role": "system", "content": _RAPPEL}
+        full = stables + variables + history + [rappel_msg]
+        reduced = stables + [m for m in (ctx_msg, pk_msg) if m] + history + [rappel_msg]
         return full, reduced
 
     # ── Inference streaming ───────────────────────────────────────────────────
@@ -733,6 +763,17 @@ class AssistantEngine:
             with urllib.request.urlopen(req, timeout=300):
                 pass
             logger.info("[Assistant] préchauffage terminé (modèle résident).")
+            # L'index documentaire est en mémoire PROJETÉE : la toute première
+            # recherche lit 1,5 Go depuis le disque et coûte ~12 s (mesuré),
+            # contre ~2 s ensuite. On paie ce péage ICI, pendant que
+            # l'utilisateur écrit, plutôt que sur sa première question.
+            try:
+                from core.assistant import rag
+                if rag.available():
+                    rag.context_block("impression 3D premiere couche")
+                    logger.info("[Assistant] index documentaire préchauffé.")
+            except Exception as e:
+                logger.info(f"[Assistant] préchauffage de l'index ignoré : {e}")
         except Exception as e:
             logger.info(f"[Assistant] préchauffage ignoré : {e}")
         finally:

@@ -513,8 +513,8 @@ class OrdersPage(QWidget):
         from core.export.order_pdf import render_order
         company = store.get_company()
         safe = _re.sub(r'[<>:"/\\|?*]', "_", f"neoSlice_{o.get('number','commande')}.pdf")
-        dl = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
-        out = Path(dl) if dl else Path.home()
+        from core.prefs import dossier_sortie
+        out = dossier_sortie()
         out.mkdir(parents=True, exist_ok=True)
         path = str(out / safe)
         try:

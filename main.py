@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QProgressBar
+from PySide6.QtWidgets import QApplication, QProgressBar, QVBoxLayout, QWidget
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont, QIcon, QPixmap
 from loguru import logger
@@ -49,8 +49,12 @@ class _ImportThread(QThread):
 
 
 class SplashScreen(QWidget):
-    def __init__(self):
+    """Écran de chargement. `image` permet à neoForge d'avoir le sien, au même
+    format et avec la même barre de progression que celui de neoSlice."""
+
+    def __init__(self, image: str = "splash_bg.png", titre: str = ""):
         super().__init__()
+        self._titre = titre
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint
@@ -58,7 +62,7 @@ class SplashScreen(QWidget):
 
         self.setFixedSize(740, 416)
         self._bg_pixmap = None
-        bg_path = _assets_dir() / "splash_bg.png"
+        bg_path = _assets_dir() / image
         if bg_path.exists():
             self._bg_pixmap = QPixmap(str(bg_path)).scaled(
                 740, 416,
@@ -68,7 +72,11 @@ class SplashScreen(QWidget):
         else:
             self.setStyleSheet("QWidget { background-color: #070D14; }")
 
-        # Barre de chargement infinie tout en bas
+        # Barre de chargement infinie tout en bas.
+        # ⚠ Elle DOIT rester un widget Qt : son animation est dessinée en C++ et
+        # continue donc de défiler pendant que Python est occupé (import du
+        # noyau, chargement des modules). Une barre peinte en Python se fige à
+        # ces moments là, parce qu'un seul fil Python s'exécute à la fois.
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -91,6 +99,7 @@ class SplashScreen(QWidget):
             }
         """)
         layout.addWidget(bar)
+        self._barre = bar
 
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(
@@ -106,6 +115,15 @@ class SplashScreen(QWidget):
             p.drawPixmap(0, 0, self._bg_pixmap)
         else:
             super().paintEvent(event)
+            # Image absente : le nom du logiciel, pour ne jamais montrer un
+            # rectangle noir vide.
+            if self._titre:
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                f_titre = QFont(FONT_MAIN, 34, QFont.Weight.Bold)
+                p.setFont(f_titre)
+                p.setPen(QColor(232, 240, 252))
+                p.drawText(QRectF(0, 0, self.width(), self.height()),
+                           Qt.AlignmentFlag.AlignCenter, self._titre)
 
         # « Chargement… » sous le slogan (incrusté dans l'image), au-dessus de la barre
         try:
@@ -131,7 +149,11 @@ class SplashScreen(QWidget):
 
 def main():
     _configure_logging()
-    logger.info("Démarrage de neoSlice")
+    # neoForge (module Pro) = CE MÊME exe relancé avec --neoforge : un programme
+    # à part, avec sa fenêtre et sa place dans la barre des tâches, mais qui
+    # partage licence, thème et langue. Voir core/neoforge/lanceur.py.
+    mode_neoforge = "--neoforge" in sys.argv
+    logger.info("Démarrage de neoForge" if mode_neoforge else "Démarrage de neoSlice")
 
     # Certificats SSL — CRITIQUE pour macOS : une app gelée (PyInstaller) n'a pas
     # le magasin de certificats système → tout HTTPS (activation Pro, mises à jour,
@@ -150,7 +172,8 @@ def main():
     # AppUserModelID — requis pour que Windows affiche la bonne icône dans la barre des tâches
     if sys.platform == "win32":
         try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("neoSlice.app")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "neoSlice.neoForge" if mode_neoforge else "neoSlice.app")
         except Exception:
             pass
 
@@ -329,6 +352,21 @@ def main():
         _icon_path = _assets_dir() / "neoSlice.png"
     if _icon_path.exists():
         app.setWindowIcon(QIcon(str(_icon_path)))
+
+    if mode_neoforge:
+        from core.neoforge.lanceur import demarrer as _demarrer_neoforge
+        # Même écran de chargement que neoSlice (même taille, même barre), avec
+        # sa propre image : l'ouverture prend quelques secondes (noyau de CAO).
+        splash_forge = SplashScreen("splash_neoforge.png", "neoForge")
+        splash_forge.show()
+        app.processEvents()
+        try:
+            _fen_forge = _demarrer_neoforge(app, splash_forge)
+        finally:
+            splash_forge.close()
+        if _fen_forge is None:
+            return sys.exit(0)
+        return sys.exit(app.exec())
 
     splash = SplashScreen()
     splash.show()

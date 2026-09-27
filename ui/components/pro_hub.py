@@ -1584,8 +1584,8 @@ class ProHubDialog(QDialog):
             self._msg(_("pro.autobk_title"), _("pro.autobk_saved"))
 
     def _do_export(self):
-        downloads = Path.home() / "Downloads"
-        start = downloads if downloads.is_dir() else Path.home()
+        from core.prefs import dossier_sortie
+        start = dossier_sortie()
         path, _f = QFileDialog.getSaveFileName(
             self, _("pro.export"), str(start / "neoslice_atelier.zip"), "ZIP (*.zip)")
         if not path:
@@ -1601,9 +1601,9 @@ class ProHubDialog(QDialog):
     def _do_import(self):
         if not self._ask(_("pro.import"), _("pro.import_confirm")):
             return
-        start = Path.home() / "Downloads"
+        from core.prefs import dossier_sortie
         path, _f = QFileDialog.getOpenFileName(
-            self, _("pro.import"), str(start if start.is_dir() else Path.home()), "ZIP (*.zip)")
+            self, _("pro.import"), str(dossier_sortie()), "ZIP (*.zip)")
         if not path:
             return
         try:
