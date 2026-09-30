@@ -137,6 +137,30 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 END OF TERMS AND CONDITIONS"""
 
 
+OCCT_NOTICE = """Open CASCADE Technology
+Copyright (c) 1999-2024 OPEN CASCADE SAS
+
+This library is free software; you can redistribute it and/or modify it under
+the terms of the GNU Lesser General Public License version 2.1 as published by
+the Free Software Foundation, with special exception defined in the file
+OCCT_LGPL_EXCEPTION.txt. Consult the file LICENSE_LGPL_21.txt included in OCCT
+distribution for complete text of the license and disclaimer of any warranty.
+
+Alternatively, this file may be used under the terms of Open CASCADE
+commercial license or contractual agreement.
+
+OCCT is used as an unmodified dynamic library. As required by the LGPL, these
+libraries may be replaced by another build of OCCT; they are located in the
+neoForge kernel installation folder.
+
+Full text of the GNU LGPL version 2.1:
+https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+Open CASCADE licensing:
+https://dev.opencascade.org/resources/licensing
+OCCT source code:
+https://github.com/Open-Cascade-SAS/OCCT"""
+
+
 # ── Sources de la base de connaissances (attribution) ─────────────────────────
 # name, url. Documentation publique des fabricants et communautés.
 KB_SOURCES: tuple[tuple[str, str], ...] = (
@@ -324,6 +348,27 @@ class LicensesDialog(QDialog):
             for n, lic, u in libs)
         parts.append(
             f"<ul style='color:{c_text};font-size:12px;margin:4px 0;'>{rows_libs}</ul>")
+
+        # neoForge : noyau geometrique OCCT + liaisons OCP
+        parts.append(
+            f"<p style='color:{c_head};font-weight:bold;font-size:14px;"
+            f"margin:16px 0 2px 0;'>{esc(_('licenses.sec_neoforge'))}</p>")
+        parts.append(
+            f"<p style='color:{c_text};font-size:12px;margin:2px 0;'>"
+            "<b>Open CASCADE Technology</b> (noyau geometrique de neoForge : "
+            "conges, chanfreins, operations booleennes, taraudages), par "
+            "OPEN CASCADE SAS, sous licence LGPL 2.1 assortie d'une exception.<br>"
+            "<a href='https://dev.opencascade.org/resources/licensing' style='color:"
+            + c_head + "';>dev.opencascade.org/resources/licensing</a></p>")
+        parts.append(block("Open CASCADE Technology - LGPL 2.1 with exception",
+                           OCCT_NOTICE))
+        parts.append(
+            f"<p style='color:{c_text};font-size:12px;margin:10px 0 2px 0;'>"
+            "<b>OCP</b> (liaisons Python vers OCCT, paquet cadquery-ocp-novtk), "
+            "par Bernhard Walter et les contributeurs du projet CadQuery, sous "
+            "licence Apache 2.0.<br>"
+            "<a href='https://github.com/CadQuery/OCP' style='color:" + c_head +
+            "';>github.com/CadQuery/OCP</a></p>")
 
         # Texte Apache 2.0 (une seule fois, vaut pour tous les composants Apache)
         parts.append(

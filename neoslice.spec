@@ -184,6 +184,14 @@ a = Analysis(
         'trimesh.repair',
         'trimesh.smoothing',
         'trimesh.transformations',
+        # Lancer de rayon accéléré : sert à MESURER l'épaisseur de matière pour
+        # la thermomap de fragilité. trimesh l'importe dynamiquement dans un
+        # try/except, donc PyInstaller ne le voit pas tout seul, et sans lui
+        # l'exe retomberait en silence sur la mesure par grille, moins juste.
+        'embreex',
+        'embreex.rtcore_scene',
+        'embreex.mesh_construction',
+        'trimesh.ray.ray_pyembree',
         'scipy',
         'scipy.spatial',
         'scipy.spatial.qhull',

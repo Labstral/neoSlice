@@ -614,8 +614,12 @@ COOKBOOK = [
      "# arretes arrondies impossibles ici : cube simple + creux coniques\n"
      "piece = boite_3d(16, 16, 16)"),
     ("sapin noel arbre", "un sapin de noel de 9 cm",
-     "# silhouette tournee, dessous des etages a ~53 deg (imprimable sans support)\n"
-     "piece = revolution([(0,0),(7,0),(32,14),(11,42),(26,46),(10,68),(18,72),(0.5,92),(0,92)])"),
+     "# Chaque etage MONTE autant qu'il s'ouvre : le dessous fait donc 45 deg\n"
+     "# et s'imprime sans support. L'ancien profil annoncait 53 deg mais\n"
+     "# mesurait 15 a 29 deg (evasements trop brusques), 39 % de la surface en\n"
+     "# surplomb : il ne passait que parce que l'analyseur les manquait.\n"
+     "piece = revolution([(0,0),(7,0),(7,3),(32,28),(13,46),(26,59),(10,72),"
+     "(18,80),(0.5,92),(0,92)])"),
     ("bonhomme neige", "un bonhomme de neige de 8 cm",
      "c1 = sphere(42)\nc2 = deplacer(sphere(30), 0, 0, 36)\nc3 = deplacer(sphere(20), 0, 0, 60)\n"
      "piece = fusionner(c1, c2, c3)"),

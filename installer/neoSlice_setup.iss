@@ -3,7 +3,7 @@
 ; Pour compiler : ISCC.exe neoSlice_setup.iss
 
 #define AppName      "neoSlice"
-#define AppVersion   "2.3.0"
+#define AppVersion   "2.3.1"
 #define AppPublisher "Emmanuel Percheron"
 #define AppURL       "https://github.com/neoslice"
 #define AppExeName   "neoSlice.exe"

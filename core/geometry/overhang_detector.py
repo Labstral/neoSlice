@@ -28,6 +28,10 @@ SUPPORT_THRESHOLD_DEG: float = 45.0   # angle depuis l'horizontale (norme FDM)
 _MIN_CLUSTER_AREA_MM2: float = 8.0    # surface minimale d'un cluster à signaler (~3×3 mm)
 _MAX_BRIDGE_SPAN_MM: float = 12.0    # portée max en pont (~10-15 mm Bambu)
 _SMOOTH_WEIGHT: float = 0.25          # contribution voisin au lissage
+# De combien un appui doit DESCENDRE sous le surplomb pour porter quelque
+# chose. Une paroi qui commence exactement à la hauteur du surplomb pend dans
+# le vide avec lui : ce n'est pas un appui, c'est le bord du porte-à-faux.
+_ANCRE_DESCENTE_MIN: float = 0.1     # mm
 
 
 @dataclass
@@ -96,15 +100,28 @@ def analyze_overhangs(
     mask = angles_smooth < cutoff
 
     # ── 3. Exclusion plateau ─────────────────────────────────────────────────
+    # Une face n'est « posée sur le plateau » que si elle l'est VRAIMENT. Dès
+    # qu'elle est en l'air, c'est un surplomb, si bas soit-il : l'imprimante ne
+    # sait pas déposer de matière dans le vide, que ce soit à 1 mm ou à 50 mm
+    # du plateau. Emmanuel, 2026-09-30 : « à partir du moment où on considère
+    # qu'une imprimante ne peut pas imprimer une zone qui est dans le vide,
+    # même très proche du plateau, il faut la considérer comme un surplomb,
+    # c'est évident ».
+    #
+    # L'ancienne tolérance était une allocation GÉNÉREUSE, jusqu'à 5 mm sur une
+    # pièce basse et large et 9,6 mm sur une tour de 120 mm. Mesuré sur son
+    # Chute_Cover.stl, 52 × 57 × 16 mm : ses 29 faces réellement en l'air, à
+    # 1,37 jusqu'à 2,80 mm, tombaient toutes sous le seuil de 5 mm, et la pièce
+    # était annoncée à 0,00 % de surplombs. Avec un seuil réaliste, elles
+    # ressortent, soit 0,91 % de la surface.
+    #
+    # Ce qui reste ne sert qu'à absorber un fond légèrement incliné ou bruité,
+    # pas à pardonner un vrai porte-à-faux : l'épaisseur d'une première couche,
+    # avec un petit supplément proportionnel pour les grands maillages, plafonné
+    # à 1 mm.
     z_min = float(mesh.bounds[0][2])
     z_height = float(mesh.bounds[1][2] - z_min)
-    _aspect = z_height / max(float(mesh.bounding_box.extents[0]),
-                              float(mesh.bounding_box.extents[1]), 1.0)
-    _base_tol = 5.0 if _aspect < 0.4 else 3.0
-    plate_tol = min(
-        max(_base_tol, z_height * 0.08),
-        z_height * 0.35,
-    )
+    plate_tol = min(max(0.4, z_height * 0.01), 1.0)
     face_centroids = mesh.triangles_center
     on_plate = (
         (face_centroids[:, 2] <= z_min + plate_tol)
@@ -261,6 +278,9 @@ def _filter_clusters_and_bridges(
     face_areas = mesh.area_faces
     centroids = mesh.triangles_center
     adj = mesh.face_adjacency  # (E, 2) — arêtes partagées
+    # Point le plus bas de chaque face : sert à distinguer un vrai appui, qui
+    # descend sous le surplomb, d'une paroi qui pend dans le vide avec lui.
+    face_zmin = np.asarray(mesh.triangles)[:, :, 2].min(axis=1)
 
     # ── Composantes connexes des faces en surplomb ───────────────────────────
     both_ov = mask[adj[:, 0]] & mask[adj[:, 1]]
@@ -304,11 +324,28 @@ def _filter_clusters_and_bridges(
             continue
 
         # Filtre 2 : pont imprimable
+        #
+        # Un pont n'est un pont que s'il repose sur quelque chose AUX DEUX
+        # BOUTS. Or n'importe quelle face voisine était acceptée comme appui,
+        # y compris la face verticale extérieure d'un rebord, qui pend elle
+        # même dans le vide. Un simple porte-à-faux était donc pris pour un
+        # pont et ignoré. Mesuré sur le Chute_Cover d'Emmanuel : 54 faces
+        # réellement en l'air, 2,07 % de la surface, ramenées à zéro ici, d'où
+        # « pas de surplombs significatifs » sur une pièce qui en a.
+        #
+        # Un vrai appui DESCEND plus bas que le surplomb qu'il est censé
+        # porter. La face extérieure d'un rebord commence exactement à la
+        # hauteur du surplomb, elle ne porte rien ; le mur auquel le rebord se
+        # rattache, lui, descend jusqu'au plateau. Les deux piliers d'un pont
+        # véritable descendent tous les deux, le pont reste donc reconnu.
         lbl_anc_mask = ov_lbl_b == lbl
+        anchor_xy = None
         if lbl_anc_mask.any():
-            anchor_xy = centroids[anc_face[lbl_anc_mask], :2]
-        else:
-            anchor_xy = None   # pas d'ancres → certainement pas un pont
+            _anc = anc_face[lbl_anc_mask]
+            _sous = face_zmin[_anc] < (float(face_zmin[comp_arr].min())
+                                       - _ANCRE_DESCENTE_MIN)
+            if _sous.any():
+                anchor_xy = centroids[_anc[_sous], :2]
 
         if anchor_xy is not None and _is_bridgeable(
             centroids[comp_arr, :2], anchor_xy, max_bridge

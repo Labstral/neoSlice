@@ -200,9 +200,37 @@ class AutoBackupDialog(QDialog):
         self._close.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p['TEXT_SECONDARY']}; border: none; }}"
             f"QPushButton:hover {{ background: {p['ERROR_RED']}; color: #fff; border-radius: 4px; }}")
+        # La LISTE DÉROULÉE est une fenêtre à part : sans règle pour elle, Qt
+        # lui laisse ses couleurs par défaut et son texte devient illisible sur
+        # le thème sombre (signalé par Emmanuel le 2026-09-30). On reprend
+        # exactement le modèle déjà appliqué ailleurs dans l'Espace Pro :
+        # fond élevé, texte principal, surlignage à l'accent. Et comme styler
+        # un QComboBox lui fait perdre sa flèche, on la redessine.
+        from ui.styles.theme import arrow_icon
+        fleche = arrow_icon("down", p["TEXT_SECONDARY"]).replace("\\", "/")
+
+        def _assombrir(hexa: str, part: float = 0.80) -> str:
+            """Une teinte plus sombre de la même couleur.
+
+            La ligne survolée porte du texte blanc sur l'accent. Tel quel, le
+            contraste tombe à 3,2 pour 1 en thème sombre, sous le seuil de
+            lisibilité. En assombrissant l'accent de 20 %, il remonte à 4,8
+            sans changer de couleur : la ligne reste bleue, elle devient
+            lisible.
+            """
+            h = hexa.lstrip("#")
+            r, v, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+            return "#%02x%02x%02x" % (int(r * part), int(v * part), int(b * part))
         field = (f"QLineEdit, QComboBox {{ background: {p['BG_INPUT']}; color: {p['TEXT_PRIMARY']}; "
                  f"border: 1px solid {p['INACTIVE']}; border-radius: 4px; padding: 4px 8px; }}"
-                 f"QLineEdit:disabled, QComboBox:disabled {{ color: {p['TEXT_LABEL']}; }}")
+                 f"QLineEdit:disabled, QComboBox:disabled {{ color: {p['TEXT_LABEL']}; }}"
+                 f"QComboBox::drop-down {{ border: none; width: 20px; }}"
+                 f"QComboBox::down-arrow {{ image: url(\"{fleche}\"); width: 9px; height: 6px; }}"
+                 f"QComboBox QAbstractItemView {{ background: {p['BG_ELEVATED']}; "
+                 f"color: {p['TEXT_PRIMARY']}; "
+                 f"selection-background-color: {_assombrir(p['ACCENT'])}; "
+                 f"selection-color: #ffffff; border: 1px solid {p['INACTIVE']}; "
+                 f"outline: none; }}")
         self._folder_edit.setStyleSheet(field)
         self._freq_combo.setStyleSheet(field)
         soft = (f"QPushButton {{ background: transparent; color: {p['TEXT_SECONDARY']}; "
@@ -219,5 +247,8 @@ class AutoBackupDialog(QDialog):
             f"QCheckBox::indicator {{ width: 18px; height: 18px; }}"
             f"QCheckBox::indicator:unchecked {{ border: 1px solid {p['INACTIVE']}; "
             f"background: {p['BG_INPUT']}; border-radius: 4px; }}"
-            f"QCheckBox::indicator:checked {{ border: 1px solid {p['TELE_GREEN']}; "
-            f"background: {p['TELE_GREEN']}; border-radius: 4px; }}")
+            # Cochée en BLEU d'accent, comme toutes les autres cases de
+            # l'application. Celle ci était la seule en vert, ce qui la faisait
+            # ressortir sans raison (demande d'Emmanuel, 2026-09-30).
+            f"QCheckBox::indicator:checked {{ border: 1px solid {p['ACCENT']}; "
+            f"background: {p['ACCENT']}; border-radius: 4px; }}")

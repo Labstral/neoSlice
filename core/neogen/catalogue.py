@@ -1074,12 +1074,25 @@ def construire(entree_id: str, params: dict):
             _g.ESPACEMENT_ACTIF = max(0.0, float(params["espacement"]))
         except (TypeError, ValueError):
             pass
+    # TAILLE DU TEXTE demandée, en pourcentage de la taille automatique.
+    # Elle atteint tous les objets porteurs de texte, y compris ceux dont le
+    # constructeur n'a aucun paramètre pour ça : les deux fonctions de texte
+    # la lisent dans le contexte. Demandé par Kevin, utilisateur, 2026-09-30 :
+    # 20 objets sur 24 n'offraient aucun moyen de la changer.
+    _jeton = None
+    if e["texte"] != "aucun" and params.get("taille_texte") is not None:
+        try:
+            _jeton = _g.regler_echelle_texte(float(params["taille_texte"]) / 100.0)
+        except (TypeError, ValueError):
+            _jeton = None
     try:
         return e["construire"](p)
     finally:
         _g.POLICE_ACTIVE = None
         _g.RELIEF_ACTIF = None
         _g.ESPACEMENT_ACTIF = None
+        if _jeton is not None:
+            _g.restaurer_echelle_texte(_jeton)
 
 
 def piece_hors_plateau(piece, volume: tuple[float, float, float]) -> str | None:

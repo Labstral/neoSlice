@@ -247,7 +247,47 @@ SOMMAIRE
 
 
 ------------------------------------------------------------------------------
-8. NOUVEAUTÉS v2.3.0
+8. NOUVEAUTÉS v2.3.1
+------------------------------------------------------------------------------
+
+  FRAGILITÉ : ON VOIT ENFIN OÙ
+  -----------------------------
+  * La couleur montre désormais L'ENDROIT fragile, et plus seulement si la
+    pièce l'est dans son ensemble. Une nervure fine ressort en rouge au
+    milieu d'une pièce verte.
+  * L'épaisseur de matière est MESURÉE au lieu d'être estimée. Une paroi de
+    3 mm est annoncée 3 mm, un fil de 2 mm est annoncé 2 mm.
+  * Conséquence : certaines pièces que vous croyiez fragiles ne le sont pas,
+    et l'inverse aussi. Les réglages renforcés automatiquement suivent.
+  * L'analyse est également beaucoup plus rapide.
+  * La case « Fragilité » du viewer est toujours disponible, que vous voyiez
+    plusieurs pièces, une seule, ou une pièce isolée d'un clic. La jauge de
+    la colonne, qui ne donnait qu'un chiffre global, a été retirée.
+
+  SURPLOMBS
+  ---------
+  * Les porte-à-faux situés près du plateau et les rebords en saillie
+    n'étaient pas signalés. Ils le sont désormais.
+
+  neoGen
+  ------
+  * Nouveau réglage « Taille du texte » sur tous les objets qui portent du
+    texte. 100 % correspond à la taille automatique d'avant.
+  * Ouvrir un résultat de recherche pouvait afficher un autre objet et
+    laisser le formulaire vide. Corrigé.
+
+  ESPACE PRO
+  ----------
+  * La liste déroulante de la sauvegarde automatique était illisible en
+    thème sombre.
+
+  neoFORGE
+  --------
+  * Message plus clair lorsque le module doit être mis à jour.
+
+
+------------------------------------------------------------------------------
+9. NOUVEAUTÉS v2.3.0
 ------------------------------------------------------------------------------
 
   neoFORGE, LE MODELEUR 3D (version Pro)
@@ -272,7 +312,7 @@ SOMMAIRE
     deux d'entre eux pouvaient fermer l'application. Ils sont neutralisés.
 
 ------------------------------------------------------------------------------
-9. NOUVEAUTÉS v2.2.0
+10. NOUVEAUTÉS v2.2.0
 ------------------------------------------------------------------------------
 
   LOGICIEL DE SLICING ET IMPRIMANTE AU MÊME ENDROIT
@@ -320,7 +360,7 @@ RAPPEL - LES GRANDES NOUVEAUTÉS DE LA v2
 
 
 ------------------------------------------------------------------------------
-10. CONTACT ET SUPPORT
+11. CONTACT ET SUPPORT
 ------------------------------------------------------------------------------
 
   Développeur  : Emmanuel Percheron

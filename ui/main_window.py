@@ -4718,25 +4718,36 @@ class MainWindow(QMainWindow):
         self._frag_gen = getattr(self, "_frag_gen", 0) + 1
         _gen = self._frag_gen
         self._viewer.clear_fragility_data()
-        try:
-            _frag_upfront = _is_multipart or (
-                _ng_scene is not None and len(_ng_scene[0].geometry) >= 2)
-        except Exception:
-            _frag_upfront = _is_multipart
-        if not _is_color_asm and _frag_upfront:
-            self._analysis_panel.set_fragility_disabled()
-        if _is_color_asm:
-            return
+        # Annoncer le calcul pour TOUTE pièce, et non plus seulement pour les
+        # scènes à plusieurs corps. Depuis que la carte est produite aussi pour
+        # une pièce seule, et qu'elle demande plusieurs secondes sur un
+        # maillage dense, l'utilisateur restait sinon devant un viewer muet
+        # sans savoir qu'un calcul tournait.
+        _frag_upfront = True
+        self._analysis_panel.set_fragility_disabled()
 
         def _calcul_thermomap():
+            """La case « Fragilité » doit être là DANS TOUS LES CAS : plusieurs
+            objets, un seul, un objet isolé d'un clic, ou un assemblage
+            couleur. Chaque constructeur spécialisé peut renoncer (trop de
+            corps, alignement non garanti, maillage hors budget) ; on retombe
+            alors sur la carte de la pièce entière plutôt que de priver
+            l'utilisateur de toute information."""
             if _is_multipart:                        # 3MF multi-objets
                 s, mx = self._build_multipart_fragility_severity()
-                return (s if mx >= 0.0 else None), False
-            if _ng_scene is not None:                # objet neoGen bicolore
+                if s is not None and mx >= 0.0:
+                    return s, False
+            elif _ng_scene is not None:              # objet neoGen bicolore
                 s, _mx, _n = self._build_neogen_fragility_severity()
-                return s, True
-            s, _mx = self._build_bodysplit_fragility_severity()
-            return s, False                          # mesh à corps séparés
+                if s is not None:
+                    return s, True
+            else:                                    # corps séparés, ou pièce seule
+                s, _mx = self._build_bodysplit_fragility_severity()
+                if s is not None:
+                    return s, False
+            # Dernier recours : la pièce d'un bloc. Un assemblage couleur passe
+            # aussi par ici, et son retour se fait vers les surplombs.
+            return self._build_whole_fragility_severity(), bool(_ng_scene is not None)
 
         def _thermomap_prete(sev, restore_neogen):
             if _gen != getattr(self, "_frag_gen", 0) or self._mesh is None:
@@ -4952,17 +4963,27 @@ class MainWindow(QMainWindow):
             orig_fc = len(obj.mesh.faces)
             dev = abs(orig_fc - _min_fc) / max(_min_fc, 1) if _min_fc > 0 else 0
             viewer_fc = _min_fc if (dev > 0 and dev < 0.05) else orig_fc
+            carte = None
             try:
                 m = obj.mesh.copy()
                 if not np.allclose(obj.transform, np.eye(4)):
                     m.apply_transform(obj.transform)
                 m.apply_translation([0.0, 0.0, -float(m.bounds[0][2])])
-                sev = float(detect_fragility(m, nozzle_diameter_mm=_nz).severity)
+                _fr = detect_fragility(m, nozzle_diameter_mm=_nz, avec_faces=True)
+                sev = float(_fr.severity)
+                carte = _fr.severites_faces
             except Exception:
                 sev = 0.0
             obj_severities[str(obj.object_id)] = sev
             max_sev = max(max_sev, sev)
-            blocks.append(np.full(viewer_fc, sev, dtype=np.float32))
+            # Carte par face quand elle s'aligne EXACTEMENT sur ce que le viewer
+            # attend. `viewer_fc` peut différer du nombre réel de faces (voir la
+            # correction ci-dessus) : dans ce cas la carte décalerait les
+            # couleurs, on retombe alors sur la teinte unique, qui reste juste.
+            if carte is not None and len(carte) == viewer_fc:
+                blocks.append(np.asarray(carte, dtype=np.float32))
+            else:
+                blocks.append(np.full(viewer_fc, sev, dtype=np.float32))
 
         sev_arr = np.concatenate(blocks) if blocks else np.zeros(0, dtype=np.float32)
         n = len(self._mesh.faces)
@@ -5003,14 +5024,20 @@ class MainWindow(QMainWindow):
         _nz = float(getattr(self, "_current_nozzle_diameter", 0.4))
         blocks, max_sev = [], 0.0
         for b in bodies:
+            carte = None
             try:
                 bb = b.copy()
                 bb.apply_translation([0.0, 0.0, -float(bb.bounds[0][2])])
-                sev = float(detect_fragility(bb, nozzle_diameter_mm=_nz).severity)
+                _fr = detect_fragility(bb, nozzle_diameter_mm=_nz, avec_faces=True)
+                sev = float(_fr.severity)
+                carte = _fr.severites_faces
             except Exception:
                 sev = 0.0
             max_sev = max(max_sev, sev)
-            blocks.append(np.full(len(b.faces), sev, dtype=np.float32))
+            if carte is not None and len(carte) == len(b.faces):
+                blocks.append(np.asarray(carte, dtype=np.float32))
+            else:
+                blocks.append(np.full(len(b.faces), sev, dtype=np.float32))
         sev_arr = np.concatenate(blocks)
         if len(sev_arr) != len(self._mesh.faces):
             logger.info(
@@ -5025,14 +5052,26 @@ class MainWindow(QMainWindow):
         supports, jeux de pièces…), STL/OBJ externes multi-pièces. Chaque
         composante connexe = une partie ; alignement par indices de faces
         d'origine (donc exact, même si l'ordre change). Retourne (severity, max)
-        ou (None, -1) si non applicable (< 2 corps, trop de corps, mesh énorme)."""
+        ou (None, -1) si non applicable (trop de corps, mesh énorme).
+
+        Une pièce d'UN SEUL corps est traitée elle aussi : avant, elle n'avait
+        aucune thermomap, alors que c'est le cas où voir OÙ ça casse sert le
+        plus. Chaque corps est peint face par face."""
         from trimesh.graph import connected_components
         from core.geometry.fragility_detector import detect_fragility
         m = self._mesh
         if m is None:
             return None, -1.0
         nf = len(m.faces)
-        if nf == 0 or nf > 250_000:      # coût de detect_fragility par corps
+        # Plafond RELEVÉ de 250 000 à 1,5 million (2026-09-29). À 250 000, la
+        # case « Fragilité » n'apparaissait tout simplement pas sur les gros
+        # fichiers : Emmanuel l'a constaté sur une Main Suspendue Vortex de
+        # 514 000 faces. Tant que la jauge existait, il restait un chiffre ;
+        # depuis qu'elle est retirée, ce plafond privait la pièce de TOUTE
+        # information de fragilité. Le calcul tourne en tâche de fond avec son
+        # indicateur, donc la durée se supporte : environ 6 s pour 490 000
+        # faces, mesuré sur un Baby Groot.
+        if nf == 0 or nf > 1_500_000:
             return None, -1.0
         try:
             comps = [np.asarray(c) for c
@@ -5040,21 +5079,61 @@ class MainWindow(QMainWindow):
                      if len(c) > 0]
         except Exception:
             return None, -1.0
-        if len(comps) < 2 or len(comps) > _MAX_FRAG_BARS_OBJECTS:
+        if not comps or len(comps) > _MAX_FRAG_BARS_OBJECTS:
             return None, -1.0
         _nz = float(getattr(self, "_current_nozzle_diameter", 0.4))
         sev = np.zeros(nf, dtype=np.float32)
         max_sev = 0.0
         for idx in comps:
+            carte = None
             try:
                 sub = m.submesh([idx], append=True)
                 sub.apply_translation([0.0, 0.0, -float(sub.bounds[0][2])])
-                s = float(detect_fragility(sub, nozzle_diameter_mm=_nz).severity)
+                _fr = detect_fragility(sub, nozzle_diameter_mm=_nz, avec_faces=True)
+                s = float(_fr.severity)
+                carte = _fr.severites_faces
             except Exception:
                 s = 0.0
             max_sev = max(max_sev, s)
-            sev[idx] = s
+            # `submesh` garde les faces DANS L'ORDRE de `idx`, donc la carte se
+            # réinjecte directement aux bons indices.
+            if carte is not None and len(carte) == len(idx):
+                sev[idx] = np.asarray(carte, dtype=np.float32)
+            else:
+                sev[idx] = s
         return sev, max_sev
+
+    def _build_whole_fragility_severity(self):
+        """Carte par face de la pièce ENTIÈRE, sans découpage par corps.
+
+        Dernier recours, pour que la case « Fragilité » soit proposée DANS TOUS
+        LES CAS (demande d'Emmanuel, 2026-09-29 : « qu'on voie plusieurs
+        objets, un seul, ou qu'on en isole un »). Les constructeurs spécialisés
+        renoncent dans plusieurs situations parfaitement ordinaires, trop de
+        corps, alignement non garanti, maillage hors budget, et la pièce se
+        retrouvait alors sans aucune information de fragilité, d'autant plus
+        gênant depuis que la jauge a été retirée.
+
+        Sans découpage, la couleur reste juste : elle est mesurée face par
+        face, donc elle montre les endroits fins même sur un bloc unique."""
+        from core.geometry.fragility_detector import detect_fragility
+        m = self._mesh
+        if m is None or len(m.faces) == 0:
+            return None
+        _nz = float(getattr(self, "_current_nozzle_diameter", 0.4))
+        try:
+            mm = m.copy()
+            mm.apply_translation([0.0, 0.0, -float(mm.bounds[0][2])])
+            fr = detect_fragility(mm, nozzle_diameter_mm=_nz, avec_faces=True)
+            carte = fr.severites_faces
+            if carte is not None and len(carte) == len(m.faces):
+                return np.asarray(carte, dtype=np.float32)
+            # Pas de carte (chemin de repli du détecteur) : la teinte unique
+            # vaut mieux que rien, la case reste utilisable.
+            return np.full(len(m.faces), float(fr.severity), dtype=np.float32)
+        except Exception:
+            logger.debug("carte de fragilité globale échouée", exc_info=True)
+            return None
 
     def _on_analysis_error(self, message: str):
         self._analysis_timeout.stop()

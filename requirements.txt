@@ -22,6 +22,15 @@ segno>=1.6                 # QR code 3D (matrice hors-ligne, pur Python, sans d�
 svgelements>=1.9           # import de logos SVG
 opencv-python-headless>=4.10   # vectorisation de logos PNG (contours)
 
+# Analyse de fragilité — mesure EXACTE de l'épaisseur par lancer de rayon.
+# Sans embreex, trimesh retombe sur un lanceur en Python pur, des milliers de
+# fois plus lent, et neoSlice reprend alors la mesure par grille de voxels :
+# l'application fonctionne, mais l'épaisseur des sections rondes et fines est
+# faussée (deux fils identiques ne prennent pas la même couleur dans la
+# thermomap). Mesuré sur un Baby Groot de 490 000 faces : 0,83 s au rayon
+# contre 6,1 s à la grille, et un fil de 2,0 mm rend 1,98 au lieu de 1,2.
+embreex>=4.4.0
+
 # Certificats SSL (HTTPS fiable en app gelée, surtout macOS)
 certifi>=2024.0.0
 

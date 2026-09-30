@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v2.3.0** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v2.3.1** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -48,6 +48,15 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v2.3.1
+- **Fragilité** : la couleur montre désormais OÙ la pièce est fragile, et plus seulement si elle l'est. L'épaisseur de matière est mesurée au lieu d'être estimée, ce qui la rend juste au dixième de millimètre. L'analyse est aussi nettement plus rapide.
+- **Fragilité** : la case du viewer est toujours disponible, y compris sur une pièce seule ou sur une pièce isolée d'un clic. La jauge, devenue redondante, a été retirée.
+- **Surplombs** : les porte-à-faux proches du plateau et les rebords en saillie étaient ignorés. Ils sont détectés.
+- **neoGen** : nouveau réglage **Taille du texte** sur tous les objets qui en portent.
+- **neoGen** : ouvrir un résultat de recherche affichait parfois un autre objet et laissait le formulaire vide.
+- **Espace Pro** : la liste déroulante de la sauvegarde automatique était illisible en thème sombre.
+- **neoForge** : message plus clair quand le module doit être mis à jour.
 
 ### v2.3.0
 - **neoForge, le modeleur 3D** *(Pro)* : un nouveau module pour dessiner vos pièces sans connaître la CAO. Vous posez des formes, vous les étirez, vous les percez, vous arrondissez, vous mesurez, et la pièce part directement dans neoSlice.

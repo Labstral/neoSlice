@@ -71,6 +71,10 @@ class FragilityResult:
     fragile_zones: list[Zone3D]
     min_thickness_mm: float
     severity: float  # 0.0 → 1.0 continu
+    # Sévérité PAR FACE, pour peindre la pièce là où elle est fragile au lieu
+    # d'une couleur unique. None quand l'appelant ne l'a pas demandée, ou quand
+    # la pièce est passée par un chemin de repli qui ne sait pas la produire.
+    severites_faces: "np.ndarray | None" = None
 
 
 # ── API publique ───────────────────────────────────────────────────────────────
@@ -80,6 +84,7 @@ def detect_fragility(
     n_samples: int = 2000,
     nozzle_diameter_mm: float = _DEFAULT_NOZZLE_MM,
     fast: bool = False,
+    avec_faces: bool = False,
 ) -> FragilityResult:
     """fast=True réduit la résolution voxel (~8x plus rapide) pour les previews."""
     """Détecte les zones fragiles en tenant compte du diamètre de buse.
@@ -109,16 +114,42 @@ def detect_fragility(
                 _area_sev = float(np.clip(
                     1.0 - _avg_face_area / _area_threshold, 0.0, 1.0
                 ))
-                # Également SA/V si watertight (complément)
-                if mesh.is_watertight:
+                # Épaisseur moyenne par le rapport volume / surface. C'est
+                # l'estimateur qui sépare vraiment une paroi fine d'un maillage
+                # simplement dense. On l'utilise dans les DEUX sens, et sans
+                # exiger un maillage étanche : un modèle téléchargé ne l'est
+                # presque jamais, et son volume reste exploitable.
+                _ep_moy = None
+                try:
                     _vol = abs(float(mesh.volume))
-                    if _vol > 0:
-                        _mean_t = 2.0 * _vol / max(_total_sa, 1e-6)
-                        if _mean_t < sig_t0:
-                            _area_sev = max(_area_sev,
-                                            float(np.clip(1.0 - _mean_t/sig_t0, 0.0, 1.0)))
+                    _mini_dim = float(min(mesh.bounding_box.extents))
+                    if _vol > 0 and _total_sa > 0:
+                        _t = 2.0 * _vol / _total_sa
+                        # Une épaisseur moyenne plus grande que la plus petite
+                        # dimension de la pièce n'a pas de sens : volume faux.
+                        if 0.0 < _t <= _mini_dim:
+                            _ep_moy = _t
+                except Exception:
+                    pass
 
-                if _area_sev > 0.3:
+                if _ep_moy is not None and _ep_moy < sig_t0:
+                    _area_sev = max(_area_sev,
+                                    float(np.clip(1.0 - _ep_moy / sig_t0, 0.0, 1.0)))
+
+                # VETO. Mesuré sur un Baby Groot de 490 000 faces : aire moyenne
+                # 0,071 mm² donc raccourci déclenché, sévérité 0,89 et « paroi
+                # de 0,1 mm » annoncés en 0 ms, alors que la pièce fait 12,8 mm
+                # d'épaisseur moyenne et ressort verte à 95 % par le vrai
+                # calcul. Une maille dense a de petites faces quelle que soit
+                # son épaisseur : quand 2V/A dit massif, le raccourci se tait et
+                # on paie la voxelisation.
+                _massif = _ep_moy is not None and _ep_moy > 2.0 * sig_t0
+                if _massif:
+                    logger.debug(f"Thin-struct ignoré : aire moy "
+                                 f"{_avg_face_area:.3f} mm² mais 2V/A = "
+                                 f"{_ep_moy:.1f} mm → pièce massive")
+
+                if _area_sev > 0.3 and not _massif:
                     _est_t = max(0.1, nozzle * (1.0 - _area_sev))
                     logger.debug(f"Thin-struct: avg_face={_avg_face_area:.3f}mm² "
                                  f"(thresh={_area_threshold:.3f}) → sev={_area_sev:.2f}")
@@ -131,12 +162,20 @@ def detect_fragility(
     except Exception:
         pass
 
+    # ── Chemin PRINCIPAL : la mesure au rayon ─────────────────────────────
+    # Elle est à la fois plus juste et plus rapide que la grille de voxels,
+    # donc elle passe devant. La grille reste derrière, en repli.
+    par_rayon = _detecter_par_rayon(mesh, min_t, sig_t0)
+    if par_rayon is not None:
+        return par_rayon
+
     bb      = mesh.bounding_box.extents
     max_dim = float(max(bb))
     pitch   = float(np.clip(max_dim / 200.0, 0.20, 0.80))
 
     try:
-        result = _detect_voxel_edt(mesh, pitch, min_t, sig_t0)
+        result = _detect_voxel_edt(mesh, pitch, min_t, sig_t0,
+                                   avec_faces=avec_faces)
         if result is not None:
             # Combiner avec l'estimation SA/V si disponible
             return result
@@ -153,6 +192,7 @@ def _detect_voxel_edt(
     pitch: float,
     min_thickness_mm: float,
     sig_t0: float = _F_SIG_T0 * _DEFAULT_NOZZLE_MM,
+    avec_faces: bool = False,
 ) -> FragilityResult | None:
 
     # ── 1. Voxelisation solide avec padding ──────────────────────────────
@@ -166,6 +206,12 @@ def _detect_voxel_edt(
     # ── 2. EDT 3D ────────────────────────────────────────────────────────
     dist_voxels = ndimage.distance_transform_edt(grid)
     dist_mm     = dist_voxels * pitch
+
+    # Carte par face, tirée du MÊME champ de distance : la voxelisation et la
+    # transformée sont le gros du coût, les refaire ailleurs doublerait le
+    # temps de la thermomap.
+    sev_faces = _severites_faces(mesh, dist_mm, bb_min, pitch, sig_t0) \
+        if avec_faces else None
 
     # ── 3. Axe médian robuste = maximums locaux du champ EDT ─────────────
     # On exclut les voxels à dist_voxels ≤ _MIN_MEDIAL_DIST : ce sont les
@@ -220,7 +266,7 @@ def _detect_voxel_edt(
 
     has = bool(thin_mask.any())
     if not has:
-        return FragilityResult(False, [], min_t_medial, global_sev)
+        return FragilityResult(False, [], min_t_medial, global_sev, sev_faces)
 
     # ── 5. Clustering des zones fragiles ─────────────────────────────────
     labeled, n_zones = ndimage.label(thin_mask)
@@ -259,15 +305,386 @@ def _detect_voxel_edt(
             break
 
     if not fragile_zones:
-        return FragilityResult(False, [], min_t_medial, global_sev)
+        return FragilityResult(False, [], min_t_medial, global_sev, sev_faces)
 
-    # global_sev calculé depuis l'axe médian robuste (étape 3).
+    # ── 6. Les zones locales REMONTENT dans le score global ─────────────
+    # Sans ça, une partie fine posée sur une partie massive disparaissait des
+    # statistiques P50/P10 de l'étape 3, et la pièce s'affichait VERTE. Mesuré
+    # sur un bloc 40x40x10 portant une nervure de 0,6 mm : sévérité 0,00 et
+    # « épaisseur minimale 10,25 mm », alors que la même plaque de 0,6 mm seule
+    # sortait à 0,73. Pire, c'était inversé : plus la nervure était fine, plus
+    # elle échappait à l'axe médian robuste, donc plus la pièce paraissait
+    # solide. Une pièce vaut désormais au moins sa PIRE zone : un seul point
+    # cassant suffit à casser la pièce entière.
+    pire_zone   = max(z.severity for z in fragile_zones)
+    zone_mince  = min(z.thickness_mm for z in fragile_zones)
+    global_sev  = max(global_sev, pire_zone)
+    min_t_final = min(min_t_medial, zone_mince)
+
     return FragilityResult(
         has_fragile_zones=True,
         fragile_zones=fragile_zones,
-        min_thickness_mm=min_t_medial,
+        min_thickness_mm=min_t_final,
         severity=global_sev,
+        severites_faces=sev_faces,
     )
+
+
+
+# ── Épaisseur locale : sondage du champ de distance ──────────────────────────
+
+# Jusqu'où on s'enfonce dans la matière, en multiples du centre de sigmoïde.
+# Inutile d'aller plus loin : au delà, la sévérité est déjà nulle.
+_MARCHE_FACTEUR = 4.0
+# Points sondés d'un coup. Le tableau intermédiaire fait bloc × pas × 3
+# flottants : sans découpage, un maillage dense demanderait des centaines de Mo.
+_BLOC_SONDES = 40_000
+
+
+def _sonder_epaisseur(points, normales, dist_mm, bb_min, pitch, sig_t0):
+    """Épaisseur locale de matière sous chaque point, en mm.
+
+    Depuis chaque point on s'enfonce le long de la normale rentrante et on
+    retient la PLUS GRANDE distance-à-la-surface rencontrée : c'est le rayon de
+    la plus grosse sphère inscrite sous ce point, donc la demi-épaisseur locale.
+
+    Retenir le maximum, et non la valeur à une profondeur fixe, rend la mesure
+    robuste : quand la normale sort de la matière (arête vive, face concave),
+    les pas concernés renvoient zéro sans polluer le résultat.
+
+    Renvoie (épaisseurs_mm, vu) où `vu` est faux pour les points dont TOUS les
+    pas sont tombés hors matière. Leur épaisseur ne veut rien dire et
+    l'appelant doit les écarter, sinon ils ressortiraient en rouge vif.
+    """
+    marche = max(3.0, _MARCHE_FACTEUR * sig_t0)
+    n_pas = int(np.clip(np.ceil(marche / pitch), 3, 64))
+    pas = np.arange(1, n_pas + 1, dtype=np.float64) * pitch
+
+    demi = np.zeros(len(points), dtype=np.float64)
+    for debut in range(0, len(points), _BLOC_SONDES):
+        fin = min(debut + _BLOC_SONDES, len(points))
+        p = points[debut:fin]
+        n = normales[debut:fin]
+        sondes = p[:, None, :] - n[:, None, :] * pas[None, :, None]
+        idx = (sondes - bb_min) / pitch - 0.5
+        d = ndimage.map_coordinates(
+            dist_mm, idx.reshape(-1, 3).T, order=1, mode="constant", cval=0.0)
+        demi[debut:fin] = d.reshape(fin - debut, n_pas).max(axis=1)
+
+    vu = demi > 0.0
+    epaisseurs = np.maximum(pitch * 0.5, demi * 2.0 - pitch)
+    return epaisseurs, vu
+
+
+# Barycentres des quatre sondes d'une face : le centre, puis trois points
+# nettement à l'intérieur, tirés vers chaque sommet sans jamais l'atteindre.
+_BARYCENTRES = (
+    (1 / 3, 1 / 3, 1 / 3),
+    (0.60, 0.20, 0.20),
+    (0.20, 0.60, 0.20),
+    (0.20, 0.20, 0.60),
+)
+
+
+# Part de la SURFACE la plus mince retenue comme « épaisseur minimale » de la
+# pièce. Prendre le minimum absolu donnerait la valeur d'une esquille de
+# triangle ; une esquille ne casse pas une pièce, une vraie paroi si. Vérifié
+# sur un bloc portant une nervure de 1 mm : la nervure fait 10 % de la surface,
+# elle est donc largement au dessus de ce seuil et reste détectée.
+_PART_MINCE = 0.005          # 0,5 % de la surface
+# Au delà de cette proportion de rayons perdus, le maillage est trop ouvert
+# pour qu'on se fie à la mesure : on repasse à la grille.
+_RAYONS_PERDUS_MAX = 0.40
+
+_SANS_EMBREE_DIT = False
+
+
+def _prevenir_sans_embree():
+    """Le dire UNE FOIS dans le journal, mais le dire.
+
+    Sans `embreex`, tout continue de fonctionner, la mesure retombe simplement
+    sur la grille de voxels, moins juste sur les sections rondes et fines.
+    C'est exactement le genre de chose qui passe inaperçue : le 2026-09-29,
+    `embreex` avait été installé dans l'environnement de BUILD (.venv312) mais
+    pas dans celui qui lance l'application (.venv, en Python 3.14), et rien ne
+    le signalait. Emmanuel a simplement vu que « ça ne change rien ».
+    """
+    global _SANS_EMBREE_DIT
+    if not _SANS_EMBREE_DIT:
+        _SANS_EMBREE_DIT = True
+        logger.warning(
+            "embreex absent : l'épaisseur est estimée par grille de voxels au "
+            "lieu d'être mesurée au rayon. La thermomap reste utilisable mais "
+            "les sections rondes et fines seront imprécises. "
+            "Installer avec : python -m pip install embreex")
+
+
+def _epaisseur_par_rayon(mesh):
+    """Épaisseur de matière sous chaque face, MESURÉE et non estimée.
+
+    Depuis le centre de chaque face, on tire un rayon perpendiculaire vers
+    l'intérieur et on lit la distance jusqu'à la paroi opposée. C'est
+    l'épaisseur, exactement, sans grille ni arrondi.
+
+    Pourquoi ce chemin existe. La mesure par grille de voxels est biaisée sur
+    les sections RONDES et FINES, et le biais dépend de l'orientation de la
+    pièce par rapport à la grille : deux fils identiques, l'un aligné sur un
+    axe, l'autre en biais, ne se mesuraient pas pareil. Emmanuel l'a vu tout
+    de suite (2026-09-29) : « les fils dans la main sont censés être tous
+    rouges, or on en voit des jaunes et même des verts, c'est insensé car ils
+    ont tous le même diamètre ». Vérifié : le défaut ne venait ni du lissage,
+    ni de la finesse de la grille (testée de 0,80 à 0,30 mm, même écart), ni de
+    la règle de combinaison des sondes.
+
+    Au rayon, mesuré : une plaque de 3,0 mm rend 3,00 ; un fil de 2,0 mm rend
+    1,98, et TOUTES ses faces rendent la même valeur, écart 0,000. Sur un Baby
+    Groot de 490 000 faces, 0,83 s contre 6,1 s pour la grille.
+
+    ⚠ Demande `embreex`. Sans lui, trimesh retombe sur un lanceur en Python
+    pur, des milliers de fois plus lent, inutilisable ici : on renvoie alors
+    None et l'appelant reprend la mesure par grille.
+    """
+    try:
+        from trimesh.ray import has_embree
+        if not has_embree:
+            _prevenir_sans_embree()
+            return None
+        from trimesh.ray.ray_pyembree import RayMeshIntersector
+    except Exception:
+        _prevenir_sans_embree()
+        return None
+    try:
+        normales = np.asarray(mesh.face_normals, dtype=np.float64)
+        # On part LÉGÈREMENT sous la surface, sinon le rayon peut retoucher la
+        # face dont il part.
+        origines = np.asarray(mesh.triangles_center, dtype=np.float64) - normales * 1e-3
+        touche, i_rayon, _ = RayMeshIntersector(mesh).intersects_location(
+            origines, -normales, multiple_hits=False)
+        # Un rayon qui ne touche rien (maillage ouvert) laisse l'infini, donc
+        # « solide » : mieux vaut se taire que crier au loup.
+        ep = np.full(len(normales), np.inf, dtype=np.float64)
+        if len(i_rayon):
+            ep[i_rayon] = np.linalg.norm(touche - origines[i_rayon], axis=1)
+        return ep
+    except Exception:
+        logger.debug("mesure d'épaisseur par rayon impossible", exc_info=True)
+        return None
+
+
+def _detecter_par_rayon(mesh, min_thickness_mm, sig_t0):
+    """Diagnostic COMPLET à partir de l'épaisseur mesurée au rayon.
+
+    Tout vient désormais de la même mesure : la couleur par face, l'épaisseur
+    minimale annoncée, la sévérité de la pièce et les zones fragiles. Avant,
+    seule la couleur était mesurée au rayon et le reste venait de la grille :
+    la couleur était donc plus juste que le chiffre, et les deux pouvaient se
+    contredire sur les sections rondes et fines. Emmanuel, 2026-09-29 : « migre
+    ces six usages et fais en sorte que tout soit complet, logique,
+    fonctionnel et parfaitement bien fini et précis ».
+
+    Ce chiffre ne sert pas qu'à l'affichage : il décide du RENFORT AUTOMATIQUE
+    des pièces fragiles, oriente le moteur de paramètres, présélectionne les
+    intentions, s'imprime dans le PDF et se lit dans les réponses d'Oen. Une
+    nervure de 2,5 mm, que la grille annonçait à 0,73, vaut en réalité 0,07 :
+    l'ancienne mesure la faisait renforcer pour rien.
+
+    Renvoie None si la mesure n'est pas fiable, et l'appelant reprend alors la
+    grille : pas de moteur de rayon accéléré, ou trop de rayons perdus sur un
+    maillage ouvert.
+    """
+    ep = _epaisseur_par_rayon(mesh)
+    if ep is None or len(ep) != len(mesh.faces) or len(ep) == 0:
+        return None
+    touche = np.isfinite(ep)
+    if not touche.any() or float((~touche).mean()) > _RAYONS_PERDUS_MAX:
+        return None
+
+    aires = np.asarray(mesh.area_faces, dtype=np.float64)
+    aires = np.where(np.isfinite(aires) & (aires > 0.0), aires, 0.0)
+    if aires[touche].sum() <= 0.0:
+        return None
+
+    # Épaisseur minimale = la plus mince SURFACE qui compte vraiment, et non la
+    # plus mince facette. On trie par épaisseur et on avance jusqu'à couvrir la
+    # part retenue de la surface.
+    ordre = np.argsort(ep[touche])
+    ep_triee = ep[touche][ordre]
+    aire_triee = aires[touche][ordre]
+    cumul = np.cumsum(aire_triee) / max(aire_triee.sum(), 1e-12)
+    i = int(np.searchsorted(cumul, _PART_MINCE))
+    i = min(i, len(ep_triee) - 1)
+    min_t = float(ep_triee[i])
+
+    severite = float(np.clip(_t_to_sev(min_t, sig_t0), 0.0, 1.0))
+    # « Il y a des zones fragiles » et « en voici la liste » doivent dire la
+    # MÊME chose. Sans ça, une plaque de 1,2 mm annonçait deux zones tout en
+    # affirmant n'en avoir aucune, et le message « Parois fines » ne
+    # s'affichait pas alors que les zones existaient.
+    zones = _zones_depuis_rayon(mesh, ep, min_thickness_mm, sig_t0)
+    fragile = bool(zones) or bool(min_t < min_thickness_mm)
+
+    return FragilityResult(
+        has_fragile_zones=fragile,
+        fragile_zones=zones,
+        min_thickness_mm=min_t,
+        severity=severite,
+        severites_faces=_unifier_par_surface(
+            mesh, np.clip(_t_to_sev(np.minimum(ep, 1e6), sig_t0), 0.0, 1.0)),
+    )
+
+
+def _zones_depuis_rayon(mesh, ep, seuil_mm, sig_t0, maxi=50):
+    """Les zones fragiles, groupées, à partir de l'épaisseur mesurée.
+
+    Une zone par ensemble de faces minces qui se touchent, située à son point
+    le plus mince. Sans regroupement, une paroi fine produirait des centaines
+    de zones pour un seul défaut.
+    """
+    try:
+        minces = np.isfinite(ep) & (ep < seuil_mm)
+        if not minces.any():
+            return []
+        from scipy.sparse import coo_matrix
+        from scipy.sparse.csgraph import connected_components
+        paires = np.asarray(mesh.face_adjacency)
+        garder = minces[paires[:, 0]] & minces[paires[:, 1]]
+        nf = len(ep)
+        a, b = paires[garder, 0], paires[garder, 1]
+        g = coo_matrix((np.ones(len(a)), (a, b)), shape=(nf, nf))
+        _n, etiquette = connected_components(g, directed=False)
+        centres = np.asarray(mesh.triangles_center, dtype=np.float64)
+        zones = []
+        for lab in np.unique(etiquette[minces]):
+            membres = np.where(minces & (etiquette == lab))[0]
+            if len(membres) < 2:          # une facette isolée n'est pas une zone
+                continue
+            pire = membres[int(np.argmin(ep[membres]))]
+            t = float(ep[pire])
+            zones.append(Zone3D(point=centres[pire].tolist(),
+                                thickness_mm=round(t, 3),
+                                severity=round(float(_t_to_sev(t, sig_t0)), 3)))
+            if len(zones) >= maxi:
+                break
+        return zones
+    except Exception:
+        logger.debug("regroupement des zones par rayon impossible", exc_info=True)
+        return []
+
+
+def _severites_faces(mesh, dist_mm, bb_min, pitch, sig_t0):
+    """Sévérité de fragilité POUR CHAQUE FACE du maillage, dans [0, 1].
+
+    C'est ce qui permet de voir OÙ la pièce est fragile, et non seulement
+    qu'elle l'est : le viewer peint déjà une valeur par face.
+
+    Deux mesures possibles, la meilleure d'abord : le lancer de rayon, exact,
+    puis le sondage de la grille de distance, approximatif mais toujours
+    disponible.
+    """
+    ep_rayon = _epaisseur_par_rayon(mesh)
+    if ep_rayon is not None and len(ep_rayon) == len(mesh.faces):
+        sev = np.clip(_t_to_sev(np.minimum(ep_rayon, 1e6), sig_t0), 0.0, 1.0)
+        return _unifier_par_surface(mesh, sev)
+
+    tri = np.asarray(mesh.triangles, dtype=np.float64)          # (nf, 3, 3)
+    normales_f = np.asarray(mesh.face_normals, dtype=np.float64)
+    nf = len(tri)
+    if nf == 0:
+        return None
+
+    points = np.concatenate([
+        tri[:, 0] * a + tri[:, 1] * b + tri[:, 2] * c
+        for a, b, c in _BARYCENTRES
+    ])
+    normales = np.tile(normales_f, (len(_BARYCENTRES), 1))
+
+    epaisseurs, vu = _sonder_epaisseur(points, normales, dist_mm, bb_min,
+                                       pitch, sig_t0)
+    sev = np.clip(_t_to_sev(epaisseurs, sig_t0), 0.0, 1.0)
+    # Une sonde tombée hors matière ne dit rien : on la neutralise plutôt que
+    # de la laisser crier au rouge.
+    sev[~vu] = 0.0
+    par_face = sev.reshape(len(_BARYCENTRES), nf).max(axis=0)
+    return _unifier_par_surface(mesh, par_face)
+
+
+# Une arête en dessous de cet angle sépare deux triangles de la MÊME surface
+# plane : ils reçoivent alors exactement la même couleur.
+_ANGLE_SURFACE_PLANE = 2.0     # degrés
+# Au dessous de cet angle, deux faces appartiennent à une surface continue,
+# même courbe : on y lisse, sans jamais franchir une arête vive.
+_ANGLE_SURFACE_DOUCE = 30.0    # degrés
+_LISSAGES = 4
+
+
+def _unifier_par_surface(mesh, sev):
+    """Une même surface, une même couleur.
+
+    Emmanuel, 2026-09-29 : « sur une même surface lisse on a un triangle jaune
+    et une partie verte, ce n'est pas normal, il faut choisir une couleur
+    unie ». Un grand panneau plat n'est souvent fait que de deux triangles, et
+    il suffit que leurs points de sonde tombent à des endroits légèrement
+    différents pour que la surface se retrouve coupée en deux tons.
+
+    Deux passes, et elles ne franchissent JAMAIS une arête vive, sinon un
+    panneau hériterait de la fragilité des nervures qui s'y rattachent (c'est
+    l'erreur que j'avais faite en moyennant aux sommets) :
+
+      1. les faces d'une même surface PLANE prennent toutes la moyenne de
+         cette surface, pondérée par les aires. Une surface plane devient donc
+         strictement d'un seul ton ;
+      2. sur les surfaces courbes, un lissage léger entre voisines efface le
+         grain sans effacer les variations réelles.
+
+    Mesuré sur un Baby Groot de 490 000 faces : la plus grande surface plane ne
+    fait que 10 faces, donc rien n'y est écrasé, et le pic de fragilité reste
+    à 0,90.
+    """
+    try:
+        nf = len(sev)
+        paires = np.asarray(mesh.face_adjacency)
+        if len(paires) == 0 or nf == 0:
+            return sev.astype(np.float32)
+        angles = np.asarray(mesh.face_adjacency_angles)
+        aires = np.asarray(mesh.area_faces, dtype=np.float64)
+        aires = np.where(np.isfinite(aires) & (aires > 0.0), aires, 1e-9)
+        v = np.asarray(sev, dtype=np.float64).copy()
+
+        # 1. D'ABORD adoucir les surfaces courbes. Ce lissage déborde d'une
+        # surface plane vers ses voisines courbes, donc il DOIT passer avant
+        # l'unification, sinon il la défait. Mesuré dans l'autre ordre sur un
+        # Baby Groot : l'écart au sein d'une même surface plane remontait à
+        # 0,36 après coup.
+        doux = angles < np.radians(_ANGLE_SURFACE_DOUCE)
+        if doux.any():
+            a, b = paires[doux, 0], paires[doux, 1]
+            for _ in range(_LISSAGES):
+                s = aires * v
+                p = aires.copy()
+                s += np.bincount(a, weights=(aires * v)[b], minlength=nf)
+                p += np.bincount(a, weights=aires[b], minlength=nf)
+                s += np.bincount(b, weights=(aires * v)[a], minlength=nf)
+                p += np.bincount(b, weights=aires[a], minlength=nf)
+                v = np.divide(s, p, out=v.copy(), where=p > 0)
+
+        # 2. ENSUITE, et en dernier, les surfaces PLANES d'un seul ton.
+        plat = angles < np.radians(_ANGLE_SURFACE_PLANE)
+        if plat.any():
+            from scipy.sparse import coo_matrix
+            from scipy.sparse.csgraph import connected_components
+            a, b = paires[plat, 0], paires[plat, 1]
+            g = coo_matrix((np.ones(len(a)), (a, b)), shape=(nf, nf))
+            _n, etiquette = connected_components(g, directed=False)
+            poids = np.bincount(etiquette, weights=aires, minlength=_n)
+            somme = np.bincount(etiquette, weights=aires * v, minlength=_n)
+            moyenne = np.divide(somme, poids, out=np.zeros_like(somme),
+                                where=poids > 0)
+            v = moyenne[etiquette]
+
+        return np.clip(v, 0.0, 1.0).astype(np.float32)
+    except Exception:
+        logger.debug("unification des surfaces impossible", exc_info=True)
+        return np.asarray(sev, dtype=np.float32)
 
 
 # ── Voxelisation solide par parité des rayons Z ───────────────────────────────

@@ -1189,23 +1189,34 @@ class Viewer3D(QWidget):
         except Exception:
             pass
 
+    def _maj_opacite_plateau(self):
+        """Accorde l'opacité du plateau à la position ACTUELLE de la caméra.
+
+        Vu de dessous, le plateau s'efface pour laisser voir les pièces (vue
+        façon Bambu Studio). Appelée à deux moments : quand la caméra bouge, et
+        surtout quand le plateau vient d'être REDESSINÉ, car il repart alors à
+        son opacité de dessus sans que la caméra ait bougé.
+        """
+        if self._plotter is None:
+            return
+        try:
+            _op = 0.0 if self._plotter.camera.position[2] < 0 else self._PLATE_OPACITY
+            # TOUS les plateaux (mono « build_plate_surface » ET multi
+            # « build_plate_surface_N ») — sinon les plateaux multiples
+            # restaient opaques vus de dessous.
+            for _nm, _ac in list(self._plotter.actors.items()):
+                if _nm.startswith("build_plate_surface"):
+                    _ac.prop.opacity = _op
+        except Exception:
+            pass
+
     def _setup_cam_observer(self):
         """Rend le plateau transparent quand la caméra passe en dessous (vue Bambu Studio)."""
         if self._plotter is None:
             return
         try:
             def _cam_cb(caller, event):
-                try:
-                    pos = self._plotter.camera.position
-                    _op = 0.0 if pos[2] < 0 else self._PLATE_OPACITY
-                    # TOUS les plateaux (mono « build_plate_surface » ET multi
-                    # « build_plate_surface_N ») — sinon les plateaux multiples
-                    # restaient opaques vus de dessous.
-                    for _nm, _ac in list(self._plotter.actors.items()):
-                        if _nm.startswith("build_plate_surface"):
-                            _ac.prop.opacity = _op
-                except Exception:
-                    pass
+                self._maj_opacite_plateau()
             self._plotter.renderer.GetActiveCamera().AddObserver("ModifiedEvent", _cam_cb)
         except Exception:
             pass
@@ -1682,6 +1693,13 @@ class Viewer3D(QWidget):
             self._draw_single_plate(0.0, 0.0, plate_size)
         except Exception:
             pass
+        # Le plateau vient d'être RECRÉÉ, donc il repart à son opacité de
+        # dessus. Or l'observateur de caméra, seul à le rendre transparent
+        # quand on regarde par en dessous, ne se déclenche QUE si la caméra
+        # bouge : en basculant la thermomap sans toucher à la vue, le plateau
+        # redevenait opaque et masquait les pièces (signalé le 2026-09-29).
+        # On applique donc tout de suite l'opacité de la caméra ACTUELLE.
+        self._maj_opacite_plateau()
 
     def _add_multipart_plates(self, final_meshes: list, orig_positions: list,
                                plate_count: int) -> None:
@@ -3474,6 +3492,21 @@ class Viewer3D(QWidget):
         self._setup_lights()
         self._add_build_plate(mesh)
         pv_mesh = self._place_on_plate(self._trimesh_to_pyvista(mesh))
+        # Couleur PAR FACE, telle qu'elle est mesurée.
+        #
+        # J'avais essayé de la lisser en la reportant aux sommets, pour effacer
+        # les arêtes des triangles. C'était une erreur, et elle a empiré le
+        # rendu : un sommet appartient à PLUSIEURS surfaces à la fois, donc le
+        # coin d'un grand panneau plat héritait d'une part de la fragilité des
+        # nervures fines qui s'y rattachent, et l'interpolation étalait cette
+        # contamination sur tout le panneau. Mesuré sur une équerre : le
+        # panneau arrière était parfaitement uniforme par face (0,090 partout,
+        # écart nul) et devenait dégradé de 0,104 à 0,138 une fois passé aux
+        # sommets, parce que ses quatre coins touchent des joues à 0,58.
+        #
+        # Par face, une surface d'épaisseur constante est d'un seul ton, et les
+        # arêtes de ses triangles sont invisibles puisque les valeurs voisines
+        # sont identiques.
         pv_mesh.cell_data["fragility"] = fsev
         self._plotter.add_mesh(
             pv_mesh,

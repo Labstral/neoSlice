@@ -56,8 +56,8 @@ def embed_mesh(chemin: str) -> dict:
             "gz_b64": base64.b64encode(gzip.compress(raw)).decode("ascii")}
 
 
-VERSION = "2026-09-27"
-NOTES = "Deux nouveautés. Le RANGEMENT DE JEU de société, un insert à la taille de votre boîte, avec au choix un logement de cartes et son échancrure pour attraper le paquet, des godets ronds pour les jetons, ou des cases pour les meeples (idée de Sébastien). Et la PANCARTE DE PORTE à suspendre à la poignée, avec votre texte en relief ou gravé, sur plusieurs lignes, et au choix un trou fermé ou un crochet ouvert (idée de Pierre)."
+VERSION = "2026-09-28"
+NOTES = "La BOÎTE + COUVERCLE sait maintenant se répartir sur DEUX PLATEAUX. Jusqu'ici le couvercle était toujours posé à côté de la boîte, ce qui faisait déborder du plateau dès que la pièce devenait grande : une boîte ronde de 155 mm réclamait 326 mm de profondeur. Un nouveau réglage Disposition sépare les deux pièces sur deux plateaux, automatiquement quand c'est nécessaire, ou à la demande (idée de Pierre)."
 
 # Catégories (domaines) NON natives définies par la base — permet d'ajouter une
 # NOUVELLE catégorie neoGen SANS rebuild (fusionnées par catalogue.par_domaine).
@@ -94,6 +94,12 @@ OBJETS = [
              [["int", "Intérieures (volume utile)", "Inner (usable)"],
               ["ext", "Extérieures (murs compris)", "Outer (with walls)"]],
              "int"],
+            ["disposition", "Disposition", "Layout",
+             [["auto", "Automatique", "Automatic"],
+              ["cote", "Côte à côte, 1 plateau", "Side by side, 1 plate"],
+              ["plateaux", "Boîte et couvercle sur 2 plateaux",
+               "Box and lid on 2 plates"]],
+             "auto"],
         ],
         "flags": [
             ["coulissant", "Couvercle coulissant", "Sliding lid", False],
@@ -137,15 +143,15 @@ if coulissant:
     lw = (Wd - 2 * p) + 2 * gd - 2 * jeu
     ll = Lg - p - jeu
     lt = gh - jeu
-    couvercle = deplacer(boite_3d(ll, lw, lt), 0, Wd + 16, 0)
-    piece = scene(corps, couvercle)
+    couvercle = boite_3d(ll, lw, lt)
+    emprise = Wd
 elif forme == "ronde":
     d = Dt
     corps = creuser(cylindre(d, H), p)
     cap = extrusion(disque(d), fond)
     lip = tube(d - 2 * (p + jeu), d - 2 * (p + jeu) - 2 * p, 6)
-    couvercle = deplacer(fusionner(cap, deplacer(lip, 0, 0, fond - 0.01)), 0, d + 16, 0)
-    piece = scene(corps, couvercle)
+    couvercle = fusionner(cap, deplacer(lip, 0, 0, fond - 0.01))
+    emprise = d
 else:
     if forme == "carree":
         Lx = Dt
@@ -160,8 +166,24 @@ else:
     li = rectangle_arrondi(Lx - 2 * (p + jeu) - 2 * p, Wy - 2 * (p + jeu) - 2 * p, max(0.5, rc - 2 * p))
     lip = percer(extrusion(lo, 6), deplacer(extrusion(li, 8), 0, 0, -1))
     cap = extrusion(foot, fond)
-    couvercle = deplacer(fusionner(cap, deplacer(lip, 0, 0, fond - 0.01)), 0, Wy + 16, 0)
-    piece = scene(corps, couvercle)''',
+    couvercle = fusionner(cap, deplacer(lip, 0, 0, fond - 0.01))
+    emprise = Wy
+# Disposition. Côte à côte, l'ensemble occupe deux fois l'emprise plus 16 mm
+# de jeu, ce qui déborde vite : une boîte ronde de 155 mm réclame 326 mm de
+# profondeur. Sur deux plateaux, chaque pièce est centrée sur le sien et la
+# seule limite devient celle de la plus grande des deux.
+# La recette ignore quelle imprimante est choisie, donc le mode automatique
+# s'en tient à un seuil prudent et les deux réglages manuels priment.
+if disposition == "plateaux":
+    deux = True
+elif disposition == "cote":
+    deux = False
+else:
+    deux = (2 * emprise + 16) > 250
+if deux:
+    piece = scene(plateau(corps, 0), plateau(couvercle, 1))
+else:
+    piece = scene(corps, deplacer(couvercle, 0, emprise + 16, 0))''',
     },
     {
         # OVERRIDE de l'objet natif « photo_relief » (lithophanie) pour ajouter,

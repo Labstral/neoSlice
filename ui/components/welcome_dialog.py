@@ -54,6 +54,23 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v2.3.1",
+     "• Fragilité : la couleur montre maintenant OÙ la pièce est fragile, et "
+     "plus seulement si elle l'est. Une nervure fine ressort en rouge au "
+     "milieu d'une pièce verte.\n"
+     "• Fragilité : l'épaisseur de matière est mesurée au lieu d'être "
+     "estimée. Certaines pièces que vous croyiez fragiles ne le sont pas, et "
+     "l'inverse aussi. L'analyse est aussi bien plus rapide.\n"
+     "• Fragilité : la case du viewer est toujours disponible, que vous "
+     "voyiez plusieurs pièces, une seule, ou une pièce isolée d'un clic.\n"
+     "• Surplombs : les porte-à-faux proches du plateau et les rebords en "
+     "saillie n'étaient pas signalés. Ils le sont désormais.\n"
+     "• neoGen : nouveau réglage « Taille du texte » sur tous les objets qui "
+     "portent du texte.\n"
+     "• neoGen : ouvrir un résultat de recherche pouvait afficher un autre "
+     "objet et laisser le formulaire vide.\n"
+     "• Espace Pro : la liste déroulante de la sauvegarde automatique était "
+     "illisible en thème sombre."),
     ("Nouveautés v2.3.0",
      "• neoForge, le modeleur 3D (version Pro) : un nouveau module pour "
      "dessiner vos pièces sans rien connaître à la CAO. Vous posez des "

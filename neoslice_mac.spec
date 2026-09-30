@@ -191,6 +191,12 @@ a = Analysis(
         'trimesh.smoothing', 'trimesh.transformations',
         'trimesh.voxel', 'trimesh.voxel.creation',
         'trimesh.voxel.ops', 'trimesh.proximity',
+        # Lancer de rayon accéléré, pour MESURER l'épaisseur de matière dans la
+        # thermomap de fragilité. trimesh l'importe dans un try/except, donc
+        # PyInstaller ne le voit pas seul, et sans lui l'application retombe en
+        # silence sur la mesure par grille, moins juste sur les sections rondes.
+        'embreex', 'embreex.rtcore_scene', 'embreex.mesh_construction',
+        'trimesh.ray.ray_pyembree',
         'scipy', 'scipy.spatial', 'scipy.spatial.qhull',
         'scipy.sparse', 'scipy.sparse.csgraph', 'scipy.ndimage',
         'rtree', 'loguru', 'yaml', 'numpy', 'pydantic',

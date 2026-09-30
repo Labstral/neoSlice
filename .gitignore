@@ -66,3 +66,4 @@ result.json
 
 # Artefacts générés (base d'objets neoGen à téléverser sur les assets)
 tools/out/
+_cube_tranchage*.stl

@@ -248,17 +248,28 @@ class AnalysisPanel(QWidget):
 
         self._g_overhangs = _GaugeRow(_("analysis.gauge_oh"))
         self._g_stability = _GaugeRow(_("analysis.gauge_stab"))
+        # La jauge FRAGILITÉ n'est plus affichée (demande d'Emmanuel,
+        # 2026-09-29) : un chiffre unique pour toute une pièce ne dit pas
+        # grand-chose, et la thermomap montre désormais l'endroit exact. Sur un
+        # plateau multi-objets elle était de toute façon grisée. Le widget
+        # SURVIT sans être posé dans la mise en page : une dizaine d'appels le
+        # manipulent encore ailleurs (thème, rapport, désactivation), et les
+        # supprimer tous casserait plus que ça ne nettoierait.
         self._g_fragility = _GaugeRow(_("analysis.gauge_frag"))
         self._g_support   = _GaugeRow(_("analysis.gauge_supp"))
         g_layout.addWidget(self._g_overhangs)
         g_layout.addWidget(self._g_stability)
+        # La jauge reste POSÉE dans la mise en page, mais masquée : Qt ignore
+        # un widget caché, elle ne prend donc aucune place ni aucun espacement.
+        # La poser sans parent en ferait une fenêtre de premier niveau, prête à
+        # apparaître toute seule si quelqu'un l'affichait par mégarde.
         g_layout.addWidget(self._g_fragility)
+        self._g_fragility.hide()
         g_layout.addWidget(self._g_support)
         root.addWidget(gauges)
 
         self._g_overhangs.setToolTip(_("analysis.tip_oh"))
         self._g_stability.setToolTip(_("analysis.tip_stab"))
-        self._g_fragility.setToolTip(_("analysis.tip_frag"))
         self._g_support.setToolTip(_("analysis.tip_supp"))
 
         # ── Avis « analyse allégée » (Auto/Économique) + bouton Forcer ──────

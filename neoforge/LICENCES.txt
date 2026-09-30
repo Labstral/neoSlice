@@ -1,0 +1,64 @@
+neoForge, composants tiers et licences
+======================================
+
+neoForge est un module de neoSlice. Il s'appuie sur des bibliotheques libres
+dont les licences imposent d'etre citees et de suivre le programme. Leur texte
+figure ci-dessous. Les memes informations sont consultables dans neoSlice, par
+Parametres puis « Licences et mentions ».
+
+
+1. Open CASCADE Technology (OCCT)
+---------------------------------
+
+Le noyau geometrique de neoForge (congés, chanfreins, operations booleennes,
+taraudages) est Open CASCADE Technology.
+
+Copyright (c) 1999-2024 OPEN CASCADE SAS
+
+This library is free software; you can redistribute it and/or modify it under
+the terms of the GNU Lesser General Public License version 2.1 as published by
+the Free Software Foundation, with special exception defined in the file
+OCCT_LGPL_EXCEPTION.txt. Consult the file LICENSE_LGPL_21.txt included in OCCT
+distribution for complete text of the license and disclaimer of any warranty.
+
+Alternatively, this file may be used under the terms of Open CASCADE
+commercial license or contractual agreement.
+
+Texte complet de la GNU LGPL version 2.1 :
+  https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+Licences Open CASCADE :
+  https://dev.opencascade.org/resources/licensing
+Code source d'OCCT :
+  https://github.com/Open-Cascade-SAS/OCCT
+
+OCCT est utilise sous forme de bibliotheque dynamique, sans modification.
+Conformement a la LGPL 2.1, vous pouvez remplacer ces bibliotheques par une
+autre version d'OCCT. Elles se trouvent dans le dossier d'installation du
+noyau de neoForge.
+
+
+2. OCP (cadquery-ocp-novtk)
+---------------------------
+
+Les liaisons Python vers OCCT sont fournies par OCP, sous licence Apache 2.0.
+
+Auteur : Bernhard Walter et les contributeurs du projet CadQuery
+Version utilisee : 8.0.1.0.0
+
+  https://github.com/CadQuery/OCP
+  https://pypi.org/project/cadquery-ocp-novtk/
+
+Texte complet de la licence Apache 2.0 :
+  https://www.apache.org/licenses/LICENSE-2.0
+
+
+3. Le reste de neoSlice
+-----------------------
+
+Les autres composants tiers de neoSlice (Qt, PyVista, Trimesh, NumPy, SciPy et
+les modeles d'intelligence artificielle) sont cites dans la fenetre
+« Licences et mentions » de l'application.
+
+
+neoForge lui-meme, son code et son interface, reste la propriete d'Emmanuel
+Percheron et n'est pas couvert par les licences ci-dessus.

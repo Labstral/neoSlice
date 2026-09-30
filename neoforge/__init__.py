@@ -12,6 +12,6 @@ Organisation :
   ui/      fenêtre, viewer, panneaux
 """
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 # Version minimale de neoSlice qui sait lancer ce paquet (API du lanceur).
 NEOSLICE_MIN = "2.3.0"

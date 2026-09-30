@@ -569,14 +569,27 @@ class NeoGenPanel(QWidget):
         self._choisir_domaine(0)
         return w
 
-    def _choisir_domaine(self, idx: int):
+    def _choisir_domaine(self, idx: int, auto: bool = True):
+        """Remplit la liste des objets de la catégorie.
+
+        `auto=False` quand l'appelant va lui-même choisir un objet précis
+        juste après. Sans ça, on passait TOUJOURS par l'objet numéro 1 de la
+        catégorie au passage, et dans « Accessoires & cadeaux » cet objet est
+        la CARTE DE VISITE : ouvrir un résultat de recherche déclenchait donc
+        son panneau, qui venait ensuite recouvrir le formulaire de l'objet
+        réellement demandé. Emmanuel, 2026-09-30 : « je tape médaille, il me
+        trouve badge, et quand je clique sur badge il m'affiche la carte de
+        visite ». Ensuite le formulaire restait vide, parce que le panneau
+        carte avait pris sa place.
+        """
         self._combo_objet.blockSignals(True)
         self._combo_objet.clear()
         if 0 <= idx < len(self._donnees):
             for e in self._donnees[idx][1]:
                 self._combo_objet.addItem(_fr_en(e["fr"], e["en"]))
         self._combo_objet.blockSignals(False)
-        self._choisir_objet(0)
+        if auto:
+            self._choisir_objet(0)
 
     def _choisir_objet(self, idx: int):
         didx = self._combo_domaine.currentIndex()
@@ -907,6 +920,29 @@ class NeoGenPanel(QWidget):
                 sp_esp.setStyleSheet(style_champ)
                 form.addRow(_lbl(_("neogen.spacing_label")), sp_esp)
                 champs["espacement"] = sp_esp
+                # TAILLE DU TEXTE, en pourcentage de la taille automatique.
+                # Elle manquait sur 20 objets sur 24 : la taille était toujours
+                # calculée pour remplir la zone, sans recours possible (signalé
+                # par Kevin, utilisateur, 2026-09-30, sur une médaille).
+                #
+                # ⚠ Sauf si l'objet en propose DÉJÀ un : la pancarte de porte a
+                # son propre « taille_texte », exprimé en millimètres. Deux
+                # champs sous le même nom se seraient écrasés, et la valeur en
+                # pourcentage serait partie se faire ramener dans une plage en
+                # millimètres.
+                if not any(p[0] in ("taille_texte", "taille_police",
+                                    "hauteur_texte")
+                           for p in e.get("params", [])):
+                    sp_taille = QDoubleSpinBox()
+                    sp_taille.setRange(50.0, 125.0)
+                    sp_taille.setValue(100.0)
+                    sp_taille.setSingleStep(5.0)
+                    sp_taille.setDecimals(0)
+                    sp_taille.setSuffix(" %")
+                    sp_taille.setToolTip(_("neogen.text_size_hint"))
+                    sp_taille.setStyleSheet(style_champ)
+                    form.addRow(_lbl(_("neogen.text_size_label")), sp_taille)
+                    champs["taille_texte"] = sp_taille
                 # Pas de case « gravé » si un menu de STYLE (relief/gravé/lisse) est
                 # déjà présent (sinon doublon contradictoire).
                 _has_style = any(c[0] == "style" for c in e["choix"])
@@ -1047,7 +1083,10 @@ class NeoGenPanel(QWidget):
         self._combo_domaine.blockSignals(True)
         self._combo_domaine.setCurrentIndex(di)
         self._combo_domaine.blockSignals(False)
-        self._choisir_domaine(di)
+        # `auto=False` : on ne passe PAS par l'objet numéro 1 de la catégorie
+        # en chemin. Sinon, dans « Accessoires & cadeaux », on réveillait la
+        # carte de visite avant d'arriver à l'objet demandé.
+        self._choisir_domaine(di, auto=False)
         self._combo_objet.blockSignals(True)
         self._combo_objet.setCurrentIndex(oi)
         self._combo_objet.blockSignals(False)

@@ -136,6 +136,55 @@ def _ligne_texte(texte: str, hauteur_mm: float,
     raise RuntimeError(f"Impossible de vectoriser « {texte} » : {derniere_err}")
 
 
+import contextvars as _ctx
+
+# Facteur de TAILLE DU TEXTE, entre 0,5 et 1,25, porté par le contexte.
+#
+# Kevin, utilisateur, 2026-09-30 : « j'ai généré une médaille, cependant je ne
+# vois pas d'outils pour modifier manuellement la taille du texte que l'on met
+# dessus, y a-t-il quelque chose qui m'échappe ? ». Non, il ne lui échappait
+# rien : sur 24 objets porteurs de texte, 20 n'offraient AUCUN réglage de
+# taille. La taille était toujours calculée pour remplir la zone disponible.
+#
+# Pourquoi le contexte plutôt qu'un paramètre passé de main en main : ces 24
+# objets sont construits par des dizaines de fonctions différentes, dans
+# quatre fichiers. Tout le monde passe en revanche par les DEUX fonctions
+# ci-dessous. Un `ContextVar` reste propre entre fils d'exécution, contrairement
+# à une variable globale.
+#
+# ⚠ Le facteur est appliqué dans les deux fonctions SANS jamais se cumuler :
+# `ajuster_dans` remet le texte à l'échelle depuis zéro, donc il efface au
+# passage ce que `texte_multilignes` avait appliqué.
+_ECHELLE_TEXTE = _ctx.ContextVar("neogen_echelle_texte", default=1.0)
+ECHELLE_TEXTE_MIN = 0.5
+ECHELLE_TEXTE_MAX = 1.25
+
+
+def regler_echelle_texte(facteur: float):
+    """Fixe la taille du texte pour la construction en cours.
+
+    Renvoie le jeton à rendre à `restaurer_echelle_texte`, pour que le réglage
+    ne déborde pas sur l'objet suivant.
+    """
+    try:
+        f = float(facteur)
+    except (TypeError, ValueError):
+        f = 1.0
+    f = min(ECHELLE_TEXTE_MAX, max(ECHELLE_TEXTE_MIN, f))
+    return _ECHELLE_TEXTE.set(f)
+
+
+def restaurer_echelle_texte(jeton) -> None:
+    try:
+        _ECHELLE_TEXTE.reset(jeton)
+    except Exception:
+        _ECHELLE_TEXTE.set(1.0)
+
+
+def echelle_texte() -> float:
+    return _ECHELLE_TEXTE.get()
+
+
 def texte_multilignes(texte: str, hauteur_ligne: float = 10.0,
                       police: str | None = None,
                       espacement: float | None = None) -> MultiPolygon:
@@ -151,6 +200,10 @@ def texte_multilignes(texte: str, hauteur_ligne: float = 10.0,
     lignes = [l.strip() for l in brut.replace(chr(10), "|").split("|") if l.strip()]
     if not lignes:
         raise ValueError("Texte vide.")
+    # Taille demandée par l'utilisateur. Sans effet sur les objets qui
+    # ré-ajustent ensuite le bloc dans une zone : `ajuster_dans` le renormalise
+    # et applique le facteur lui-même.
+    hauteur_ligne = float(hauteur_ligne) * _ECHELLE_TEXTE.get()
     interligne = hauteur_ligne * 1.45
     blocs = []
     for i, l in enumerate(lignes):
@@ -166,10 +219,22 @@ def texte_multilignes(texte: str, hauteur_ligne: float = 10.0,
     return translate(tout, xoff=-(minx + maxx) / 2.0, yoff=-(miny + maxy) / 2.0)
 
 
-def ajuster_dans(mp: MultiPolygon, larg_max: float, haut_max: float) -> MultiPolygon:
-    """Met le bloc texte à l'échelle pour tenir dans larg_max × haut_max (centré)."""
+def ajuster_dans(mp: MultiPolygon, larg_max: float, haut_max: float,
+                 echelle: float | None = None) -> MultiPolygon:
+    """Met le bloc texte à l'échelle pour tenir dans larg_max × haut_max (centré).
+
+    Le facteur demandé par l'utilisateur s'applique ICI, et nulle part ailleurs
+    pour ces objets : cette fonction repart de la taille voulue pour la zone,
+    elle efface donc au passage tout agrandissement fait en amont. C'est ce qui
+    évite qu'une taille de 125 % soit appliquée deux fois.
+
+    La zone laisse toujours une marge autour du texte, mais elle n'est pas
+    infinie : au delà de 1,25 le texte déborderait de l'objet, d'où le plafond.
+    """
     minx, miny, maxx, maxy = mp.bounds
     f = min(larg_max / (maxx - minx), haut_max / (maxy - miny))
+    voulu = _ECHELLE_TEXTE.get() if echelle is None else float(echelle)
+    f *= min(ECHELLE_TEXTE_MAX, max(ECHELLE_TEXTE_MIN, voulu))
     return shp_scale(mp, xfact=f, yfact=f, origin=(0, 0))
 
 
