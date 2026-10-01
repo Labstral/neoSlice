@@ -247,8 +247,71 @@ SOMMAIRE
 
 
 ------------------------------------------------------------------------------
-8. NOUVEAUTÉS v2.3.1
+8. NOUVEAUTÉS v2.4.0
 ------------------------------------------------------------------------------
+
+  TOUTES LES IMPRIMANTES ENFIN TROUVABLES
+  ---------------------------------------
+  * Le menu ne montrait que les machines connues du logiciel de découpe
+    sélectionné, et celui par défaut n'en connaît qu'un cinquième. Des
+    marques ENTIÈRES (Flashforge, Snapmaker, Artillery, Sovol et une
+    quarantaine d'autres) n'apparaissaient pas du tout.
+  * Le catalogue complet est désormais proposé, quel que soit le logiciel
+    de sortie choisi.
+  * Quand la machine retenue n'est pas gérée par le logiciel courant,
+    neoSlice bascule tout seul vers celui qui sait la produire, et vous le
+    dit dans la barre du bas.
+
+  CHAQUE IMPRIMANTE CONNAÎT SON VRAI PLATEAU
+  ------------------------------------------
+  * Seules les Bambu Lab avaient leurs dimensions réelles. Toutes les
+    autres étaient traitées comme un plateau de 256 mm : une Elegoo
+    Neptune 4 Max de 420 mm passait pour une machine deux fois plus petite.
+  * Plus de 1200 machines ont maintenant leurs vraies cotes.
+  * Conséquences : la répartition en série fabrique le bon nombre de
+    plateaux, le garde-fou de génération n'écarte plus des pièces qui
+    tiennent, et neoForge reçoit le bon plateau.
+
+  RANGER UN PROJET SUR VOS PLATEAUX
+  ---------------------------------
+  * Un projet importé garde les plateaux de son fichier d'origine, souvent
+    prévus pour une machine plus petite que la vôtre.
+  * Un bouton propose de tout regrouper sur le moins de plateaux possible
+    pour votre imprimante. Il n'apparaît que s'il y a des plateaux à
+    gagner.
+
+  VOIR LA SÉRIE AVANT D'EXPORTER
+  ------------------------------
+  * Un bouton pose les exemplaires sur leurs plateaux dans la vue 3D. On
+    ne règle plus un ×16 à l'aveugle.
+  * Sur un projet à plusieurs pièces, chaque pièce garde SON nombre
+    d'exemplaires, réglé en l'isolant d'un clic, et la vue d'ensemble
+    permet de multiplier le jeu complet.
+
+  ANYCUBIC
+  --------
+  * Les fichiers de neoSlice étaient chargés par Anycubic Slicer sans
+    aucun réglage : il fallait tout ressaisir à la main. Ils sont
+    désormais reconnus comme de vrais projets.
+  * La Kobra S1 gagne ses buses 0,25, 0,6 et 0,8 mm.
+  * Les Kobra 1, Kobra 1 Max, Kobra 1 Plus, Kobra 4 et Kobra X entrent au
+    catalogue.
+
+  macOS : QUATRE FOIS PLUS LÉGER
+  ------------------------------
+  * Le téléchargement passe de 1,9 Go à 0,4 Go, et l'espace occupé une
+    fois installé de 6,5 Go à 1,4 Go, pour exactement le même logiciel.
+  * Des Mac n'arrivaient tout simplement pas à décompresser le fichier
+    faute de place.
+
+  IMPRIMANTE ET FILAMENT
+  ----------------------
+  * Changer l'un ou l'autre APRÈS les avoir validés laissait l'étape
+    cochée sans permettre de revalider, et la configuration déjà générée
+    restait celle de l'ancienne machine.
+  * Les deux étapes redemandent maintenant une validation, l'import se
+    referme en attendant, et la configuration est regénérée. La pièce
+    chargée, elle, reste en place.
 
   FRAGILITÉ : ON VOIT ENFIN OÙ
   -----------------------------

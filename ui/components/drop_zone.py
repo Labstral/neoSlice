@@ -131,7 +131,25 @@ class DropZone(QWidget):
     def _refresh_labels(self):
         _p = _T.palette()
         inc = _p["INACTIVE"]; ts = _p["TEXT_SECONDARY"]; tl = _p["TEXT_LABEL"]
-        if self._locked:
+        if self._locked and self._loaded:
+            # Une pièce est chargée ET l'étape ① a été défaite (changement
+            # d'imprimante ou de filament). Afficher le cadenas effacerait le
+            # nom du fichier alors que la pièce est toujours à l'écran et
+            # toujours la pièce de travail. On garde donc sa miniature et son
+            # nom, et on explique seulement pourquoi on ne peut pas en changer.
+            # (Signalé par Emmanuel, 2026-10-01.)
+            if hasattr(self, "_recent_btn"):
+                self._recent_btn.hide()
+            if self._current_file is not None:
+                self._set_main_text(self._current_file.name)
+            self._main_label.setStyleSheet(
+                f"color: {_p['TELE_GREEN']}; background: transparent; font-size: 11px;")
+            self._sub_label.setText(_("drop.sub_locked_loaded"))
+            self._sub_label.setStyleSheet(f"color: {_p['AMBER']}; background: transparent;")
+            self._step_label.setText(_("drop.step_locked"))
+            self._step_label.setStyleSheet(f"color: {tl}; background: transparent;")
+            self._step_label.show()
+        elif self._locked:
             self._icon.setText("⊘")
             self._icon.setStyleSheet(f"font-size: 30px; color: {ts}; background: transparent;")
             self._main_full = ""   # état court : pas d'élidage au resize
@@ -146,6 +164,16 @@ class DropZone(QWidget):
             if hasattr(self, "_recent_btn"):
                 self._recent_btn.hide()
             self._step_label.hide()
+            # Retour à l'état chargé NORMAL : il faut remettre la ligne du
+            # dessous, sinon « validez l'étape ① pour en changer » reste
+            # affiché alors qu'on vient justement de revalider.
+            if self._current_file is not None:
+                self._set_main_text(self._current_file.name)
+            self._main_label.setStyleSheet(
+                f"color: {_p['TELE_GREEN']}; background: transparent; font-size: 11px;")
+            self._sub_label.setText(_("drop.sub_loaded"))
+            self._sub_label.setStyleSheet(
+                f"color: {_p['TEXT_LABEL']}; background: transparent;")
         else:
             self._icon.setText("⬆")
             self._icon.setStyleSheet(f"font-size: 30px; color: {inc}; background: transparent;")

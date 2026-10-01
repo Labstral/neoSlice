@@ -131,11 +131,22 @@ def test_favori_valide_bascule_le_slicer(app, _isole_prefs):
     # La clé à épingler est celle du MENU (préfixée par la marque : « Creality
     # CR-10 Max »), pas celle du catalogue brut — c'est ce décalage qui produit
     # les favoris morts si on épingle depuis une autre source.
+    #
+    # Depuis que le menu montre TOUT le catalogue et plus seulement ce que la
+    # sortie courante sait produire, la première entrée du menu n'est plus
+    # forcément réalisable par Snapmaker Orca : la Creality CR-10 n'existe que
+    # dans CrealityPrint. L'épingler sur Snapmaker Orca produirait un favori
+    # impossible, que neoSlice corrigerait aussitôt vers CrealityPrint — ce
+    # n'est pas ce que ce test veut mesurer. On choisit donc une machine que
+    # Snapmaker Orca sait vraiment produire.
+    from data.printers import _by_model, _slicer_supported
+    _ok = {mk for mk, v in _by_model().items()
+           if _slicer_supported("snapmaker", v["slicers"], v["marque"])}
     _isole_prefs["slicer_output"] = "snapmaker"
     ref = FilamentPrinterSelector()
     ref._populate_printers()
     cible = next(k for k in ref._printer_combo._key_label
-                 if mm.parse_machine_key(k) is None)
+                 if mm.parse_machine_key(k) is None and k in _ok)
     _isole_prefs["slicer_output"] = "bambu"
 
     mm.pin("snapmaker", cible, cible)

@@ -693,9 +693,26 @@ def _slicer_branding() -> dict:
             "extra_files": {},
         }
     if slicer == "anycubic":
-        # Anycubic Slicer (Next) = fork OrcaSlicer → producteur AnycubicSlicerNext.
+        # Anycubic Slicer (Next) = fork OrcaSlicer, MAIS il n'accepte pas son
+        # propre nom comme producteur. Son chargeur 3MF ne reconnaît le fichier
+        # comme un PROJET que si « Application » commence par « BambuStudio- »
+        # ou « OrcaSlicer- » ; sinon il affiche « Le fichier 3mf n'est pas
+        # supporté par AnycubicSlicerNext, chargement des données de géométrie
+        # uniquement » et l'utilisateur doit tout ressaisir à la main.
+        # (Signalé par Eric Nauche, Anycubic Kobra S1, 2026-10-01.)
+        #
+        # MESURÉ sur AnycubicSlicerNext 1.4.1.2 réellement installé, par
+        # --export-settings sur le même 3MF dont SEUL le producteur change :
+        #     AnycubicSlicerNext-1.4.1.2  refusé
+        #     AnycubicSlicer-1.4.1.2      refusé
+        #     BambuStudio-1.4.1.2         accepté, réglages relus
+        #     OrcaSlicer-02.03.00.58      accepté
+        # Et le slicer d'Anycubic écrit lui-même « BambuStudio-1.4.1.2 » dans
+        # les projets qu'il enregistre : on écrit donc exactement la même chose,
+        # avec SA version. Aucun avertissement « créé par BambuStudio » puisque
+        # c'est sa propre signature.
         return {
-            "application": f"AnycubicSlicerNext-{_ANYCUBIC_APP_VERSION}",
+            "application": f"BambuStudio-{_ANYCUBIC_APP_VERSION}",
             "slice_info": None,
             "extra_files": {},
         }

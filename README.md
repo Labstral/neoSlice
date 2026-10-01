@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v2.3.1** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v2.4.0** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -49,7 +49,15 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 
 ## Changelog
 
-### v2.3.1
+### v2.4.0
+- **Toutes les imprimantes enfin trouvables** : le menu ne montrait que les machines connues du logiciel de découpe sélectionné, et celui par défaut n'en connaît qu'un cinquième. Des marques entières, Flashforge, Snapmaker, Artillery, Sovol et une quarantaine d'autres, n'apparaissaient pas du tout. Le catalogue complet est désormais proposé, et neoSlice choisit tout seul le logiciel de découpe capable de produire la machine retenue.
+- **Chaque imprimante connaît son vrai plateau** : seules les Bambu Lab avaient leurs dimensions réelles, toutes les autres étaient traitées comme un plateau de 256 mm. Une Elegoo Neptune 4 Max de 420 mm passait pour une machine deux fois plus petite. Plus de 1200 machines ont maintenant leurs vraies cotes, ce qui corrige la répartition en série, le garde-fou de génération et le plateau annoncé à neoForge.
+- **Ranger un projet sur vos plateaux** : un projet importé conserve les plateaux du fichier d'origine, souvent prévus pour une machine plus petite. Un bouton propose de tout regrouper sur le moins de plateaux possible pour votre imprimante, et n'apparaît que s'il y a à gagner.
+- **Voir la série avant d'exporter** : un bouton pose les exemplaires sur leurs plateaux dans la vue 3D. Sur un projet à plusieurs pièces, chaque pièce garde son propre nombre d'exemplaires, et la vue d'ensemble permet de multiplier le jeu complet.
+- **Anycubic Slicer** : les fichiers de neoSlice étaient chargés sans aucun réglage, il fallait tout ressaisir à la main. Ils sont reconnus comme de vrais projets.
+- **Anycubic** : la Kobra S1 gagne ses buses 0,25, 0,6 et 0,8 mm, et les Kobra 1, Kobra 4 et Kobra X entrent au catalogue.
+- **macOS** : le téléchargement passe de 1,9 Go à 0,4 Go et l'espace occupé de 6,5 Go à 1,4 Go, pour exactement le même logiciel. Des Mac n'arrivaient tout simplement pas à décompresser le fichier.
+- **Imprimante et filament** : changer l'un ou l'autre après les avoir validés laissait l'étape cochée sans permettre de revalider, et la configuration déjà générée restait celle de l'ancienne machine. Les deux étapes redemandent une validation, l'import se referme et la configuration est regénérée.
 - **Fragilité** : la couleur montre désormais OÙ la pièce est fragile, et plus seulement si elle l'est. L'épaisseur de matière est mesurée au lieu d'être estimée, ce qui la rend juste au dixième de millimètre. L'analyse est aussi nettement plus rapide.
 - **Fragilité** : la case du viewer est toujours disponible, y compris sur une pièce seule ou sur une pièce isolée d'un clic. La jauge, devenue redondante, a été retirée.
 - **Surplombs** : les porte-à-faux proches du plateau et les rebords en saillie étaient ignorés. Ils sont détectés.

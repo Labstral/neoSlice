@@ -1133,6 +1133,8 @@ class _StatusBar(QWidget):
 
     export_clicked    = Signal()
     diag_apply_clicked = Signal(object)   # DiagnosticResult
+    replate_clicked   = Signal()          # ranger les pièces sur les plateaux
+    serie_apercu_clicked = Signal()       # montrer les exemplaires de la série
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1170,6 +1172,19 @@ class _StatusBar(QWidget):
         self._apply_diag_btn_style()
         layout.addWidget(self._diag_btn)
 
+        # Ranger les pièces d'un projet importé sur les plateaux de l'imprimante
+        # CHOISIE. N'apparaît que si ça fait gagner des plateaux : un projet
+        # déjà bien rangé ne doit pas afficher un bouton qui ne sert à rien.
+        # (Demandé par eleovna BERGES, Elegoo Neptune 4 Max, 2026-10-01.)
+        self._replate_btn = QPushButton()
+        self._replate_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
+        self._replate_btn.setFixedHeight(30)
+        self._replate_btn.setCursor(Qt.PointingHandCursor)
+        self._replate_btn.clicked.connect(self.replate_clicked.emit)
+        self._replate_btn.hide()
+        self._apply_replate_btn_style()
+        layout.addWidget(self._replate_btn)
+
         # Mode série : ×N exemplaires disposés en grille à l'export (déborde sur
         # plusieurs plateaux si besoin). ÉTIQUETTE « SÉRIE » + QDoubleSpinBox
         # (0 décimale) pour hériter du style de flèches partagé spinbox_qss —
@@ -1193,6 +1208,21 @@ class _StatusBar(QWidget):
         self._serie_spin.setFocusPolicy(Qt.StrongFocus)
         self._style_serie_spin()
         layout.addWidget(self._serie_spin)
+
+        # Changer le compteur ne montrait RIEN : on réglait ×16 à l'aveugle et
+        # on découvrait la disposition en ouvrant le slicer. Ce bouton pose les
+        # exemplaires sur leurs plateaux dans le viewer.
+        # (Signalé par Emmanuel, 2026-10-01.)
+        self._serie_ok_btn = QPushButton(_("serie.apercu_btn"))
+        self._serie_ok_btn.setFont(QFont(FONT_MAIN, 8, QFont.Bold))
+        self._serie_ok_btn.setFixedHeight(30)
+        self._serie_ok_btn.setFixedWidth(34)
+        self._serie_ok_btn.setCursor(Qt.PointingHandCursor)
+        self._serie_ok_btn.setToolTip(_("serie.apercu_tip"))
+        self._serie_ok_btn.setVisible(False)
+        self._serie_ok_btn.clicked.connect(self.serie_apercu_clicked.emit)
+        self._style_serie_ok()
+        layout.addWidget(self._serie_ok_btn)
 
         self._export_btn = QPushButton(_("export.btn", slicer=_slicer_name()))
         self._export_btn.setFont(QFont(FONT_MAIN, 9, QFont.Bold))
@@ -1218,6 +1248,31 @@ class _StatusBar(QWidget):
         """)
         self._export_btn.clicked.connect(self.export_clicked)
         layout.addWidget(self._export_btn)
+
+    # ── Bouton « ranger les plateaux » ─────────────────────────────────────
+    def _apply_replate_btn_style(self):
+        """Contour discret : il propose, il ne doit pas concurrencer EXPORTER."""
+        pal = _THEME.palette()
+        self._replate_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {pal['ACCENT']};
+                border: 1px solid {pal['ACCENT']}; border-radius: 3px;
+                padding: 0 14px; letter-spacing: 1px;
+            }}
+            QPushButton:hover {{
+                background: {pal['ACCENT']}; color: {pal['EXPORT_FG']};
+            }}
+        """)
+
+    def set_replate(self, texte: str, infobulle: str = "") -> None:
+        """Affiche le bouton avec son libellé, ou le masque si `texte` est vide."""
+        if not texte:
+            self._replate_btn.hide()
+            return
+        self._replate_btn.setText(texte)
+        self._replate_btn.setToolTip(infobulle)
+        self._apply_replate_btn_style()
+        self._replate_btn.show()
 
     # ── Bouton corrections diagnostic ──────────────────────────────────────
     def _apply_diag_btn_style(self):
@@ -1272,9 +1327,30 @@ class _StatusBar(QWidget):
             f"border-radius: 4px; padding: 0 4px; }}"
             + spinbox_qss(pal, "rgba(30,144,255,0.35)"))
 
+    def _style_serie_ok(self):
+        """Contour discret, comme le bouton de rangement : il accompagne le
+        compteur, il ne doit pas attirer l'œil plus que EXPORTER."""
+        pal = _THEME.palette()
+        self._serie_ok_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {pal['ACCENT']};
+                border: 1px solid {pal['ACCENT']}; border-radius: 3px;
+            }}
+            QPushButton:hover {{
+                background: {pal['ACCENT']}; color: {pal['EXPORT_FG']};
+            }}
+        """)
+
     def serie_count(self) -> int:
         """Nombre d'exemplaires demandés (mode série ; 1 = pièce seule)."""
         return int(self._serie_spin.value())
+
+    def set_serie(self, n: int) -> None:
+        """Pose le compteur SANS déclencher d'aperçu (changement de contexte :
+        on isole un objet, on revient à l'ensemble…)."""
+        self._serie_spin.blockSignals(True)
+        self._serie_spin.setValue(max(1, int(n)))
+        self._serie_spin.blockSignals(False)
 
     def reset_serie(self) -> None:
         self._serie_spin.setValue(1)
@@ -1285,6 +1361,8 @@ class _StatusBar(QWidget):
         self._style_serie_spin()
         self._dot.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
         self._msg.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
+        self._apply_replate_btn_style()      # sinon il garde la palette sombre
+        self._style_serie_ok()
         if self._diag_btn.isEnabled():
             self._apply_diag_btn_style()
         if not self._export_btn.isEnabled():
@@ -1336,6 +1414,9 @@ class _StatusBar(QWidget):
         self._serie_spin.setEnabled(enabled)
         self._serie_spin.setVisible(enabled)   # visible SEULEMENT quand exportable
         self._serie_lbl.setVisible(enabled)
+        self._serie_ok_btn.setVisible(enabled)
+        if not enabled:
+            self._replate_btn.hide()           # rien d'exportable, rien à ranger
         if enabled:
             self._pulse_phase = 0
             self._pulse_timer.start(20)
@@ -1837,6 +1918,8 @@ class MainWindow(QMainWindow):
         self._statusbar = _StatusBar()
         self._statusbar.export_clicked.connect(self._on_export_requested)
         self._statusbar.diag_apply_clicked.connect(self._do_apply_diagnostic)
+        self._statusbar.replate_clicked.connect(self._reorganiser_plateaux)
+        self._statusbar.serie_apercu_clicked.connect(self._apercu_serie)
         root.addWidget(self._statusbar)
 
     # ── Panneau gauche ─────────────────────────────────────────────────────
@@ -1892,6 +1975,7 @@ class MainWindow(QMainWindow):
         # neoGen chargent sans passer par le glisser-déposer qui imposait ça)
         self._filament_selector.printer_confirmed.connect(self._maj_prerequis_generation)
         self._filament_selector.filament_confirmed.connect(self._maj_prerequis_generation)
+        self._filament_selector.validation_perdue.connect(self._on_validation_perdue)
         layout.addWidget(self._filament_selector)
 
         sep0 = QFrame()
@@ -1978,6 +2062,8 @@ class MainWindow(QMainWindow):
         # Réglages MÉMORISÉS par objet (édition multi-objets) :
         # {object_id: {"config", "selection", "explanations", "intent_ids"}}.
         self._per_object_state = {}
+        self._serie_objet = {}          # compteur de série PAR objet
+        self._serie_globale = 1         # combien de fois le jeu complet
         self._viewer.objet_clique.connect(self._isoler_objet)
         self._viewer.retour_ensemble.connect(self._retour_vue_ensemble)
         layout.addWidget(self._viewer, stretch=1)
@@ -2003,6 +2089,10 @@ class MainWindow(QMainWindow):
         self._overview_camera = self._viewer.get_camera_state()
         self._overview_threemf = td        # mémoriser pour y revenir
         self._active_object_id = str(object_id)
+        # Le compteur de série suit le contexte : isolé, il montre le compteur
+        # de CETTE pièce ; en vue d'ensemble, celui du jeu complet.
+        self._statusbar.set_serie(
+            (getattr(self, "_serie_objet", {}) or {}).get(str(object_id), 1))
         self._active_object_name = str(mo.name or "objet")   # → nom de fichier export
         self._threemf_data = None          # traiter comme un mono-objet
         self._mesh = m
@@ -2056,6 +2146,7 @@ class MainWindow(QMainWindow):
         self._mesh = td.combined_mesh
         self._active_object_id = None
         self._active_object_name = None
+        self._statusbar.set_serie(getattr(self, "_serie_globale", 1))
         self._orient_reset_state()         # retour à l'ensemble multi-pièces
         self._overview_threemf = None
 
@@ -2100,6 +2191,19 @@ class MainWindow(QMainWindow):
 
         # Des réglages par objet ont été posés → permettre l'export d'ensemble
         # (un 3MF avec toutes les modifications) même sans re-générer une config.
+        # Une série est en cours → la vue d'ensemble montre le TOTAL. Sans ça,
+        # les exemplaires réglés sur un objet isolé « disparaissent » au retour,
+        # ce qui est exactement ce qu'Emmanuel décrivait.
+        if self._serie_active() and not self._projet_structure():
+            try:
+                vue, _bases, plan = self._td_serie(td)
+                self._viewer.load_mesh(vue)
+                self._statusbar.set_message(
+                    _("serie.apercu_multi", n=len(vue.objects),
+                      p=max(1, plan.plateaux)), TELE_GREEN)
+            except Exception:
+                logger.debug("vue d'ensemble développée impossible", exc_info=True)
+
         _edits = {o: s for o, s in (getattr(self, "_per_object_state", {}) or {}).items()
                   if s and s.get("config") is not None}
         if _edits and getattr(self, "_current_config", None) is not None:
@@ -3680,6 +3784,8 @@ class MainWindow(QMainWindow):
         self._overview_cache = None
         self._overview_camera = None
         self._per_object_state = {}
+        self._serie_objet = {}          # compteur de série PAR objet
+        self._serie_globale = 1         # combien de fois le jeu complet
         self._neogen_multiplate = False
         self._neogen_multiplate_profils = {}
         self._neogen_scene = None
@@ -3828,6 +3934,8 @@ class MainWindow(QMainWindow):
         self._overview_cache = None
         self._overview_camera = None
         self._per_object_state = {}
+        self._serie_objet = {}          # compteur de série PAR objet
+        self._serie_globale = 1         # combien de fois le jeu complet
         try:
             self._viewer.montrer_retour_ensemble(False)
         except Exception:
@@ -5147,23 +5255,67 @@ class MainWindow(QMainWindow):
             first_line = "Avertissement géométrique interne (non critique) — résultats disponibles"
         self._statusbar.set_message(_("status.analysis_err", msg=first_line), ERROR_RED)
 
+    def _maj_verrou_import(self) -> None:
+        """L'import n'est ouvert QUE si l'imprimante ET le filament sont validés.
+
+        Un seul endroit décide, sinon les cas se contredisent : revalider la
+        seule imprimante après l'avoir changée rendait l'étape ① complète, mais
+        la zone restait verrouillée parce que seul le filament la déverrouillait.
+        (Signalé par Emmanuel, 2026-10-01.)"""
+        valide = self._filament_selector.est_valide()
+        self._drop_zone.set_locked(not valide)
+        self._maj_prerequis_generation()
+        if valide:
+            self._step_config.set_done()
+            self._step_stl.set_active()
+        else:
+            self._step_config.set_active()
+
     def _on_printer_confirmed(self):
         self._statusbar.set_message(_("status.printer_confirmed"), TELE_GREEN)
+        self._maj_verrou_import()
 
     def _on_filament_printer_changed(self, printer: str, filament: str):
         self._current_printer = printer
         self._current_filament = filament
         self._current_nozzle_mm = self._filament_selector.current_nozzle_diameter_mm()
+        # Le plateau vient de changer de taille : le rangement proposé aussi.
+        try:
+            self._maj_bouton_replateau()
+        except Exception:
+            logger.debug("bouton de rangement non réévalué", exc_info=True)
+
+    def _on_validation_perdue(self):
+        """Une étape ① ou ② validée ne l'est plus.
+
+        On reverrouille l'import, sans ça on pouvait changer d'imprimante APRÈS
+        avoir validé et importer quand même.
+
+        Surtout, on JETTE la configuration générée. Elle avait été calculée pour
+        l'ancienne machine, avec ses vitesses, ses accélérations, son débit et
+        ses températures. L'export, lui, lit l'imprimante COURANTE : le fichier
+        serait donc étiqueté « Neptune 4 Max » tout en portant les réglages
+        d'une X1 Carbon. Rien ne l'aurait signalé.
+
+        La PIÈCE et son ANALYSE restent en place : la géométrie ne change pas
+        quand on change de machine, et refaire l'analyse d'une pièce lourde
+        coûterait une vingtaine de secondes pour rien."""
+        self._maj_verrou_import()
+        if getattr(self, "_current_config", None) is None or self._mesh is None:
+            return
+        self._current_config = None
+        self._statusbar.set_export_enabled(False)
+        self._statusbar.set_message(_("status.config_perimee"), AMBER)
+        logger.info("Imprimante ou filament changé → configuration invalidée")
 
     def _on_filament_confirmed(self):
         """Étapes ①② validées → on déverrouille la drop zone."""
-        self._drop_zone.set_locked(False)
-        self._step_config.set_done()
-        self._step_stl.set_active()
-        self._statusbar.set_message(
-            "Configuration validée — glissez votre fichier STL",
-            TELE_GREEN,
-        )
+        self._maj_verrou_import()
+        if self._filament_selector.est_valide():
+            self._statusbar.set_message(
+                "Configuration validée — glissez votre fichier STL",
+                TELE_GREEN,
+            )
 
     def _on_intent_submitted(self, result: SelectionResult):
         if self._mesh is None:
@@ -5239,6 +5391,7 @@ class MainWindow(QMainWindow):
                 TELE_GREEN,
             )
             self._statusbar.set_export_enabled(True)
+            self._maj_bouton_replateau()
             self._step_intent.set_done()
 
             # Édition multi-objets : MÉMORISER les réglages de l'objet actif pour
@@ -5268,6 +5421,300 @@ class MainWindow(QMainWindow):
     # ══════════════════════════════════════════════════════════════════════
     # ÉDITION PAR OBJET — export d'ensemble (Phase 3b) + repli batch
     # ══════════════════════════════════════════════════════════════════════
+
+    # ── Ranger les pièces sur les plateaux de l'imprimante ────────────────
+    # eleovna BERGES, Elegoo Neptune 4 Max, 2026-10-01 : « il serait judicieux
+    # que le logiciel tienne compte du plateau dans la répartition des éléments
+    # par plateau sur un projet volumineux ». À l'import, neoSlice respectait
+    # les plateaux déclarés dans le fichier, même quand ils venaient d'une
+    # machine deux fois plus petite que la sienne.
+
+    def _empreintes_projet(self, td) -> list:
+        """[(object_id, xmin, ymin, xmax, ymax)] — l'empreinte au sol de chaque
+        objet, transform comprise.
+
+        On transforme les 8 COINS de la boîte englobante plutôt que le maillage
+        entier : sur un projet d'un million de faces, copier chaque maillage
+        juste pour lire ses bornes coûterait plusieurs secondes. Si la transform
+        contient une rotation, l'empreinte obtenue est un peu plus grande que la
+        vraie, jamais plus petite : le rangement reste sûr."""
+        import numpy as _np
+        empreintes = []
+        for mo in td.objects:
+            lo, hi = mo.mesh.bounds
+            if _np.allclose(mo.transform, _np.eye(4)):
+                x0, y0, x1, y1 = lo[0], lo[1], hi[0], hi[1]
+            else:
+                coins = _np.array([[x, y, z, 1.0]
+                                   for x in (lo[0], hi[0])
+                                   for y in (lo[1], hi[1])
+                                   for z in (lo[2], hi[2])])
+                pts = (_np.asarray(mo.transform, dtype=float) @ coins.T).T[:, :3]
+                x0, y0 = pts[:, 0].min(), pts[:, 1].min()
+                x1, y1 = pts[:, 0].max(), pts[:, 1].max()
+            empreintes.append((str(mo.object_id), float(x0), float(y0),
+                               float(x1), float(y1)))
+        return empreintes
+
+    def _plan_replateau(self):
+        """(plan, nombre de plateaux actuels), ou (None, 0) si sans objet."""
+        td = self._threemf_data
+        if td is None or td.object_count < 2:
+            return None, 0
+        # Une scène neoGen répartit ses corps par le tag plateau() de la recette :
+        # ces plateaux sont VOULUS (couvercle lithophane d'un côté, boîte de
+        # l'autre, chacun son profil). Proposer de les fusionner défairait un
+        # choix délibéré de l'auteur de la recette.
+        if getattr(self, "_neogen_multiplate_profils", None):
+            return None, 0
+        from core.geometry.replateau import repartir
+        from data.printers import volume_impression
+        bx, by, _bz = volume_impression(self._current_printer)
+        avant = len({int(getattr(o, "plate_index", 0) or 0) for o in td.objects})
+        try:
+            return repartir(self._empreintes_projet(td), (bx, by)), avant
+        except Exception:
+            logger.debug("rangement des plateaux impossible", exc_info=True)
+            return None, 0
+
+    def _maj_bouton_replateau(self) -> None:
+        """Propose le rangement UNIQUEMENT s'il fait gagner des plateaux."""
+        try:
+            plan, avant = self._plan_replateau()
+        except Exception:
+            plan, avant = None, 0
+        if plan is None or not plan.utile or plan.plateaux >= avant:
+            self._statusbar.set_replate("")
+            return
+        from data.printers import volume_impression
+        bx, by, _bz = volume_impression(self._current_printer)
+        self._statusbar.set_replate(
+            _("replateau.btn", n=plan.plateaux),
+            _("replateau.tip", avant=avant, apres=plan.plateaux,
+              x=f"{bx:.0f}", y=f"{by:.0f}", imprimante=self._current_printer))
+
+    def _reorganiser_plateaux(self) -> None:
+        """Déplace les pièces sur le moins de plateaux possible, puis réaffiche."""
+        import numpy as _np
+        td = self._threemf_data
+        plan, avant = self._plan_replateau()
+        if td is None or plan is None or not plan.utile:
+            return
+        poses = {p.id: p for p in plan.poses}
+        for mo in td.objects:
+            pose = poses.get(str(mo.object_id))
+            if pose is None:
+                continue                      # pièce plus grande que le plateau
+            tr = _np.asarray(mo.transform, dtype=float).copy()
+            tr[0, 3] += pose.dx
+            tr[1, 3] += pose.dy
+            mo.transform = tr
+            mo.plate_index = int(pose.plateau)
+        td.plate_count = plan.plateaux
+        td.reagence = True
+
+        # Le maillage combiné sert aux dimensions affichées : le laisser tel quel
+        # annoncerait l'encombrement d'AVANT le rangement.
+        try:
+            import trimesh as _tm
+            td.combined_mesh = _tm.util.concatenate(
+                [self._object_mesh_sur_plateau(mo) for mo in td.objects])
+        except Exception:
+            logger.debug("maillage combiné non reconstruit", exc_info=True)
+
+        try:
+            self._viewer._load_multipart_mesh(td)
+        except Exception:
+            logger.warning("réaffichage après rangement échoué", exc_info=True)
+
+        from data.printers import volume_impression
+        bx, by, _bz = volume_impression(self._current_printer)
+        msg = _("replateau.done", avant=avant, apres=plan.plateaux,
+                x=f"{bx:.0f}", y=f"{by:.0f}")
+        if plan.trop_grandes:
+            msg += " · " + _("replateau.too_big", n=len(plan.trop_grandes))
+        self._statusbar.set_message(msg, TELE_GREEN)
+        logger.info(f"Plateaux rangés : {avant} → {plan.plateaux} "
+                    f"sur {bx:.0f}×{by:.0f} mm ({self._current_printer})")
+        self._maj_bouton_replateau()          # souvent : plus rien à gagner
+
+    def _apercu_serie(self) -> None:
+        """Pose les exemplaires de la série sur leurs plateaux, dans le viewer.
+
+        APERÇU seulement : `self._mesh` n'est pas touché et l'export continue de
+        recalculer la série de son côté. On ne risque donc pas de livrer une
+        pièce dupliquée deux fois."""
+        n = self._statusbar.serie_count()
+        if self._mesh is None:
+            return
+
+        # Un objet ISOLÉ : le compteur est le sien, et il est mémorisé.
+        _aid = getattr(self, "_active_object_id", None)
+        if _aid is not None:
+            self._serie_objet = getattr(self, "_serie_objet", {})
+            self._serie_objet[str(_aid)] = max(1, int(n))
+
+        # VUE D'ENSEMBLE d'un projet : le compteur multiplie le jeu complet, et
+        # l'aperçu montre le TOTAL réel, compteurs par objet inclus.
+        if _aid is None and self._threemf_data is not None                 and self._threemf_data.object_count > 1:
+            if self._projet_structure():
+                self._statusbar.set_message(_("serie.na_structure"), AMBER)
+                return
+            self._serie_globale = max(1, int(n))
+            try:
+                vue, _bases, plan = self._td_serie(self._threemf_data)
+            except Exception:
+                logger.warning("aperçu de série multi-objets échoué", exc_info=True)
+                self._statusbar.set_message(_("serie.too_big"), AMBER)
+                return
+            self._viewer.load_mesh(vue)
+            self._statusbar.set_message(
+                _("serie.apercu_multi", n=len(vue.objects),
+                  p=max(1, plan.plateaux)), TELE_GREEN)
+            if plan.trop_grandes:
+                logger.warning(f"{len(plan.trop_grandes)} pièce(s) hors plateau")
+            self._maj_bouton_replateau()
+            return
+
+        if n <= 1:
+            self._viewer.load_mesh(self._mesh)          # retour à la pièce seule
+            self._statusbar.set_message(_("serie.apercu_un"), TELE_GREEN)
+            return
+
+        from core.geometry.serie import copies_serie
+        from core.geometry.threemf_data import MeshObject, ThreeMFData
+        from data.printers import volume_impression
+        import trimesh as _tm
+        bx, by, _bz = volume_impression(self._current_printer)
+        try:
+            groupes = copies_serie(self._mesh, n, (bx, by))
+        except ValueError:
+            self._statusbar.set_message(_("serie.too_big"), AMBER)
+            return
+
+        objets, k = [], 0
+        for plateau, copies in enumerate(groupes):
+            for c in copies:
+                k += 1
+                objets.append(MeshObject(object_id=f"serie{k}", name=f"#{k}",
+                                         extruder=1, mesh=c, plate_index=plateau))
+        td = ThreeMFData(
+            combined_mesh=_tm.util.concatenate([o.mesh for o in objets]),
+            objects=objets, source_path=self._stl_path,
+            plate_count=len(groupes),
+            # Disposition calculée par nous : le viewer ne doit pas la recompacter.
+            reagence=True)
+        self._viewer.load_mesh(td)
+        self._statusbar.set_message(
+            _("serie.apercu", n=n, p=len(groupes)), TELE_GREEN)
+        logger.info(f"Aperçu série ×{n} : {len(groupes)} plateau(x) "
+                    f"de {bx:.0f}×{by:.0f} mm")
+
+    # ── Série sur un projet à PLUSIEURS objets ────────────────────────────
+    # Emmanuel, 2026-10-01 : « comment faire pour que le nombre de série
+    # fonctionne avec plusieurs objets différents dans un 3mf ? […] si j'isole
+    # un objet et que j'augmente la valeur, j'en vois bien plusieurs, seulement
+    # quand je reviens à la vue d'ensemble ils disparaissent. »
+    #
+    # DEUX compteurs, choisis avec lui, qui se multiplient :
+    #   * `_serie_objet[oid]`  — combien d'exemplaires de CETTE pièce là,
+    #     réglé quand elle est isolée, et mémorisé comme ses autres réglages ;
+    #   * `_serie_globale`     — combien de fois le JEU complet, réglé depuis
+    #     la vue d'ensemble.
+    # Total d'une pièce = son compteur × le compteur global. Deux nombres
+    # séparés plutôt qu'une multiplication en place : remettre la vue
+    # d'ensemble à ×1 redonne exactement les compteurs par objet, alors qu'une
+    # multiplication cumulative serait impossible à défaire.
+
+    def _projet_structure(self) -> bool:
+        """Projet 3MF qu'on ne peut PAS reconstruire sans perdre sa structure :
+        modifieurs, multi-couleur, assemblage de couleurs. Y ajouter des
+        exemplaires demanderait de tout réécrire, et on perdrait justement ce
+        qui fait sa valeur. On le dit plutôt que de le casser."""
+        td = getattr(self, "_threemf_data", None)
+        if td is None:
+            return False
+        return bool(getattr(td, "modifier_meshes", None)
+                    or getattr(td, "is_multicolor", False)
+                    or getattr(td, "is_color_assembly", False))
+
+    def _serie_active(self) -> bool:
+        return (int(getattr(self, "_serie_globale", 1)) > 1
+                or any(int(v) > 1 for v in
+                       (getattr(self, "_serie_objet", {}) or {}).values()))
+
+    def _compte_serie(self, oid) -> int:
+        """Nombre d'exemplaires d'un objet, compteur global compris."""
+        par_objet = int((getattr(self, "_serie_objet", {}) or {}).get(str(oid), 1))
+        return max(1, par_objet) * max(1, int(getattr(self, "_serie_globale", 1)))
+
+    def _objets_serie(self, td):
+        """Développe chaque objet selon son compteur et range le tout sur les
+        plateaux de l'imprimante choisie.
+
+        Retourne (objets, bases) : `objets` sont des MeshObject prêts à
+        afficher ET à exporter (géométrie déjà posée, plate_index attribué),
+        `bases[nouvel_id] = id d'origine` pour retrouver les réglages de la
+        pièce dont chaque exemplaire est issu."""
+        from core.geometry.replateau import repartir
+        from core.geometry.threemf_data import MeshObject
+        from data.printers import volume_impression
+        import numpy as _np
+
+        objets, bases = [], {}
+        for mo in td.objects:
+            base = self._object_mesh_sur_plateau(mo)      # position conservée
+            for k in range(self._compte_serie(mo.object_id)):
+                nid = str(mo.object_id) if k == 0 else f"{mo.object_id}#{k + 1}"
+                nom = str(mo.name) if k == 0 else f"{mo.name} ({k + 1})"
+                objets.append(MeshObject(object_id=nid, name=nom,
+                                         extruder=int(getattr(mo, "extruder", 1) or 1),
+                                         mesh=base.copy(), plate_index=0))
+                bases[nid] = str(mo.object_id)
+
+        bx, by, _bz = volume_impression(self._current_printer)
+        empreintes = []
+        for o in objets:
+            lo, hi = o.mesh.bounds
+            empreintes.append((o.object_id, float(lo[0]), float(lo[1]),
+                               float(hi[0]), float(hi[1])))
+        plan = repartir(empreintes, (bx, by))
+        poses = {q.id: q for q in plan.poses}
+        for o in objets:
+            q = poses.get(o.object_id)
+            if q is None:
+                continue                      # pièce plus grande que le plateau
+            o.mesh.apply_translation([q.dx, q.dy, 0.0])
+            o.plate_index = int(q.plateau)
+        return objets, bases, plan
+
+    def _td_serie(self, td):
+        """Vue d'ensemble DÉVELOPPÉE, prête pour le viewer."""
+        from core.geometry.threemf_data import ThreeMFData
+        import trimesh as _tm
+        objets, bases, plan = self._objets_serie(td)
+        vue = ThreeMFData(
+            combined_mesh=_tm.util.concatenate([o.mesh for o in objets]),
+            objects=objets, source_path=getattr(self, "_stl_path", None),
+            plate_count=max(1, plan.plateaux),
+            reagence=True)
+        return vue, bases, plan
+
+    def _object_mesh_sur_plateau(self, mo):
+        """Mesh d'un MeshObject pour un export MULTI-PLATEAUX : transform
+        appliquée et base à z=0, mais position XY CONSERVÉE.
+
+        Centrer chaque pièce comme le fait `_object_mesh_posed` superposerait
+        toutes les pièces d'un même plateau : l'écrivain 3MF centre le GROUPE
+        et compte sur les positions relatives. Le défaut était dormant tant
+        qu'il n'y avait qu'une pièce par plateau (boîte lumineuse), il devient
+        certain dès qu'on range plusieurs pièces ensemble."""
+        import numpy as np
+        m = mo.mesh.copy()
+        if not np.allclose(mo.transform, np.eye(4)):
+            m.apply_transform(mo.transform)
+        m.apply_translation([0.0, 0.0, -float(m.bounds[0][2])])
+        return m
 
     def _object_mesh_posed(self, mo):
         """Mesh d'un MeshObject placé pour un export mono-objet : transform
@@ -5316,6 +5763,104 @@ class MainWindow(QMainWindow):
             mesh=mesh, config=config, output_path=out,
             printer_ui_name=printer, filament_ui_name=filament,
             nozzle_diameter_mm=nozzle_mm, plate_type=_plate)
+
+    def _maybe_export_serie_multi(self, base_config, ok, result_msg) -> bool:
+        """Projet à plusieurs objets AVEC une série demandée.
+
+        Impossible par injection dans le 3MF source : on ne peut pas y AJOUTER
+        des exemplaires. Le projet est donc reconstruit, ce qui est sûr tant
+        qu'il ne porte ni modifieur ni couleurs — sinon on le dit et on exporte
+        sans la série plutôt que de casser sa structure."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        if getattr(self, "_active_object_id", None) is not None:
+            return False                       # objet isolé → export objet seul
+        td = getattr(self, "_threemf_data", None)
+        if td is None or td.object_count < 2 or not self._serie_active():
+            return False
+
+        if self._projet_structure():
+            _mb = QMessageBox(self)
+            _mb.setWindowTitle(_("serie.na_title"))
+            _mb.setText(_("serie.na_structure"))
+            _mb.setIcon(QMessageBox.Information)
+            try:
+                _mb.setStyleSheet(self.styleSheet())
+            except Exception:
+                pass
+            _mb.exec()
+            return False                       # export standard, SANS la série
+
+        try:
+            objets, bases, plan = self._objets_serie(td)
+        except Exception:
+            logger.exception("développement de la série impossible")
+            self._statusbar.set_message(_("serie.too_big"), AMBER)
+            return True
+
+        def _cfg(oid):
+            st = (getattr(self, "_per_object_state", {}) or {}).get(bases.get(oid, oid))
+            if st and st.get("config") is not None:
+                return st["config"]
+            return base_config
+
+        items = [{"mesh": o.mesh, "config": _cfg(o.object_id),
+                  "plate": int(o.plate_index),
+                  "name": _sanitize_filename(o.name) or o.object_id}
+                 for o in objets]
+
+        from core.prefs import PREFS as _P
+        from core.export.perobject_capabilities import supports_per_object_one_file
+        from data.printers import is_catalogue_model
+        slicer = _P.get("slicer_output", "bambu")
+        nozzle = self._filament_selector.current_nozzle_diameter_mm()
+        downloads = self._dossier_export_defaut()
+        base_nom = Path(getattr(self, "_stl_path", None) or "projet").stem
+        un_fichier = (supports_per_object_one_file(slicer)
+                      and not is_catalogue_model(self._current_printer))
+        try:
+            if un_fichier:
+                from core.export.multiplate_3mf import build_multiplate_bambu
+                sortie, _f = QFileDialog.getSaveFileName(
+                    self, _("export.save_two_plates"),
+                    str(downloads / f"{base_nom}_serie.3mf"),
+                    _("export.dialog_filter"))
+                if not sortie:
+                    return True
+                chemin = build_multiplate_bambu(
+                    items, base_config, Path(sortie), self._current_printer,
+                    self._current_filament, nozzle,
+                    plate_type=self._filament_selector.current_plate_type())
+                logger.info(f"Série multi-objets exportée : {chemin}")
+                self._show_success_dialog(base_config,
+                                          getattr(self, "_current_selection", None),
+                                          chemin)
+                self._statusbar.set_message(
+                    _("serie.exported", n=len(objets), p=max(1, plan.plateaux)),
+                    TELE_GREEN)
+            else:
+                # Ce slicer ne sait pas porter plusieurs plateaux dans un seul
+                # fichier : UN fichier par plateau, comme pour les scènes neoGen.
+                import trimesh as _tm
+                dossier = QFileDialog.getExistingDirectory(
+                    self, _("export.save_ensemble"), str(downloads))
+                if not dossier:
+                    return True
+                par_plateau = {}
+                for o in objets:
+                    par_plateau.setdefault(int(o.plate_index), []).append(o.mesh)
+                for pl in sorted(par_plateau):
+                    fusion = _tm.util.concatenate(par_plateau[pl])
+                    self._build_3mf_from_mesh(
+                        fusion, base_config,
+                        Path(dossier) / f"{base_nom}_plateau{pl + 1}.3mf", nozzle)
+                logger.info(f"Série multi-objets : {len(par_plateau)} fichier(s) "
+                            f"dans {dossier}")
+                self._statusbar.set_message(
+                    _("serie.exported_files", p=len(par_plateau)), TELE_GREEN)
+        except Exception as e:
+            logger.exception("export de la série multi-objets")
+            self._statusbar.set_message(_("status.export_err", msg=e), ERROR_RED)
+        return True
 
     def _maybe_export_vue_ensemble(self, base_config, ok, result_msg) -> bool:
         """Vue d'ensemble d'une scène multi-objets AVEC des réglages par objet :
@@ -5613,7 +6158,7 @@ class MainWindow(QMainWindow):
         for mo in objs:
             oid = str(mo.object_id)
             profil = profils.get(oid)
-            items.append({"mesh": self._object_mesh_posed(mo),
+            items.append({"mesh": self._object_mesh_sur_plateau(mo),
                           "config": _cfg_for(oid, profil),
                           "plate": int(getattr(mo, "plate_index", 0) or 0),
                           "profil": profil,
@@ -5730,6 +6275,8 @@ class MainWindow(QMainWindow):
         # objet : proposer UN seul 3MF regroupant tous les objets, chacun ses
         # surcharges (Bambu/Orca) ; sinon repli (un fichier par objet / réglages
         # communs). Prend la main sur le flux d'export standard si applicable.
+        if self._maybe_export_serie_multi(config, ok, result_msg):
+            return
         if self._maybe_export_vue_ensemble(config, ok, result_msg):
             return
 

@@ -38,6 +38,15 @@ _PROFILE_DIRS_BY_SLICER = {
         Path(r"C:\Program Files\ElegooSlicer\resources\profiles"),
         Path(r"C:\Program Files (x86)\ElegooSlicer\resources\profiles"),
     ],
+    # Anycubic Slicer Next = fork OrcaSlicer, et c'est la SEULE source des
+    # buses 0,25 / 0,6 / 0,8 des Kobra : OrcaSlicer n'embarque que la 0,4
+    # pour la Kobra S1, donc un possesseur de Kobra S1 en 0,6 ne trouvait
+    # pas sa buse. (Constaté en répondant à Bruno Guerin, Kobra S1 Combo,
+    # 2026-10-01.)
+    "anycubic": [
+        Path(r"C:\Program Files\AnycubicSlicerNext\resources\profiles"),
+        Path(r"C:\Program Files (x86)\AnycubicSlicerNext\resources\profiles"),
+    ],
 }
 
 # Bambu Lab (BBL) géré à part via PRINTERS (catalogue enrichi). On l'exclut ici.
@@ -238,9 +247,35 @@ def dump_slicer_presets(data_dir: Path) -> None:
                   f"({len(machines_n)} machines, {len(filaments_n)} filaments)")
 
 
+def fusionner_ajouts_manuels(catalog: dict, machines: dict, data: Path) -> int:
+    """Réinjecte data/printers_catalog_extra.json.
+
+    Certaines machines ne viennent d'AUCUN slicer installé et ont été ajoutées
+    à la main (l'Eryone Thinker SE, livrée en 0.1.8.2). Une régénération du
+    catalogue les effaçait en silence : la machine d'un utilisateur disparaissait
+    du menu à la release suivante, sans que rien ne le signale.
+    Les ajouts manuels ne remplacent jamais un profil trouvé dans un slicer :
+    si la machine finit par arriver dans OrcaSlicer, c'est sa version qui prime."""
+    chemin = data / "printers_catalog_extra.json"
+    if not chemin.exists():
+        return 0
+    extra = _load(chemin)
+    n = 0
+    for nom, bloc in extra.items():
+        if nom in catalog:
+            continue
+        catalog[nom] = bloc["catalogue"]
+        machines[nom] = bloc["machine"]
+        n += 1
+    return n
+
+
 def main():
     catalog, machines = extract()
     data = Path(__file__).resolve().parent.parent / "data"
+    n_extra = fusionner_ajouts_manuels(catalog, machines, data)
+    if n_extra:
+        print(f"Ajouts manuels réinjectés : {n_extra}")
     out_cat = data / "printers_catalog.json"
     out_mac = data / "printer_machines.json"
     out_cat.write_text(json.dumps(catalog, ensure_ascii=False, indent=1), encoding="utf-8")

@@ -47,6 +47,12 @@ class ThreeMFData:
     # Vrai si plusieurs parts de couleurs s'imbriquent pour former UN solide (badge
     # multicolore) : l'analyse ne doit pas y détecter de fausses régions flottantes.
     is_color_assembly: bool = False
+    # Vrai quand neoSlice a REFAIT la répartition sur les plateaux de l'imprimante
+    # choisie. Le viewer doit alors afficher la disposition TELLE QUELLE : son
+    # garde-fou anti-dispersion, prévu pour les transforms Bambu corrompus,
+    # recompacterait un plateau de 420 mm en petite grille et montrerait autre
+    # chose que ce qui sera imprimé.
+    reagence: bool = False
 
     @property
     def object_count(self) -> int:

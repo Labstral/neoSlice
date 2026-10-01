@@ -1872,7 +1872,8 @@ class Viewer3D(QWidget):
         return True, offsets
 
     @staticmethod
-    def _layout_par_plateau(transformed: list, objects: list) -> tuple:
+    def _layout_par_plateau(transformed: list, objects: list,
+                            seuil_disperse: float = 300.0) -> tuple:
         """Disposition fidèle multi-plateaux : groupe les pièces par plate_index
         (lu du 3MF — aucune devinette spatiale), garde la disposition INTERNE de
         chaque plateau, et pose les plateaux côte à côte.
@@ -1889,7 +1890,7 @@ class Viewer3D(QWidget):
         # des transforms d'instance corrompus → pièces dispersées sur des mètres,
         # vécu : Table de chevet, plateau « 256 mm » étendu sur 3,3 m). On range
         # alors les pièces du plateau en petite grille compacte.
-        SEUIL_DISPERSE = 300.0
+        SEUIL_DISPERSE = float(seuil_disperse)
 
         local = [(0.0, 0.0)] * len(transformed)   # offsets DANS le repère du groupe
         tailles = []                              # (largeur, hauteur) par groupe
@@ -2036,9 +2037,15 @@ class Viewer3D(QWidget):
             # disposition interne ; le dessin des plateaux suit dans
             # _add_build_plate via self._plate_groups_draw.
             do_arrange = True
+            # Rangement calculé par neoSlice : on l'affiche au millimètre.
+            # Son garde-fou anti-dispersion, prévu pour les transforms Bambu
+            # corrompus, recompacterait un plateau de 420 mm en petite grille
+            # et montrerait autre chose que ce qui part à l'impression.
+            _seuil = (float("inf") if getattr(threemf_data, "reagence", False)
+                      else 300.0)
             (arrange_offsets, self._plate_groups_idx,
              self._plate_cote, self._plate_centres) = \
-                self._layout_par_plateau(transformed, _display_objects)
+                self._layout_par_plateau(transformed, _display_objects, _seuil)
         elif threemf_data.slot_count > 1 and not _positions_huge:
             do_arrange = False
             arrange_offsets = [(0.0, 0.0)] * len(transformed)

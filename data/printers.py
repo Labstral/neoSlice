@@ -9,6 +9,7 @@
 from __future__ import annotations
 import functools
 import json
+import re
 from pathlib import Path
 
 # Ordre d'affichage des séries dans les sélecteurs
@@ -330,6 +331,11 @@ def _by_model() -> dict:
             "marque": e.get("marque", ""),
             "display": _display_model(mk, e.get("marque", "")),
             "nozzles": {},
+            # Quel(s) logiciel(s) savent produire CHAQUE buse. Anycubic Slicer
+            # est le seul à connaître la Kobra S1 en 0,25 / 0,6 / 0,8 ;
+            # proposer ces buses sous une sortie OrcaSlicer ferait écrire dans
+            # le 3MF le nom d'un préréglage qu'Orca ne possède pas.
+            "nozzles_slicers": {},
             "slicers": set(),
             "bed_size": e.get("bed_size", ""),
             "height": e.get("printable_height", ""),
@@ -346,6 +352,8 @@ def _by_model() -> dict:
         _composite = "+" in str(e.get("printer_variant", "") or "")
         if not _composite or _nz not in slot["nozzles"]:
             slot["nozzles"][_nz] = name
+        slot["nozzles_slicers"].setdefault(_nz, set()).update(
+            e.get("slicers", ["bambu", "orca"]))
         slot["slicers"].update(e.get("slicers", ["bambu", "orca"]))
     return out
 
@@ -389,9 +397,68 @@ def models_for_brand(brand: str, slicer: str = "orca") -> list[tuple[str, str]]:
     return sorted(items, key=lambda t: t[0].lower())
 
 
-def nozzles_for_model(model_key: str) -> list[float]:
-    """Diamètres de buse réellement disponibles pour ce modèle (triés)."""
-    nz = _by_model().get(model_key, {}).get("nozzles", {})
+# ── Le catalogue ENTIER, sans filtre de slicer ────────────────────────────
+# Le sélecteur d'imprimante filtrait par slicer de SORTIE. Or la sortie par
+# défaut est Bambu Studio, qui ne connaît que 78 des 396 machines du catalogue :
+# un possesseur d'Elegoo Centauri Carbon 2 ne voyait que la série Neptune, et
+# des marques entières (Flashforge, Snapmaker, Artillery, Sovol, Volumic…)
+# n'apparaissaient tout simplement pas. Il concluait, à raison vu l'écran, que
+# son imprimante n'était pas gérée.
+# (Signalé par Pascal Guiheux, Elegoo Centauri Carbon 2, 2026-10-01.)
+#
+# On montre donc TOUT le catalogue, et `slicer_pour_modele` déplace la sortie
+# vers un logiciel capable de produire la machine choisie.
+
+
+def catalogue_brands_tous() -> list[str]:
+    """Toutes les marques du catalogue, quel que soit le slicer de sortie."""
+    return sorted({v["marque"] for v in _by_model().values() if v["marque"]},
+                  key=_brand_sort_key)
+
+
+def models_for_brand_tous(brand: str) -> list[tuple[str, str]]:
+    """[(libellé affiché, model_key)] d'une marque, quel que soit le slicer."""
+    items = [(v["display"], mk) for mk, v in _by_model().items()
+             if v["marque"] == brand]
+    return sorted(items, key=lambda t: t[0].lower())
+
+
+def slicer_pour_modele(model_key: str, courant: str) -> str:
+    """Slicer de sortie capable de produire ce modèle, '' si `courant` convient.
+
+    Ordre de préférence : le logiciel MAISON de la marque (profils d'origine),
+    puis OrcaSlicer qui couvre 367 modèles, puis Bambu Studio, puis n'importe
+    quel logiciel déclaré compatible. Renvoie '' pour une Bambu Lab ou une clé
+    inconnue : on ne déplace jamais une sortie sans savoir où.
+    """
+    e = _by_model().get(model_key)
+    if not e:
+        return ""
+    es, marque = e["slicers"], e["marque"]
+    if _slicer_supported(courant, es, marque):
+        return ""
+    for sl in (slicer_de_marque(marque), "orca", "bambu", *sorted(es or [])):
+        if sl and _slicer_supported(sl, es, marque):
+            return sl
+    return ""
+
+
+def nozzles_for_model(model_key: str, slicer: str = "") -> list[float]:
+    """Diamètres de buse réellement disponibles pour ce modèle (triés).
+
+    Avec `slicer`, ne garde que les buses que CE logiciel de sortie sait
+    produire. Une Kobra S1 a quatre buses chez Anycubic et une seule chez
+    OrcaSlicer : proposer la 0,6 sous une sortie OrcaSlicer écrirait dans le
+    3MF le nom d'un préréglage qu'Orca ne possède pas, et le slicer
+    retomberait sur une autre machine sans rien dire.
+    (Demandé par Emmanuel après le retour de Bruno Guerin, 2026-10-01.)"""
+    e = _by_model().get(model_key, {})
+    nz = e.get("nozzles", {})
+    if slicer:
+        par_buse = e.get("nozzles_slicers", {})
+        marque = e.get("marque", "")
+        nz = {k: v for k, v in nz.items()
+              if _slicer_supported(slicer, par_buse.get(k, set()), marque)}
     return sorted(float(x) for x in nz)
 
 
@@ -496,6 +563,11 @@ def _prusa_by_model() -> dict:
             "marque": brand,
             "display": _prusa_display_brand(preset, brand),
             "nozzles": {},
+            # Le plateau PrusaSlicer est un POLYGONE (« 0x0,235x0,235x235,0x235 »)
+            # et non deux dimensions : il est gardé tel quel, `volume_impression`
+            # en extrait l'encombrement.
+            "bed_shape": e.get("bed_shape", ""),
+            "max_print_height": e.get("max_print_height", ""),
         })
         slot["nozzles"][str(e.get("nozzle_diameter", "0.4"))] = preset
     return out
@@ -738,16 +810,124 @@ def printer_bed_info(printer_key: str) -> dict:
     return bt.get(alias, {})
 
 
-def volume_impression(nom_ui: str) -> tuple[float, float, float]:
-    """Volume d'impression (X, Y, Z) en mm d'une imprimante, d'après son champ
-    « volume » (ex. « 256×256×256 mm »). Repli prudent 256×256×256 si inconnu
-    (imprimantes catalogue sans volume renseigné). Sert de garde-fou neoGen :
-    refuser de générer une pièce plus grande que le plateau cible."""
+VOLUME_REPLI: tuple[float, float, float] = (256.0, 256.0, 256.0)
+
+
+# La virgule n'est PAS une décimale ici : dans un plateau PrusaSlicer elle
+# sépare les coins (« 2.5x5,302.5x5,… »). La lire comme une décimale donnait
+# un plateau de 5 mm sur une CR-10 Mini. L'exposant est reconnu parce que
+# certains plateaux delta portent un « 2.54949e-15 » en guise de zéro, et le
+# couper en deux décalait tous les coins suivants.
+_NOMBRE = re.compile(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+
+def _mesures(texte) -> list[float]:
+    """Nombres d'une dimension écrite n'importe comment : « 420×420 »,
+    « 150x150 », « 235 x 235 mm », « 256×256×256 mm »."""
+    out = []
+    for n in _NOMBRE.findall(str(texte or "")):
+        try:
+            out.append(float(n))
+        except ValueError:
+            pass
+    return out
+
+
+def _hauteur(valeur, defaut: float) -> float:
+    """Hauteur imprimable, qu'elle arrive en nombre (480) ou en texte (« 480 mm »)."""
+    m = [abs(v) for v in _mesures(valeur)]
+    return m[0] if m and m[0] > 0 else defaut
+
+
+def _volume_catalogue(modele: str) -> tuple[float, float, float] | None:
+    """Catalogue OrcaSlicer : « bed_size » = « 420×420 », « height » = « 480 »."""
+    e = _by_model().get(modele)
+    if not e:
+        return None
+    xy = _mesures(e.get("bed_size"))
+    if len(xy) < 2 or min(xy[0], xy[1]) <= 0:
+        return None
+    return (xy[0], xy[1], _hauteur(e.get("height"), VOLUME_REPLI[2]))
+
+
+def _volume_cura(machine: str) -> tuple[float, float, float] | None:
+    """Cura : largeur, profondeur et hauteur sont déjà des nombres."""
+    e = _cura_by_model().get(machine)
+    if not e:
+        return None
     try:
-        v = (PRINTERS.get(nom_ui) or {}).get("volume", "")
-        parts = [p.strip() for p in str(v).replace("mm", "").split("×")]
-        if len(parts) == 3:
-            return (float(parts[0]), float(parts[1]), float(parts[2]))
+        x, y = float(e.get("width") or 0), float(e.get("depth") or 0)
+    except (TypeError, ValueError):
+        return None
+    if min(x, y) <= 0:
+        return None
+    return (x, y, _hauteur(e.get("height"), VOLUME_REPLI[2]))
+
+
+def _volume_flashprint(modele: str) -> tuple[float, float, float] | None:
+    """FlashPrint : « bed_size » = « 150x150 » (un x minuscule, pas un ×)."""
+    e = _flashprint_by_model().get(modele)
+    if not e:
+        return None
+    xy = _mesures(e.get("bed_size"))
+    if len(xy) < 2 or min(xy[0], xy[1]) <= 0:
+        return None
+    return (xy[0], xy[1], _hauteur(e.get("printable_height"), VOLUME_REPLI[2]))
+
+
+def _volume_prusa(modele: str) -> tuple[float, float, float] | None:
+    """PrusaSlicer décrit le plateau par le POLYGONE de ses coins
+    (« 0x0,235x0,235x235,0x235 ») : on en prend l'encombrement. Un plateau
+    DELTA est un cercle de points, et son encombrement reste juste."""
+    e = _prusa_by_model().get(modele)
+    if not e:
+        return None
+    pts = _mesures(e.get("bed_shape"))
+    if len(pts) < 4 or len(pts) % 2:
+        return None
+    xs, ys = pts[0::2], pts[1::2]
+    # ENCOMBREMENT, pas la coordonnée maximale : 18 plateaux sont centrés sur
+    # l'origine (« -85x-85,85x-85,… »), où le maximum vaut la moitié du plateau.
+    x, y = max(xs) - min(xs), max(ys) - min(ys)
+    if min(x, y) <= 0:
+        return None
+    return (x, y, _hauteur(e.get("max_print_height"), VOLUME_REPLI[2]))
+
+
+def volume_impression(nom_ui: str) -> tuple[float, float, float]:
+    """Volume d'impression (X, Y, Z) en mm de l'imprimante choisie.
+
+    Cherche dans TOUS les catalogues, pas seulement les Bambu Lab. Jusqu'au
+    2026-10-01 seules les 13 Bambu étaient connues : les 396 modèles du
+    catalogue, les 578 machines Cura, les 27 FlashPrint et les 255 PrusaSlicer
+    retombaient toutes sur un plateau de 256 mm. Une Elegoo Neptune 4 Max
+    (420×420×480) était donc traitée comme une machine deux fois plus petite,
+    avec trois conséquences visibles : la série ×N fabriquait beaucoup trop de
+    plateaux, le garde-fou neoGen refusait des pièces qui tiennent largement,
+    et neoForge annonçait un mauvais plateau.
+    (Signalé par eleovna BERGES, Elegoo Neptune 4 Max, 2026-10-01.)
+
+    L'ordre suit la précision des sources : le catalogue OrcaSlicer donne la
+    surface réellement imprimable (Snapmaker A250 : 230×250), là où le polygone
+    PrusaSlicer donne le carré englobant (250×250).
+
+    Repli prudent 256×256×256 quand le modèle est inconnu ou sans dimensions :
+    mieux vaut sous-estimer le plateau que proposer une pièce qui ne rentre pas.
+    """
+    if not nom_ui:
+        return VOLUME_REPLI
+    try:
+        xyz = _mesures((PRINTERS.get(nom_ui) or {}).get("volume"))
+        if len(xyz) >= 3 and min(xyz[:3]) > 0:
+            return (xyz[0], xyz[1], xyz[2])
     except Exception:
         pass
-    return (256.0, 256.0, 256.0)
+    for chercher in (_volume_catalogue, _volume_cura,
+                     _volume_flashprint, _volume_prusa):
+        try:
+            trouve = chercher(nom_ui)
+        except Exception:
+            trouve = None
+        if trouve:
+            return trouve
+    return VOLUME_REPLI

@@ -19,6 +19,7 @@ from data.filaments import FILAMENTS, FAMILLES_ORDRE
 from data.printers import (
     PRINTERS, SERIES_ORDRE,
     catalogue_brands, models_for_brand, nozzles_for_model, is_catalogue_model,
+    catalogue_brands_tous, models_for_brand_tous, slicer_pour_modele,
     prusa_brands, prusa_models_for_brand, prusa_nozzles_for_model, is_prusa_model,
     cura_brands, cura_models_for_brand, cura_nozzles_for_model, is_cura_model,
     flashprint_brands, flashprint_models_for_brand, flashprint_nozzles_for_model,
@@ -252,6 +253,7 @@ class FilamentPrinterSelector(QWidget):
     status_message     = Signal(str)       # message court pour la barre d'état
     printer_confirmed  = Signal()          # émis quand l'étape ① est validée
     filament_confirmed = Signal()          # émis quand l'étape ② est validée
+    validation_perdue  = Signal()          # une étape validée ne l'est plus
     nozzle_changed     = Signal(float)     # diamètre buse (mm) quand l'utilisateur change
     nozzle_changed     = Signal(float)     # émis quand le diamètre de buse change
     nozzle_changed     = Signal(float)     # diamètre buse (mm) quand l'utilisateur change
@@ -260,6 +262,14 @@ class FilamentPrinterSelector(QWidget):
         super().__init__(parent)
         self._printer_done = False
         self._filament_done = False
+        # Ce qui a été validé, pas seulement le fait que ça l'ait été : changer
+        # d'imprimante ou de filament APRÈS coup laissait l'étape cochée et son
+        # bouton grisé. Impossible de revalider, donc la sortie restait celle de
+        # l'ancienne machine et le badge de compatibilité mentait.
+        # (Signalé par Emmanuel, 2026-10-01.)
+        self._printer_valide = ""
+        self._filament_valide = ""
+        self._bascule_en_cours = False
         self._setup_ui()
         self._update_compatibility()
 
@@ -525,15 +535,20 @@ class FilamentPrinterSelector(QWidget):
         choisie."""
         self._printer_done = False
         self._filament_done = False
+        self._printer_valide = ""
+        self._filament_valide = ""
         self._btn_confirm_printer.setText(_("selector.validate_btn"))
         self._btn_confirm_printer.setEnabled(True)
+        self._btn_confirm_printer.setStyleSheet(self._style_a_valider())
         self._btn_confirm_filament.setText(_("selector.validate_btn"))
+        self._btn_confirm_filament.setStyleSheet(self._style_a_valider())
         self._btn_confirm_filament.setEnabled(False)
         self._filament_combo.setEnabled(False)
         self._plate_combo.setEnabled(False)
         self._hint_filament.show()
         self._compat_badge.hide()
         self.refresh_theme()          # libellés/boutons cohérents avec l'état
+        self.validation_perdue.emit()
 
     def _on_slicer_combo(self) -> None:
         """L'utilisateur choisit son logiciel de découpe : le catalogue
@@ -548,35 +563,8 @@ class FilamentPrinterSelector(QWidget):
             self._reset_validation()
         self.slicer_switched.emit(code)       # bouton d'export, etc.
 
-    def _corriger_slicer_selon_marque(self) -> bool:
-        """Aligne le SLICER DE SORTIE sur la marque de l'imprimante validée.
-
-        Snapmaker Orca embarque toute la bibliothèque OrcaSlicer : neoSlice y
-        propose 367 machines, dont 19 Snapmaker seulement. Une utilisatrice a
-        donc pu choisir sa « Elegoo Centauri Carbon » avec une sortie restée sur
-        Snapmaker Orca — elle avait bien renseigné son imprimante, mais le
-        fichier partait pour le mauvais logiciel (vécu).
-
-        On ne touche JAMAIS aux slicers génériques (OrcaSlicer, Bambu Studio…) :
-        y exporter n'importe quelle marque est un choix légitime. Retourne True
-        si le slicer a été basculé."""
-        from data.printers import (brand_of, is_catalogue_model, models_for_brand,
-                                   marque_du_slicer, slicer_de_marque)
-        printer = self.current_printer()
-        if not printer or not is_catalogue_model(printer):
-            return False                       # Bambu Lab / clé inconnue
-        courant = PREFS.get("slicer_output", "bambu")
-        if not marque_du_slicer(courant):
-            return False                       # slicer générique → on respecte
-        marque = brand_of(printer)
-        cible = slicer_de_marque(marque)
-        if not marque or not cible or cible == courant:
-            return False
-        # La machine doit exister dans le catalogue du slicer CIBLE, sinon on
-        # basculerait vers une sortie où elle n'est plus sélectionnable.
-        if printer not in {mk for _lbl, mk in models_for_brand(marque, cible)}:
-            return False
-
+    def _basculer_slicer(self, cible: str, printer: str, cle_message: str) -> bool:
+        """Déplace la sortie vers `cible` en gardant l'imprimante sélectionnée."""
         label = self._printer_combo._key_label.get(printer, printer)
         PREFS.set("slicer_output", cible)
         self.refresh_printers()                # catalogue + buses + plateaux
@@ -589,13 +577,129 @@ class FilamentPrinterSelector(QWidget):
         self.slicer_switched.emit(cible)
         from core import mes_machines as _mm
         self.status_message.emit(
-            _("selector.slicer_auto", printer=label,
-              slicer=_mm.slicer_label(cible)))
+            _(cle_message, printer=label, slicer=_mm.slicer_label(cible)))
         return True
+
+    def _corriger_slicer_selon_marque(self) -> bool:
+        """Aligne le SLICER DE SORTIE sur l'imprimante validée.
+
+        DEUX règles, dans cet ordre.
+
+        1. La sortie courante est INCAPABLE de produire cette machine. Depuis
+           que le menu montre tout le catalogue et non plus les seules machines
+           du logiciel courant (Bambu Studio n'en connaît que 78 sur 396), le
+           choix peut tomber hors de sa portée : on déplace alors la sortie,
+           même si c'est un logiciel générique, car y rester produirait un
+           fichier pour une imprimante que le logiciel ne connaît pas.
+
+        2. La sortie est le logiciel MAISON d'une autre marque. Snapmaker Orca
+           embarque toute la bibliothèque OrcaSlicer : neoSlice y propose 367
+           machines, dont 19 Snapmaker seulement. Une utilisatrice a donc pu
+           choisir sa « Elegoo Centauri Carbon » avec une sortie restée sur
+           Snapmaker Orca — elle avait bien renseigné son imprimante, mais le
+           fichier partait pour le mauvais logiciel (vécu). On ne touche JAMAIS
+           à un slicer générique sur cette règle là : y exporter n'importe
+           quelle marque est un choix légitime.
+
+        Retourne True si le slicer a été basculé."""
+        from data.printers import (brand_of, is_catalogue_model, models_for_brand,
+                                   marque_du_slicer, slicer_de_marque)
+        printer = self.current_printer()
+        if not printer or not is_catalogue_model(printer):
+            return False                       # Bambu Lab / clé inconnue
+        courant = PREFS.get("slicer_output", "bambu")
+
+        # Règle 1 : la sortie ne sait pas produire cette machine. Déjà jouée à
+        # la SÉLECTION ; rejouée ici au cas où la sortie aurait changé entre les
+        # deux (l'utilisateur peut toucher au menu du logiciel entre temps).
+        if self._corriger_sortie_incapable():
+            return True
+
+        # Règle 2 : la sortie est le logiciel maison d'une AUTRE marque.
+        if not marque_du_slicer(courant):
+            return False                       # slicer générique → on respecte
+        marque = brand_of(printer)
+        cible = slicer_de_marque(marque)
+        if not marque or not cible or cible == courant:
+            return False
+        # La machine doit exister dans le catalogue du slicer CIBLE, sinon on
+        # basculerait vers une sortie où elle n'est plus sélectionnable.
+        if printer not in {mk for _lbl, mk in models_for_brand(marque, cible)}:
+            return False
+
+        return self._basculer_slicer(cible, printer, "selector.slicer_auto")
+
+    def _style_a_valider(self) -> str:
+        """Style du bouton « Valider », relu sur la palette COURANTE. La
+        constante du module est figée à l'import : la réutiliser rendrait le
+        bouton sombre en thème clair."""
+        pal = _T.palette()
+        return f"""
+            QPushButton {{
+                background: {pal['ACCENT']}; color: #ffffff;
+                border: none; border-radius: 3px; padding: 0 10px;
+                font-size: 10px; font-family: {FONT_MAIN};
+                font-weight: bold; letter-spacing: 1px;
+            }}
+            QPushButton:hover {{ background: {pal['ACCENT_BRIGHT']}; }}
+        """
+
+    def _rearmer_imprimante(self) -> None:
+        """L'imprimante a changé : l'étape ① redevient « à valider »."""
+        self._printer_done = False
+        self._btn_confirm_printer.setText(_("selector.validate_btn"))
+        self._btn_confirm_printer.setEnabled(True)
+        self._btn_confirm_printer.setStyleSheet(self._style_a_valider())
+        self._compat_badge.setText("")
+        self.validation_perdue.emit()
+
+    def _rearmer_filament(self) -> None:
+        """Le filament a changé : l'étape ② redevient « à valider »."""
+        self._filament_done = False
+        self._btn_confirm_filament.setText(_("selector.validate_btn"))
+        self._btn_confirm_filament.setEnabled(True)
+        self._btn_confirm_filament.setStyleSheet(self._style_a_valider())
+        self._compat_badge.setText("")
+        self.validation_perdue.emit()
+
+    def _corriger_sortie_incapable(self) -> bool:
+        """Le logiciel de sortie ne sait PAS produire la machine choisie.
+
+        Appliqué dès la SÉLECTION, sans attendre une validation : y rester
+        fabriquerait un fichier pour une imprimante que le logiciel ignore, et
+        l'utilisateur ne le découvrirait qu'en ouvrant son slicer."""
+        from data.printers import is_catalogue_model, marque_du_slicer
+        if self._bascule_en_cours:
+            return False
+        printer = self.current_printer()
+        if not printer:
+            return False
+        courant = PREFS.get("slicer_output", "bambu")
+        if not is_catalogue_model(printer):
+            # Bambu Lab : aucun slicer de FABRICANT ne sait la produire. Les
+            # génériques (Bambu Studio, OrcaSlicer) sont légitimes, on n'y
+            # touche pas.
+            if printer in PRINTERS and marque_du_slicer(courant):
+                self._bascule_en_cours = True
+                try:
+                    return self._basculer_slicer("bambu", printer,
+                                                 "selector.slicer_requis")
+                finally:
+                    self._bascule_en_cours = False
+            return False
+        cible = slicer_pour_modele(printer, courant)
+        if not cible:
+            return False
+        self._bascule_en_cours = True
+        try:
+            return self._basculer_slicer(cible, printer, "selector.slicer_requis")
+        finally:
+            self._bascule_en_cours = False
 
     def _on_confirm_printer(self):
         self._corriger_slicer_selon_marque()
         self._printer_done = True
+        self._printer_valide = self.current_printer()
         pal = _T.palette()
         tg = pal["TELE_GREEN"]; tl = pal["TEXT_LABEL"]
 
@@ -655,6 +759,7 @@ class FilamentPrinterSelector(QWidget):
 
     def _on_confirm_filament(self):
         self._filament_done = True
+        self._filament_valide = self.current_filament()
         pal = _T.palette()
         tg = pal["TELE_GREEN"]; tl = pal["TEXT_LABEL"]
 
@@ -706,21 +811,29 @@ class FilamentPrinterSelector(QWidget):
             models = flashprint_models_for_brand
             groups = []
         else:
-            brands = catalogue_brands(slicer)
-            models = lambda b: models_for_brand(b, slicer)
+            # TOUT le catalogue, pas seulement ce que la sortie courante sait
+            # produire : la sortie par défaut est Bambu Studio, qui ne connaît
+            # que 78 des 396 machines. Un possesseur d'Elegoo Centauri Carbon 2
+            # ne voyait que la série Neptune, et des marques entières
+            # (Flashforge, Snapmaker, Artillery, Sovol…) manquaient à l'appel.
+            # Choisir une machine que la sortie ne gère pas déplace la sortie
+            # (cf. _corriger_slicer_selon_marque).
+            brands = catalogue_brands_tous()
+            models = models_for_brand_tous
             by_serie: dict[str, list[str]] = {}
             for name, data in PRINTERS.items():
                 by_serie.setdefault(data.get("serie", "Autre"), []).append(name)
             bambu = [(name, name) for serie in SERIES_ORDRE
                      for name in by_serie.get(serie, [])]
-            # Groupe « Bambu Lab » UNIQUEMENT pour les slicers qui ciblent vraiment
-            # les Bambu Lab : Bambu Studio (natif) et OrcaSlicer (universel, embarque
-            # le vendor Bambu). Les slicers de FABRICANT (CrealityPrint/ElegooSlicer/
-            # Anycubic/Snapmaker) sont choisis par les possesseurs de CES machines ;
-            # y proposer une Bambu Lab n'a pas de sens ET risque un export cassé (un
-            # fork allégé peut ne pas connaître le preset Bambu -> mauvaise imprimante
-            # au chargement). Le catalogue ne les marque d'ailleurs jamais compatibles.
-            groups = [("Bambu Lab", bambu)] if slicer in ("bambu", "orca") else []
+            # Le groupe « Bambu Lab » était réservé à Bambu Studio et OrcaSlicer :
+            # un fork de fabricant peut ne pas connaître le preset Bambu et
+            # chargerait la mauvaise imprimante. Mais le cacher enfermait
+            # l'utilisateur : essayer une Elegoo basculait la sortie sur
+            # ElegooSlicer, et sa propre Bambu Lab disparaissait du menu, sans
+            # aucun moyen évident d'y revenir. On le montre donc partout, et
+            # choisir une Bambu Lab depuis un slicer de fabricant ramène la
+            # sortie sur Bambu Studio (cf. _corriger_sortie_incapable).
+            groups = [("Bambu Lab", bambu)]
 
         # Cura : comparaison SOUPLE (fabricants suffixés différemment : « Creality3D »,
         # « Ultimaker B.V. » au lieu de « Creality »/« UltiMaker » → l'égalité stricte
@@ -837,6 +950,18 @@ class FilamentPrinterSelector(QWidget):
         self._populate_plates()          # les plateaux dépendent de l'imprimante choisie
         self._update_compatibility()
         printer = self.current_printer()
+        # Changer un choix DÉJÀ validé doit redemander une validation : sinon
+        # l'étape reste cochée ✓, son bouton grisé, et l'utilisateur croit avoir
+        # confirmé une machine qu'il vient de remplacer.
+        if self._printer_done and printer and printer != self._printer_valide:
+            self._rearmer_imprimante()
+        _fil = self.current_filament()
+        if self._filament_done and _fil and _fil != self._filament_valide:
+            self._rearmer_filament()
+        # La sortie courante ne sait pas produire cette machine : on corrige
+        # TOUT DE SUITE, sans attendre une validation que l'utilisateur ne fera
+        # peut-être pas, sinon le fichier partirait pour le mauvais logiciel.
+        self._corriger_sortie_incapable()
         # Avertissement A2L : affiché dès la sélection (pas seulement à la validation)
         if printer == "A2L":
             self._show_a2l_warning()
@@ -1045,7 +1170,12 @@ class FilamentPrinterSelector(QWidget):
         elif key and is_flashprint_model(key):
             sizes = flashprint_nozzles_for_model(key) or list(_NOZZLE_SIZES)
         elif key and is_catalogue_model(key):
-            sizes = nozzles_for_model(key) or list(_NOZZLE_SIZES)
+            # Filtré par le logiciel de SORTIE : une buse que ce logiciel ne
+            # connaît pas pour cette machine ferait écrire dans le 3MF le nom
+            # d'un préréglage inexistant.
+            _sl = PREFS.get("slicer_output", "bambu")
+            sizes = (nozzles_for_model(key, _sl) or nozzles_for_model(key)
+                     or list(_NOZZLE_SIZES))
         else:
             sizes = list(_NOZZLE_SIZES)
         prev = self.current_nozzle_diameter_mm()

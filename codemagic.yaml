@@ -72,9 +72,39 @@ workflows:
       - name: Create ZIP (auto-update)
         script: |
           cd dist
-          zip -r neoSlice-v${APP_VERSION}-macOS.zip neoSlice.app
+          # `zip -r` SUIT les liens symboliques et en recopie la cible. Or un
+          # bundle .app de PyInstaller est bâti sur des liens : Contents/Resources
+          # pointe sur Contents/Frameworks. Résultat mesuré sur la 2.3.1 : 78 % du
+          # contenu dupliqué, 1,91 Go à télécharger et 6,46 Go une fois décompressé,
+          # soit 8,4 Go de place nécessaire. Des utilisateurs Mac n'arrivaient tout
+          # simplement pas à décompresser le fichier.
+          # (Signalé par Yannick Lebeau Fraisse, MacBook Air M4, 2026-09-30.)
+          #
+          # `ditto -c -k` est l'outil d'Apple pour archiver un bundle : il garde les
+          # liens, les permissions et les attributs étendus.
+          ditto -c -k --keepParent neoSlice.app neoSlice-v${APP_VERSION}-macOS.zip
           echo "ZIP créé: $(du -sh neoSlice-v${APP_VERSION}-macOS.zip)"
           ls -lh *.dmg *.zip
+
+      - name: Verify ZIP keeps symlinks
+        script: |
+          cd dist
+          ZIP="neoSlice-v${APP_VERSION}-macOS.zip"
+          # Garde-fou : si l'archivage reperd les liens, l'archive regonfle de
+          # 0,4 Go à 1,9 Go sans que rien ne casse visiblement. On refuse alors
+          # la construction plutôt que de publier une archive de 1,9 Go.
+          # zipinfo marque les liens symboliques par un « l » en tête des droits.
+          LIENS=$(zipinfo -l "$ZIP" | grep -c '^l' || true)
+          TAILLE=$(stat -f%z "$ZIP")
+          echo "Liens symboliques : $LIENS   Taille : $TAILLE octets"
+          if [ "$LIENS" -lt 50 ]; then
+            echo "ERREUR : les liens du bundle ont été déroulés."
+            exit 1
+          fi
+          if [ "$TAILLE" -gt 1200000000 ]; then
+            echo "ERREUR : archive de plus de 1,2 Go, attendu autour de 0,4 Go."
+            exit 1
+          fi
 
     artifacts:
       - dist/neoSlice-v*-macOS.dmg

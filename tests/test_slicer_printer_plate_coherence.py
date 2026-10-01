@@ -153,10 +153,20 @@ def test_selecteur_plateau_visible(slicer):
         PREFS.set("slicer_output", prev)
 
 
-def test_bambu_lab_seulement_bambu_et_orca():
-    """Le groupe « Bambu Lab » n'apparaît que sous Bambu Studio et OrcaSlicer ;
-    jamais sous les slicers de fabricant (Creality/Elegoo/Anycubic/Snapmaker) ni
-    Prusa/Cura/FlashPrint (catalogues dédiés)."""
+def test_bambu_lab_present_dans_tout_le_catalogue():
+    """Le groupe « Bambu Lab » apparaît sous TOUTES les sorties du catalogue,
+    jamais sous Prusa/Cura/FlashPrint qui ont leurs propres machines.
+
+    RÈGLE CHANGÉE le 2026-10-01. Le groupe était réservé à Bambu Studio et
+    OrcaSlicer, parce qu'un fork de fabricant peut ne pas connaître le preset
+    Bambu et chargerait la mauvaise imprimante. Le risque est réel, mais le
+    remède enfermait l'utilisateur : depuis que le menu montre tout le
+    catalogue, essayer une Elegoo bascule la sortie sur ElegooSlicer, et sa
+    propre Bambu Lab disparaissait du menu sans moyen évident d'y revenir.
+
+    Le risque est désormais traité à la source : choisir une Bambu Lab depuis
+    un slicer de fabricant ramène la sortie sur Bambu Studio. C'est l'objet du
+    test suivant, et il doit rester vrai."""
     import os
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -167,10 +177,31 @@ def test_bambu_lab_seulement_bambu_et_orca():
         for slicer in _ALL_SLICERS:
             PREFS.set("slicer_output", slicer)
             w = FilamentPrinterSelector()
-            labels = [g[0] for g in w._printer_groups()]
-            has_bambu = "Bambu Lab" in labels
-            assert has_bambu == (slicer in ("bambu", "orca")), \
-                f"[{slicer}] groupe Bambu Lab présent={has_bambu} (attendu {slicer in ('bambu','orca')})"
+            present = "Bambu Lab" in [g[0] for g in w._printer_groups()]
+            attendu = slicer in _CATALOGUE_SLICERS
+            assert present == attendu, (
+                f"[{slicer}] groupe Bambu Lab présent={present}, attendu {attendu}")
+    finally:
+        PREFS.set("slicer_output", prev)
+
+
+def test_une_bambu_depuis_un_slicer_de_fabricant_revient_sur_bambu_studio():
+    """Le garde-fou qui remplace l'ancienne règle : un fork de fabricant ne
+    connaît pas forcément le preset Bambu, on n'y laisse donc jamais partir
+    une Bambu Lab."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from ui.components.filament_printer_selector import FilamentPrinterSelector
+    QApplication.instance() or QApplication([])
+    prev = PREFS.get("slicer_output", "bambu")
+    try:
+        for slicer in ("creality", "elegoo", "anycubic", "snapmaker"):
+            PREFS.set("slicer_output", slicer)
+            w = FilamentPrinterSelector()
+            w._printer_combo.set_current_key("X1 Carbon", emit=True)
+            assert PREFS.get("slicer_output") == "bambu", (
+                f"[{slicer}] une X1 Carbon serait partie pour le mauvais logiciel")
     finally:
         PREFS.set("slicer_output", prev)
 
