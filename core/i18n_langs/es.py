@@ -1072,7 +1072,8 @@ TR: dict[str, str] = {
         "• <b>Artículos</b>: catálogo<br>"
         "• <b>Copia de seguridad automática</b> de su taller<br><br>"
         "<b>Activación única, de por vida</b> — un solo pago, sin suscripción."),
-    "pro.price_suffix":              "{price} · pago único, de por vida",
+    "pro.price_suffix":              "{price} sin IVA · pago único, de por vida",
+    "pro.price_vat":                 "IVA añadido al pagar según su país. Pueden aplicarse gastos de cambio de divisa.",
     "pro.unlock_btn":                "Desbloquear neoSlice Pro",
     "pro.already_bought":            "¿Ya lo ha comprado? Pegue su clave de licencia",
     "pro.key_placeholder":           "XXXX-XXXX-XXXX-XXXX",

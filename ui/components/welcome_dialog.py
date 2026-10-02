@@ -54,6 +54,18 @@ def is_update() -> bool:
 
 
 _WHATS_NEW_FR = [
+    ("Nouveautés v2.4.1",
+     "• Version Pro : le prix indique maintenant qu'il est HORS TAXES, et "
+     "une ligne précise que la TVA de votre pays s'ajoute au paiement et "
+     "que des frais de change peuvent s'appliquer. Un acheteur s'est vu "
+     "demander 107 $ pour un prix annoncé 79,99 €, sans avoir été "
+     "prévenu.\n"
+     "• Installation : un fichier de journal de développement de 4,3 Mo "
+     "était embarqué par erreur. Le journal de votre machine s'écrivait à "
+     "sa suite et devenait inexploitable en cas de problème. Il repart "
+     "maintenant d'une page blanche.\n"
+     "• Version Pro : le bouton « Activer » de la clé de licence "
+     "paraissait coupé, son texte touchait les deux bords."),
     ("Nouveautés v2.4.0",
      "• Toutes les imprimantes sont enfin trouvables : le menu ne montrait "
      "que les machines connues du logiciel de découpe sélectionné, et des "

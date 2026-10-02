@@ -273,6 +273,18 @@ class PaywallDialog(QDialog):
         self._price_lbl.setFont(QFont(FONT_MAIN, 10, QFont.Bold))
         self._price_lbl.setAlignment(Qt.AlignCenter)
         lay.addWidget(self._price_lbl)
+
+        # Le prix affiché est HORS TAXES : Gumroad ajoute la TVA du pays de
+        # l'acheteur au moment du paiement, et facture dans sa propre devise.
+        # Rien ne le disait : un client s'est vu demander 107 $ pour un prix
+        # annoncé 79,99 €, soit la TVA plus les frais de change de sa banque.
+        # Son calcul était juste au centime.
+        # (Signalé par Yannick Lebeau Fraisse, 2026-10-02.)
+        self._price_vat_lbl = QLabel(_("pro.price_vat"))
+        self._price_vat_lbl.setFont(QFont(FONT_MAIN, 8))
+        self._price_vat_lbl.setAlignment(Qt.AlignCenter)
+        self._price_vat_lbl.setWordWrap(True)
+        lay.addWidget(self._price_vat_lbl)
         lay.addSpacing(12)
 
         self._buy_btn = QPushButton(_("pro.unlock_btn"))
@@ -380,6 +392,11 @@ class PaywallDialog(QDialog):
         )
         self._subtitle_lbl.setStyleSheet(f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         self._price_lbl.setStyleSheet(f"color: {pal['TELE_GREEN']}; background: transparent;")
+        # TEXT_SECONDARY et pas TEXT_LABEL : mesuré, le gris le plus pâle ne
+        # donne que 2,88 de contraste sur le fond sombre. Une mention de prix
+        # doit être lisible, pas devinée.
+        self._price_vat_lbl.setStyleSheet(
+            f"color: {pal['TEXT_SECONDARY']}; background: transparent;")
         self._activate_title.setStyleSheet(f"color: {pal['TEXT_PRIMARY']}; background: transparent;")
         self._sep1.setStyleSheet(f"background: {pal['INACTIVE']}; border: none;")
 
@@ -403,12 +420,17 @@ class PaywallDialog(QDialog):
             }}
             QPushButton:hover {{ background: #00D080; }}
         """)
+        # Rembourrage horizontal, SANS largeur fixe : sans lui le bouton faisait
+        # exactement la largeur de son texte, qui touchait les deux bords et
+        # paraissait coupé. Une largeur fixe ferait déborder l'allemand
+        # (« Aktivieren ») ; le rembourrage laisse la largeur suivre la langue.
         self._activate_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {pal['ACCENT']};
                 color: {pal['EXPORT_FG']};
                 border: none;
                 border-radius: 4px;
+                padding: 0 14px;
             }}
             QPushButton:hover {{ opacity: 0.9; }}
         """)

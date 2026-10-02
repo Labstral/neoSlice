@@ -247,7 +247,31 @@ SOMMAIRE
 
 
 ------------------------------------------------------------------------------
-8. NOUVEAUTÉS v2.4.0
+8. NOUVEAUTÉS v2.4.1
+------------------------------------------------------------------------------
+
+  VERSION PRO : LE PRIX DIT QU'IL EST HORS TAXES
+  ----------------------------------------------
+  * Le prix affiché est désormais suivi de « HT », et une ligne précise que
+    la TVA de votre pays s'ajoute au moment du paiement et que des frais de
+    change peuvent s'appliquer.
+  * Un acheteur s'est vu demander 107 $ pour un prix annoncé 79,99 €, sans
+    que rien ne l'ait prévenu. Son calcul était juste : 79,99 € hors taxes,
+    plus 20 % de TVA, plus les frais de change de sa banque.
+  * Le bouton « Activer » de la clé de licence paraissait coupé, son texte
+    touchait les deux bords.
+
+  INSTALLATION PLUS PROPRE
+  ------------------------
+  * Un fichier de journal de développement de 4,3 Mo était embarqué par
+    erreur dans l'installation. Il est retiré.
+  * Surtout, le journal de diagnostic de votre machine s'écrivait à la suite
+    de ce fichier : en cas de problème, il était inexploitable. Il repart
+    maintenant d'une page blanche.
+
+
+------------------------------------------------------------------------------
+9. NOUVEAUTÉS v2.4.0
 ------------------------------------------------------------------------------
 
   TOUTES LES IMPRIMANTES ENFIN TROUVABLES
@@ -350,7 +374,7 @@ SOMMAIRE
 
 
 ------------------------------------------------------------------------------
-9. NOUVEAUTÉS v2.3.0
+10. NOUVEAUTÉS v2.3.0
 ------------------------------------------------------------------------------
 
   neoFORGE, LE MODELEUR 3D (version Pro)
@@ -375,7 +399,7 @@ SOMMAIRE
     deux d'entre eux pouvaient fermer l'application. Ils sont neutralisés.
 
 ------------------------------------------------------------------------------
-10. NOUVEAUTÉS v2.2.0
+11. NOUVEAUTÉS v2.2.0
 ------------------------------------------------------------------------------
 
   LOGICIEL DE SLICING ET IMPRIMANTE AU MÊME ENDROIT
@@ -423,7 +447,7 @@ RAPPEL - LES GRANDES NOUVEAUTÉS DE LA v2
 
 
 ------------------------------------------------------------------------------
-11. CONTACT ET SUPPORT
+12. CONTACT ET SUPPORT
 ------------------------------------------------------------------------------
 
   Développeur  : Emmanuel Percheron

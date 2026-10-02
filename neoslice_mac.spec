@@ -148,6 +148,13 @@ if Path('data').exists():
     for _item in sorted(Path('data').iterdir()):
         if _item.name == 'kb':
             continue
+        # neoslice.log : le JOURNAL DE DÉVELOPPEMENT. Il traînait dans data/ et
+        # partait donc chez tous les utilisateurs : 4,3 Mo, 30 000 lignes, le nom
+        # de session Windows du développeur et 1195 chemins de fichiers 3D. Pire,
+        # le journal de l'utilisateur s'ajoutait à la suite, ce qui rendait tout
+        # diagnostic illisible. (Constaté le 2026-10-02.)
+        if _item.name == 'neoslice.log' or _item.name.startswith('neoslice.log.'):
+            continue
         dest = f'data/{_item.name}' if _item.is_dir() else 'data'
         project_datas.append((str(_item), dest))
 

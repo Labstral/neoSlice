@@ -2,7 +2,7 @@
 
 **neoSlice** est un assistant IA de slicing multi-marques. Il analyse vos fichiers 3D, règle automatiquement une impression optimisée et exporte un fichier prêt à ouvrir dans **9 slicers** — Bambu Studio, OrcaSlicer, PrusaSlicer, CrealityPrint, ElegooSlicer, AnycubicSlicer, Snapmaker Orca, UltiMaker Cura et FlashPrint — pour **plus de 80 marques et 600 imprimantes** (Bambu Lab, Creality, Prusa, Anycubic, Elegoo, FlashForge, Sovol…).
 
-> Version actuelle : **v2.4.0** — [Télécharger](https://neoslice-ai.com)
+> Version actuelle : **v2.4.1** — [Télécharger](https://neoslice-ai.com)
 
 ---
 
@@ -48,6 +48,11 @@ Paramètres (⚙) → section **Mise à jour** → **Vérifier maintenant**
 ---
 
 ## Changelog
+
+### v2.4.1
+- **Version Pro** : le prix indique désormais qu'il est **hors taxes**, et une ligne précise que la TVA de votre pays s'ajoute au paiement et que des frais de change peuvent s'appliquer. Un acheteur s'est vu demander 107 $ pour un prix annoncé 79,99 €, sans que rien ne l'ait prévenu.
+- **Installation** : un fichier de journal de développement de 4,3 Mo était embarqué par erreur. Il partait chez chaque utilisateur, et le journal de diagnostic s'écrivait à sa suite, ce qui le rendait inexploitable en cas de problème.
+- **Version Pro** : le bouton « Activer » de la clé de licence paraissait coupé, son texte touchait les deux bords.
 
 ### v2.4.0
 - **Toutes les imprimantes enfin trouvables** : le menu ne montrait que les machines connues du logiciel de découpe sélectionné, et celui par défaut n'en connaît qu'un cinquième. Des marques entières, Flashforge, Snapmaker, Artillery, Sovol et une quarantaine d'autres, n'apparaissaient pas du tout. Le catalogue complet est désormais proposé, et neoSlice choisit tout seul le logiciel de découpe capable de produire la machine retenue.

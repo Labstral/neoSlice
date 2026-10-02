@@ -1073,7 +1073,8 @@ TR: dict[str, str] = {
         "• <b>Artikel</b>: Katalog<br>"
         "• <b>Automatische Sicherung</b> Ihrer Werkstatt<br><br>"
         "<b>Einmalige Aktivierung, lebenslang</b> — eine einzige Zahlung, kein Abo."),
-    "pro.price_suffix":              "{price} · Einmalzahlung, lebenslang",
+    "pro.price_suffix":              "{price} zzgl. MwSt. · Einmalzahlung, lebenslang",
+    "pro.price_vat":                 "MwSt. wird je nach Land beim Bezahlen hinzugefügt. Umrechnungsgebühren können anfallen.",
     "pro.unlock_btn":                "neoSlice Pro freischalten",
     "pro.already_bought":            "Bereits gekauft? Fügen Sie Ihren Lizenzschlüssel ein",
     "pro.key_placeholder":           "XXXX-XXXX-XXXX-XXXX",

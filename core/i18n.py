@@ -1101,7 +1101,8 @@ _FR: dict[str, str] = {
         "• <b>Articles</b> : catalogue<br>"
         "• <b>Sauvegarde automatique</b> de votre atelier<br><br>"
         "<b>Activation unique, à vie</b> — un seul paiement, pas d'abonnement."),
-    "pro.price_suffix":              "{price} · paiement unique, à vie",
+    "pro.price_suffix":              "{price} HT · paiement unique, à vie",
+    "pro.price_vat":                 "TVA en sus selon votre pays, ajoutée au paiement. Des frais de change peuvent s'appliquer.",
     "pro.unlock_btn":                "Débloquer neoSlice Pro",
     "pro.already_bought":            "Déjà acheté ? Collez votre clé de licence",
     "pro.key_placeholder":           "XXXX-XXXX-XXXX-XXXX",
@@ -2812,7 +2813,8 @@ _EN: dict[str, str] = {
         "• <b>Products</b>: catalog<br>"
         "• <b>Automatic backup</b> of your workshop<br><br>"
         "<b>One-time activation, lifetime</b> — a single payment, no subscription."),
-    "pro.price_suffix":              "{price} · one-time payment, lifetime",
+    "pro.price_suffix":              "{price} excl. VAT · one-time payment, lifetime",
+    "pro.price_vat":                 "VAT added at checkout according to your country. Currency conversion fees may apply.",
     "pro.unlock_btn":                "Unlock neoSlice Pro",
     "pro.already_bought":            "Already purchased? Paste your license key",
     "pro.key_placeholder":           "XXXX-XXXX-XXXX-XXXX",
